@@ -3,6 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "description": "Nodedr Restaurant — offline-first Restaurant Management System",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Raktim94/nodedr-restaurant-pos.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Raktim94/nodedr-restaurant-pos/issues"
+  },
+  "homepage": "https://github.com/Raktim94/nodedr-restaurant-pos#readme",
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
