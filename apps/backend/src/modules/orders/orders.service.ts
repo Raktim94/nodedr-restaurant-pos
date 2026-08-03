@@ -11,6 +11,7 @@ import type {
   RefundDto,
 } from '@nodedr-restaurant/types';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
+import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { computeOrderTotals, priceLine, round2 } from './pricing';
@@ -29,6 +30,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     private readonly giftCards: GiftCardsService,
+    private readonly inventory: InventoryService,
   ) {}
 
   async listOpen(branchId: string) {
@@ -134,7 +136,12 @@ export class OrdersService {
     return this.getOrder(branchId, order.id);
   }
 
-  async checkout(branchId: string, orderId: string, dto: CheckoutDto) {
+  async checkout(
+    branchId: string,
+    orderId: string,
+    userId: string,
+    dto: CheckoutDto,
+  ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
       include: { items: true, customer: true },
@@ -228,6 +235,21 @@ export class OrdersService {
           `Payments (${totalCovered}) do not cover the total due (${totalDue})`,
         );
       }
+
+      // Best-effort, non-blocking: deducts ingredient stock for whichever
+      // items have a recipe modeled (most won't yet). See
+      // InventoryService.deductForOrderItems for why this never throws on
+      // insufficient stock — a recipe-modeling gap must never be the reason
+      // a paid order fails to save.
+      await this.inventory.deductForOrderItems(
+        tx,
+        branchId,
+        userId,
+        order.items.map((item) => ({
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+        })),
+      );
 
       if (order.tableId) {
         await tx.table.update({

@@ -98,7 +98,8 @@ Display Screen, billing + checkout (tips, split-bill calculator, gift
 cards, loyalty points, refunds), customer CRM, a real-time dashboard, and
 inventory & store management — ingredients, weighted-average recipe
 costing, suppliers, purchase orders, goods receipts with batch/lot +
-expiry tracking, and FIFO waste logging.
+expiry tracking, FIFO waste logging, and automatic ingredient deduction
+on checkout (combo-aware, never blocks a sale on a stock shortfall).
 
 ## Screenshots
 
@@ -221,6 +222,11 @@ docs/           Screenshots and supplementary docs
   blended average. See
   `apps/backend/src/modules/inventory/goods-receipts.service.ts` and
   `waste.service.ts`.
+- **Order checkout deducts ingredient stock but never blocks a sale on it**
+  — `StockService.consumeStock(..., allowNegative: true)` lets stock go
+  negative rather than fail a paid order over a recipe-modeling gap; waste
+  logging uses the same function with `allowNegative: false`, since it has
+  no such urgency. See `apps/backend/src/modules/inventory/stock.service.ts`.
 
 ## Contributing
 

@@ -3,14 +3,16 @@
 Checkboxes are the actual status — trust these (and `git log`) over prose in
 `PROJECT.md`. Update this file at the end of every work session.
 
-## Current phase: 4 core complete → procurement depth + Phase 5 next
+## Current phase: 4 complete (incl. order deduction) → procurement depth + Phase 5 next
 
 Started 2026-08-03. Phases 0-3 finished and verified the same day. Phase 4's
 core (ingredients, recipe costing, suppliers, purchase orders, GRN,
-batch/lot, waste) landed 2026-08-04, verified numerically end-to-end (not
-just built) — see Session log. Procurement depth (vendor quotations,
-purchase requests, vendor invoices/payment tracking, supplier performance)
-and a few Phase-4-adjacent items are deliberately deferred — see the
+batch/lot, waste) landed 2026-08-04, and automatic ingredient deduction on
+order checkout (the one Phase 4 item deferred that day) landed later the
+same day — both verified numerically end-to-end, not just built — see
+Session log. Procurement depth (vendor quotations, purchase requests,
+vendor invoices/payment tracking, supplier performance) and a few
+Phase-4-adjacent items are deliberately deferred — see the
 checkboxes below and "Explicitly deferred" for what and why.
 
 ---
@@ -200,8 +202,12 @@ containers, not just "it compiles."
 - [x] Recipes: menu item → ingredient quantities (`RecipeIngredient`), live
       cost computed from current weighted-average ingredient cost and
       snapshotted onto `MenuItem.costPrice` on save.
-- [ ] Automatic ingredient deduction on order checkout — **deferred**, see
-      "Explicitly deferred" below.
+- [x] Automatic ingredient deduction on order checkout. Deducts via FIFO
+      batch consumption inside the checkout transaction, for every order
+      item with a recipe modeled (combos expanded one level into their
+      component items first). Deliberately **allows stock to go negative**
+      instead of blocking the sale — see the Session log entry below for
+      the reasoning and the numeric verification.
 - [x] Purchase orders (draft → sent → partially received → received /
       cancelled, sequential PO numbers), supplier management, goods
       received (GRN) linked or unlinked to a PO, each GRN line creating a
@@ -295,15 +301,6 @@ reach it (tax code masters, delivery-platform rate cards, etc.).
   factors can be ingredient-specific and sometimes non-linear, e.g. a dozen
   of a piece-counted item vs. a weight-based one) that would have doubled
   the schema surface for this pass. Revisit when a real recipe needs it.
-- **Automatic ingredient deduction on order checkout.** The roadmap's
-  original ask. Building it correctly means deciding what happens when a
-  sale outruns physical stock (block the sale? allow negative stock and
-  flag it? partial-deduct?) and touching the existing, already-verified
-  `orders` checkout path — a real decision + a change to money-adjacent
-  code that deserved its own numeric-verification pass, not a rushed
-  addition at the end of an inventory-focused session. The data model is
-  ready for it (`RecipeIngredient` + `StockMovement.type = CONSUMPTION`
-  already exists in the schema, unused) — the wiring is what's deferred.
 - **Stock transfers.** Deferred to Phase 6 alongside multi-branch, since a
   transfer needs two real branches to mean anything.
 - **Expiry/low-stock alerting (push/email/report).** The *data* is
@@ -313,6 +310,62 @@ reach it (tax code masters, delivery-platform rate cards, etc.).
   something to bolt on ad hoc here.
 
 ## Session log
+
+- **2026-08-04 (later same day)**: Automatic ingredient deduction on order
+  checkout — the one Phase 4 item deferred earlier that day, picked up as
+  "next feature" once the core landed.
+
+  **Design decisions made (this was the actual work, not the wiring):**
+  1. **Never blocks the sale.** `consumeStock(..., allowNegative: true)` —
+     if modeled recipe demand exceeds available batches, it deducts what's
+     there and lets `Ingredient.currentStock` go negative rather than
+     throwing. A recipe-modeling gap (most menu items won't have a recipe
+     yet) or a mid-service substitution must never be the reason a paid
+     food order fails to save; that's a strictly worse outcome than a
+     stock figure that needs a stocktake correction later. Waste logging
+     keeps the opposite behavior (`allowNegative: false`, blocks) since it
+     has no such urgency — same function, opposite defaults, on purpose.
+  2. **Combos expand one level.** A combo's own `MenuItem` row essentially
+     never carries a direct recipe — deducting only by the combo's
+     `menuItemId` would silently skip inventory for every combo sale.
+     `InventoryService.deductForOrderItems` expands `isCombo` items via
+     `ComboComponent` before resolving recipes. No combos-of-combos in this
+     schema (no self-relation on `ComboComponent`), so one level is
+     complete, not partial.
+  3. **Refunds do not restock.** Deliberately not implemented: if food was
+     already prepared and then refunded, the ingredients were still
+     consumed — refunding money doesn't un-cook the food. Not a gap, a
+     decision.
+
+  **Real refactor, not just new code:** extracted the FIFO batch-consumption
+  core (previously duplicated inline in `WasteService`) into
+  `StockService.consumeStock`, shared by both waste logging and order
+  deduction now. Caught and fixed a real latent bug while doing it: the
+  pre-refactor `WasteService`/`StockService.adjustStock` both read
+  `Ingredient.currentStock` in a plain query *before* opening the
+  `$transaction`, then used that stale snapshot to compute the new value
+  inside it — under concurrent requests against the same ingredient,
+  Postgres's default READ COMMITTED isolation doesn't protect against a
+  lost update there (two concurrent waste-logs could both read the same
+  starting stock and the second one to commit silently overwrites the
+  first's deduction). Fixed by moving the read to be the first statement
+  *inside* the transaction in both places — the same discipline
+  `orders.service.ts`'s loyalty-point redemption already used (re-read the
+  mutable balance inside the transaction, not before it), just not yet
+  applied to the inventory module when it was first built hours earlier.
+
+  **Verified numerically via curl, real scenarios, real orders:** ordering
+  2× a menu item with a 0.2kg recipe line against 3kg of stock landed
+  stock at exactly 2.6kg; ordering enough of the same item to demand more
+  than what remained (20× against 2.6kg) still returned `201` and correctly
+  drove stock to exactly -1.4 instead of blocking; an order for an item
+  with zero recipe lines checked out cleanly with no errors; a combo built
+  live for this test (1× recipe-bearing item + 1× plain item) correctly
+  deducted through to the component's recipe on checkout, landing stock at
+  exactly the expected value. Also caught and killed an orphaned `nest
+  start` process left running from earlier the same session, squatting
+  port 4001 — same "check what's actually bound to the port" lesson
+  `nodedr-pos`'s memory already recorded once.
 
 - **2026-08-04**: Phase 4 core (Inventory & Store Management) — ingredients,
   recipe costing, suppliers, purchase orders, GRN, batch/lot, waste. Scoped

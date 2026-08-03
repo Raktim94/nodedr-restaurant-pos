@@ -72,7 +72,7 @@ export class OrdersController {
     @Body() body: unknown,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.ordersService.checkout(branchId, id, body as never);
+    return this.ordersService.checkout(branchId, id, user.id, body as never);
   }
 
   @Auth('refunds.process')
