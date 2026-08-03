@@ -150,21 +150,73 @@ Postgres over the originally-specced SQLite — is in
 
 ## Quick start
 
-### Docker (recommended)
+### Installing Docker
+
+Skip this if `docker --version` already works. Otherwise, pick your OS:
+
+**Linux** (Debian/Ubuntu/Fedora/etc. — official convenience script):
 
 ```bash
-git clone https://github.com/Raktim94/nodedr-restaurant-pos.git
-cd nodedr-restaurant-pos
-cp .env.example .env        # edit JWT_SECRET / POSTGRES_PASSWORD for anything beyond local dev
-docker compose up -d --build
-docker exec nodedr-restaurant-backend npx ts-node prisma/seed.ts   # first run only — demo data + login
+curl -fsSL https://get.docker.com | sudo sh && sudo usermod -aG docker $USER
 ```
+
+Log out and back in (or run `newgrp docker`) so your user can run `docker`
+without `sudo`.
+
+**macOS** (via [Homebrew](https://brew.sh)):
+
+```bash
+brew install --cask docker
+```
+
+Then open the Docker.app once from Launchpad/Spotlight to finish setup and
+start the Docker engine — it needs to be running before `docker compose`
+works.
+
+**Windows 10/11** (via [winget](https://learn.microsoft.com/windows/package-manager/winget/), bundled with current Windows):
+
+```powershell
+winget install Docker.DockerDesktop
+```
+
+Reboot if prompted, accept the WSL2 backend if asked, then launch Docker
+Desktop once from the Start menu. Run the install steps below from **WSL2**
+or **Git Bash** (both include the `bash` this project's install script
+needs) — plain PowerShell/cmd can't run a `.sh` file directly.
+
+No hand-holding needed beyond that — all three ship Docker Compose v2
+already bundled, which is all this project requires.
+
+### One-click install
+
+```bash
+git clone https://github.com/Raktim94/nodedr-restaurant-pos.git && cd nodedr-restaurant-pos && ./install.sh
+```
+
+[`install.sh`](install.sh) generates a `.env` with random secrets (only if
+one doesn't already exist — safe to re-run), builds the backend + web Docker
+images, starts the stack, waits for the backend to report healthy, loads
+demo data, then prints the URL and login. Re-run it any time after
+`git pull` to rebuild.
 
 Open **http://localhost:1995** and sign in with `owner@demo.local` /
 `Password123!` (seeded demo account — change or remove before real use).
 
 The backend API and Swagger docs are reachable only through the web app's
 `/api` proxy, not published directly to the host.
+
+### Manual install
+
+If you'd rather run each step yourself (e.g. to set your own secrets instead
+of generated ones):
+
+```bash
+git clone https://github.com/Raktim94/nodedr-restaurant-pos.git
+cd nodedr-restaurant-pos
+cp .env.example .env        # edit JWT_SECRET / POSTGRES_PASSWORD for anything beyond local dev
+docker compose up -d --build
+docker exec nodedr-restaurant-backend npx ts-node prisma/seed.ts   # demo data + login; upsert-based, safe to re-run
+```
 
 ### Local dev (no Docker for the apps)
 
