@@ -225,13 +225,17 @@ This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md).
 
 ## License
 
-Licensed under the [GNU Affero General Public License v3.0](./LICENSE)
-(AGPL-3.0). In short: you're free to self-host, use, and modify this
-software for your restaurant or business. If you modify it and run that
-modified version as a network service for others, you must make your
-modified source available to those users under the same license — this
-keeps improvements to a self-hosted business tool in the open rather than
+Copyright © 2026 [Nodedr Infotech Private Limited](https://www.nodedr.com/)
+and Raktim Ranjit. Licensed under the
+[GNU Affero General Public License v3.0](./LICENSE) (AGPL-3.0). In short:
+you're free to self-host, use, and modify this software for your
+restaurant or business. If you modify it and run that modified version
+as a network service for others, you must make your modified source
+available to those users under the same license — this keeps
+improvements to a self-hosted business tool in the open rather than
 disappearing into a closed commercial fork.
+
+See [`MAINTAINERS.md`](./MAINTAINERS.md) for project maintainers.
 
 ---
 
