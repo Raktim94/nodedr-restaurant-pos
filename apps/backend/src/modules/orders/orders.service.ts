@@ -302,4 +302,35 @@ export class OrdersService {
     this.realtime.emitToBranch(branchId, 'kot.updated', updated);
     return updated;
   }
+
+  async reprintKot(branchId: string, kotId: string) {
+    const kot = await this.prisma.kot.findFirst({
+      where: { id: kotId, order: { branchId } },
+    });
+    if (!kot) throw new NotFoundException('KOT not found');
+
+    const updated = await this.prisma.kot.update({
+      where: { id: kotId },
+      data: { printedCount: { increment: 1 } },
+    });
+    this.realtime.emitToBranch(branchId, 'kot.reprinted', {
+      id: updated.id,
+      printedCount: updated.printedCount,
+    });
+    return updated;
+  }
+
+  async setKotPriority(branchId: string, kotId: string, isPriority: boolean) {
+    const kot = await this.prisma.kot.findFirst({
+      where: { id: kotId, order: { branchId } },
+    });
+    if (!kot) throw new NotFoundException('KOT not found');
+
+    const updated = await this.prisma.kot.update({
+      where: { id: kotId },
+      data: { isPriority },
+    });
+    this.realtime.emitToBranch(branchId, 'kot.updated', updated);
+    return updated;
+  }
 }

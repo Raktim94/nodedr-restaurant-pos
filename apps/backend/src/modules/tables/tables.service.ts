@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type {
   FloorDto,
@@ -66,6 +67,18 @@ export class TablesService {
     await this.prisma.table.delete({ where: { id } });
     this.realtime.emitToBranch(branchId, 'table.deleted', { id });
     return { ok: true };
+  }
+
+  async rotateQrToken(branchId: string, id: string) {
+    const table = await this.prisma.table.findFirst({
+      where: { id, floor: { branchId } },
+    });
+    if (!table) throw new NotFoundException('Table not found');
+
+    // opaque, unguessable token — not the table's own id, so a leaked QR
+    // image can't be used to enumerate other tables' ids/data
+    const qrToken = randomBytes(16).toString('hex');
+    return this.prisma.table.update({ where: { id }, data: { qrToken } });
   }
 
   private async assertFloorInBranch(branchId: string, floorId: string) {

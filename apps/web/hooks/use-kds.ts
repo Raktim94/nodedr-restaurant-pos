@@ -53,3 +53,36 @@ export const NEXT_STATUS: Partial<Record<KotStatusDto, KotStatusDto>> = {
   PREPARING: "READY",
   READY: "SERVED",
 };
+
+export function useSetKotPriority(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, isPriority }: { id: string; isPriority: boolean }) =>
+      api.patch(`/kds/tickets/${id}/priority?branchId=${branchId}`, { isPriority }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] }),
+  });
+}
+
+export function useReprintKot(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post(`/kds/tickets/${id}/reprint?branchId=${branchId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] }),
+  });
+}
+
+export interface KitchenPerformanceRow {
+  stationId: string;
+  stationName: string;
+  ticketsReady: number;
+  avgMinutesToReady: number;
+}
+
+export function useKitchenPerformance(branchId: string | null) {
+  return useQuery({
+    queryKey: ["kds", "performance", branchId],
+    queryFn: () => api.get<KitchenPerformanceRow[]>(`/kds/performance?branchId=${branchId}`),
+    enabled: !!branchId,
+    refetchInterval: 60_000,
+  });
+}

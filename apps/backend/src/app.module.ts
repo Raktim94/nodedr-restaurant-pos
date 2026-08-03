@@ -13,6 +13,9 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { KdsModule } from './modules/kds/kds.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { RestaurantsModule } from './modules/restaurants/restaurants.module';
+import { ReservationsModule } from './modules/reservations/reservations.module';
+import { WaitlistModule } from './modules/waitlist/waitlist.module';
+import { PublicModule } from './modules/public/public.module';
 
 @Module({
   imports: [
@@ -27,6 +30,9 @@ import { RestaurantsModule } from './modules/restaurants/restaurants.module';
     KdsModule,
     DashboardModule,
     RestaurantsModule,
+    ReservationsModule,
+    WaitlistModule,
+    PublicModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

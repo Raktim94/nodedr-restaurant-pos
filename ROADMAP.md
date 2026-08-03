@@ -3,11 +3,12 @@
 Checkboxes are the actual status — trust these (and `git log`) over prose in
 `PROJECT.md`. Update this file at the end of every work session.
 
-## Current phase: 1 complete → starting Phase 2
+## Current phase: 2 complete → starting Phase 3
 
-Started 2026-08-03. Phase 0 + Phase 1 finished and verified end-to-end the
-same session (real Docker containers, real Postgres, full click-through —
-see Session log).
+Started 2026-08-03. Phase 0 + 1 finished and verified same day (real Docker
+containers, real Postgres, full click-through). Phase 2 (kitchen depth +
+reservations/waitlist/QR) finished and verified the same session — see
+Session log for both.
 
 ---
 
@@ -111,17 +112,37 @@ containers, not just "it compiles."
       cards, 15s polling refresh (not yet wired to the realtime gateway;
       KDS/tables are, dashboard fast-follow).
 
-### Phase 2 — Kitchen depth + Reservations
+### Phase 2 — Kitchen depth + Reservations — ✅ DONE
 
-- [ ] Kitchen stations as first-class config (name → routes menu items),
-      reprint KOT, delay alerts, priority orders, kitchen performance report
-- [ ] Reservations: customer name/phone/email, guest count, date/time/
-      duration, assigned table, special requests, deposit, status flow
-      (reserved/confirmed/arrived/completed/cancelled/no_show), reminder
-      notifications
-- [ ] Waitlist
-- [ ] Table QR generation + public QR ordering read path (view menu, no
-      order placement yet — full QR ordering lands Phase 5)
+- [x] Kitchen stations were already first-class config (Phase 1). Added this
+      phase: reprint KOT (`POST /kds/tickets/:id/reprint`, increments
+      `printedCount`), priority toggle (star icon on the ticket card, ring
+      highlight same as the 15-min delay warning), kitchen performance
+      report (`GET /kds/performance` — avg minutes-to-ready per station
+      today, small widget atop the KDS board). **Scope note:** "delay
+      alerts" is the existing Phase 1 visual (warning ring past 15 min) —
+      no separate push notification was added, the KDS screen itself is the
+      alert surface.
+- [x] Reservations: customer name/phone/email, guest count, date/time/
+      duration, assigned table, special requests, deposit (schema only, no
+      payment collection UI yet), full status flow (reserved→confirmed→
+      arrived→completed/cancelled/no_show) with table-status side effects
+      (assigning a table on create marks it RESERVED, ARRIVED occupies it,
+      terminal statuses release it back to AVAILABLE — mirrors the same
+      side-effect pattern checkout() uses for dine-in orders). **Scope
+      cut:** no reminder notifications (would need Phase 8's SMS/email/
+      WhatsApp integrations) — `reminderSentAt` exists on the schema,
+      unused.
+- [x] Waitlist: name/phone/party size/quoted wait, WAITING→SEATED/CANCELLED,
+      seat action assigns a table and marks it OCCUPIED. Lives as a panel
+      on the Tables page (not a separate nav item) since seating a waitlist
+      guest is a table-floor action.
+- [x] Table QR generation (opaque per-table token, rotate/regenerate
+      invalidates the old one) + public read-only menu view at
+      `/order/[qrToken]` — unauthenticated, no ordering yet (that's still
+      Phase 5), verified with both a valid token (renders categories/items/
+      veg-nonveg indicator) and an invalid one (empty-state, not a raw
+      error page).
 
 ### Phase 3 — CRM + Loyalty + Combos
 
@@ -282,3 +303,39 @@ reach it (tax code masters, delivery-platform rate cards, etc.).
   **Not done, explicitly deferred (see inline Phase 0/1 notes above):** CI
   workflow, floor drag-to-reposition UI, KDS per-station column view,
   receipt HTML/PDF rendering, dashboard realtime (still polling).
+
+- **2026-08-03 (same day, continued session): Phase 2 — kitchen depth +
+  reservations/waitlist/QR.** Added `Reservation` and `WaitlistEntry` models
+  (migration `add_reservations_waitlist`); reused `Table.qrToken` (already
+  in the Phase 1 schema, unused until now) for QR generation. Backend:
+  `ReservationsModule`, `WaitlistModule`, unauthenticated `PublicModule`
+  (`GET /public/menu/:qrToken`), plus reprint/priority/performance additions
+  to the existing orders/KDS modules. Frontend: Reservations page, a
+  Waitlist panel embedded in the Tables page, a QR-code dialog on each
+  table tile (`qrcode.react`), the public `/order/[qrToken]` menu view, and
+  priority/reprint controls + a performance widget on the KDS board.
+
+  **Verified, not just written:** full Playwright click-through (create
+  reservation → change status → confirm table-status side effect; add to
+  waitlist → seat → table occupied; generate QR → scan-equivalent visit to
+  `/order/[qrToken]` with both a valid and an invalid token; KDS priority
+  star + reprint button + performance widget all rendering real data from
+  earlier curl-driven test orders) — screenshots taken at each step,
+  including one dark-mode pass on the new Reservations page. Backend
+  behavior (table status RESERVED→OCCUPIED→AVAILABLE through the
+  reservation lifecycle, waitlist seat marking a table OCCUPIED) verified
+  via curl against the running Postgres-backed API before any frontend
+  existed for it, same discipline as Phase 1.
+
+  **Nothing new broke the recurring lessons from Phase 1** (Zod pipe
+  body-only scoping, React derived-state-in-effect) — this phase's code
+  was written with those already in mind, not rediscovered. One new
+  Prisma-specific gotcha: `Table` has no direct `branchId` column (it's
+  reached via `Floor.branchId`), so `rotateQrToken`'s tenancy check needed
+  `where: { id, floor: { branchId } }`, not a flat `{ id, branchId }` —
+  caught immediately by `tsc`, not at runtime.
+
+  **Not done, explicitly deferred (see inline Phase 2 notes above):**
+  reservation reminder notifications (needs Phase 8 SMS/email/WhatsApp),
+  deposit collection UI (field exists, no payment flow), QR ordering
+  beyond view-only (Phase 5 scope).

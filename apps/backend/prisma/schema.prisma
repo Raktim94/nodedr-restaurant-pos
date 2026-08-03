@@ -45,13 +45,15 @@ model Branch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  floors     Floor[]
-  users      UserBranch[]
-  menuItems  MenuItem[]
-  categories MenuCategory[]
-  stations   KitchenStation[]
-  orders     Order[]
-  customers  Customer[]
+  floors          Floor[]
+  users           UserBranch[]
+  menuItems       MenuItem[]
+  categories      MenuCategory[]
+  stations        KitchenStation[]
+  orders          Order[]
+  customers       Customer[]
+  reservations    Reservation[]
+  waitlistEntries WaitlistEntry[]
 
   @@index([restaurantId])
   @@map("branches")
@@ -217,7 +219,9 @@ model Table {
   notes   String?
   qrToken String? @unique // opaque token embedded in the table's QR code (Phase 2+)
 
-  orders Order[]
+  orders          Order[]
+  reservations    Reservation[]
+  waitlistEntries WaitlistEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -550,6 +554,74 @@ enum PaymentMethod {
   BANK_TRANSFER
   GIFT_CARD
   STORE_CREDIT
+}
+
+// ---------------------------------------------------------------------------
+// Reservations & Waitlist (Phase 2)
+// ---------------------------------------------------------------------------
+
+enum ReservationStatus {
+  RESERVED
+  CONFIRMED
+  ARRIVED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Reservation {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  customerName    String
+  phone           String?
+  email           String?
+  guestCount      Int
+  reservedAt      DateTime
+  durationMinutes Int      @default(90)
+
+  tableId String?
+  table   Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
+
+  specialRequests String?
+  deposit         Decimal?          @db.Decimal(12, 2)
+  status          ReservationStatus @default(RESERVED)
+  reminderSentAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId, reservedAt])
+  @@map("reservations")
+}
+
+enum WaitlistStatus {
+  WAITING
+  SEATED
+  CANCELLED
+}
+
+model WaitlistEntry {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  customerName      String
+  phone             String?
+  partySize         Int
+  quotedWaitMinutes Int?
+  notes             String?
+  status            WaitlistStatus @default(WAITING)
+
+  tableId String?
+  table   Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime  @default(now())
+  seatedAt  DateTime?
+
+  @@index([branchId, status])
+  @@map("waitlist_entries")
 }
 
 model Payment {

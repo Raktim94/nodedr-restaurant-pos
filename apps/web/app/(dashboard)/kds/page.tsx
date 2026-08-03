@@ -1,6 +1,7 @@
 "use client";
 
 import type { KotStatusDto } from "@nodedr-restaurant/types";
+import { PerformanceWidget } from "@/components/kds/performance-widget";
 import { TicketCard } from "@/components/kds/ticket-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
@@ -30,6 +31,8 @@ export default function KdsPage() {
         </h1>
         <p className="text-sm text-muted-foreground">Live order tickets by station</p>
       </div>
+
+      <PerformanceWidget branchId={branchId} />
 
       <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden sm:grid-cols-2 xl:grid-cols-4">
         {COLUMNS.map((col) => (

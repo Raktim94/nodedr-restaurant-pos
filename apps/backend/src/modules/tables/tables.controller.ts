@@ -93,6 +93,17 @@ export class TablesController {
   }
 
   @Auth('tables.manage')
+  @Post(':id/qr-token')
+  async rotateQrToken(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.rotateQrToken(branchId, id);
+  }
+
+  @Auth('tables.manage')
   @Delete(':id')
   async deleteTable(
     @CurrentUser() user: SessionUser,
