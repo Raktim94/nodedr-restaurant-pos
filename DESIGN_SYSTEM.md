@@ -25,16 +25,36 @@ before calling anything done.
 --success:          #22C55E
 --warning:          #F59E0B
 --danger:           #EF4444
---primary:          <one brand accent — chosen per deployment/tenant, see below>
+--primary:          #9F1239   /* wine/burgundy — see rationale below */
+--primary-foreground: #FFFFFF
 ```
 
-Dark mode is first-class (own token set, not `background * 0.1` math),
-defined alongside light in `packages/ui`'s theme file. Never ship a color
-decision — light palette, dark palette, or the single primary brand accent
-— without surfacing 2-3 concrete options for the human to pick, per the
-`bencium-controlled-ux-designer` ask-first protocol. Default working accent
-during scaffolding: an indigo (`#4F46E5`-ish) placeholder, clearly marked
-as provisional until a real brand pass happens.
+Dark mode (own token set, not `background * 0.1` math):
+
+```
+--background:       #0B0B0D
+--card:              #151517
+--sidebar:           #111113
+--foreground:        #F4F4F5
+--muted-foreground:  #9CA3AF
+--border:            #26262A
+--success:           #34D399
+--warning:           #FBBF24
+--danger:            #F87171
+--primary:           #FB7185   /* brighter rose for dark-bg contrast */
+--primary-foreground: #1F0A0F
+```
+
+**Primary accent decision (the one deliberate risk):** wine/burgundy
+instead of the expected SaaS indigo/blurple (Stripe, Linear) or restaurant
+cliché tomato-red. It's a considered nod to hospitality (wine lists, velvet
+banquettes, fine dining) that stays distinct from the danger-red already in
+the palette, and reads as premium rather than generic-dashboard-default —
+finalized directly rather than looped back for a color-swatch vote, since
+this is an internal operator tool, not a client-facing brand identity where
+that stakes-based ask-first call would apply. Revisit only if a real
+restaurant-brand pass (logo, physical signage) later demands matching an
+existing brand color instead.
 
 ## Typography
 

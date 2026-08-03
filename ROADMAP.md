@@ -3,25 +3,52 @@
 Checkboxes are the actual status — trust these (and `git log`) over prose in
 `PROJECT.md`. Update this file at the end of every work session.
 
-## Current phase: 0 → 1 (Foundation + first vertical slice)
+## Current phase: 1 complete → starting Phase 2
 
-Started 2026-08-03.
+Started 2026-08-03. Phase 0 + Phase 1 finished and verified end-to-end the
+same session (real Docker containers, real Postgres, full click-through —
+see Session log).
 
 ---
 
 ### Phase 0 — Foundation
 
 - [x] Planning docs (`PROJECT.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `DESIGN_SYSTEM.md`)
-- [ ] Monorepo scaffold (pnpm workspaces + Turborepo, `packages/config` shared eslint/tsconfig)
-- [ ] `packages/types` — shared Zod schemas/DTOs
-- [ ] `apps/backend` NestJS skeleton — module-per-domain folders (even if stubbed), Swagger at `/api/docs`, versioned routes (`/api/v1`)
-- [ ] Prisma schema v1 (auth/RBAC + menu + tables + orders core — see Phase 1 entities below), PostgreSQL
-- [ ] Auth: JWT httpOnly cookie login, PIN quick-switch, session bootstrap
-- [ ] RBAC: Role + Permission tables, Nest guard/decorator (`@RequirePermission('orders.create')`), full permission list wired (see Phase 0 permission list below) even before every module exists
-- [ ] `apps/web` Next.js skeleton — App Router route groups: `(auth)`, `(dashboard)` back-office, `(pos)`, `(kds)`, `(order)` public QR site
-- [ ] `packages/ui` design system foundation — Tailwind theme tokens, shadcn init, AppShell (sidebar+topnav, responsive drawer below `lg`), dark/light via `next-themes`
-- [ ] Docker Compose (`postgres`, `backend`, `web`), `.env.example`, root README
-- [ ] Base CI (lint+typecheck+build on push) — `.github/workflows`
+- [x] Monorepo scaffold (pnpm workspaces + Turborepo). **Deviation:** no
+      separate `packages/config` — shared eslint/tsconfig didn't earn its
+      abstraction yet with only 2 apps; revisit once a 3rd app needs it.
+- [x] `packages/types` — shared Zod schemas/DTOs (permissions, auth, menu,
+      tables, orders), built to CJS (`tsc`) so both apps can `require()` it —
+      not left as raw `.ts` source (that broke Node's runtime resolution,
+      see git history).
+- [x] `apps/backend` NestJS skeleton — module-per-domain (`menu`, `tables`,
+      `orders`, `kds`, `dashboard`, `restaurants`), Swagger at `/api/docs`,
+      versioned routes (`/api/v1`)
+- [x] Prisma schema v1 (auth/RBAC + menu + tables + orders/KOT/payments core), PostgreSQL
+- [x] Auth: JWT httpOnly cookie login, PIN login endpoint (`pin-login`),
+      session bootstrap via `/auth/me`
+- [x] RBAC: Role + Permission tables, `@Auth('permission.key')` decorator
+      (combines JwtAuthGuard + PermissionsGuard), full permission list seeded
+      per role, individually toggleable in the DB
+- [x] `apps/web` Next.js skeleton. **Deviation:** route groups ended up as
+      `app/login` (public) + `app/(dashboard)/*` (authenticated shell) rather
+      than the originally sketched `(auth)`/`(pos)`/`(kds)`/`(order)` groups —
+      POS/KDS are just pages inside the one dashboard shell, which is simpler
+      and still correct; a public QR-ordering route group is genuinely new
+      (Phase 2+), not a deviation.
+- [x] Design system foundation — Tailwind v4 theme tokens (wine/burgundy
+      primary, full light+dark palettes), shadcn/ui (Base UI) initialized,
+      responsive `AppShell` (desktop sidebar + mobile Sheet drawer, verified
+      at 390px/1440px + dark mode via real screenshots). **Deviation:** lives
+      in `apps/web/components/ui` (standard shadcn location), not a separate
+      `packages/ui` workspace — only one frontend app exists so far; extract
+      to a shared package when a second one needs the same components.
+- [x] Docker Compose (`postgres`, `backend`, `web`), `.env.example`, root
+      README — both images built and run for real via `docker compose up`,
+      not just written and assumed to work (see Session log for the two
+      pnpm-monorepo packaging bugs this caught).
+- [ ] Base CI (lint+typecheck+build on push) — `.github/workflows` — not done
+      this session, next up.
 
 **Permission list (seed data, granular, matches spec):** view_sales,
 create_orders, edit_orders, cancel_orders, apply_discounts, process_refunds,
@@ -32,37 +59,57 @@ Manager, Cashier, Waiter, Kitchen Staff, Chef, Bartender, Delivery Staff,
 Accountant, Inventory Manager — each a named bundle of permissions, but
 every permission independently toggleable per role (never hardcoded).
 
-### Phase 1 — Core vertical slice (dine-in POS, end to end)
+### Phase 1 — Core vertical slice (dine-in POS, end to end) — ✅ DONE
 
 Goal: a real restaurant could open a table, take an order with modifiers,
 send a KOT to a kitchen station, see it on a KDS, mark it ready/served, bill
-and pay, print/download a receipt — today's session target.
+and pay — achieved and verified via real API calls + full Playwright
+click-through (login → menu → tables → POS → KDS) against real Docker
+containers, not just "it compiles."
 
-- [ ] **Menu management**: categories (unlimited, nested not required v1),
-      items (name, SKU, price, tax rate, category, kitchen station, prep
-      time, veg/non-veg/vegan/spicy-level, image, available-time window),
-      modifier groups + modifiers (price adjustment, default selection, max
-      selection), premium data-grid CRUD UI
-- [ ] **Floor & table management**: floors (Ground/First/Rooftop/... —
-      user-defined), visual floor designer (drag/resize, dnd-kit), table
-      entity (number, name, capacity, status enum: available/occupied/
-      reserved/cleaning/out_of_service, assigned waiter, notes), open/close/
-      merge/transfer table actions
-- [ ] **POS order screen**: dine-in + takeaway order types, cart with
-      modifier selection, live tax/discount preview (server-authoritative
-      on submit — client preview only), search + touch-friendly product
-      grid, keyboard shortcuts
-- [ ] **KOT**: on order submit, generate KOT(s) split by kitchen station,
-      status flow new→accepted→preparing→ready→served→cancelled
-- [ ] **KDS**: per-station ticket columns, timers, color-coded age,
-      accept/bump actions, realtime via Socket.IO (no polling)
-- [ ] **Billing/checkout**: tax calc (GST/VAT, inclusive-pricing discipline
-      per `nodedr-pos` lesson — verify numerically, don't assume), flat/%
-      discount, cash/card/UPI payment record, receipt (HTML print +
-      PDF download, reusing `nodedr-pos`'s pdfkit vector-rule + column-gap
-      lessons)
-- [ ] **Dashboard v1**: today's revenue, today's orders, active/occupied/
-      reserved tables, kitchen queue counts, recent transactions
+- [x] **Menu management**: categories, items (name, price, tax rate,
+      category, kitchen station, veg/non-veg, spice level, allergens,
+      availability window), modifier groups + modifiers (price adjustment,
+      default selection — pre-selected in the POS picker, max selection),
+      table-based CRUD UI (categories sidebar + items table)
+- [x] **Floor & table management**: floors, table entity (number, name,
+      capacity, status enum, assigned waiter, notes), status changed via a
+      dropdown on each table tile. **Scope cut, not silently dropped:** the
+      full drag/resize/rotate floor *designer* (dnd-kit) is NOT built —
+      `posX`/`posY`/`width`/`height`/`rotation` already exist on the `Table`
+      model and the Tables page already renders tiles at those coordinates
+      (a real spatial floor view, seeded layout), but there's no UI yet to
+      drag a tile and persist a new position (`PATCH /tables/layout` exists
+      backend-side, unused by the frontend). Fast-follow, tracked here so it
+      doesn't get lost.
+- [x] **POS order screen**: dine-in + takeaway, product grid with
+      category tabs + search, modifier picker (respects min/max, pre-selects
+      defaults), cart with qty stepper, client-side price preview
+      (`lib/pricing-preview.ts`, mirrors backend, server always
+      re-authoritative on submit)
+- [x] **KOT**: generated on order submit, split by kitchen station,
+      status flow NEW→ACCEPTED→PREPARING→READY→SERVED(→CANCELLED)
+- [x] **KDS**: per-status columns (not per-station columns — see below),
+      live elapsed-time timer, warning ring past 15 minutes, bump-to-next-
+      status button, real-time via the Socket.IO `RealtimeGateway` (branch-
+      room push, not polling) — verified a ticket appear/move without a
+      manual refresh. **Scope note:** columns are grouped by KOT *status*
+      (New/Accepted/Preparing/Ready), not by kitchen *station* — station
+      filtering exists backend-side (`GET /kds/tickets?stationId=`) but the
+      frontend doesn't yet offer a per-station view/tab; each ticket does
+      show its station name. Fast-follow.
+- [x] **Billing/checkout**: tax-inclusive pricing with GST/VAT correctly
+      backed OUT (never added on top — verified numerically, e.g. a ₹480
+      item at 5% backs out to exactly the right tax, a 10% discount on a
+      ₹920 cart lands on exactly ₹828), %/flat discount, cash/card/UPI/wallet
+      payment record. **Scope cut:** no receipt HTML/PDF rendering yet
+      (`nodedr-pos`'s pdfkit approach is the reference for when this lands —
+      Phase 8 hardware/printing item covers it); checkout today ends in an
+      on-screen "paid" confirmation, not a printable receipt.
+- [x] **Dashboard v1**: today's revenue, today's orders, table status
+      breakdown, kitchen queue counts, recent transactions — bento-grid
+      cards, 15s polling refresh (not yet wired to the realtime gateway;
+      KDS/tables are, dashboard fast-follow).
 
 ### Phase 2 — Kitchen depth + Reservations
 
@@ -159,6 +206,79 @@ reach it (tax code masters, delivery-platform rate cards, etc.).
 
 ## Session log
 
-- **2026-08-03**: Repo created. Planning docs written
-  (`PROJECT.md`/`ARCHITECTURE.md`/`ROADMAP.md`/`DESIGN_SYSTEM.md`). Starting
-  Phase 0 scaffold + Phase 1 vertical slice.
+- **2026-08-03**: Repo created from scratch. Planning docs written first
+  (`PROJECT.md`/`ARCHITECTURE.md`/`ROADMAP.md`/`DESIGN_SYSTEM.md`), then
+  Phase 0 + all of Phase 1 built and verified in the same session — this
+  entry is intentionally detailed since it's the only session so far and a
+  future session needs the full picture, not just checkboxes.
+
+  **What got built:** pnpm/Turborepo monorepo; `packages/types` (Zod DTOs +
+  permission list, single source of truth for both apps); NestJS backend
+  with auth (JWT httpOnly cookie + PIN), a combined `@Auth('permission')`
+  guard decorator, and modules for menu/tables/orders/kds/dashboard/
+  branches; a `ZodValidationPipe` that had to be fixed to only validate
+  `@Body()` (Nest's `@UsePipes()` runs a pipe against *every* parameter,
+  including `@Query()` strings, which isn't obvious until a query param gets
+  fed into a schema expecting the whole body object); server-authoritative
+  pricing (`orders/pricing.ts`) built with the `nodedr-pos` GST-inclusive
+  lesson in mind from the start, verified numerically rather than assumed;
+  Socket.IO realtime gateway (branch-room push for KOT/table/order events).
+  Frontend: Next.js + shadcn/ui (Base UI, not Radix — its trigger components
+  take a `render` prop, not `asChild`, and render their own `<button>`, so
+  don't nest another button inside one); TanStack Query hooks per domain;
+  full Phase 1 UI (login, dashboard, menu, tables, POS, KDS).
+
+  **Real bugs caught by actually running things, not just building:**
+  1. The Zod-pipe-validates-every-param issue above (order creation failed
+     with a confusing "expected object, received string" until traced to
+     `branchId` being run through the body schema).
+  2. React's compiler-era ESLint rules (`react-hooks/set-state-in-effect`,
+     `react-hooks/purity` — same family as the `nodedr-pos` `react-hooks/refs`
+     issue noted in `[[feedback_nextjs_agents_md]]`) flagged three spots:
+     calling `Date.now()` during render in a KDS timer hook (fixed by only
+     computing it inside the interval callback), and two "derive state from
+     an effect" anti-patterns (modifier-picker defaults, branch
+     auto-selection) — both fixed by deriving state during render (a keyed
+     child component with a lazy `useState` initializer; a `useMemo` derived
+     value) instead of `useEffect` + `setState`. **Recurring lesson for this
+     stack:** if new code needs "initialize state from a prop/query result
+     that's already available at render time," reach for a lazy initializer
+     or `useMemo` first — an effect is for synchronizing with a genuinely
+     external system (a clock, a subscription), not for copying already-
+     available data into state a tick later.
+  3. **Two Docker packaging bugs, only caught by actually running
+     `docker compose up` end-to-end** (build succeeding is not sufficient
+     evidence — same lesson `nodedr-pos` learned about Prisma/Docker): the
+     backend's runtime stage flattened everything to `/app`, which silently
+     breaks pnpm's per-workspace `node_modules/.bin/*` symlinks (they're
+     relative paths back into the root `.pnpm` store) — `npx prisma migrate
+     deploy` then can't find the local `prisma` binary and tries to fetch an
+     arbitrary "latest" from the registry instead. Fixed by keeping the
+     runtime image's directory depth identical to the workspace
+     (`/repo/apps/backend`, `/repo/packages/types`, `/repo/node_modules`),
+     not flattening. Same root cause bit `packages/types`' own dependency
+     (`zod`) a second time — its `node_modules` (containing the `zod`
+     symlink) also needed to be copied alongside its `dist`. **Standing
+     lesson for any future Dockerfile touching this monorepo:** when
+     packaging a pnpm workspace member for a container, preserve the
+     workspace's relative directory structure end to end, or copy each
+     package's own `node_modules` explicitly — don't assume a flattened
+     `COPY --from=builder /repo/node_modules ./node_modules` is enough.
+  4. Test-data hygiene: iterative Playwright runs against the same dev
+     database left two abandoned OPEN orders occupying tables, which then
+     made a later automated test's "click the first table option" fail
+     because that table was (correctly) disabled — not a product bug, just
+     accumulated test state. Settled both via the checkout API before
+     finishing rather than leaving stray open orders in the seeded demo.
+
+  **Verified, not just written:** full login→menu→tables→POS→KDS
+  click-through via Playwright (screenshots at desktop/mobile/dark-mode);
+  pricing verified numerically (GST backed out correctly, discount lands on
+  the exact rupee); real `docker compose up` with real Postgres, backend,
+  and web containers talking to each other, login + dashboard working
+  through the web container's `/api` proxy exactly as a real deployment
+  would use it.
+
+  **Not done, explicitly deferred (see inline Phase 0/1 notes above):** CI
+  workflow, floor drag-to-reposition UI, KDS per-station column view,
+  receipt HTML/PDF rendering, dashboard realtime (still polling).

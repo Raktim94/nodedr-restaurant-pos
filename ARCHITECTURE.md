@@ -92,9 +92,12 @@ nodedr-restaurant-pos/
 │   ├── backend/        # NestJS API — REST (versioned /api/v1), Swagger, Socket.IO gateways
 │   └── web/             # Next.js — back-office, POS, KDS, public QR-ordering site (route groups)
 ├── packages/
-│   ├── ui/               # design system: shadcn-based components, owned source
-│   ├── config/           # shared eslint/tsconfig/tailwind config
 │   └── types/            # shared Zod schemas + TS types (DTOs) used by both apps
+│   # `ui`/`config` packages were planned here but not split out yet — the
+│   # design system currently lives directly in apps/web/components/ui
+│   # (standard shadcn location) since there's only one frontend app so far;
+│   # extract to a shared package once a second app needs the same
+│   # components. See ROADMAP.md Phase 0 notes.
 ├── docker/
 ├── docs/
 ├── PROJECT.md

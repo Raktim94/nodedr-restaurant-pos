@@ -1,0 +1,138 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* Nodedr Restaurant — light palette. See DESIGN_SYSTEM.md for rationale
+     (wine/burgundy primary is the one deliberate accent choice). */
+  --background: #FAFAFA;
+  --foreground: #111827;
+  --card: #FFFFFF;
+  --card-foreground: #111827;
+  --popover: #FFFFFF;
+  --popover-foreground: #111827;
+  --primary: #9F1239;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F4F4F5;
+  --secondary-foreground: #111827;
+  --muted: #F4F4F5;
+  --muted-foreground: #6B7280;
+  --accent: #FDF2F4;
+  --accent-foreground: #9F1239;
+  --destructive: #EF4444;
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --border: #E5E7EB;
+  --input: #E5E7EB;
+  --ring: #9F1239;
+  --chart-1: #9F1239;
+  --chart-2: #22C55E;
+  --chart-3: #F59E0B;
+  --chart-4: #6366F1;
+  --chart-5: #6B7280;
+  --radius: 1rem;
+  --sidebar: #FCFCFC;
+  --sidebar-foreground: #111827;
+  --sidebar-primary: #9F1239;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #FDF2F4;
+  --sidebar-accent-foreground: #9F1239;
+  --sidebar-border: #E5E7EB;
+  --sidebar-ring: #9F1239;
+}
+
+.dark {
+  --background: #0B0B0D;
+  --foreground: #F4F4F5;
+  --card: #151517;
+  --card-foreground: #F4F4F5;
+  --popover: #151517;
+  --popover-foreground: #F4F4F5;
+  --primary: #FB7185;
+  --primary-foreground: #1F0A0F;
+  --secondary: #1D1D20;
+  --secondary-foreground: #F4F4F5;
+  --muted: #1D1D20;
+  --muted-foreground: #9CA3AF;
+  --accent: #2A151A;
+  --accent-foreground: #FB7185;
+  --destructive: #F87171;
+  --success: #34D399;
+  --warning: #FBBF24;
+  --border: #26262A;
+  --input: #26262A;
+  --ring: #FB7185;
+  --chart-1: #FB7185;
+  --chart-2: #34D399;
+  --chart-3: #FBBF24;
+  --chart-4: #818CF8;
+  --chart-5: #9CA3AF;
+  --sidebar: #111113;
+  --sidebar-foreground: #F4F4F5;
+  --sidebar-primary: #FB7185;
+  --sidebar-primary-foreground: #1F0A0F;
+  --sidebar-accent: #2A151A;
+  --sidebar-accent-foreground: #FB7185;
+  --sidebar-border: #26262A;
+  --sidebar-ring: #FB7185;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

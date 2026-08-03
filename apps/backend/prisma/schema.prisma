@@ -1,0 +1,567 @@
+// Nodedr Restaurant — Phase 0/1 core schema.
+// See ARCHITECTURE.md for why PostgreSQL is the primary target and how
+// multi-branch/single-location both map onto the same schema (a branch is
+// just a Branch row, not a different deployment mode).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy / Branch
+// ---------------------------------------------------------------------------
+
+model Restaurant {
+  id        String   @id @default(cuid())
+  name      String
+  legalName String?
+  currency  String   @default("INR")
+  timezone  String   @default("Asia/Kolkata")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branches Branch[]
+  roles    Role[]
+  users    User[]
+
+  @@map("restaurants")
+}
+
+model Branch {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  name      String
+  address   String?
+  phone     String?
+  gstNumber String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  floors     Floor[]
+  users      UserBranch[]
+  menuItems  MenuItem[]
+  categories MenuCategory[]
+  stations   KitchenStation[]
+  orders     Order[]
+  customers  Customer[]
+
+  @@index([restaurantId])
+  @@map("branches")
+}
+
+// ---------------------------------------------------------------------------
+// Auth / RBAC
+// ---------------------------------------------------------------------------
+
+enum StaffRoleName {
+  OWNER
+  ADMINISTRATOR
+  RESTAURANT_MANAGER
+  CASHIER
+  WAITER
+  KITCHEN_STAFF
+  CHEF
+  BARTENDER
+  DELIVERY_STAFF
+  ACCOUNTANT
+  INVENTORY_MANAGER
+}
+
+model Permission {
+  id       String @id @default(cuid())
+  key      String @unique // e.g. "orders.create", "menu.manage"
+  label    String
+  category String // grouping for the settings UI, e.g. "Orders", "Inventory"
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model Role {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  name      StaffRoleName
+  label     String
+  isSystem  Boolean       @default(true) // seeded default role vs. custom role
+  createdAt DateTime      @default(now())
+
+  permissions RolePermission[]
+  users       User[]
+
+  @@unique([restaurantId, name])
+  @@map("roles")
+}
+
+model RolePermission {
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  name            String
+  email           String?
+  phone           String?
+  passwordHash    String
+  pinHash         String? // quick-switch PIN login on a shared terminal
+  isActive        Boolean @default(true)
+  twoFactorSecret String? // set once 2FA is enabled (Phase 8)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branches      UserBranch[]
+  waiterTables  Table[]      @relation("TableWaiter")
+  ordersCreated Order[]      @relation("OrderCreatedBy")
+  auditLogs     AuditLog[]
+
+  @@unique([restaurantId, email])
+  @@index([restaurantId])
+  @@map("users")
+}
+
+model UserBranch {
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, branchId])
+  @@map("user_branches")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Floor & Table management
+// ---------------------------------------------------------------------------
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  CLEANING
+  OUT_OF_SERVICE
+}
+
+model Floor {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name      String
+  sortOrder Int    @default(0)
+
+  tables Table[]
+
+  @@index([branchId])
+  @@map("floors")
+}
+
+model Table {
+  id      String @id @default(cuid())
+  floorId String
+  floor   Floor  @relation(fields: [floorId], references: [id], onDelete: Cascade)
+
+  number   String
+  name     String?
+  capacity Int         @default(2)
+  status   TableStatus @default(AVAILABLE)
+
+  // Floor designer layout — percentage-based so any canvas size renders consistently
+  posX     Float   @default(0)
+  posY     Float   @default(0)
+  width    Float   @default(80)
+  height   Float   @default(80)
+  rotation Float   @default(0)
+  shape    String  @default("square") // square | round | rect
+  color    String?
+
+  assignedWaiterId String?
+  assignedWaiter   User?   @relation("TableWaiter", fields: [assignedWaiterId], references: [id], onDelete: SetNull)
+
+  notes   String?
+  qrToken String? @unique // opaque token embedded in the table's QR code (Phase 2+)
+
+  orders Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([floorId, number])
+  @@index([floorId])
+  @@map("tables")
+}
+
+// ---------------------------------------------------------------------------
+// Menu management
+// ---------------------------------------------------------------------------
+
+model MenuCategory {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name      String
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  items MenuItem[]
+
+  @@index([branchId])
+  @@map("menu_categories")
+}
+
+model KitchenStation {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name        String // e.g. "Main Kitchen", "Tandoor", "Bar", "Dessert Station"
+  printerName String?
+
+  items MenuItem[]
+  kots  Kot[]
+
+  @@index([branchId])
+  @@map("kitchen_stations")
+}
+
+enum SpiceLevel {
+  NONE
+  MILD
+  MEDIUM
+  HOT
+  EXTRA_HOT
+}
+
+model MenuItem {
+  id         String          @id @default(cuid())
+  branchId   String
+  branch     Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   MenuCategory    @relation(fields: [categoryId], references: [id])
+  stationId  String?
+  station    KitchenStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
+
+  name        String
+  sku         String?
+  description String?
+  imageUrl    String?
+
+  price          Decimal  @db.Decimal(12, 2) // tax-inclusive selling price (see nodedr-pos GST lesson in ARCHITECTURE.md)
+  taxRatePercent Decimal  @default(0) @db.Decimal(5, 2)
+  costPrice      Decimal? @db.Decimal(12, 2)
+
+  prepTimeMinutes Int?
+  calories        Int?
+  isVeg           Boolean    @default(true)
+  isVegan         Boolean    @default(false)
+  isJain          Boolean    @default(false)
+  isHalal         Boolean    @default(false)
+  isGlutenFree    Boolean    @default(false)
+  spiceLevel      SpiceLevel @default(NONE)
+  allergens       String[]   @default([])
+
+  availableFrom String? // "HH:mm" — availability window
+  availableTo   String?
+  isSeasonal    Boolean   @default(false)
+  seasonStart   DateTime?
+  seasonEnd     DateTime?
+
+  barcode  String?
+  isActive Boolean @default(true)
+  isCombo  Boolean @default(false)
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  modifierGroups MenuItemModifierGroup[]
+  orderItems     OrderItem[]
+
+  @@index([branchId, categoryId])
+  @@map("menu_items")
+}
+
+model ModifierGroup {
+  id         String  @id @default(cuid())
+  name       String // e.g. "Crust Type", "Extras"
+  minSelect  Int     @default(0)
+  maxSelect  Int     @default(1)
+  isRequired Boolean @default(false)
+
+  modifiers Modifier[]
+  menuItems MenuItemModifierGroup[]
+
+  @@map("modifier_groups")
+}
+
+model Modifier {
+  id      String        @id @default(cuid())
+  groupId String
+  group   ModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  name            String // e.g. "Extra Cheese", "No Onion"
+  priceAdjustment Decimal  @default(0) @db.Decimal(12, 2)
+  taxRatePercent  Decimal? @db.Decimal(5, 2)
+  kitchenNote     String?
+  isDefault       Boolean  @default(false)
+  sortOrder       Int      @default(0)
+
+  orderItemModifiers OrderItemModifier[]
+
+  @@index([groupId])
+  @@map("modifiers")
+}
+
+model MenuItemModifierGroup {
+  menuItemId      String
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  modifierGroupId String
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  sortOrder       Int           @default(0)
+
+  @@id([menuItemId, modifierGroupId])
+  @@map("menu_item_modifier_groups")
+}
+
+// ---------------------------------------------------------------------------
+// Customers (minimal Phase 1 shape — full CRM lands Phase 3)
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name  String?
+  phone String?
+  email String?
+
+  createdAt DateTime @default(now())
+  orders    Order[]
+
+  @@index([branchId, phone])
+  @@map("customers")
+}
+
+// ---------------------------------------------------------------------------
+// Orders / KOT / Payments
+// ---------------------------------------------------------------------------
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+  DRIVE_THRU
+  QR_ORDER
+  KIOSK
+  PHONE
+}
+
+enum OrderStatus {
+  OPEN
+  BILLED
+  PAID
+  CANCELLED
+}
+
+model Order {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  orderNumber String // human-readable, sequential per branch per day
+  type        OrderType   @default(DINE_IN)
+  status      OrderStatus @default(OPEN)
+
+  tableId    String?
+  table      Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  guestCount Int?
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  createdById String
+  createdBy   User   @relation("OrderCreatedBy", fields: [createdById], references: [id])
+
+  subtotal       Decimal @default(0) @db.Decimal(12, 2)
+  discountAmount Decimal @default(0) @db.Decimal(12, 2)
+  taxAmount      Decimal @default(0) @db.Decimal(12, 2) // informational breakup only — see ARCHITECTURE.md inclusive-pricing note
+  totalAmount    Decimal @default(0) @db.Decimal(12, 2)
+
+  notes String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  billedAt  DateTime?
+
+  items    OrderItem[]
+  kots     Kot[]
+  payments Payment[]
+
+  @@unique([branchId, orderNumber])
+  @@index([branchId, status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+
+  // Snapshotted at order time so later menu edits never rewrite history
+  // (same discipline as nodedr-pos snapshotting name/taxRate/unit onto InvoiceItem).
+  nameSnapshot      String
+  unitPriceSnapshot Decimal @db.Decimal(12, 2)
+  taxRateSnapshot   Decimal @db.Decimal(5, 2)
+
+  quantity    Int           @default(1)
+  lineTotal   Decimal       @db.Decimal(12, 2)
+  kitchenNote String?
+  status      KotItemStatus @default(NEW)
+
+  modifiers OrderItemModifier[]
+  kotItems  KotItem[]
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderItemModifier {
+  id          String    @id @default(cuid())
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifierId  String
+  modifier    Modifier  @relation(fields: [modifierId], references: [id])
+
+  nameSnapshot     String
+  priceAdjSnapshot Decimal @db.Decimal(12, 2)
+
+  @@index([orderItemId])
+  @@map("order_item_modifiers")
+}
+
+// ---------------------------------------------------------------------------
+// Kitchen Order Tickets
+// ---------------------------------------------------------------------------
+
+enum KotStatus {
+  NEW
+  ACCEPTED
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum KotItemStatus {
+  NEW
+  ACCEPTED
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+model Kot {
+  id        String          @id @default(cuid())
+  orderId   String
+  order     Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  stationId String?
+  station   KitchenStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
+
+  ticketNumber String
+  status       KotStatus @default(NEW)
+  isPriority   Boolean   @default(false)
+  printedCount Int       @default(0)
+
+  createdAt  DateTime  @default(now())
+  acceptedAt DateTime?
+  readyAt    DateTime?
+  servedAt   DateTime?
+
+  items KotItem[]
+
+  @@index([orderId])
+  @@index([stationId, status])
+  @@map("kots")
+}
+
+model KotItem {
+  id          String    @id @default(cuid())
+  kotId       String
+  kot         Kot       @relation(fields: [kotId], references: [id], onDelete: Cascade)
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  status KotItemStatus @default(NEW)
+
+  @@index([kotId])
+  @@map("kot_items")
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+  WALLET
+  BANK_TRANSFER
+  GIFT_CARD
+  STORE_CREDIT
+}
+
+model Payment {
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  method    PaymentMethod
+  amount    Decimal       @db.Decimal(12, 2)
+  reference String? // gateway/UPI txn ref
+  createdAt DateTime      @default(now())
+
+  @@index([orderId])
+  @@map("payments")
+}

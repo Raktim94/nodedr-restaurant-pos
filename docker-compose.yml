@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nodedr-restaurant-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nodedr
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nodedr_dev_pw}
+      POSTGRES_DB: nodedr_restaurant
+    # Not published to the host — only the backend needs it, over the
+    # internal Docker network. Uncomment `ports` below for local psql access.
+    expose:
+      - "5432"
+    # ports:
+    #   - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nodedr"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: nodedr-restaurant-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://nodedr:${POSTGRES_PASSWORD:-nodedr_dev_pw}@postgres:5432/nodedr_restaurant"
+      JWT_SECRET: ${JWT_SECRET:?set a real JWT_SECRET in .env for anything beyond local dev}
+      JWT_EXPIRES_IN: "12h"
+      PORT: "4000"
+      CORS_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:1995}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Not published to the host — reachable only via the web service's
+    # server-side /api proxy, same reasoning as nodedr-pos (keeps the API
+    # off the LAN, shrinks attack surface).
+    expose:
+      - "4000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Next bakes rewrite destinations at BUILD time — this must be a
+        # build ARG, not a runtime env (see apps/web/Dockerfile comment).
+        BACKEND_URL: "http://backend:4000"
+    container_name: nodedr-restaurant-web
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-1995}:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pg_data:
