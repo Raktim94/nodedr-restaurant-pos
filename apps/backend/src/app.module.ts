@@ -18,6 +18,7 @@ import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { PublicModule } from './modules/public/public.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { GiftCardsModule } from './modules/gift-cards/gift-cards.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { GiftCardsModule } from './modules/gift-cards/gift-cards.module';
     PublicModule,
     CustomersModule,
     GiftCardsModule,
+    InventoryModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

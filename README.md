@@ -72,7 +72,7 @@ by phase.
 | 2 | Table & Reservation Management — visual floor plan, booking, waitlist, QR table ordering, table transfer | ✅ |
 | 3 | Kitchen Management (KDS) — display, KOTs, multi-station routing, prep tracking, performance reporting | ✅ |
 | 4 | Menu Management — categories, modifier groups, combos, seasonal menus, availability scheduling | ✅ |
-| 5 | Inventory & Store Management — ingredients, recipe costing, POs, suppliers, GRN, waste, batch/lot | 🚧 Phase 4 |
+| 5 | Inventory & Store Management — ingredients, recipe costing, POs, suppliers, GRN, waste, batch/lot | ✅ |
 | 6 | Procurement — vendor quotations, purchase requests/orders, invoices, supplier performance | 🚧 Phase 4 |
 | 7 | CRM — profiles, loyalty points, memberships, gift vouchers, feedback, visit history | ✅ |
 | 8 | Staff Management — records, attendance, shift scheduling, payroll, leave, tip distribution | 🚧 Phase 6 |
@@ -95,7 +95,10 @@ waitlist and merge, reservations, table QR codes with a public read-only
 menu view, POS order-taking with modifiers, KOT generation routed to
 kitchen stations (priority/reprint/performance reporting), a live Kitchen
 Display Screen, billing + checkout (tips, split-bill calculator, gift
-cards, loyalty points, refunds), customer CRM, and a real-time dashboard.
+cards, loyalty points, refunds), customer CRM, a real-time dashboard, and
+inventory & store management — ingredients, weighted-average recipe
+costing, suppliers, purchase orders, goods receipts with batch/lot +
+expiry tracking, and FIFO waste logging.
 
 ## Screenshots
 
@@ -109,6 +112,8 @@ cards, loyalty points, refunds), customer CRM, and a real-time dashboard.
 | Tables — floor view + waitlist | Reservations |
 | ![Customers](docs/screenshots/customers-light.png) | ![Menu](docs/screenshots/menu-light.png) |
 | Customers — CRM + loyalty | Menu management — combo builder |
+| ![Inventory](docs/screenshots/inventory-light.png) | ![Purchase Orders](docs/screenshots/purchase-orders-light.png) |
+| Inventory — ingredients, low-stock, weighted-average cost | Purchase orders — supplier, status, total |
 
 <details>
 <summary>Mobile (390px)</summary>
@@ -210,6 +215,12 @@ docs/           Screenshots and supplementary docs
 - **Realtime** — `RealtimeGateway` (Socket.IO) pushes KOT/table/order
   events into a per-branch room; the frontend's `useRealtime` hook
   invalidates the matching TanStack Query caches instead of polling.
+- **Inventory costing is weighted-average**, recomputed on every goods
+  receipt; waste is drawn FIFO from the oldest stock batch first, so
+  cost-of-waste reporting reflects the batch that actually spoiled, not a
+  blended average. See
+  `apps/backend/src/modules/inventory/goods-receipts.service.ts` and
+  `waste.service.ts`.
 
 ## Contributing
 

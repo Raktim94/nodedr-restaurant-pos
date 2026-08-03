@@ -3,12 +3,15 @@
 Checkboxes are the actual status — trust these (and `git log`) over prose in
 `PROJECT.md`. Update this file at the end of every work session.
 
-## Current phase: 3 complete → starting Phase 4
+## Current phase: 4 core complete → procurement depth + Phase 5 next
 
-Started 2026-08-03. Phases 0-3 all finished and verified the same day (real
-Docker containers, real Postgres, full click-through each phase). Phase 3
-(CRM/loyalty/gift cards/combos/billing depth) is the latest — see Session
-log.
+Started 2026-08-03. Phases 0-3 finished and verified the same day. Phase 4's
+core (ingredients, recipe costing, suppliers, purchase orders, GRN,
+batch/lot, waste) landed 2026-08-04, verified numerically end-to-end (not
+just built) — see Session log. Procurement depth (vendor quotations,
+purchase requests, vendor invoices/payment tracking, supplier performance)
+and a few Phase-4-adjacent items are deliberately deferred — see the
+checkboxes below and "Explicitly deferred" for what and why.
 
 ---
 
@@ -190,14 +193,38 @@ containers, not just "it compiles."
 
 ### Phase 4 — Inventory & Procurement
 
-- [ ] Ingredient-based inventory: raw materials, units + unit conversion,
-      recipes (menu item → ingredient quantities), automatic deduction on
-      order
-- [ ] Purchase orders, supplier management, goods received (GRN), stock
-      transfers, stock adjustments
-- [ ] Waste recording, expiry tracking, batch/lot numbers, low-stock alerts
+- [x] Ingredient-based inventory: raw materials, weighted-average cost per
+      unit (recomputed on every GRN), reorder level / low-stock flagging.
+      **Deviation:** one base unit per ingredient, no unit-conversion engine
+      (buy a 25kg bag, stock/recipe in kg) — see "Explicitly deferred" below.
+- [x] Recipes: menu item → ingredient quantities (`RecipeIngredient`), live
+      cost computed from current weighted-average ingredient cost and
+      snapshotted onto `MenuItem.costPrice` on save.
+- [ ] Automatic ingredient deduction on order checkout — **deferred**, see
+      "Explicitly deferred" below.
+- [x] Purchase orders (draft → sent → partially received → received /
+      cancelled, sequential PO numbers), supplier management, goods
+      received (GRN) linked or unlinked to a PO, each GRN line creating a
+      batch and a stock-ledger entry.
+- [ ] Stock transfers (branch-to-branch) — deferred to Phase 6 (multi-branch
+      work needs to land first; a single-branch transfer has no real
+      counterpart yet).
+- [x] Stock adjustments (manual stocktake corrections, ledgered).
+- [x] Waste recording (reason-coded, FIFO-consumed from the oldest batch,
+      priced at that batch's own cost — not a blended average).
+- [x] Expiry tracking (optional `expiryDate` captured per batch on receipt)
+      and batch/lot numbers (auto-generated `GRN-000N-n` or supplier-
+      provided). **Deviation:** expiry is stored and visible per batch, but
+      there's no automated "expiring soon" alert/report yet — deferred with
+      the rest of the alerting/reporting engine to Phase 7.
+- [x] Low-stock alerts: `GET /inventory/ingredients/low-stock` + a "Low
+      stock" badge on the Ingredients page. No push/email notification yet
+      (Phase 7 territory, same as expiry alerts).
 - [ ] Procurement: vendor quotations, purchase requests, vendor invoices,
-      payment tracking, supplier performance
+      payment tracking, supplier performance — **deferred**, not started
+      this session (the user's ask was scoped to inventory & store
+      management specifically; procurement-depth is its own real chunk of
+      work, tracked here rather than half-built).
 
 ### Phase 5 — Delivery + Online/QR ordering
 
@@ -261,7 +288,85 @@ Same judgment call `nodedr-pos` made on large government reference datasets
 dataset gets a documented import path, not a fabricated snapshot, when we
 reach it (tax code masters, delivery-platform rate cards, etc.).
 
+**Phase 4 scope cuts (2026-08-04):**
+- **Unit conversion.** Each `Ingredient` has one base unit used everywhere
+  (recipe, PO, GRN, stock). A real conversion engine — buy a 25kg bag,
+  stock and recipe in kg — is real, non-trivial modeling work (conversion
+  factors can be ingredient-specific and sometimes non-linear, e.g. a dozen
+  of a piece-counted item vs. a weight-based one) that would have doubled
+  the schema surface for this pass. Revisit when a real recipe needs it.
+- **Automatic ingredient deduction on order checkout.** The roadmap's
+  original ask. Building it correctly means deciding what happens when a
+  sale outruns physical stock (block the sale? allow negative stock and
+  flag it? partial-deduct?) and touching the existing, already-verified
+  `orders` checkout path — a real decision + a change to money-adjacent
+  code that deserved its own numeric-verification pass, not a rushed
+  addition at the end of an inventory-focused session. The data model is
+  ready for it (`RecipeIngredient` + `StockMovement.type = CONSUMPTION`
+  already exists in the schema, unused) — the wiring is what's deferred.
+- **Stock transfers.** Deferred to Phase 6 alongside multi-branch, since a
+  transfer needs two real branches to mean anything.
+- **Expiry/low-stock alerting (push/email/report).** The *data* is
+  captured now (`expiryDate` per batch, `reorderLevel` per ingredient,
+  `GET /ingredients/low-stock`) — an actual notification/report layer is
+  Phase 7 territory alongside the rest of the reporting engine, not
+  something to bolt on ad hoc here.
+
 ## Session log
+
+- **2026-08-04**: Phase 4 core (Inventory & Store Management) — ingredients,
+  recipe costing, suppliers, purchase orders, GRN, batch/lot, waste. Scoped
+  to what the user asked for; procurement depth and the items above are
+  deferred, not silently dropped.
+
+  **What got built:** Prisma models (`Ingredient`, `RecipeIngredient`,
+  `Supplier`, `PurchaseOrder`/`PurchaseOrderItem`, `GoodsReceipt`/
+  `GoodsReceiptItem`, `StockBatch`, `StockMovement`, `WasteLog`) plus their
+  Zod DTOs in `packages/types/src/inventory.ts`; a NestJS `inventory` module
+  (`InventoryService` for ingredients/suppliers/recipe costing,
+  `PurchaseOrdersService`, `GoodsReceiptsService`, `WasteService`,
+  `StockService` for adjustments/ledger reads) behind the already-seeded
+  `inventory.manage` permission; frontend at `/inventory` (tabs for
+  Ingredients/Suppliers/Purchase Orders/Waste), a PO detail page with a
+  receive-against-PO dialog that pre-fills outstanding quantities.
+
+  **Costing/stock discipline (the actual hard part):** weighted-average
+  cost, recomputed on every GRN (`newCost = ((oldStock*oldCost) +
+  (recvQty*recvCost)) / (oldStock+recvQty)`), and FIFO waste consumption
+  (oldest `StockBatch` first, each batch's own cost carried into the waste
+  log — not a blended average). Every cached running total (`Ingredient.
+  currentStock`/`costPerUnit`, `PurchaseOrderItem.quantityReceived`) is
+  updated via a transactional read-then-`set`, never a DB `increment` —
+  the `nodedr-pos` float-drift lesson, applied from the start instead of
+  rediscovered later. Verified numerically end-to-end via curl before any
+  UI existed for it (see the schema's own inline comment and this session's
+  transcript): a 10kg@₹300 GRN then a 5kg@₹360 GRN landed the ingredient at
+  exactly ₹320/kg (the correct weighted average); a 0.2kg recipe line at
+  that cost priced the menu item at exactly ₹64.00; wasting 12kg correctly
+  drained the first batch (10kg@300) fully and 2kg from the second
+  (@360), leaving 3kg remaining and the ingredient at exactly 3kg stock;
+  over-wasting past available stock correctly 400'd instead of going
+  negative.
+
+  **Real bugs/gotchas caught this session:**
+  1. `apps/backend/.env`'s `DATABASE_URL` had a stale password
+     (`nodedr_dev_pw`) that didn't match root `.env`'s actual
+     `POSTGRES_PASSWORD` (`change-me`, which is what the running Postgres
+     volume was actually initialized with) — local migrations failed with
+     an auth error until traced and fixed. Pre-existing drift between the
+     two env files, not introduced this session, but worth knowing about
+     if migrations mysteriously fail with valid-looking credentials again.
+  2. Root `docker-compose.yml` deliberately doesn't publish Postgres to the
+     host (only `expose:`, for security) — local `prisma migrate dev`
+     needs host access, so a gitignored `docker-compose.override.yml`
+     (now in `.gitignore`) adds the port mapping locally without touching
+     the committed, intentionally-locked-down compose file.
+  3. Same-value-for-two-fields TypeScript inference gotcha: `let
+     purchaseOrder = null` infers type `null` forever, not
+     `PurchaseOrderWithItems | null` — needed an explicit
+     `Prisma.PurchaseOrderGetPayload<{...}>` type annotation. Cheap to miss,
+     caught immediately by `tsc`, worth remembering for the next
+     conditionally-fetched Prisma relation.
 
 - **2026-08-03**: Repo created from scratch. Planning docs written first
   (`PROJECT.md`/`ARCHITECTURE.md`/`ROADMAP.md`/`DESIGN_SYSTEM.md`), then
