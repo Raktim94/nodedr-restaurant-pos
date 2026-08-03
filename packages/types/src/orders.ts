@@ -57,6 +57,9 @@ export type CreateOrderDto = z.infer<typeof createOrderSchema>;
 export const checkoutSchema = z.object({
   discountPercent: z.coerce.number().min(0).max(100).optional(),
   discountFlat: z.coerce.number().min(0).optional(),
+  tipAmount: z.coerce.number().min(0).optional(),
+  loyaltyPointsToRedeem: z.number().int().min(0).optional(),
+  giftCardCode: z.string().optional(),
   payments: z
     .array(
       z.object({
@@ -65,9 +68,21 @@ export const checkoutSchema = z.object({
         reference: z.string().optional(),
       }),
     )
-    .min(1),
+    .default([]),
 });
 export type CheckoutDto = z.infer<typeof checkoutSchema>;
+
+export const refundSchema = z.object({
+  amount: z.coerce.number().positive(),
+  reason: z.string().optional(),
+  method: paymentMethodSchema,
+});
+export type RefundDto = z.infer<typeof refundSchema>;
+
+export const mergeOrdersSchema = z.object({
+  sourceOrderId: z.string(),
+});
+export type MergeOrdersDto = z.infer<typeof mergeOrdersSchema>;
 
 export const kotItemStatusUpdateSchema = z.object({
   status: kotStatusSchema,

@@ -16,6 +16,8 @@ import { RestaurantsModule } from './modules/restaurants/restaurants.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { PublicModule } from './modules/public/public.module';
+import { CustomersModule } from './modules/customers/customers.module';
+import { GiftCardsModule } from './modules/gift-cards/gift-cards.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { PublicModule } from './modules/public/public.module';
     ReservationsModule,
     WaitlistModule,
     PublicModule,
+    CustomersModule,
+    GiftCardsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

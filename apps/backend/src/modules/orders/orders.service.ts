@@ -8,16 +8,27 @@ import type {
   CartItemDto,
   CheckoutDto,
   CreateOrderDto,
+  RefundDto,
 } from '@nodedr-restaurant/types';
+import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { computeOrderTotals, priceLine, round2 } from './pricing';
+
+// 1 loyalty point = ₹1 of discount when redeemed; 1 point earned per ₹100
+// spent (floor) on the final tax-inclusive total, excluding tip. Both are
+// deliberately simple, fixed constants for now — a per-restaurant
+// configurable loyalty program is a Phase-later refinement, not silently
+// hardcoded forever.
+const LOYALTY_POINT_VALUE = 1;
+const LOYALTY_EARN_PER_CURRENCY = 100;
 
 @Injectable()
 export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly giftCards: GiftCardsService,
   ) {}
 
   async listOpen(branchId: string) {
@@ -126,7 +137,7 @@ export class OrdersService {
   async checkout(branchId: string, orderId: string, dto: CheckoutDto) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
-      include: { items: true },
+      include: { items: true, customer: true },
     });
     if (!order) throw new NotFoundException('Order not found');
     if (order.status !== 'OPEN') {
@@ -146,21 +157,100 @@ export class OrdersService {
       dto.discountFlat ?? 0,
     );
 
-    const paidAmount = round2(
-      dto.payments.reduce((sum, p) => sum + p.amount, 0),
-    );
-    if (paidAmount < totals.totalAmount) {
+    // Loyalty redemption is a further flat discount on top of
+    // discountPercent/discountFlat — capped so it can never make the bill
+    // negative, and capped by the customer's actual point balance (checked
+    // again inside the transaction against a fresh read, not this
+    // pre-transaction snapshot, to avoid a stale-balance race).
+    const pointsToRedeem = dto.loyaltyPointsToRedeem ?? 0;
+    if (pointsToRedeem > 0 && !order.customerId) {
       throw new BadRequestException(
-        `Payments (${paidAmount}) do not cover the total due (${totals.totalAmount})`,
+        'Cannot redeem loyalty points without a customer on the order',
       );
     }
+    const requestedLoyaltyDiscount = round2(
+      Math.min(pointsToRedeem * LOYALTY_POINT_VALUE, totals.totalAmount),
+    );
+    const totalDue = round2(
+      totals.totalAmount - requestedLoyaltyDiscount + (dto.tipAmount ?? 0),
+    );
+
+    const tipAmount = round2(dto.tipAmount ?? 0);
+    const manualPaymentsTotal = round2(
+      dto.payments.reduce((sum, p) => sum + p.amount, 0),
+    );
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      let loyaltyDiscountAmount = 0;
+      let actualPointsRedeemed = 0;
+
+      if (pointsToRedeem > 0 && order.customerId) {
+        const customer = await tx.customer.findUniqueOrThrow({
+          where: { id: order.customerId },
+        });
+        if (customer.loyaltyPoints < pointsToRedeem) {
+          throw new BadRequestException(
+            `Customer only has ${customer.loyaltyPoints} loyalty points available`,
+          );
+        }
+        actualPointsRedeemed = pointsToRedeem;
+        loyaltyDiscountAmount = requestedLoyaltyDiscount;
+        await tx.customer.update({
+          where: { id: order.customerId },
+          data: { loyaltyPoints: customer.loyaltyPoints - pointsToRedeem },
+        });
+      }
+
+      let giftCardAmountApplied = 0;
+      if (dto.giftCardCode) {
+        const remainingAfterManual = round2(totalDue - manualPaymentsTotal);
+        if (remainingAfterManual > 0) {
+          const result = await this.giftCards.debit(
+            tx,
+            branchId,
+            dto.giftCardCode,
+            remainingAfterManual,
+          );
+          giftCardAmountApplied = result.amountApplied;
+          await tx.giftCardRedemption.create({
+            data: {
+              giftCardId: result.giftCardId,
+              orderId,
+              amount: giftCardAmountApplied,
+            },
+          });
+        }
+      }
+
+      const totalCovered = round2(manualPaymentsTotal + giftCardAmountApplied);
+      if (totalCovered < totalDue) {
+        throw new BadRequestException(
+          `Payments (${totalCovered}) do not cover the total due (${totalDue})`,
+        );
+      }
+
       if (order.tableId) {
         await tx.table.update({
           where: { id: order.tableId },
           data: { status: 'AVAILABLE' },
         });
+      }
+
+      // Loyalty earn on net spend (excluding tip), only once the sale is
+      // actually paid — read-modify-write with a plain integer, not a DB
+      // increment, so it stays consistent with the redeem path above.
+      if (order.customerId) {
+        const netSpend = round2(totals.totalAmount - loyaltyDiscountAmount);
+        const pointsEarned = Math.floor(netSpend / LOYALTY_EARN_PER_CURRENCY);
+        if (pointsEarned > 0) {
+          const customer = await tx.customer.findUniqueOrThrow({
+            where: { id: order.customerId },
+          });
+          await tx.customer.update({
+            where: { id: order.customerId },
+            data: { loyaltyPoints: customer.loyaltyPoints + pointsEarned },
+          });
+        }
       }
 
       // Table update runs first so the nested `table` include below reflects
@@ -169,7 +259,10 @@ export class OrdersService {
         where: { id: orderId },
         data: {
           discountAmount: totals.discountAmount,
-          totalAmount: totals.totalAmount,
+          loyaltyPointsRedeemed: actualPointsRedeemed,
+          loyaltyDiscountAmount,
+          tipAmount,
+          totalAmount: totalDue,
           status: 'PAID',
           billedAt: new Date(),
           payments: { create: dto.payments },
@@ -183,6 +276,139 @@ export class OrdersService {
       status: 'PAID',
     });
     return updated;
+  }
+
+  async refund(
+    branchId: string,
+    orderId: string,
+    userId: string,
+    dto: RefundDto,
+  ) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, branchId },
+      include: { refunds: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'PAID') {
+      throw new BadRequestException('Only a paid order can be refunded');
+    }
+
+    const alreadyRefunded = round2(
+      order.refunds.reduce((sum, r) => sum + Number(r.amount), 0),
+    );
+    const refundable = round2(Number(order.totalAmount) - alreadyRefunded);
+    if (dto.amount > refundable) {
+      throw new BadRequestException(
+        `Cannot refund ${dto.amount} — only ${refundable} remains refundable on this order`,
+      );
+    }
+
+    const refund = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.refund.create({
+        data: {
+          orderId,
+          amount: dto.amount,
+          reason: dto.reason,
+          method: dto.method,
+          createdById: userId,
+        },
+      });
+
+      if (dto.method === 'STORE_CREDIT' && order.customerId) {
+        const customer = await tx.customer.findUniqueOrThrow({
+          where: { id: order.customerId },
+        });
+        await tx.customer.update({
+          where: { id: order.customerId },
+          data: {
+            walletBalance: round2(Number(customer.walletBalance) + dto.amount),
+          },
+        });
+      }
+
+      return created;
+    });
+
+    this.realtime.emitToBranch(branchId, 'order.updated', { id: orderId });
+    return refund;
+  }
+
+  async mergeOrders(
+    branchId: string,
+    targetOrderId: string,
+    sourceOrderId: string,
+  ) {
+    if (targetOrderId === sourceOrderId) {
+      throw new BadRequestException('Cannot merge an order into itself');
+    }
+    const [target, source] = await Promise.all([
+      this.prisma.order.findFirst({ where: { id: targetOrderId, branchId } }),
+      this.prisma.order.findFirst({ where: { id: sourceOrderId, branchId } }),
+    ]);
+    if (!target || !source) throw new NotFoundException('Order not found');
+    if (target.status !== 'OPEN' || source.status !== 'OPEN') {
+      throw new BadRequestException('Both orders must be open to merge');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.orderItem.updateMany({
+        where: { orderId: sourceOrderId },
+        data: { orderId: targetOrderId },
+      });
+      await tx.kot.updateMany({
+        where: { orderId: sourceOrderId },
+        data: { orderId: targetOrderId },
+      });
+
+      const items = await tx.orderItem.findMany({
+        where: { orderId: targetOrderId },
+      });
+      const lines = items.map((item) =>
+        priceLine({
+          quantity: item.quantity,
+          unitPriceInclusive: Number(item.lineTotal) / item.quantity,
+          taxRatePercent: Number(item.taxRateSnapshot),
+        }),
+      );
+      // Discount is intentionally not recomputed here — it's re-entered at
+      // checkout time for the merged bill, same as any other order.
+      const totals = computeOrderTotals(lines);
+
+      const result = await tx.order.update({
+        where: { id: targetOrderId },
+        data: {
+          subtotal: totals.subtotal,
+          taxAmount: totals.taxAmount,
+          totalAmount: totals.subtotal,
+        },
+        include: { items: true },
+      });
+
+      await tx.order.update({
+        where: { id: sourceOrderId },
+        data: {
+          status: 'CANCELLED',
+          notes: `Merged into order ${target.orderNumber}`,
+        },
+      });
+
+      if (source.tableId && source.tableId !== target.tableId) {
+        await tx.table.update({
+          where: { id: source.tableId },
+          data: { status: 'AVAILABLE' },
+        });
+      }
+
+      return result;
+    });
+
+    this.realtime.emitToBranch(branchId, 'order.updated', {
+      id: targetOrderId,
+    });
+    this.realtime.emitToBranch(branchId, 'order.updated', {
+      id: sourceOrderId,
+    });
+    return this.getOrder(branchId, updated.id);
   }
 
   private buildLine(

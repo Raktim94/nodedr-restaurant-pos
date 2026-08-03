@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   ShoppingCart,
+  UsersRound,
   UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
@@ -27,4 +28,5 @@ export const NAV_ITEMS: NavItem[] = [
   },
   { label: "Menu", href: "/menu", icon: UtensilsCrossed, permission: "menu.manage" },
   { label: "Kitchen Display", href: "/kds", icon: ChefHat, permission: "kds.manage" },
+  { label: "Customers", href: "/customers", icon: UsersRound, permission: "customers.manage" },
 ];

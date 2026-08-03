@@ -1,7 +1,7 @@
 "use client";
 
 import type { TableStatusDto } from "@nodedr-restaurant/types";
-import { QrCode, Users } from "lucide-react";
+import { Merge, QrCode, Users } from "lucide-react";
 import { useState } from "react";
 import {
   DropdownMenu,
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useUpdateTableStatus, type RestaurantTable } from "@/hooks/use-tables";
 import { cn } from "@/lib/utils";
+import { MergeTableDialog } from "./merge-table-dialog";
 import { TableQrDialog } from "./table-qr-dialog";
 
 const STATUS_STYLES: Record<TableStatusDto, string> = {
@@ -32,15 +33,18 @@ const STATUS_LABEL: Record<TableStatusDto, string> = {
 
 export function TableTile({
   table,
+  allTables,
   branchId,
   style,
 }: {
   table: RestaurantTable;
+  allTables: RestaurantTable[];
   branchId: string | null;
   style?: React.CSSProperties;
 }) {
   const updateStatus = useUpdateTableStatus(branchId);
   const [qrOpen, setQrOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   return (
     <>
@@ -76,10 +80,23 @@ export function TableTile({
             <QrCode className="h-4 w-4" />
             View QR code
           </DropdownMenuItem>
+          {table.status === "OCCUPIED" && (
+            <DropdownMenuItem onClick={() => setMergeOpen(true)}>
+              <Merge className="h-4 w-4" />
+              Merge another table&apos;s bill here
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
       <TableQrDialog table={table} branchId={branchId} open={qrOpen} onOpenChange={setQrOpen} />
+      <MergeTableDialog
+        branchId={branchId}
+        table={table}
+        allTables={allTables}
+        open={mergeOpen}
+        onOpenChange={setMergeOpen}
+      />
     </>
   );
 }

@@ -1,10 +1,11 @@
 "use client";
 
-import { Leaf, Trash2 } from "lucide-react";
+import { Layers, Leaf, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AddCategoryDialog } from "@/components/menu/add-category-dialog";
 import { AddItemDialog } from "@/components/menu/add-item-dialog";
+import { ComboComponentsDialog } from "@/components/menu/combo-components-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -18,7 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useBranch } from "@/hooks/use-branch";
-import { useCategories, useDeleteMenuItem, useMenuItems } from "@/hooks/use-menu";
+import { useCategories, useDeleteMenuItem, useMenuItems, type MenuItem } from "@/hooks/use-menu";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,9 @@ export default function MenuPage() {
   const { data: categories, isLoading: categoriesLoading } = useCategories(branchId);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>(undefined);
   const { data: items, isLoading: itemsLoading } = useMenuItems(branchId, selectedCategoryId);
+  const { data: allItems } = useMenuItems(branchId);
   const deleteItem = useDeleteMenuItem(branchId);
+  const [comboItem, setComboItem] = useState<MenuItem | null>(null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -137,20 +140,34 @@ export default function MenuPage() {
                       {Number(item.taxRatePercent)}%
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={() =>
-                          deleteItem.mutate(item.id, {
-                            onSuccess: () => toast.success(`${item.name} removed`),
-                            onError: (err) =>
-                              toast.error(err instanceof ApiError ? err.message : "Could not remove item"),
-                          })
-                        }
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn(
+                            "h-8 w-8 text-muted-foreground hover:text-primary",
+                            item.isCombo && "text-primary",
+                          )}
+                          title="Combo components"
+                          onClick={() => setComboItem(item)}
+                        >
+                          <Layers className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          onClick={() =>
+                            deleteItem.mutate(item.id, {
+                              onSuccess: () => toast.success(`${item.name} removed`),
+                              onError: (err) =>
+                                toast.error(err instanceof ApiError ? err.message : "Could not remove item"),
+                            })
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -166,6 +183,14 @@ export default function MenuPage() {
           )}
         </Card>
       </div>
+
+      <ComboComponentsDialog
+        branchId={branchId}
+        item={comboItem}
+        allItems={allItems ?? []}
+        open={!!comboItem}
+        onOpenChange={(open) => !open && setComboItem(null)}
+      />
     </div>
   );
 }

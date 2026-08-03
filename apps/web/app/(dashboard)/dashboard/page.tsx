@@ -1,6 +1,7 @@
 "use client";
 
 import { ChefHat, ClipboardList, Flame, ReceiptText, Timer, Wallet } from "lucide-react";
+import { RefundDialog } from "@/components/orders/refund-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -141,9 +142,17 @@ export default function DashboardPage() {
                     {order.type.replace("_", " ")}
                   </Badge>
                 </div>
-                <span className="font-medium tabular-nums text-foreground">
-                  {formatCurrency(order.totalAmount)}
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="font-medium tabular-nums text-foreground">
+                    {formatCurrency(order.totalAmount)}
+                  </span>
+                  <RefundDialog
+                    branchId={branchId}
+                    orderId={order.id}
+                    orderNumber={order.orderNumber}
+                    maxAmount={Number(order.totalAmount)}
+                  />
+                </div>
               </div>
             ))}
           </div>

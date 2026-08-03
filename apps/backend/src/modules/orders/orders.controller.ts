@@ -11,6 +11,8 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   checkoutSchema,
   createOrderSchema,
+  mergeOrdersSchema,
+  refundSchema,
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
@@ -71,5 +73,32 @@ export class OrdersController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.ordersService.checkout(branchId, id, body as never);
+  }
+
+  @Auth('refunds.process')
+  @Post(':id/refund')
+  @UsePipes(new ZodValidationPipe(refundSchema))
+  async refund(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.ordersService.refund(branchId, id, user.id, body as never);
+  }
+
+  @Auth('orders.edit')
+  @Post(':id/merge')
+  @UsePipes(new ZodValidationPipe(mergeOrdersSchema))
+  async merge(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const { sourceOrderId } = body as { sourceOrderId: string };
+    return this.ordersService.mergeOrders(branchId, id, sourceOrderId);
   }
 }

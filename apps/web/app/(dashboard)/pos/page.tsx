@@ -9,6 +9,7 @@ import { ModifierPickerDialog } from "@/components/pos/modifier-picker-dialog";
 import { ProductGrid } from "@/components/pos/product-grid";
 import { Card } from "@/components/ui/card";
 import { useBranch } from "@/hooks/use-branch";
+import type { Customer } from "@/hooks/use-customers";
 import type { MenuItem } from "@/hooks/use-menu";
 import { useCreateOrder, type CreatedOrder } from "@/hooks/use-orders";
 import { useFloors } from "@/hooks/use-tables";
@@ -22,6 +23,7 @@ export default function PosPage() {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<"DINE_IN" | "TAKEAWAY">("DINE_IN");
   const [tableId, setTableId] = useState("");
+  const [customer, setCustomer] = useState<Customer | null>(null);
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [activeOrder, setActiveOrder] = useState<CreatedOrder | null>(null);
 
@@ -78,6 +80,7 @@ export default function PosPage() {
       {
         type: orderType,
         tableId: orderType === "DINE_IN" ? tableId : undefined,
+        customerId: customer?.id,
         items: lines.map((l) => ({
           menuItemId: l.menuItemId,
           quantity: l.quantity,
@@ -98,6 +101,7 @@ export default function PosPage() {
     setActiveOrder(null);
     setLines([]);
     setTableId("");
+    setCustomer(null);
   };
 
   return (
@@ -108,15 +112,23 @@ export default function PosPage() {
 
       <Card className="overflow-hidden p-5">
         {activeOrder ? (
-          <CheckoutPanel order={activeOrder} branchId={branchId} onDone={resetForNewOrder} />
+          <CheckoutPanel
+            order={activeOrder}
+            branchId={branchId}
+            customer={customer}
+            onDone={resetForNewOrder}
+          />
         ) : (
           <CartPanel
+            branchId={branchId}
             lines={lines}
             orderType={orderType}
             onOrderTypeChange={setOrderType}
             tables={tables}
             tableId={tableId}
             onTableChange={setTableId}
+            customer={customer}
+            onCustomerChange={setCustomer}
             onIncrement={(key) => updateQuantity(key, 1)}
             onDecrement={(key) => updateQuantity(key, -1)}
             onRemove={removeLine}

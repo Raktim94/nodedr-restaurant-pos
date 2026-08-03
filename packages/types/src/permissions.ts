@@ -22,6 +22,7 @@ export const PERMISSIONS = [
   { key: "kds.manage", label: "Manage Kitchen Display", category: "Kitchen" },
   { key: "reservations.manage", label: "Manage Reservations", category: "Reservations" },
   { key: "settings.manage", label: "Manage Settings", category: "Admin" },
+  { key: "customers.manage", label: "Manage Customers & Loyalty", category: "CRM" },
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]["key"];
@@ -52,9 +53,12 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
     "sales.view", "orders.create", "orders.edit", "orders.cancel",
     "discounts.apply", "bills.print", "tables.manage", "menu.manage",
     "inventory.manage", "reports.access", "kds.manage",
-    "reservations.manage",
+    "reservations.manage", "customers.manage", "refunds.process",
   ],
-  CASHIER: ["orders.create", "orders.edit", "bills.print", "discounts.apply", "sales.view"],
+  CASHIER: [
+    "orders.create", "orders.edit", "bills.print", "discounts.apply",
+    "sales.view", "customers.manage",
+  ],
   WAITER: ["orders.create", "orders.edit", "tables.manage", "bills.print"],
   KITCHEN_STAFF: ["kds.manage"],
   CHEF: ["kds.manage", "menu.manage"],

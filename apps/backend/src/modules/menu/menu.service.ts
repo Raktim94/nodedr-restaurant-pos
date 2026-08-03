@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   MenuCategoryDto,
   MenuItemDto,
@@ -170,5 +174,48 @@ export class MenuService {
     if (!group) throw new NotFoundException('Modifier group not found');
     await this.prisma.modifierGroup.delete({ where: { id } });
     return { ok: true };
+  }
+
+  // --- Combo meals -----------------------------------------------------------
+
+  async setComboComponents(
+    branchId: string,
+    comboItemId: string,
+    components: { componentItemId: string; quantity: number }[],
+  ) {
+    await this.getItem(branchId, comboItemId);
+    if (components.some((c) => c.componentItemId === comboItemId)) {
+      throw new BadRequestException(
+        'A combo cannot include itself as a component',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.comboComponent.deleteMany({ where: { comboItemId } });
+      if (components.length > 0) {
+        await tx.comboComponent.createMany({
+          data: components.map((c) => ({ comboItemId, ...c })),
+        });
+      }
+      await tx.menuItem.update({
+        where: { id: comboItemId },
+        data: { isCombo: components.length > 0 },
+      });
+      return tx.comboComponent.findMany({
+        where: { comboItemId },
+        include: {
+          componentItem: { select: { id: true, name: true, price: true } },
+        },
+      });
+    });
+  }
+
+  getComboComponents(comboItemId: string) {
+    return this.prisma.comboComponent.findMany({
+      where: { comboItemId },
+      include: {
+        componentItem: { select: { id: true, name: true, price: true } },
+      },
+    });
   }
 }

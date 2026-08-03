@@ -5,3 +5,6 @@ export * from "./tables";
 export * from "./orders";
 export * from "./reservations";
 export * from "./kitchen";
+export * from "./customers";
+export * from "./gift-cards";
+export * from "./combos";

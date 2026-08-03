@@ -14,6 +14,7 @@ import {
   menuCategorySchema,
   menuItemSchema,
   modifierGroupSchema,
+  setComboComponentsSchema,
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
@@ -188,5 +189,29 @@ export class MenuController {
   @Delete('modifier-groups/:id')
   deleteModifierGroup(@Param('id') id: string) {
     return this.menuService.deleteModifierGroup(id);
+  }
+
+  // --- Combo meals -----------------------------------------------------------
+
+  @Auth('menu.manage')
+  @Get('items/:id/combo-components')
+  getComboComponents(@Param('id') id: string) {
+    return this.menuService.getComboComponents(id);
+  }
+
+  @Auth('menu.manage')
+  @Post('items/:id/combo-components')
+  @UsePipes(new ZodValidationPipe(setComboComponentsSchema))
+  async setComboComponents(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const { components } = body as {
+      components: { componentItemId: string; quantity: number }[];
+    };
+    return this.menuService.setComboComponents(branchId, id, components);
   }
 }

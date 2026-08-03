@@ -42,6 +42,7 @@ export interface MenuItem {
   taxRatePercent: string;
   isVeg: boolean;
   isActive: boolean;
+  isCombo: boolean;
   category: { id: string; name: string };
   station: { id: string; name: string } | null;
   modifierGroups: { modifierGroup: ModifierGroup }[];

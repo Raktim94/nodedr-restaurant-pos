@@ -15,7 +15,8 @@ export default function TablesPage() {
   const [activeFloorId, setActiveFloorId] = useState<string | undefined>(undefined);
 
   const activeFloor = floors?.find((f) => f.id === (activeFloorId ?? floors[0]?.id));
-  const availableTables = floors?.flatMap((f) => f.tables).filter((t) => t.status === "AVAILABLE") ?? [];
+  const allTables = floors?.flatMap((f) => f.tables) ?? [];
+  const availableTables = allTables.filter((t) => t.status === "AVAILABLE");
 
   const canvasWidth = activeFloor
     ? Math.max(600, ...activeFloor.tables.map((t) => t.posX + t.width + 40))
@@ -57,6 +58,7 @@ export default function TablesPage() {
                   <TableTile
                     key={table.id}
                     table={table}
+                    allTables={allTables}
                     branchId={branchId}
                     style={{
                       left: table.posX,

@@ -94,15 +94,16 @@ refined during implementation.
 
 ## Status
 
-**Phase 0, 1, and 2 are complete and verified** (auth/RBAC, menu, tables,
+**Phases 0 through 3 are complete and verified** (auth/RBAC, menu, tables,
 POS ordering with modifiers, KOT generation, live KDS with priority/reprint/
 performance reporting, billing/checkout, dashboard, reservations, waitlist,
-table QR codes + public read-only menu view — see `ROADMAP.md` for exactly
-what's done vs. scope-cut vs. still ahead). Docker Compose stack builds and
-runs for real. Next up: Phase 3 (CRM/loyalty/combos) and the CI workflow
-that still hasn't made it in. This section is updated at the end of every
-work session; if it looks stale, trust `git log` and `ROADMAP.md`'s
-checkboxes over prose here.
+table QR codes + public read-only menu view, customer CRM with loyalty
+points, gift cards, combo meals, tips/refunds/order-merging — see
+`ROADMAP.md` for exactly what's done vs. scope-cut vs. still ahead). Docker
+Compose stack builds and runs for real. Next up: Phase 4 (inventory &
+procurement) and the CI workflow that still hasn't made it in. This section
+is updated at the end of every work session; if it looks stale, trust
+`git log` and `ROADMAP.md`'s checkboxes over prose here.
 
 ## How to resume work on this project
 

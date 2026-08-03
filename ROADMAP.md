@@ -3,12 +3,12 @@
 Checkboxes are the actual status — trust these (and `git log`) over prose in
 `PROJECT.md`. Update this file at the end of every work session.
 
-## Current phase: 2 complete → starting Phase 3
+## Current phase: 3 complete → starting Phase 4
 
-Started 2026-08-03. Phase 0 + 1 finished and verified same day (real Docker
-containers, real Postgres, full click-through). Phase 2 (kitchen depth +
-reservations/waitlist/QR) finished and verified the same session — see
-Session log for both.
+Started 2026-08-03. Phases 0-3 all finished and verified the same day (real
+Docker containers, real Postgres, full click-through each phase). Phase 3
+(CRM/loyalty/gift cards/combos/billing depth) is the latest — see Session
+log.
 
 ---
 
@@ -144,13 +144,49 @@ containers, not just "it compiles."
       veg-nonveg indicator) and an invalid one (empty-state, not a raw
       error page).
 
-### Phase 3 — CRM + Loyalty + Combos
+### Phase 3 — CRM + Loyalty + Combos — ✅ DONE
 
-- [ ] Customer profiles (phone/email/address/birthday/anniversary/
-      allergies/notes/order history)
-- [ ] Loyalty points (earn/redeem), memberships, gift vouchers
-- [ ] Combo meals (bundle pricing, ingredient deduction across bundle)
-- [ ] Split/merge bills, gift cards, tips, partial/advance payments, refunds
+- [x] Customer profiles (phone/email/address/birthday/anniversary/
+      allergies/notes) + order history + a profile page
+      (`/customers/[id]`) showing loyalty balance, store credit, gift
+      cards, and paid-order history. Attachable to a POS order via a
+      name/phone search-and-attach picker in the cart panel.
+- [x] Loyalty: 1 point earned per ₹100 of net spend (floor, excluding tip),
+      1 point = ₹1 redeemable discount, redemption capped at the customer's
+      actual balance (re-checked inside the checkout transaction, not
+      trusted from a pre-transaction snapshot) and at the bill total.
+      **Scope note:** the earn/redeem rate is a fixed constant for now
+      (`LOYALTY_POINT_VALUE` / `LOYALTY_EARN_PER_CURRENCY` in
+      `orders.service.ts`), not yet a per-restaurant configurable program —
+      real "memberships" (tiers) are not built, only the points ledger.
+- [x] Gift cards: issue (random code + balance), balance lookup, redeem as
+      a checkout payment source — debits up to the remaining amount due
+      (never more than the card's balance), read-modify-write with
+      `round2` + `set` (not a DB `increment`, per this project's standing
+      Float-balance discipline). "Gift vouchers" and gift cards are treated
+      as the same feature here, not two separate systems.
+- [x] Combo meals: a menu item can declare component items + quantities
+      (`ComboComponent`, editable via a builder dialog in Menu
+      management — the "Layers" icon on each item row). Setting/clearing
+      components toggles `MenuItem.isCombo` automatically. **Scope cut,
+      not silently dropped:** components are informational/kitchen-facing
+      only — a combo still has its own flat selling price, and there's no
+      automatic ingredient stock deduction across the bundle yet (that
+      needs Phase 4's inventory system to exist first; tracked there, not
+      forgotten).
+- [x] Billing depth: tips (added on top of the discounted subtotal, not
+      taxed), refunds (capped at what's actually refundable — total minus
+      prior refunds on that order — with an optional store-credit payout
+      that credits the customer's wallet), and merging two open dine-in
+      orders into one (moves items + KOTs, recomputes subtotal/tax, cancels
+      the source order, releases its table). **Scope cut, documented:**
+      "split bill" is a display-only equal-split calculator in the
+      checkout panel (shows each guest's share so the cashier can collect
+      cash from each), not a system that produces separate checks/receipts
+      per guest — this app's Order model finalizes OPEN→PAID as one unit,
+      and building true per-guest sub-bills would mean a real data-model
+      change, not a quick add. Revisit if a future session needs it for
+      real.
 
 ### Phase 4 — Inventory & Procurement
 
@@ -339,3 +375,56 @@ reach it (tax code masters, delivery-platform rate cards, etc.).
   reservation reminder notifications (needs Phase 8 SMS/email/WhatsApp),
   deposit collection UI (field exists, no payment flow), QR ordering
   beyond view-only (Phase 5 scope).
+
+- **2026-08-03 (same day, third session): Phase 3 — CRM, loyalty, gift
+  cards, combos, billing depth.** New Prisma models: expanded `Customer`
+  (address/birthday/anniversary/allergies/notes/loyaltyPoints/
+  walletBalance), `GiftCard` + `GiftCardRedemption`, `ComboComponent`,
+  `Refund`; `Order` gained `tipAmount`, `loyaltyPointsRedeemed`,
+  `loyaltyDiscountAmount` (migration `add_crm_loyalty_giftcards_combos`).
+  Backend: `CustomersModule`, `GiftCardsModule`, combo-composition methods
+  folded into the existing `MenuService`/`MenuController` (not a separate
+  module — it's menu configuration), and a substantial rewrite of
+  `OrdersService.checkout()` to layer in tip/loyalty-redemption/
+  gift-card-payment/loyalty-earning inside one transaction, plus new
+  `refund()` and `mergeOrders()` methods. Frontend: a Customers list +
+  profile page, a customer search-and-attach picker wired into the POS
+  cart, loyalty/gift-card/tip/split-bill-calculator fields added to the
+  checkout panel, a combo-builder dialog in Menu management (a "Layers"
+  icon per item row, highlighted when `isCombo`), a refund action on the
+  dashboard's recent-transactions list, and a "merge another table's bill
+  here" action on occupied table tiles.
+
+  **Verified, not just written:** every new backend capability hit with
+  curl first (loyalty earn on a ₹480 order → exactly 4 points at the
+  stated rate; redeeming those 4 points on a ₹90 order → exactly ₹86 due
+  and balance back to 0; a ₹200 gift card correctly only partially
+  covering a ₹220 order, then fully draining across two payment sources;
+  a refund correctly capped at "total minus prior refunds," rejecting an
+  over-refund attempt; merging two open orders producing the exact summed
+  subtotal, cancelling the source order, and releasing its table) *before*
+  any frontend UI existed for it — same discipline as Phase 1/2. Then the
+  same flows again through Playwright against the real UI (customer
+  create → profile page, combo save reflected live in the Layers-icon
+  highlight, refund dialog → toast → dashboard revenue update, merge
+  dialog → correct target/source table statuses).
+
+  **New recurring-lesson hit, not a new class of bug:** the
+  `react-hooks/set-state-in-effect` issue from Phase 1/2 recurred a third
+  time in the combo-builder dialog (initializing local editable `rows`
+  state from a `useComboComponents` query result). Fixed with the same
+  established pattern — a child component keyed by the parent item, given
+  a lazy `useState` initializer once the query result is available, rather
+  than an effect copying query data into state. Worth calling out
+  specifically because it's now happened enough times in this codebase
+  that it should be the *default* instinct for "seed local state from
+  already-fetched data," not something to rediscover per component.
+
+  **Deliberate scope cuts, decided and documented, not silently
+  skipped:** combo components are informational/kitchen-facing only — no
+  automatic ingredient stock deduction (needs Phase 4's inventory system
+  to exist first); "split bill" is a display-only equal-share calculator,
+  not a system that produces separate per-guest checks (the Order model
+  finalizes as one unit; real bill-splitting needs a data-model change,
+  not a quick add); loyalty program is a single fixed earn/redeem rate,
+  not yet configurable per restaurant.
