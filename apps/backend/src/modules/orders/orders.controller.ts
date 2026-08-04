@@ -11,6 +11,7 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import {
+  addOrderItemsSchema,
   checkoutSchema,
   createOrderSchema,
   mergeOrdersSchema,
@@ -37,9 +38,10 @@ export class OrdersController {
   async listOpen(
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId: string,
+    @Query('tableId') tableId?: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.ordersService.listOpen(branchId);
+    return this.ordersService.listOpen(branchId, tableId);
   }
 
   @Auth('orders.create')
@@ -63,6 +65,20 @@ export class OrdersController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.ordersService.createOrder(branchId, user.id, body as never);
+  }
+
+  @Auth('orders.edit')
+  @Post(':id/items')
+  @UsePipes(new ZodValidationPipe(addOrderItemsSchema))
+  async addItems(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const { items } = body as { items: never };
+    return this.ordersService.addItems(branchId, id, items);
   }
 
   @Auth('bills.print')

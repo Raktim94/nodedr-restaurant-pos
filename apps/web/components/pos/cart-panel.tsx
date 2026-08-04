@@ -32,6 +32,7 @@ export function CartPanel({
   onRemove,
   onSubmit,
   isSubmitting,
+  existingOrderNumber,
 }: {
   branchId: string | null;
   lines: CartLine[];
@@ -47,6 +48,7 @@ export function CartPanel({
   onRemove: (key: string) => void;
   onSubmit: () => void;
   isSubmitting: boolean;
+  existingOrderNumber?: string;
 }) {
   const subtotal = subtotalOf(lines.map((l) => l.unitPrice * l.quantity));
   const canSubmit = lines.length > 0 && (orderType === "TAKEAWAY" || !!tableId) && !isSubmitting;
@@ -71,12 +73,19 @@ export function CartPanel({
           </SelectTrigger>
           <SelectContent>
             {tables.map((t) => (
-              <SelectItem key={t.id} value={t.id} disabled={t.status === "OCCUPIED"}>
+              <SelectItem key={t.id} value={t.id}>
                 {t.name ?? `Table ${t.number}`} {t.status === "OCCUPIED" ? "(occupied)" : ""}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+      )}
+
+      {existingOrderNumber && (
+        <p className="rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+          This table already has open order <span className="font-medium text-foreground">#{existingOrderNumber}</span> —
+          these items will be added to it as a new round.
+        </p>
       )}
 
       <CustomerPicker branchId={branchId} customer={customer} onSelect={onCustomerChange} />
@@ -141,7 +150,11 @@ export function CartPanel({
           </span>
         </div>
         <Button className="h-11" disabled={!canSubmit} onClick={onSubmit}>
-          {isSubmitting ? "Sending to kitchen…" : "Send to kitchen"}
+          {isSubmitting
+            ? "Sending to kitchen…"
+            : existingOrderNumber
+              ? "Add to order & send to kitchen"
+              : "Send to kitchen"}
         </Button>
       </div>
     </div>

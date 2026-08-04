@@ -54,6 +54,11 @@ export const createOrderSchema = z.object({
 });
 export type CreateOrderDto = z.infer<typeof createOrderSchema>;
 
+export const addOrderItemsSchema = z.object({
+  items: z.array(cartItemSchema).min(1),
+});
+export type AddOrderItemsDto = z.infer<typeof addOrderItemsSchema>;
+
 export const checkoutSchema = z.object({
   discountPercent: z.coerce.number().min(0).max(100).optional(),
   discountFlat: z.coerce.number().min(0).optional(),

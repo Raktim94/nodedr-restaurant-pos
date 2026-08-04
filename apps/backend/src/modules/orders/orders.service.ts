@@ -33,10 +33,10 @@ export class OrdersService {
     private readonly inventory: InventoryService,
   ) {}
 
-  async listOpen(branchId: string) {
+  async listOpen(branchId: string, tableId?: string) {
     return this.prisma.order.findMany({
-      where: { branchId, status: 'OPEN' },
-      include: { table: true, items: true },
+      where: { branchId, status: 'OPEN', ...(tableId ? { tableId } : {}) },
+      include: { table: true, items: true, customer: true },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -149,6 +149,92 @@ export class OrdersService {
 
     this.realtime.emitToBranch(branchId, 'order.created', { id: order.id });
     return this.getOrder(branchId, order.id);
+  }
+
+  async addItems(branchId: string, orderId: string, items: CartItemDto[]) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, branchId },
+      include: { items: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'OPEN') {
+      throw new BadRequestException('Order is not open — cannot add items');
+    }
+
+    const menuItemIds = [...new Set(items.map((i) => i.menuItemId))];
+    const menuItems = await this.prisma.menuItem.findMany({
+      where: { id: { in: menuItemIds }, branchId },
+    });
+    if (menuItems.length !== menuItemIds.length) {
+      throw new BadRequestException(
+        'One or more menu items are invalid for this branch',
+      );
+    }
+    const menuItemById = new Map(menuItems.map((m) => [m.id, m]));
+
+    const modifierIds = [...new Set(items.flatMap((i) => i.modifierIds))];
+    const modifiers = await this.prisma.modifier.findMany({
+      where: { id: { in: modifierIds } },
+    });
+    const modifierById = new Map(modifiers.map((m) => [m.id, m]));
+    if (modifiers.length !== modifierIds.length) {
+      throw new BadRequestException('One or more modifiers are invalid');
+    }
+
+    const lineInputs = items.map((cartItem) =>
+      this.buildLine(cartItem, menuItemById, modifierById),
+    );
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const newItems = await Promise.all(
+        lineInputs.map((line) =>
+          tx.orderItem.create({
+            data: {
+              orderId,
+              menuItemId: line.menuItem.id,
+              nameSnapshot: line.menuItem.name,
+              unitPriceSnapshot: line.menuItem.price,
+              taxRateSnapshot: line.menuItem.taxRatePercent,
+              quantity: line.cartItem.quantity,
+              lineTotal: line.priced.lineTotal,
+              kitchenNote: line.cartItem.kitchenNote,
+              modifiers: {
+                create: line.selectedModifiers.map((m) => ({
+                  modifier: { connect: { id: m.id } },
+                  nameSnapshot: m.name,
+                  priceAdjSnapshot: m.priceAdjustment,
+                })),
+              },
+            },
+          }),
+        ),
+      );
+
+      const allLines = [...order.items, ...newItems].map((item) =>
+        priceLine({
+          quantity: item.quantity,
+          unitPriceInclusive: Number(item.lineTotal) / item.quantity,
+          taxRatePercent: Number(item.taxRateSnapshot),
+        }),
+      );
+      const totals = computeOrderTotals(allLines);
+
+      const result = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          subtotal: totals.subtotal,
+          taxAmount: totals.taxAmount,
+          totalAmount: totals.subtotal,
+        },
+      });
+
+      await this.generateKots(tx, orderId, branchId, newItems);
+
+      return result;
+    });
+
+    this.realtime.emitToBranch(branchId, 'order.updated', { id: orderId });
+    return this.getOrder(branchId, updated.id);
   }
 
   async checkout(
@@ -522,7 +608,10 @@ export class OrdersService {
       itemsByStation.set(stationId, bucket);
     }
 
-    let ticketSeq = 1;
+    // Start after any KOTs this order already has — addItems() can call this
+    // a second time for a later round, and ticket numbers must stay unique
+    // per order for kitchen staff to tell rounds apart.
+    let ticketSeq = (await tx.kot.count({ where: { orderId } })) + 1;
     for (const [stationId, items] of itemsByStation) {
       const kot = await tx.kot.create({
         data: {

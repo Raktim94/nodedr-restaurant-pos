@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { toast } from "sonner";
 import { CartPanel } from "@/components/pos/cart-panel";
 import { cartLineKey, type CartLine } from "@/components/pos/cart-line";
@@ -11,23 +12,43 @@ import { Card } from "@/components/ui/card";
 import { useBranch } from "@/hooks/use-branch";
 import type { Customer } from "@/hooks/use-customers";
 import type { MenuItem } from "@/hooks/use-menu";
-import { useCreateOrder, type CreatedOrder } from "@/hooks/use-orders";
+import {
+  useAddOrderItems,
+  useCreateOrder,
+  useOpenOrdersForTable,
+  type CreatedOrder,
+} from "@/hooks/use-orders";
 import { useFloors } from "@/hooks/use-tables";
 import { ApiError } from "@/lib/api";
 
 export default function PosPage() {
+  return (
+    <Suspense fallback={null}>
+      <PosPageInner />
+    </Suspense>
+  );
+}
+
+function PosPageInner() {
   const { branchId } = useBranch();
   const { data: floors } = useFloors(branchId);
   const tables = floors?.flatMap((f) => f.tables) ?? [];
+  const preselectedTableId = useSearchParams().get("tableId") ?? "";
 
   const [lines, setLines] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<"DINE_IN" | "TAKEAWAY">("DINE_IN");
-  const [tableId, setTableId] = useState("");
+  const [tableId, setTableId] = useState(preselectedTableId);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [activeOrder, setActiveOrder] = useState<CreatedOrder | null>(null);
 
   const createOrder = useCreateOrder(branchId);
+  const addOrderItems = useAddOrderItems(branchId);
+  const { data: existingOrders } = useOpenOrdersForTable(
+    branchId,
+    orderType === "DINE_IN" ? tableId || null : null,
+  );
+  const existingOrder = existingOrders?.[0];
 
   const addLine = (menuItemId: string, name: string, unitPrice: number, modifierIds: string[], modifierLabel: string) => {
     const key = cartLineKey(menuItemId, modifierIds);
@@ -76,16 +97,32 @@ export default function PosPage() {
   const removeLine = (key: string) => setLines((prev) => prev.filter((l) => l.key !== key));
 
   const handleSubmit = () => {
+    const items = lines.map((l) => ({
+      menuItemId: l.menuItemId,
+      quantity: l.quantity,
+      modifierIds: l.modifierIds,
+    }));
+
+    if (existingOrder) {
+      addOrderItems.mutate(
+        { orderId: existingOrder.id, dto: { items } },
+        {
+          onSuccess: (order) => {
+            setActiveOrder(order);
+            toast.success(`Added to order #${order.orderNumber} — sent to kitchen`);
+          },
+          onError: (err) => toast.error(err instanceof ApiError ? err.message : "Could not add items"),
+        },
+      );
+      return;
+    }
+
     createOrder.mutate(
       {
         type: orderType,
         tableId: orderType === "DINE_IN" ? tableId : undefined,
         customerId: customer?.id,
-        items: lines.map((l) => ({
-          menuItemId: l.menuItemId,
-          quantity: l.quantity,
-          modifierIds: l.modifierIds,
-        })),
+        items,
       },
       {
         onSuccess: (order) => {
@@ -133,7 +170,8 @@ export default function PosPage() {
             onDecrement={(key) => updateQuantity(key, -1)}
             onRemove={removeLine}
             onSubmit={handleSubmit}
-            isSubmitting={createOrder.isPending}
+            isSubmitting={createOrder.isPending || addOrderItems.isPending}
+            existingOrderNumber={existingOrder?.orderNumber}
           />
         )}
       </Card>

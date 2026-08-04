@@ -1,7 +1,8 @@
 "use client";
 
 import type { TableStatusDto } from "@nodedr-restaurant/types";
-import { Merge, QrCode, Users } from "lucide-react";
+import { ClipboardList, Merge, Plus, QrCode, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   DropdownMenu,
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useUpdateTableStatus, type RestaurantTable } from "@/hooks/use-tables";
 import { cn } from "@/lib/utils";
+import { BillTableDialog } from "./bill-table-dialog";
 import { MergeTableDialog } from "./merge-table-dialog";
 import { TableQrDialog } from "./table-qr-dialog";
 
@@ -42,9 +44,11 @@ export function TableTile({
   branchId: string | null;
   style?: React.CSSProperties;
 }) {
+  const router = useRouter();
   const updateStatus = useUpdateTableStatus(branchId);
   const [qrOpen, setQrOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [billOpen, setBillOpen] = useState(false);
 
   return (
     <>
@@ -81,10 +85,20 @@ export function TableTile({
             View QR code
           </DropdownMenuItem>
           {table.status === "OCCUPIED" && (
-            <DropdownMenuItem onClick={() => setMergeOpen(true)}>
-              <Merge className="h-4 w-4" />
-              Merge another table&apos;s bill here
-            </DropdownMenuItem>
+            <>
+              <DropdownMenuItem onClick={() => router.push(`/pos?tableId=${table.id}`)}>
+                <Plus className="h-4 w-4" />
+                Add order
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setBillOpen(true)}>
+                <ClipboardList className="h-4 w-4" />
+                Bill this table
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setMergeOpen(true)}>
+                <Merge className="h-4 w-4" />
+                Merge another table&apos;s bill here
+              </DropdownMenuItem>
+            </>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -97,6 +111,7 @@ export function TableTile({
         open={mergeOpen}
         onOpenChange={setMergeOpen}
       />
+      <BillTableDialog branchId={branchId} table={table} open={billOpen} onOpenChange={setBillOpen} />
     </>
   );
 }
