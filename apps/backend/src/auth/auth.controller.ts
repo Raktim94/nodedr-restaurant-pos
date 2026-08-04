@@ -8,7 +8,12 @@ import {
   UsePipes,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { loginSchema, pinLoginSchema } from '@nodedr-restaurant/types';
+import {
+  loginSchema,
+  pinLoginSchema,
+  registerSchema,
+} from '@nodedr-restaurant/types';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -34,6 +39,20 @@ function isCookieSecure(): boolean {
 @Controller('v1/auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  // Tighter than the app-wide default — unauthenticated and creates a full
+  // restaurant + owner account, a more attractive abuse target than login.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('register')
+  @UsePipes(new ZodValidationPipe(registerSchema))
+  async register(
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { token, user } = await this.authService.register(body as never);
+    this.setSessionCookie(res, token);
+    return { user };
+  }
 
   @Post('login')
   @UsePipes(new ZodValidationPipe(loginSchema))

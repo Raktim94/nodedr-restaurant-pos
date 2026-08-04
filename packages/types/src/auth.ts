@@ -6,6 +6,15 @@ export const loginSchema = z.object({
 });
 export type LoginDto = z.infer<typeof loginSchema>;
 
+export const registerSchema = z.object({
+  restaurantName: z.string().min(1),
+  branchName: z.string().min(1).default("Main Branch"),
+  ownerName: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(8),
+});
+export type RegisterDto = z.infer<typeof registerSchema>;
+
 export const pinLoginSchema = z.object({
   userId: z.string(),
   pin: z.string().min(4).max(8),

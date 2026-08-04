@@ -1,9 +1,17 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import type {
-  LoginDto,
-  PinLoginDto,
-  SessionUser,
+import {
+  DEFAULT_ROLE_PERMISSIONS,
+  PERMISSIONS,
+  STAFF_ROLES,
+  type LoginDto,
+  type PinLoginDto,
+  type RegisterDto,
+  type SessionUser,
 } from '@nodedr-restaurant/types';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -50,6 +58,84 @@ export class AuthService {
     }
 
     return this.issueSession(user);
+  }
+
+  async register(dto: RegisterDto) {
+    const existing = await this.prisma.user.findFirst({
+      where: { email: dto.email },
+    });
+    if (existing) {
+      throw new BadRequestException(
+        'An account with this email already exists',
+      );
+    }
+
+    // Permissions are global, not per-tenant — upsert (idempotent) outside
+    // the transaction below rather than re-creating them per restaurant.
+    for (const permission of PERMISSIONS) {
+      await this.prisma.permission.upsert({
+        where: { key: permission.key },
+        update: {},
+        create: permission,
+      });
+    }
+    const allPermissions = await this.prisma.permission.findMany();
+    const permissionByKey = new Map(allPermissions.map((p) => [p.key, p]));
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+
+    const owner = await this.prisma.$transaction(async (tx) => {
+      const restaurant = await tx.restaurant.create({
+        data: { name: dto.restaurantName },
+      });
+      const branch = await tx.branch.create({
+        data: { restaurantId: restaurant.id, name: dto.branchName },
+      });
+
+      let ownerRoleId = '';
+      for (const roleName of STAFF_ROLES) {
+        const role = await tx.role.create({
+          data: {
+            restaurantId: restaurant.id,
+            name: roleName,
+            label: roleName.replace(/_/g, ' '),
+          },
+        });
+        if (roleName === 'OWNER') ownerRoleId = role.id;
+
+        const grantedKeys = DEFAULT_ROLE_PERMISSIONS[roleName];
+        await tx.rolePermission.createMany({
+          data: grantedKeys
+            .map((key) => permissionByKey.get(key))
+            .filter((p): p is NonNullable<typeof p> => Boolean(p))
+            .map((permission) => ({
+              roleId: role.id,
+              permissionId: permission.id,
+            })),
+        });
+      }
+
+      const user = await tx.user.create({
+        data: {
+          restaurantId: restaurant.id,
+          roleId: ownerRoleId,
+          name: dto.ownerName,
+          email: dto.email,
+          passwordHash,
+        },
+        include: {
+          role: { include: { permissions: { include: { permission: true } } } },
+        },
+      });
+
+      await tx.userBranch.create({
+        data: { userId: user.id, branchId: branch.id },
+      });
+
+      return user;
+    });
+
+    return this.issueSession(owner);
   }
 
   async pinLogin(dto: PinLoginDto) {

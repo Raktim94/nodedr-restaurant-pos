@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, type LoginDto } from "@nodedr-restaurant/types";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -77,6 +78,12 @@ export default function LoginPage() {
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
           Demo credentials: owner@demo.local / Password123!
+        </p>
+        <p className="mt-2 text-center text-xs text-muted-foreground">
+          New restaurant?{" "}
+          <Link href="/signup" className="font-medium text-foreground hover:underline">
+            Create an account
+          </Link>
         </p>
       </div>
     </div>
