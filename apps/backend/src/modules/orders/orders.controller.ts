@@ -5,9 +5,11 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UsePipes,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import {
   checkoutSchema,
   createOrderSchema,
@@ -20,6 +22,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import { OrdersService } from './orders.service';
+import { buildReceiptHtml } from './receipt.html';
 
 @ApiTags('orders')
 @Controller('v1/orders')
@@ -73,6 +76,65 @@ export class OrdersController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.ordersService.checkout(branchId, id, user.id, body as never);
+  }
+
+  @Auth('bills.print')
+  @Get(':id/receipt')
+  async receipt(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const order = await this.ordersService.getReceiptData(branchId, id);
+    const html = buildReceiptHtml({
+      restaurantName: order.branch.restaurant.name,
+      currency: order.branch.restaurant.currency,
+      branch: {
+        name: order.branch.name,
+        address: order.branch.address,
+        phone: order.branch.phone,
+        gstNumber: order.branch.gstNumber,
+      },
+      order: {
+        orderNumber: order.orderNumber,
+        type: order.type,
+        createdAt: order.createdAt,
+        table: order.table
+          ? { label: order.table.name ?? `#${order.table.number}` }
+          : null,
+        customer: order.customer
+          ? {
+              name: order.customer.name ?? 'Guest',
+              phone: order.customer.phone,
+            }
+          : null,
+        subtotal: Number(order.subtotal),
+        discountAmount: Number(order.discountAmount),
+        taxAmount: Number(order.taxAmount),
+        tipAmount: Number(order.tipAmount),
+        loyaltyPointsRedeemed: order.loyaltyPointsRedeemed,
+        loyaltyDiscountAmount: Number(order.loyaltyDiscountAmount),
+        totalAmount: Number(order.totalAmount),
+        items: order.items.map((item) => ({
+          nameSnapshot: item.nameSnapshot,
+          quantity: item.quantity,
+          unitPriceSnapshot: Number(item.unitPriceSnapshot),
+          lineTotal: Number(item.lineTotal),
+          taxRateSnapshot: Number(item.taxRateSnapshot),
+          modifiers: item.modifiers.map((m) => ({
+            nameSnapshot: m.nameSnapshot,
+            priceAdjSnapshot: Number(m.priceAdjSnapshot),
+          })),
+        })),
+        payments: order.payments.map((p) => ({
+          method: p.method,
+          amount: Number(p.amount),
+        })),
+      },
+    });
+    res.type('html').send(html);
   }
 
   @Auth('refunds.process')

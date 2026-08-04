@@ -11,11 +11,15 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // A FormData body (file upload) must NOT get a manual Content-Type — the
+  // browser sets one with the multipart boundary itself; forcing
+  // application/json here makes the upload arrive unparseable server-side.
+  const isFormData = options.body instanceof FormData;
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...options.headers,
     },
   });
@@ -36,4 +40,9 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  upload: <T>(path: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<T>(path, { method: "POST", body: formData });
+  },
 };

@@ -31,7 +31,14 @@ FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-COPY --from=builder /repo/apps/web/public ./public
+# The standalone server (apps/web/server.js) resolves `public/` and
+# `.next/static` relative to ITS OWN traced monorepo path, i.e.
+# apps/web/public and apps/web/.next/static under this WORKDIR — not a
+# top-level ./public. Copying public/ to ./public (a sibling of apps/, not
+# a child) silently 404s every static asset (logo, icons, favicon fallback)
+# in production while `next dev` keeps working fine, since dev serves
+# public/ directly from the source tree regardless of this path.
+COPY --from=builder /repo/apps/web/public ./apps/web/public
 COPY --from=builder /repo/apps/web/.next/standalone ./
 COPY --from=builder /repo/apps/web/.next/static ./apps/web/.next/static
 

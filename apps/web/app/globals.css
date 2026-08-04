@@ -136,3 +136,29 @@
     @apply font-sans;
   }
 }
+
+/* This app is designed to run on a counter/kitchen tablet, not just a desk
+   with a mouse. The component library's default control heights (h-7/h-8,
+   ~28-32px) are comfortable with a pointer's pixel-precise click but too
+   small to reliably tap — Apple/Google both put the minimum comfortable
+   touch target around 44px. Gated on `pointer: coarse` (a real touchscreen,
+   not just a narrow viewport) so mouse-driven desktop use keeps the denser
+   layout the design system was built around. */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  a[href],
+  input,
+  select,
+  textarea,
+  [data-slot="select-trigger"],
+  [data-slot="checkbox"],
+  [data-slot="dropdown-menu-trigger"] {
+    min-height: 44px;
+  }
+
+  button,
+  [data-slot="checkbox"] {
+    min-width: 44px;
+  }
+}

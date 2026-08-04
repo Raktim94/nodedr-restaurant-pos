@@ -9,3 +9,5 @@ export * from "./customers";
 export * from "./gift-cards";
 export * from "./combos";
 export * from "./inventory";
+export * from "./settings";
+export * from "./staff";

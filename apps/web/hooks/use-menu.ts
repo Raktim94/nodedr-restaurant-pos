@@ -38,6 +38,7 @@ export interface MenuItem {
   categoryId: string;
   stationId: string | null;
   name: string;
+  imageUrl: string | null;
   price: string;
   taxRatePercent: string;
   isVeg: boolean;
@@ -81,6 +82,12 @@ export function useCreateCategory(branchId: string | null) {
     mutationFn: (dto: MenuCategoryDto) =>
       api.post(`/menu/categories?branchId=${branchId}`, dto),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["menu", "categories", branchId] }),
+  });
+}
+
+export function useUploadItemImage() {
+  return useMutation({
+    mutationFn: (file: File) => api.upload<{ url: string }>("/menu/items/upload-image", file),
   });
 }
 

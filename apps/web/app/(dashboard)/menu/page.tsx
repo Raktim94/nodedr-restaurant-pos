@@ -118,8 +118,18 @@ export default function MenuPage() {
                 {items.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell className="font-medium text-foreground">
-                      <div className="flex items-center gap-2">
-                        {item.isVeg && <Leaf className="h-3.5 w-3.5 text-success" />}
+                      <div className="flex items-center gap-3">
+                        {item.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- uploaded asset served from the backend, not a Next-optimizable remote source
+                          <img
+                            src={item.imageUrl}
+                            alt=""
+                            className="h-9 w-9 shrink-0 rounded-md object-cover"
+                          />
+                        ) : (
+                          <div className="h-9 w-9 shrink-0 rounded-md bg-secondary" />
+                        )}
+                        {item.isVeg && <Leaf className="h-3.5 w-3.5 shrink-0 text-success" />}
                         {item.name}
                       </div>
                     </TableCell>

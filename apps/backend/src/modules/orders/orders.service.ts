@@ -55,6 +55,21 @@ export class OrdersService {
     return order;
   }
 
+  async getReceiptData(branchId: string, id: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id, branchId },
+      include: {
+        table: true,
+        customer: true,
+        items: { include: { modifiers: true } },
+        payments: true,
+        branch: { include: { restaurant: true } },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return order;
+  }
+
   async createOrder(branchId: string, userId: string, dto: CreateOrderDto) {
     const menuItemIds = [...new Set(dto.items.map((i) => i.menuItemId))];
     const menuItems = await this.prisma.menuItem.findMany({

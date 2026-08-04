@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { ImagePlus, X } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +22,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useCreateMenuItem, useStations, type MenuCategory } from "@/hooks/use-menu";
+import {
+  useCreateMenuItem,
+  useStations,
+  useUploadItemImage,
+  type MenuCategory,
+} from "@/hooks/use-menu";
 import { ApiError } from "@/lib/api";
 
 export function AddItemDialog({
@@ -38,9 +44,13 @@ export function AddItemDialog({
   const [price, setPrice] = useState("");
   const [taxRatePercent, setTaxRatePercent] = useState("5");
   const [isVeg, setIsVeg] = useState(true);
+  const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
+  const [imagePreview, setImagePreview] = useState<string | undefined>(undefined);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: stations } = useStations(branchId);
   const createItem = useCreateMenuItem(branchId);
+  const uploadImage = useUploadItemImage();
 
   const reset = () => {
     setName("");
@@ -49,6 +59,22 @@ export function AddItemDialog({
     setPrice("");
     setTaxRatePercent("5");
     setIsVeg(true);
+    setImageUrl(undefined);
+    setImagePreview(undefined);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImagePreview(URL.createObjectURL(file));
+    uploadImage.mutate(file, {
+      onSuccess: (res) => setImageUrl(res.url),
+      onError: (err) => {
+        toast.error(err instanceof ApiError ? err.message : "Could not upload image");
+        setImagePreview(undefined);
+      },
+    });
   };
 
   const onSubmit = (e: React.FormEvent) => {
@@ -73,6 +99,7 @@ export function AddItemDialog({
         allergens: [],
         isActive: true,
         modifierGroupIds: [],
+        imageUrl,
       },
       {
         onSuccess: () => {
@@ -86,7 +113,13 @@ export function AddItemDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
       <DialogTrigger
         render={
           <Button size="sm" disabled={categories.length === 0}>
@@ -99,6 +132,49 @@ export function AddItemDialog({
           <DialogHeader>
             <DialogTitle>New menu item</DialogTitle>
           </DialogHeader>
+
+          <div className="flex flex-col gap-2">
+            <Label>Photo</Label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={onFileChange}
+            />
+            {imagePreview ? (
+              <div className="relative h-28 w-28 overflow-hidden rounded-lg border border-border">
+                {/* eslint-disable-next-line @next/next/no-img-element -- local blob/uploaded preview, not a Next-optimizable remote asset */}
+                <img src={imagePreview} alt="" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageUrl(undefined);
+                    setImagePreview(undefined);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-background/80 text-foreground"
+                  aria-label="Remove photo"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+                {uploadImage.isPending && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/60 text-xs">
+                    Uploading…
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-28 w-28 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary"
+              >
+                <ImagePlus className="h-5 w-5" />
+                <span className="text-xs">Add photo</span>
+              </button>
+            )}
+          </div>
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="item-name">Name</Label>
@@ -180,7 +256,7 @@ export function AddItemDialog({
           </div>
 
           <DialogFooter>
-            <Button type="submit" disabled={createItem.isPending}>
+            <Button type="submit" disabled={createItem.isPending || uploadImage.isPending}>
               {createItem.isPending ? "Adding…" : "Add item"}
             </Button>
           </DialogFooter>

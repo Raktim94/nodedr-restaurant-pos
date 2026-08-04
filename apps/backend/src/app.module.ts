@@ -19,6 +19,8 @@ import { PublicModule } from './modules/public/public.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { GiftCardsModule } from './modules/gift-cards/gift-cards.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { SettingsModule } from './modules/settings/settings.module';
+import { UsersModule } from './modules/users/users.module';
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { InventoryModule } from './modules/inventory/inventory.module';
     CustomersModule,
     GiftCardsModule,
     InventoryModule,
+    SettingsModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -5,6 +5,7 @@ import { loginSchema, type LoginDto } from "@nodedr-restaurant/types";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { Logo } from "@/components/layout/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,9 +34,7 @@ export default function LoginPage() {
     <div className="flex flex-1 items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="mb-10 flex flex-col items-center gap-2 text-center">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-lg font-semibold text-primary-foreground">
-            N
-          </div>
+          <Logo size={44} />
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Nodedr Restaurant
           </h1>

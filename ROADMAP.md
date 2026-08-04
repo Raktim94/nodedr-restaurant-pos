@@ -108,10 +108,14 @@ containers, not just "it compiles."
       backed OUT (never added on top — verified numerically, e.g. a ₹480
       item at 5% backs out to exactly the right tax, a 10% discount on a
       ₹920 cart lands on exactly ₹828), %/flat discount, cash/card/UPI/wallet
-      payment record. **Scope cut:** no receipt HTML/PDF rendering yet
-      (`nodedr-pos`'s pdfkit approach is the reference for when this lands —
-      Phase 8 hardware/printing item covers it); checkout today ends in an
-      on-screen "paid" confirmation, not a printable receipt.
+      payment record. **Update (2026-08-04):** receipt printing shipped —
+      `GET /v1/orders/:id/receipt` renders a self-printing HTML receipt
+      (ported from `nodedr-pos`'s `backend/src/lib/receipt.js` layout rules),
+      loaded into a hidden iframe and printed via the browser's own dialog
+      (any printer, or "Save as PDF"), triggered by a **Print receipt**
+      button on the post-checkout screen. A dedicated PDF-download endpoint
+      and direct-USB ESC/POS printing (nodedr-pos's other two print paths)
+      remain a Phase 8 hardware item.
 - [x] **Dashboard v1**: today's revenue, today's orders, table status
       breakdown, kitchen queue counts, recent transactions — bento-grid
       cards, 15s polling refresh (not yet wired to the realtime gateway;

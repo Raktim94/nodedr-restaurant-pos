@@ -5,6 +5,7 @@ import { Menu } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { BranchSwitcher } from "./branch-switcher";
+import { Logo } from "./logo";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
 
@@ -22,9 +23,7 @@ export function AppShell({
       {/* Desktop sidebar */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <div className="flex h-16 items-center gap-2 px-5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
-            N
-          </div>
+          <Logo />
           <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
             Nodedr Restaurant
           </span>
@@ -42,9 +41,7 @@ export function AppShell({
         <SheetContent side="left" className="w-72 bg-sidebar p-0">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <div className="flex h-16 items-center gap-2 px-5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
-              N
-            </div>
+            <Logo />
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
               Nodedr Restaurant
             </span>

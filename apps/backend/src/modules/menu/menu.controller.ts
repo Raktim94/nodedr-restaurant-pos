@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,8 +8,11 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
   UsePipes,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags } from '@nestjs/swagger';
 import {
   menuCategorySchema,
@@ -21,6 +25,7 @@ import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
+import { imageUploadOptions } from '../../common/upload/image-upload.config';
 import { MenuService } from './menu.service';
 
 @ApiTags('menu')
@@ -139,6 +144,16 @@ export class MenuController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.menuService.createItem(branchId, body as never);
+  }
+
+  @Auth('menu.manage')
+  @Post('items/upload-image')
+  @UseInterceptors(FileInterceptor('file', imageUploadOptions))
+  uploadItemImage(@UploadedFile() file?: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+    return { url: `/api/uploads/${file.filename}` };
   }
 
   @Auth('menu.manage')

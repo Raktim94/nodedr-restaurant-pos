@@ -49,6 +49,7 @@ POSTGRES_PASSWORD=${pg_password}
 JWT_SECRET=${jwt_secret}
 FRONTEND_ORIGIN=http://localhost:1995
 HOST_PORT=1995
+COOKIE_SECURE=false
 EOF
   echo ".env created with a generated POSTGRES_PASSWORD and JWT_SECRET."
 fi

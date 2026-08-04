@@ -16,6 +16,8 @@ takeaway, and kitchen operations.
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 [![Status](https://img.shields.io/badge/status-active%20development-orange.svg)](./ROADMAP.md)
 
+Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
+
 [Quick Start](#quick-start) ·
 [Features](#features) ·
 [Screenshots](#screenshots) ·
@@ -59,6 +61,35 @@ forcing one schema to serve both would have compromised both. See
 5. **Server-authoritative money** — all pricing, tax, discount, and
    loyalty math computed server-side, never trusted from the client.
 
+## Where to run it
+
+"Offline-first" describes how the app runs, not where it has to live —
+nothing about it is tied to a specific machine or network:
+
+- **A local LAN server (the default, recommended setup).** One machine in
+  the restaurant runs `docker compose up`; every till, tablet, and KDS
+  screen on the same Wi-Fi/Ethernet reaches it at `http://<that machine's
+  LAN IP>:1995`. No internet connection is needed once it's running —
+  order-taking, billing, KDS, and printing all keep working with the WAN
+  cable unplugged.
+- **Any VPS or cloud box.** The identical `docker compose up` also runs
+  unmodified on a VPS (DigitalOcean, Hetzner, AWS, etc.) if you'd rather
+  manage one restaurant — or several branches — remotely instead of on
+  site. Point `FRONTEND_ORIGIN`/`HOST_PORT` in `.env` at that box instead
+  of `localhost`; nothing else changes.
+- **Behind a tunnel (Cloudflare Tunnel, ngrok, Tailscale Funnel, or any
+  reverse proxy).** Reachable from outside the LAN with a real HTTPS
+  certificate and no port-forwarding, by pointing the tunnel at the `web`
+  service's port (`1995` by default). Once traffic reaches the app over
+  `https://`, set **`COOKIE_SECURE=true`** in `.env` so the session cookie
+  is marked `Secure` — leave it `false` (the default) for a plain
+  `http://` LAN/VPS setup, since a browser silently refuses to store a
+  `Secure` cookie on a non-HTTPS origin, which locks every user out with
+  "Unauthorized" even though login appears to succeed.
+
+Whichever way you reach it, it's the same two containers, same data, same
+login — there's no separate "cloud" mode to configure.
+
 ## Features
 
 Full field-level detail for every module lives in [`ROADMAP.md`](./ROADMAP.md).
@@ -75,7 +106,7 @@ by phase.
 | 5 | Inventory & Store Management — ingredients, recipe costing, POs, suppliers, GRN, waste, batch/lot | ✅ |
 | 6 | Procurement — vendor quotations, purchase requests/orders, invoices, supplier performance | 🚧 Phase 4 |
 | 7 | CRM — profiles, loyalty points, memberships, gift vouchers, feedback, visit history | ✅ |
-| 8 | Staff Management — records, attendance, shift scheduling, payroll, leave, tip distribution | 🚧 Phase 6 |
+| 8 | Staff Management — records, attendance, shift scheduling, payroll, leave, tip distribution | ✅ staff accounts & roles · 🚧 rest, Phase 6 |
 | 9 | Accounting — sales ledger, expenses, cash flow, P&L, GST reports, bank reconciliation | 🚧 Phase 6 |
 | 10 | Delivery Management — executives, routing, tracking, 3rd-party integration | 🚧 Phase 5 |
 | 11 | Online Ordering — website, mobile, QR, click & collect, scheduled orders | 🚧 Phase 5 |
@@ -86,8 +117,8 @@ by phase.
 | 16 | Maintenance — equipment tracking, service schedules, requests, AMC | 🚧 Phase 7 |
 | 17 | Documents — digital invoices, purchase docs, contracts, recipes, SOPs | 🚧 Phase 7 |
 | 18 | Security — RBAC, audit logs, backup/restore, activity history, 2FA | ✅ RBAC · 🚧 rest, Phase 8 |
-| 19 | Integrations — payment gateways, SMS, email, WhatsApp, accounting software, thermal printers | 🚧 Phase 8 |
-| 20 | Admin Panel — global settings, taxes, currencies, business hours, feature flags | 🚧 Phase 8 |
+| 19 | Integrations — payment gateways, SMS, email, WhatsApp, accounting software, thermal printers | ✅ browser/USB-driver receipt printing · 🚧 rest, Phase 8 |
+| 20 | Admin Panel — global settings, taxes, currencies, business hours, feature flags | ✅ restaurant & branch settings · 🚧 rest, Phase 8 |
 
 Already shipped and running against real Docker/Postgres today: auth +
 RBAC, full menu management (incl. combo meals), floor/table view with
@@ -100,6 +131,11 @@ inventory & store management — ingredients, weighted-average recipe
 costing, suppliers, purchase orders, goods receipts with batch/lot +
 expiry tracking, FIFO waste logging, and automatic ingredient deduction
 on checkout (combo-aware, never blocks a sale on a stock shortfall).
+Also shipped: printable receipts (opens the browser's print dialog, same
+"any printer, or Save as PDF" approach as [`nodedr-pos`](https://github.com/Raktim94/nodedr-pos)),
+a Settings area (restaurant + branch details) and staff account
+management (create/deactivate staff, assign roles) under **Settings** in
+the sidebar, and photo upload on menu items.
 
 ## Screenshots
 

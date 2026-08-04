@@ -19,6 +19,7 @@ import { lookupGiftCard } from "@/hooks/use-gift-cards";
 import { useCheckoutOrder, type CreatedOrder } from "@/hooks/use-orders";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
+import { openReceiptPrint } from "@/lib/print";
 import { round2 } from "@/lib/pricing-preview";
 
 const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "WALLET"];
@@ -111,9 +112,15 @@ export function CheckoutPanel({
             {completed.loyaltyPointsRedeemed} points redeemed
           </p>
         )}
-        <Button className="mt-4" onClick={onDone}>
-          New order
-        </Button>
+        <div className="mt-4 flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => branchId && openReceiptPrint(completed.id, branchId)}
+          >
+            Print receipt
+          </Button>
+          <Button onClick={onDone}>New order</Button>
+        </div>
       </div>
     );
   }

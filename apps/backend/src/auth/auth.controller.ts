@@ -18,6 +18,18 @@ import { AuthService } from './auth.service';
 const SESSION_COOKIE = 'nodedr_session';
 const COOKIE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
+// A `Secure` cookie is silently dropped by every browser on a plain
+// `http://` origin — including the default `http://<lan-ip>:1995` this app
+// is normally reached at. Deriving this from `NODE_ENV === 'production'`
+// (the old behavior) meant every Docker deployment set `Secure` on the
+// session cookie yet was served over HTTP, so login "succeeded" but the
+// browser never stored the cookie and every following request came back
+// 401 Unauthorized. Default to false; opt in explicitly via COOKIE_SECURE
+// once the app is actually served over HTTPS (see README).
+function isCookieSecure(): boolean {
+  return process.env.COOKIE_SECURE === 'true';
+}
+
 @ApiTags('auth')
 @Controller('v1/auth')
 export class AuthController {
@@ -47,7 +59,11 @@ export class AuthController {
 
   @Post('logout')
   logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie(SESSION_COOKIE);
+    res.clearCookie(SESSION_COOKIE, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: isCookieSecure(),
+    });
     return { ok: true };
   }
 
@@ -61,7 +77,7 @@ export class AuthController {
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: isCookieSecure(),
       maxAge: COOKIE_MAX_AGE_MS,
     });
   }

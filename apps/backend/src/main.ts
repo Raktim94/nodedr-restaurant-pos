@@ -1,19 +1,29 @@
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { uploadsDir } from './common/upload/image-upload.config';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      // Uploaded images are fetched cross-origin-ish (via the frontend's
+      // same-origin /api proxy, but still through an <img> tag) — the
+      // default helmet CORP header blocks that in some browsers.
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
   app.use(cookieParser());
   app.enableCors({
     origin: process.env.CORS_ORIGIN ?? 'http://localhost:1995',
     credentials: true,
   });
   app.setGlobalPrefix('api');
+  app.useStaticAssets(uploadsDir(), { prefix: '/api/uploads/' });
 
   const config = new DocumentBuilder()
     .setTitle('Nodedr Restaurant API')
