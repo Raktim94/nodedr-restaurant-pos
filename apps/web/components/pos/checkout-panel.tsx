@@ -17,13 +17,13 @@ import {
 import type { Customer } from "@/hooks/use-customers";
 import { lookupGiftCard } from "@/hooks/use-gift-cards";
 import { useCheckoutOrder, type CreatedOrder } from "@/hooks/use-orders";
+import { useSettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { openReceiptPrint } from "@/lib/print";
 import { round2 } from "@/lib/pricing-preview";
 
 const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "WALLET"];
-const LOYALTY_POINT_VALUE = 1;
 
 export function CheckoutPanel({
   order,
@@ -46,13 +46,15 @@ export function CheckoutPanel({
   const [splitCount, setSplitCount] = useState("1");
   const checkout = useCheckoutOrder(branchId);
   const [completed, setCompleted] = useState<CreatedOrder | null>(null);
+  const { data: settings } = useSettings(branchId);
+  const loyaltyPointValue = Number(settings?.restaurant.loyaltyPointValue ?? 1);
 
   const discount = Number(discountPercent) || 0;
   const tip = Number(tipAmount) || 0;
   const points = Math.max(0, Math.floor(Number(pointsToRedeem) || 0));
 
   const afterDiscount = round2(Number(order.subtotal) * (1 - discount / 100));
-  const loyaltyDiscount = round2(Math.min(points * LOYALTY_POINT_VALUE, afterDiscount));
+  const loyaltyDiscount = round2(Math.min(points * loyaltyPointValue, afterDiscount));
   const totalDue = round2(afterDiscount - loyaltyDiscount + tip);
 
   const giftCardApplied = giftCardBalance !== null ? round2(Math.min(giftCardBalance, totalDue)) : 0;

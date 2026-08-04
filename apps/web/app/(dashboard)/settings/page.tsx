@@ -61,6 +61,10 @@ function GeneralSettingsForm({
   const [legalName, setLegalName] = useState(restaurant.legalName ?? "");
   const [currency, setCurrency] = useState(restaurant.currency);
   const [timezone, setTimezone] = useState(restaurant.timezone);
+  const [loyaltyPointValue, setLoyaltyPointValue] = useState(restaurant.loyaltyPointValue);
+  const [loyaltyEarnPerCurrency, setLoyaltyEarnPerCurrency] = useState(
+    String(restaurant.loyaltyEarnPerCurrency),
+  );
 
   const [branchName, setBranchName] = useState(branch.name);
   const [address, setAddress] = useState(branch.address ?? "");
@@ -73,7 +77,14 @@ function GeneralSettingsForm({
   const onSubmitRestaurant = (e: React.FormEvent) => {
     e.preventDefault();
     updateRestaurant.mutate(
-      { name, legalName: legalName || undefined, currency, timezone },
+      {
+        name,
+        legalName: legalName || undefined,
+        currency,
+        timezone,
+        loyaltyPointValue: Number(loyaltyPointValue) || 0,
+        loyaltyEarnPerCurrency: Number(loyaltyEarnPerCurrency) || 1,
+      },
       {
         onSuccess: () => toast.success("Restaurant details saved"),
         onError: (err) => toast.error(err instanceof ApiError ? err.message : "Could not save"),
@@ -121,6 +132,46 @@ function GeneralSettingsForm({
               <Input id="r-timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} required />
             </div>
           </div>
+
+          <div className="flex flex-col gap-2 border-t border-border pt-4">
+            <h3 className="text-sm font-medium text-foreground">Loyalty program</h3>
+            <p className="text-xs text-muted-foreground">
+              How customers earn and redeem points at checkout.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="r-loyalty-earn">Earn 1 point per</Label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">{currency}</span>
+                <Input
+                  id="r-loyalty-earn"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={loyaltyEarnPerCurrency}
+                  onChange={(e) => setLoyaltyEarnPerCurrency(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="r-loyalty-value">1 point redeems for</Label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">{currency}</span>
+                <Input
+                  id="r-loyalty-value"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={loyaltyPointValue}
+                  onChange={(e) => setLoyaltyPointValue(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+          </div>
+
           <Button type="submit" disabled={updateRestaurant.isPending} className="self-start">
             {updateRestaurant.isPending ? "Saving…" : "Save restaurant"}
           </Button>

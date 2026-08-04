@@ -5,6 +5,8 @@ export const restaurantSettingsSchema = z.object({
   legalName: z.string().optional(),
   currency: z.string().optional(),
   timezone: z.string().optional(),
+  loyaltyPointValue: z.coerce.number().min(0).optional(),
+  loyaltyEarnPerCurrency: z.coerce.number().int().positive().optional(),
 });
 export type RestaurantSettingsDto = z.infer<typeof restaurantSettingsSchema>;
 

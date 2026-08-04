@@ -16,14 +16,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { computeOrderTotals, priceLine, round2 } from './pricing';
 
-// 1 loyalty point = ₹1 of discount when redeemed; 1 point earned per ₹100
-// spent (floor) on the final tax-inclusive total, excluding tip. Both are
-// deliberately simple, fixed constants for now — a per-restaurant
-// configurable loyalty program is a Phase-later refinement, not silently
-// hardcoded forever.
-const LOYALTY_POINT_VALUE = 1;
-const LOYALTY_EARN_PER_CURRENCY = 100;
-
 @Injectable()
 export class OrdersService {
   constructor(
@@ -252,6 +244,13 @@ export class OrdersService {
       throw new BadRequestException('Order is not open for checkout');
     }
 
+    const branch = await this.prisma.branch.findUniqueOrThrow({
+      where: { id: branchId },
+      include: { restaurant: true },
+    });
+    const loyaltyPointValue = Number(branch.restaurant.loyaltyPointValue);
+    const loyaltyEarnPerCurrency = branch.restaurant.loyaltyEarnPerCurrency;
+
     const lines = order.items.map((item) =>
       priceLine({
         quantity: item.quantity,
@@ -277,7 +276,7 @@ export class OrdersService {
       );
     }
     const requestedLoyaltyDiscount = round2(
-      Math.min(pointsToRedeem * LOYALTY_POINT_VALUE, totals.totalAmount),
+      Math.min(pointsToRedeem * loyaltyPointValue, totals.totalAmount),
     );
     const totalDue = round2(
       totals.totalAmount - requestedLoyaltyDiscount + (dto.tipAmount ?? 0),
@@ -364,7 +363,7 @@ export class OrdersService {
       // increment, so it stays consistent with the redeem path above.
       if (order.customerId) {
         const netSpend = round2(totals.totalAmount - loyaltyDiscountAmount);
-        const pointsEarned = Math.floor(netSpend / LOYALTY_EARN_PER_CURRENCY);
+        const pointsEarned = Math.floor(netSpend / loyaltyEarnPerCurrency);
         if (pointsEarned > 0) {
           const customer = await tx.customer.findUniqueOrThrow({
             where: { id: order.customerId },

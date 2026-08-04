@@ -22,6 +22,14 @@ model Restaurant {
   legalName String?
   currency  String   @default("INR")
   timezone  String   @default("Asia/Kolkata")
+
+  // Loyalty program config — previously hardcoded constants in
+  // OrdersService, now per-restaurant and settings-editable. Point value
+  // is the currency amount 1 redeemed point is worth; earn rate is how
+  // many currency units of net spend earn 1 point (floor division).
+  loyaltyPointValue     Decimal @default(1) @db.Decimal(6, 2)
+  loyaltyEarnPerCurrency Int    @default(100)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

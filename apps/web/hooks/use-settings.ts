@@ -10,6 +10,8 @@ export interface RestaurantSettings {
   legalName: string | null;
   currency: string;
   timezone: string;
+  loyaltyPointValue: string;
+  loyaltyEarnPerCurrency: number;
 }
 
 export interface BranchSettings {
