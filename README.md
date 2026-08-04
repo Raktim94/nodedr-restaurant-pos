@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="apps/web/public/brand-lockup.png" alt="Nodedr Restaurant" width="520">
+<img src="apps/web/public/brand-lockup.png" alt="Nodedr OrderRestro" width="520">
 
 **Offline-first Restaurant Management System** — POS, tables, kitchen
 display, reservations, CRM/loyalty, and more.
@@ -31,7 +31,7 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 
 ## What this is
 
-**Nodedr Restaurant** is a purpose-built, offline-first Restaurant
+**Nodedr OrderRestro** is a purpose-built, offline-first Restaurant
 Management System for restaurants, cafés, coffee shops, bakeries, fast
 food, fine dining, bars, food courts, cloud kitchens, and multi-branch
 chains. The whole stack — Postgres, API, and web app — runs on one local
@@ -271,6 +271,37 @@ pnpm dev   # runs backend (:4001) and web (:1995) together via Turborepo
 Full setup detail, coding conventions, and the PR process are in
 [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
+### Updating
+
+**Docker install (one-click or manual):**
+
+```bash
+git pull
+./install.sh
+```
+
+Re-running [`install.sh`](install.sh) is safe any time — it never overwrites
+an existing `.env` or touches existing data. It rebuilds the backend + web
+images and restarts the stack; the backend runs `prisma migrate deploy`
+automatically on startup, so any new database migrations from the pull are
+applied before it starts accepting traffic. If you installed manually
+instead, the equivalent is:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+**Local dev (no Docker for the apps):**
+
+```bash
+git pull
+pnpm install
+pnpm --filter @nodedr-restaurant/types build
+cd apps/backend && npx prisma migrate dev && cd ../..
+pnpm dev
+```
+
 ## Monorepo layout
 
 ```
@@ -345,5 +376,5 @@ See [`MAINTAINERS.md`](./MAINTAINERS.md) for project maintainers.
 ---
 
 <div align="center">
-<img src="apps/web/public/logo.png" alt="Nodedr Restaurant" width="72">
+<img src="apps/web/public/logo.png" alt="Nodedr OrderRestro" width="72">
 </div>

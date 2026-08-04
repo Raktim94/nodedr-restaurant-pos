@@ -26,8 +26,8 @@ async function bootstrap() {
   app.useStaticAssets(uploadsDir(), { prefix: '/api/uploads/' });
 
   const config = new DocumentBuilder()
-    .setTitle('Nodedr Restaurant API')
-    .setDescription('REST API for the Nodedr Restaurant management system')
+    .setTitle('Nodedr OrderRestro API')
+    .setDescription('REST API for the Nodedr OrderRestro management system')
     .setVersion('1.0')
     .addCookieAuth('nodedr_session')
     .build();
@@ -37,7 +37,7 @@ async function bootstrap() {
   const port = process.env.PORT ?? 4000;
   await app.listen(port);
   console.log(
-    `Nodedr Restaurant API listening on :${port} (docs at /api/docs)`,
+    `Nodedr OrderRestro API listening on :${port} (docs at /api/docs)`,
   );
 }
 void bootstrap();

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Nodedr Restaurant",
+  title: "Nodedr OrderRestro",
   description: "Offline-first restaurant management system",
 };
 

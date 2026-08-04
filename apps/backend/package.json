@@ -1,7 +1,7 @@
 {
   "name": "@nodedr-restaurant/backend",
   "version": "0.0.1",
-  "description": "Nodedr Restaurant API",
+  "description": "Nodedr OrderRestro API",
   "author": "Raktim Ranjit <ranjitraktim5@gmail.com> (https://github.com/Raktim94)",
   "private": true,
   "license": "AGPL-3.0-only",

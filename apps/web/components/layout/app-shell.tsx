@@ -25,7 +25,7 @@ export function AppShell({
         <div className="flex h-16 items-center gap-2 px-5">
           <Logo />
           <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
-            Nodedr Restaurant
+            Nodedr OrderRestro
           </span>
         </div>
         <div className="px-3 pb-3">
@@ -43,7 +43,7 @@ export function AppShell({
           <div className="flex h-16 items-center gap-2 px-5">
             <Logo />
             <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
-              Nodedr Restaurant
+              Nodedr OrderRestro
             </span>
           </div>
           <div className="px-3 pb-3">

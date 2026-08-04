@@ -1,4 +1,4 @@
-// Nodedr Restaurant — Phase 0/1 core schema.
+// Nodedr OrderRestro — Phase 0/1 core schema.
 // See ARCHITECTURE.md for why PostgreSQL is the primary target and how
 // multi-branch/single-location both map onto the same schema (a branch is
 // just a Branch row, not a different deployment mode).

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-click installer for nodedr-restaurant-pos.
+# One-click installer for Nodedr OrderRestro (nodedr-restaurant-pos).
 #
 # Run this from the repo root after cloning:
 #   ./install.sh
@@ -55,7 +55,7 @@ EOF
 fi
 
 # --- 3. Build the images and start the stack --------------------------------
-echo "Building nodedr-restaurant-pos images and starting the stack (this can take a few minutes on first run)..."
+echo "Building Nodedr OrderRestro images and starting the stack (this can take a few minutes on first run)..."
 docker compose up -d --build
 
 # --- 4. Wait for the app to report healthy ----------------------------------
@@ -88,7 +88,7 @@ docker exec nodedr-restaurant-backend npx ts-node prisma/seed.ts
 
 # --- 6. Done -----------------------------------------------------------------
 echo ""
-echo "nodedr-restaurant-pos is up and running."
+echo "Nodedr OrderRestro is up and running."
 echo "Open http://localhost:${HOST_PORT} and sign in with:"
 echo "  owner@demo.local / Password123!"
 echo "(demo account — change the password or remove it before real use)"

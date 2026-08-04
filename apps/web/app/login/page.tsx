@@ -36,7 +36,7 @@ export default function LoginPage() {
         <div className="mb-10 flex flex-col items-center gap-2 text-center">
           <Logo size={44} />
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Nodedr Restaurant
+            Nodedr OrderRestro
           </h1>
           <p className="text-sm text-muted-foreground">Sign in to manage your restaurant</p>
         </div>

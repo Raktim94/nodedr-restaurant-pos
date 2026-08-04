@@ -51,7 +51,7 @@
 }
 
 :root {
-  /* Nodedr Restaurant — light palette. See DESIGN_SYSTEM.md for rationale
+  /* Nodedr OrderRestro — light palette. See DESIGN_SYSTEM.md for rationale
      (wine/burgundy primary is the one deliberate accent choice). */
   --background: #FAFAFA;
   --foreground: #111827;
