@@ -1,12 +1,13 @@
 "use client";
 
-import { ChefHat, ClipboardList, Flame, ReceiptText, Timer, Wallet } from "lucide-react";
+import { ChefHat, ClipboardList, Flame, ReceiptText, Timer, TrendingUp, Trash2, Wallet } from "lucide-react";
+import { TrendChart } from "@/components/dashboard/trend-chart";
 import { RefundDialog } from "@/components/orders/refund-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
-import { useDashboardSummary } from "@/hooks/use-dashboard";
+import { useDashboardSummary, useDashboardTrends } from "@/hooks/use-dashboard";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +59,7 @@ function TableStatusRow({ label, count, dotClass }: { label: string; count: numb
 export default function DashboardPage() {
   const { branchId } = useBranch();
   const { data, isLoading } = useDashboardSummary(branchId);
+  const { data: trends, isLoading: trendsLoading } = useDashboardTrends(branchId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -96,6 +98,29 @@ export default function DashboardPage() {
           />
         </div>
       )}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <TrendChart
+          title="Revenue — last 14 days"
+          icon={TrendingUp}
+          data={trends?.revenue ?? []}
+          valueKey="amount"
+          color="var(--success)"
+          valueFormatter={(v) => formatCurrency(v)}
+          isLoading={trendsLoading}
+          emptyMessage="No paid orders in the last 14 days yet."
+        />
+        <TrendChart
+          title="Food waste cost — last 14 days"
+          icon={Trash2}
+          data={trends?.waste ?? []}
+          valueKey="cost"
+          color="var(--warning)"
+          valueFormatter={(v) => formatCurrency(v)}
+          isLoading={trendsLoading}
+          emptyMessage="No waste logged in the last 14 days — nice."
+        />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="flex flex-col gap-1 p-6 lg:col-span-1">

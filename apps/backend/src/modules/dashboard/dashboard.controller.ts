@@ -23,4 +23,14 @@ export class DashboardController {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.dashboardService.getSummary(branchId);
   }
+
+  @Auth()
+  @Get('trends')
+  async getTrends(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.dashboardService.getTrends(branchId);
+  }
 }
