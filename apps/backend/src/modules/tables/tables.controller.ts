@@ -12,10 +12,14 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import {
   floorSchema,
+  floorUpdateSchema,
   tableSchema,
+  tableUpdateSchema,
+  tableLayoutUpdateSchema,
   type SessionUser,
   type TableLayoutUpdateDto,
 } from '@nodedr-restaurant/types';
+import { z } from 'zod';
 import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -65,7 +69,21 @@ export class TablesController {
   }
 
   @Auth('tables.manage')
+  @Patch('floors/:id')
+  @UsePipes(new ZodValidationPipe(floorUpdateSchema))
+  async updateFloor(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.updateFloor(branchId, id, body as never);
+  }
+
+  @Auth('tables.manage')
   @Patch('layout')
+  @UsePipes(new ZodValidationPipe(z.array(tableLayoutUpdateSchema)))
   async updateLayout(
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId: string,
@@ -73,6 +91,19 @@ export class TablesController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.tablesService.updateTableLayout(branchId, body);
+  }
+
+  @Auth('tables.manage')
+  @Patch(':id')
+  @UsePipes(new ZodValidationPipe(tableUpdateSchema))
+  async updateTable(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.updateTable(branchId, id, body as never);
   }
 
   @Auth('tables.manage')

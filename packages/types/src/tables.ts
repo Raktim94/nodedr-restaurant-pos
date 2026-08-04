@@ -15,6 +15,9 @@ export const floorSchema = z.object({
 });
 export type FloorDto = z.infer<typeof floorSchema>;
 
+export const floorUpdateSchema = floorSchema.partial();
+export type FloorUpdateDto = z.infer<typeof floorUpdateSchema>;
+
 export const tableSchema = z.object({
   floorId: z.string(),
   number: z.string().min(1),
@@ -30,6 +33,9 @@ export const tableSchema = z.object({
   notes: z.string().optional(),
 });
 export type TableDto = z.infer<typeof tableSchema>;
+
+export const tableUpdateSchema = tableSchema.omit({ floorId: true }).partial();
+export type TableUpdateDto = z.infer<typeof tableUpdateSchema>;
 
 export const tableLayoutUpdateSchema = z.object({
   id: z.string(),
