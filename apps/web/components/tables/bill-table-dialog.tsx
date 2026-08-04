@@ -42,7 +42,7 @@ export function BillTableDialog({
           <CheckoutPanel
             order={order}
             branchId={branchId}
-            customer={order.customer}
+            initialCustomer={order.customer}
             onDone={() => onOpenChange(false)}
           />
         )}

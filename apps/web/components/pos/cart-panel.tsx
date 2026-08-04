@@ -11,22 +11,17 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CartLine } from "@/components/pos/cart-line";
-import { CustomerPicker } from "@/components/pos/customer-picker";
-import type { Customer } from "@/hooks/use-customers";
 import type { RestaurantTable } from "@/hooks/use-tables";
 import { formatCurrency } from "@/lib/format";
 import { subtotalOf } from "@/lib/pricing-preview";
 
 export function CartPanel({
-  branchId,
   lines,
   orderType,
   onOrderTypeChange,
   tables,
   tableId,
   onTableChange,
-  customer,
-  onCustomerChange,
   onIncrement,
   onDecrement,
   onRemove,
@@ -34,15 +29,12 @@ export function CartPanel({
   isSubmitting,
   existingOrderNumber,
 }: {
-  branchId: string | null;
   lines: CartLine[];
   orderType: "DINE_IN" | "TAKEAWAY";
   onOrderTypeChange: (type: "DINE_IN" | "TAKEAWAY") => void;
   tables: RestaurantTable[];
   tableId: string;
   onTableChange: (id: string) => void;
-  customer: Customer | null;
-  onCustomerChange: (customer: Customer | null) => void;
   onIncrement: (key: string) => void;
   onDecrement: (key: string) => void;
   onRemove: (key: string) => void;
@@ -87,8 +79,6 @@ export function CartPanel({
           these items will be added to it as a new round.
         </p>
       )}
-
-      <CustomerPicker branchId={branchId} customer={customer} onSelect={onCustomerChange} />
 
       <div className="flex-1 overflow-y-auto">
         {lines.length === 0 ? (

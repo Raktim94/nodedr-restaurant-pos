@@ -60,6 +60,7 @@ export const addOrderItemsSchema = z.object({
 export type AddOrderItemsDto = z.infer<typeof addOrderItemsSchema>;
 
 export const checkoutSchema = z.object({
+  customerId: z.string().optional(),
   discountPercent: z.coerce.number().min(0).max(100).optional(),
   discountFlat: z.coerce.number().min(0).optional(),
   tipAmount: z.coerce.number().min(0).optional(),

@@ -251,6 +251,19 @@ export class OrdersService {
     const loyaltyPointValue = Number(branch.restaurant.loyaltyPointValue);
     const loyaltyEarnPerCurrency = branch.restaurant.loyaltyEarnPerCurrency;
 
+    // A customer can be attached at billing time instead of when the order
+    // was opened — walk-ins don't need a name up front, staff can add one
+    // once the guest is ready to pay. Falls back to whatever was already on
+    // the order (e.g. attached via QR order or set at cart time).
+    let effectiveCustomerId = order.customerId;
+    if (!effectiveCustomerId && dto.customerId) {
+      const customer = await this.prisma.customer.findFirst({
+        where: { id: dto.customerId, branchId },
+      });
+      if (!customer) throw new BadRequestException('Customer not found');
+      effectiveCustomerId = customer.id;
+    }
+
     const lines = order.items.map((item) =>
       priceLine({
         quantity: item.quantity,
@@ -270,7 +283,7 @@ export class OrdersService {
     // again inside the transaction against a fresh read, not this
     // pre-transaction snapshot, to avoid a stale-balance race).
     const pointsToRedeem = dto.loyaltyPointsToRedeem ?? 0;
-    if (pointsToRedeem > 0 && !order.customerId) {
+    if (pointsToRedeem > 0 && !effectiveCustomerId) {
       throw new BadRequestException(
         'Cannot redeem loyalty points without a customer on the order',
       );
@@ -291,9 +304,9 @@ export class OrdersService {
       let loyaltyDiscountAmount = 0;
       let actualPointsRedeemed = 0;
 
-      if (pointsToRedeem > 0 && order.customerId) {
+      if (pointsToRedeem > 0 && effectiveCustomerId) {
         const customer = await tx.customer.findUniqueOrThrow({
-          where: { id: order.customerId },
+          where: { id: effectiveCustomerId },
         });
         if (customer.loyaltyPoints < pointsToRedeem) {
           throw new BadRequestException(
@@ -303,7 +316,7 @@ export class OrdersService {
         actualPointsRedeemed = pointsToRedeem;
         loyaltyDiscountAmount = requestedLoyaltyDiscount;
         await tx.customer.update({
-          where: { id: order.customerId },
+          where: { id: effectiveCustomerId },
           data: { loyaltyPoints: customer.loyaltyPoints - pointsToRedeem },
         });
       }
@@ -361,15 +374,15 @@ export class OrdersService {
       // Loyalty earn on net spend (excluding tip), only once the sale is
       // actually paid — read-modify-write with a plain integer, not a DB
       // increment, so it stays consistent with the redeem path above.
-      if (order.customerId) {
+      if (effectiveCustomerId) {
         const netSpend = round2(totals.totalAmount - loyaltyDiscountAmount);
         const pointsEarned = Math.floor(netSpend / loyaltyEarnPerCurrency);
         if (pointsEarned > 0) {
           const customer = await tx.customer.findUniqueOrThrow({
-            where: { id: order.customerId },
+            where: { id: effectiveCustomerId },
           });
           await tx.customer.update({
-            where: { id: order.customerId },
+            where: { id: effectiveCustomerId },
             data: { loyaltyPoints: customer.loyaltyPoints + pointsEarned },
           });
         }
@@ -380,6 +393,9 @@ export class OrdersService {
       return tx.order.update({
         where: { id: orderId },
         data: {
+          ...(effectiveCustomerId && !order.customerId
+            ? { customerId: effectiveCustomerId }
+            : {}),
           discountAmount: totals.discountAmount,
           loyaltyPointsRedeemed: actualPointsRedeemed,
           loyaltyDiscountAmount,

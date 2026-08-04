@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CustomerPicker } from "@/components/pos/customer-picker";
 import type { Customer } from "@/hooks/use-customers";
 import { lookupGiftCard } from "@/hooks/use-gift-cards";
 import { useCheckoutOrder, type CreatedOrder } from "@/hooks/use-orders";
@@ -28,12 +29,12 @@ const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "WALLET"];
 export function CheckoutPanel({
   order,
   branchId,
-  customer,
+  initialCustomer = null,
   onDone,
 }: {
   order: CreatedOrder;
   branchId: string | null;
-  customer: Customer | null;
+  initialCustomer?: Customer | null;
   onDone: () => void;
 }) {
   const [method, setMethod] = useState<PaymentMethodDto>("CASH");
@@ -44,6 +45,7 @@ export function CheckoutPanel({
   const [giftCardBalance, setGiftCardBalance] = useState<number | null>(null);
   const [checkingGiftCard, setCheckingGiftCard] = useState(false);
   const [splitCount, setSplitCount] = useState("1");
+  const [customer, setCustomer] = useState<Customer | null>(initialCustomer);
   const checkout = useCheckoutOrder(branchId);
   const [completed, setCompleted] = useState<CreatedOrder | null>(null);
   const { data: settings } = useSettings(branchId);
@@ -81,6 +83,7 @@ export function CheckoutPanel({
       {
         orderId: order.id,
         dto: {
+          customerId: customer?.id,
           discountPercent: discount,
           tipAmount: tip,
           loyaltyPointsToRedeem: points > 0 ? points : undefined,
@@ -138,6 +141,8 @@ export function CheckoutPanel({
           incl. {formatCurrency(order.taxAmount)} tax
         </p>
       </div>
+
+      <CustomerPicker branchId={branchId} customer={customer} onSelect={setCustomer} />
 
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-2">
