@@ -84,11 +84,17 @@ export function TableTile({
             <QrCode className="h-4 w-4" />
             View QR code
           </DropdownMenuItem>
+          {(table.status === "AVAILABLE" || table.status === "RESERVED") && (
+            <DropdownMenuItem onClick={() => router.push(`/pos?tableId=${table.id}`)}>
+              <Plus className="h-4 w-4" />
+              New order
+            </DropdownMenuItem>
+          )}
           {table.status === "OCCUPIED" && (
             <>
               <DropdownMenuItem onClick={() => router.push(`/pos?tableId=${table.id}`)}>
                 <Plus className="h-4 w-4" />
-                Add order
+                Add another round
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setBillOpen(true)}>
                 <ClipboardList className="h-4 w-4" />

@@ -98,6 +98,19 @@ export function useMergeOrder(branchId: string | null) {
   });
 }
 
+export function useCancelOrder(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) =>
+      api.post<CreatedOrder>(`/orders/${orderId}/cancel?branchId=${branchId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders", "open", branchId] });
+      queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
+      queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] });
+    },
+  });
+}
+
 export function useRefundOrder(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({

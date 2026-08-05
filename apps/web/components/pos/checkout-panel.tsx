@@ -17,7 +17,7 @@ import {
 import { CustomerPicker } from "@/components/pos/customer-picker";
 import type { Customer } from "@/hooks/use-customers";
 import { lookupGiftCard } from "@/hooks/use-gift-cards";
-import { useCheckoutOrder, type CreatedOrder } from "@/hooks/use-orders";
+import { useCancelOrder, useCheckoutOrder, type CreatedOrder } from "@/hooks/use-orders";
 import { useSettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
@@ -47,6 +47,7 @@ export function CheckoutPanel({
   const [splitCount, setSplitCount] = useState("1");
   const [customer, setCustomer] = useState<Customer | null>(initialCustomer);
   const checkout = useCheckoutOrder(branchId);
+  const cancelOrder = useCancelOrder(branchId);
   const [completed, setCompleted] = useState<CreatedOrder | null>(null);
   const { data: settings } = useSettings(branchId);
   const loyaltyPointValue = Number(settings?.restaurant.loyaltyPointValue ?? 1);
@@ -130,16 +131,40 @@ export function CheckoutPanel({
     );
   }
 
+  const handleCancel = () => {
+    if (!confirm(`Cancel order #${order.orderNumber}? This can't be undone.`)) return;
+    cancelOrder.mutate(order.id, {
+      onSuccess: () => {
+        toast.success(`Order #${order.orderNumber} cancelled`);
+        onDone();
+      },
+      onError: (err) =>
+        toast.error(err instanceof ApiError ? err.message : "Could not cancel order"),
+    });
+  };
+
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto">
-      <div>
-        <p className="text-sm text-muted-foreground">Order #{order.orderNumber} sent to kitchen</p>
-        <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-          {formatCurrency(order.subtotal)}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          incl. {formatCurrency(order.taxAmount)} tax
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-muted-foreground">Order #{order.orderNumber} sent to kitchen</p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+            {formatCurrency(order.subtotal)}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            incl. {formatCurrency(order.taxAmount)} tax
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0 text-destructive hover:text-destructive"
+          disabled={cancelOrder.isPending}
+          onClick={handleCancel}
+        >
+          Cancel order
+        </Button>
       </div>
 
       <CustomerPicker branchId={branchId} customer={customer} onSelect={setCustomer} />

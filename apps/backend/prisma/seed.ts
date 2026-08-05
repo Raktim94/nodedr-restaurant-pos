@@ -2,6 +2,22 @@ import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcrypt";
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSIONS, STAFF_ROLES } from "@nodedr-restaurant/types";
 
+// Deliberately not imported from src/modules/orders/pricing — the runtime
+// image only ships apps/backend/dist + prisma (see ARCHITECTURE.md /
+// install.sh packaging notes), so `src/` doesn't exist to import from once
+// this script runs via a container's `npx ts-node prisma/seed.ts`. Same
+// tax-inclusive math as OrdersService.priceLine, kept tiny and duplicated
+// on purpose rather than reaching across that packaging boundary.
+function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+function priceLine(quantity: number, unitPriceInclusive: number, taxRatePercent: number) {
+  const lineTotal = round2(unitPriceInclusive * quantity);
+  const rate = taxRatePercent / 100;
+  const taxAmount = rate > 0 ? round2(lineTotal - lineTotal / (1 + rate)) : 0;
+  return { lineTotal, taxAmount };
+}
+
 const prisma = new PrismaClient();
 
 async function main() {
@@ -200,6 +216,118 @@ async function main() {
           : {}),
       },
     });
+  }
+
+  console.log("Seeding takeaway demo orders...");
+  const itemById = new Map(demoItems.map((i) => [i.id, i]));
+
+  const demoOrders: {
+    id: string;
+    orderNumber: string;
+    paid: boolean;
+    lines: { itemId: string; quantity: number }[];
+  }[] = [
+    {
+      // Phoned in, sent to the kitchen, still waiting for pickup — shows up
+      // live on the Kitchen Display with no table attached.
+      id: "demo-order-takeaway-1",
+      orderNumber: "TA-DEMO-0001",
+      paid: false,
+      lines: [
+        { itemId: "demo-item-chicken-65", quantity: 1 },
+        { itemId: "demo-item-cola", quantity: 2 },
+      ],
+    },
+    {
+      // Already picked up and paid — shows takeaway flowing all the way
+      // through checkout, not just the kitchen side.
+      id: "demo-order-takeaway-2",
+      orderNumber: "TA-DEMO-0002",
+      paid: true,
+      lines: [
+        { itemId: "demo-item-butter-chicken", quantity: 1 },
+        { itemId: "demo-item-cola", quantity: 1 },
+      ],
+    },
+  ];
+
+  for (const demoOrder of demoOrders) {
+    const lines = demoOrder.lines.map((line) => {
+      const item = itemById.get(line.itemId)!;
+      const priced = priceLine(line.quantity, item.price, item.taxRatePercent);
+      return { item, quantity: line.quantity, priced };
+    });
+    const subtotal = round2(lines.reduce((sum, l) => sum + l.priced.lineTotal, 0));
+    const taxAmount = round2(lines.reduce((sum, l) => sum + l.priced.taxAmount, 0));
+    const itemStatus = demoOrder.paid ? "SERVED" : "NEW";
+
+    const order = await prisma.order.upsert({
+      where: { id: demoOrder.id },
+      update: {},
+      create: {
+        id: demoOrder.id,
+        branchId: branch.id,
+        orderNumber: demoOrder.orderNumber,
+        type: "TAKEAWAY",
+        status: demoOrder.paid ? "PAID" : "OPEN",
+        createdById: owner.id,
+        subtotal,
+        taxAmount,
+        totalAmount: subtotal,
+        billedAt: demoOrder.paid ? new Date() : null,
+        ...(demoOrder.paid
+          ? { payments: { create: [{ method: "CASH", amount: subtotal }] } }
+          : {}),
+      },
+    });
+
+    const itemsByStation = new Map<string | null, { id: string }[]>();
+    for (const [idx, line] of lines.entries()) {
+      const orderItem = await prisma.orderItem.upsert({
+        where: { id: `${demoOrder.id}-item-${idx}` },
+        update: {},
+        create: {
+          id: `${demoOrder.id}-item-${idx}`,
+          orderId: order.id,
+          menuItemId: line.item.id,
+          nameSnapshot: line.item.name,
+          unitPriceSnapshot: line.item.price,
+          taxRateSnapshot: line.item.taxRatePercent,
+          quantity: line.quantity,
+          lineTotal: line.priced.lineTotal,
+          status: itemStatus,
+        },
+      });
+      const bucket = itemsByStation.get(line.item.stationId) ?? [];
+      bucket.push({ id: orderItem.id });
+      itemsByStation.set(line.item.stationId, bucket);
+    }
+
+    let ticketSeq = 1;
+    for (const [stationId, items] of itemsByStation) {
+      const kot = await prisma.kot.upsert({
+        where: { id: `${demoOrder.id}-kot-${ticketSeq}` },
+        update: {},
+        create: {
+          id: `${demoOrder.id}-kot-${ticketSeq}`,
+          orderId: order.id,
+          stationId: stationId ?? undefined,
+          ticketNumber: `${demoOrder.orderNumber}-${ticketSeq}`,
+          status: itemStatus,
+          ...(demoOrder.paid
+            ? { acceptedAt: new Date(), readyAt: new Date(), servedAt: new Date() }
+            : {}),
+        },
+      });
+      ticketSeq += 1;
+      for (const item of items) {
+        await prisma.kotItem.upsert({
+          where: { id: `${kot.id}-${item.id}` },
+          update: {},
+          create: { id: `${kot.id}-${item.id}`, kotId: kot.id, orderItemId: item.id, status: itemStatus },
+        });
+      }
+    }
   }
 
   console.log("Seed complete.");

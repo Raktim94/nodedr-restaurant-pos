@@ -81,6 +81,17 @@ export class OrdersController {
     return this.ordersService.addItems(branchId, id, items);
   }
 
+  @Auth('orders.cancel')
+  @Post(':id/cancel')
+  async cancel(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.ordersService.cancelOrder(branchId, id);
+  }
+
   @Auth('bills.print')
   @Post(':id/checkout')
   @UsePipes(new ZodValidationPipe(checkoutSchema))

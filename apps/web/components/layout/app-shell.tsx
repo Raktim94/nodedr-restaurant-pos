@@ -4,6 +4,7 @@ import type { SessionUser } from "@nodedr-restaurant/types";
 import { Menu } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { BrandFooter } from "./brand-footer";
 import { BranchSwitcher } from "./branch-switcher";
 import { Logo } from "./logo";
 import { SidebarNav } from "./sidebar-nav";
@@ -34,6 +35,7 @@ export function AppShell({
         <div className="flex-1 overflow-y-auto py-2">
           <SidebarNav user={user} />
         </div>
+        <BrandFooter />
       </aside>
 
       {/* Mobile drawer */}
@@ -49,7 +51,10 @@ export function AppShell({
           <div className="px-3 pb-3">
             <BranchSwitcher />
           </div>
-          <SidebarNav user={user} onNavigate={() => setMobileOpen(false)} />
+          <div className="flex-1 overflow-y-auto py-2">
+            <SidebarNav user={user} onNavigate={() => setMobileOpen(false)} />
+          </div>
+          <BrandFooter />
         </SheetContent>
       </Sheet>
 

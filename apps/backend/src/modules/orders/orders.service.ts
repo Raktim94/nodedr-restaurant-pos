@@ -229,6 +229,64 @@ export class OrdersService {
     return this.getOrder(branchId, updated.id);
   }
 
+  // Realistic floor rule: once the kitchen has actually started cooking (or
+  // finished) any ticket, the order can no longer be cancelled from the
+  // floor — food already in progress must be voided/wasted through
+  // inventory instead, not silently disappeared. Cancelling is only safe
+  // while every KOT is still NEW/ACCEPTED (queued, not yet fired).
+  async cancelOrder(branchId: string, orderId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, branchId },
+      include: { kots: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'OPEN') {
+      throw new BadRequestException('Only an open order can be cancelled');
+    }
+    const alreadyStarted = order.kots.some((kot) =>
+      ['PREPARING', 'READY', 'SERVED'].includes(kot.status),
+    );
+    if (alreadyStarted) {
+      throw new BadRequestException(
+        'The kitchen has already started this order — it can no longer be cancelled from here',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: 'CANCELLED' },
+      });
+      await tx.kot.updateMany({
+        where: { orderId, status: { notIn: ['SERVED', 'CANCELLED'] } },
+        data: { status: 'CANCELLED' },
+      });
+      await tx.kotItem.updateMany({
+        where: { kot: { orderId }, status: { notIn: ['SERVED', 'CANCELLED'] } },
+        data: { status: 'CANCELLED' },
+      });
+
+      if (order.tableId) {
+        const otherOpenOrders = await tx.order.count({
+          where: { tableId: order.tableId, status: 'OPEN', id: { not: orderId } },
+        });
+        if (otherOpenOrders === 0) {
+          await tx.table.update({
+            where: { id: order.tableId },
+            data: { status: 'AVAILABLE' },
+          });
+        }
+      }
+    });
+
+    this.realtime.emitToBranch(branchId, 'order.updated', {
+      id: orderId,
+      status: 'CANCELLED',
+    });
+    this.realtime.emitToBranch(branchId, 'kot.updated', { orderId });
+    return this.getOrder(branchId, orderId);
+  }
+
   async checkout(
     branchId: string,
     orderId: string,
