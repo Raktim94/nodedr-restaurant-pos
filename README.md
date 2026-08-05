@@ -13,6 +13,7 @@ takeaway, and kitchen operations.
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](apps/web/tsconfig.json)
 [![NestJS](https://img.shields.io/badge/backend-NestJS-E0234E?logo=nestjs&logoColor=white)](apps/backend)
 [![Next.js](https://img.shields.io/badge/frontend-Next.js-000000?logo=next.js&logoColor=white)](apps/web)
+[![CasaOS / ZimaOS](https://img.shields.io/badge/CasaOS%20%2F%20ZimaOS-one--click%20app-1F6FEB)](casaos/README.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 [![Status](https://img.shields.io/badge/status-active%20development-orange.svg)](./ROADMAP.md)
 
@@ -87,8 +88,14 @@ nothing about it is tied to a specific machine or network:
   `Secure` cookie on a non-HTTPS origin, which locks every user out with
   "Unauthorized" even though login appears to succeed.
 
-Whichever way you reach it, it's the same two containers, same data, same
+Whichever way you reach it, it's the same three containers, same data, same
 login — there's no separate "cloud" mode to configure.
+
+- **CasaOS / ZimaOS.** Pre-built, multi-arch (amd64/arm64) images are
+  published to GHCR and there's a ready-to-install app manifest — no build
+  step, no `git clone` needed. Install directly from a compose URL today;
+  see [`casaos/README.md`](casaos/README.md). Official app store submission
+  pending.
 
 ## Features
 
@@ -308,6 +315,7 @@ pnpm dev
 apps/backend    NestJS API (REST /api/v1, Swagger at /api/docs, Socket.IO)
 apps/web        Next.js — back-office, POS, KDS, public QR menu view
 packages/types  Shared Zod schemas / TS types used by both apps
+casaos/         CasaOS/ZimaOS app store manifest + assets — see casaos/README.md
 docs/           Screenshots and supplementary docs
 ```
 
@@ -319,6 +327,7 @@ docs/           Screenshots and supplementary docs
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Tech-stack decisions and the reasoning behind each one |
 | [`ROADMAP.md`](./ROADMAP.md) | Phased build plan / living TODO — checkboxes are the real status |
 | [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md) | Visual language, tokens, type scale, component inventory, per-surface UX notes |
+| [`casaos/README.md`](./casaos/README.md) | CasaOS/ZimaOS one-click install, image publishing, official app store submission steps |
 
 ## Development notes
 
