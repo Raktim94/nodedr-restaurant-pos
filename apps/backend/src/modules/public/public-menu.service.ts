@@ -52,7 +52,7 @@ export class PublicMenuService {
     };
   }
 
-  async createOrder(qrToken: string, items: CartItemDto[]) {
+  async createOrder(qrToken: string, items: CartItemDto[], guestName: string) {
     const table = await this.resolveTable(qrToken);
     const branchId = table.floor.branchId;
 
@@ -89,6 +89,7 @@ export class PublicMenuService {
     return this.ordersService.createOrder(branchId, createdById, {
       type: 'QR_ORDER',
       tableId: table.id,
+      guestName,
       items,
     });
   }

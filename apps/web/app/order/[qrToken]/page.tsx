@@ -1,11 +1,15 @@
 "use client";
 
 import { CheckCircle2, Leaf, Minus, Plus, UtensilsCrossed } from "lucide-react";
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { PopBurst } from "@/components/order/pop-burst";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError } from "@/lib/api";
+import { playSuccessChime, vibrateSuccess } from "@/lib/celebrate";
 import { formatCurrency } from "@/lib/format";
 
 interface PublicMenuItem {
@@ -34,8 +38,28 @@ export default function PublicMenuPage({
   params: Promise<{ qrToken: string }>;
 }) {
   const { qrToken } = use(params);
+  const nameStorageKey = `qr-guest-name:${qrToken}`;
   const [cart, setCart] = useState<Record<string, number>>({});
   const [placed, setPlaced] = useState<{ orderNumber: string } | null>(null);
+  const [guestName, setGuestName] = useState("");
+  const [nameDraft, setNameDraft] = useState("");
+
+  // Read any name saved earlier this session after mount, not in the state
+  // initializer — sessionStorage isn't available during server rendering,
+  // so reading it there would make the client's first render disagree with
+  // the server-rendered HTML.
+  useEffect(() => {
+    const saved = sessionStorage.getItem(nameStorageKey);
+    if (saved) setGuestName(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (placed) {
+      vibrateSuccess();
+      playSuccessChime();
+    }
+  }, [placed]);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["public-menu", qrToken],
@@ -46,6 +70,7 @@ export default function PublicMenuPage({
   const placeOrder = useMutation({
     mutationFn: () =>
       api.post<{ orderNumber: string }>(`/public/menu/${qrToken}/order`, {
+        guestName,
         items: Object.entries(cart).map(([menuItemId, quantity]) => ({
           menuItemId,
           quantity,
@@ -57,6 +82,13 @@ export default function PublicMenuPage({
       setCart({});
     },
   });
+
+  const confirmName = () => {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) return;
+    sessionStorage.setItem(nameStorageKey, trimmed);
+    setGuestName(trimmed);
+  };
 
   const allItems = data?.categories.flatMap((c) => c.items) ?? [];
   const cartCount = Object.values(cart).reduce((sum, q) => sum + q, 0);
@@ -89,12 +121,58 @@ export default function PublicMenuPage({
   if (placed) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center">
-        <CheckCircle2 className="h-10 w-10 text-success" />
-        <p className="text-lg font-medium text-foreground">Order sent to the kitchen</p>
-        <p className="text-sm text-muted-foreground">Order #{placed.orderNumber}</p>
+        <div className="relative flex h-10 w-10 items-center justify-center">
+          <PopBurst />
+          <CheckCircle2 className="h-10 w-10 text-success" />
+        </div>
+        <p className="text-lg font-medium text-foreground">Thank you, {guestName}!</p>
+        <p className="text-sm text-muted-foreground">
+          {data?.branchName ?? "The kitchen"} says thanks for your order 🎉
+        </p>
+        <p className="text-xs text-muted-foreground">Order #{placed.orderNumber} · sent to the kitchen</p>
         <Button variant="outline" className="mt-2" onClick={() => setPlaced(null)}>
           Order more
         </Button>
+      </div>
+    );
+  }
+
+  if (!guestName) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+        <UtensilsCrossed className="h-8 w-8 text-primary" />
+        {isLoading ? (
+          <Skeleton className="h-7 w-40" />
+        ) : (
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              {data?.branchName}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">{data?.tableName}</p>
+          </div>
+        )}
+        <form
+          className="flex w-full max-w-xs flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            confirmName();
+          }}
+        >
+          <div className="flex flex-col gap-2 text-left">
+            <Label htmlFor="guest-name">What&apos;s your name?</Label>
+            <Input
+              id="guest-name"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              placeholder="e.g. Priya"
+              autoFocus
+              maxLength={60}
+            />
+          </div>
+          <Button type="submit" className="h-11" disabled={!nameDraft.trim()}>
+            Continue to menu
+          </Button>
+        </form>
       </div>
     );
   }

@@ -780,6 +780,9 @@ model Order {
   tableId    String?
   table      Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
   guestCount Int?
+  // Name typed in by the guest on the QR self-order flow — no account, so
+  // this is the only identity captured for that order.
+  guestName  String?
 
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)

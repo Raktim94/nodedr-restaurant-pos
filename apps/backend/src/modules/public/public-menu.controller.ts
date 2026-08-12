@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, UsePipes } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { addOrderItemsSchema } from '@nodedr-restaurant/types';
+import { publicOrderSchema } from '@nodedr-restaurant/types';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PublicMenuService } from './public-menu.service';
 
@@ -24,9 +24,9 @@ export class PublicMenuController {
   // target than an authenticated staff endpoint.
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('menu/:qrToken/order')
-  @UsePipes(new ZodValidationPipe(addOrderItemsSchema))
+  @UsePipes(new ZodValidationPipe(publicOrderSchema))
   createOrder(@Param('qrToken') qrToken: string, @Body() body: unknown) {
-    const { items } = body as { items: never };
-    return this.publicMenuService.createOrder(qrToken, items);
+    const { items, guestName } = body as { items: never; guestName: string };
+    return this.publicMenuService.createOrder(qrToken, items, guestName);
   }
 }

@@ -49,6 +49,7 @@ export const createOrderSchema = z.object({
   tableId: z.string().optional(),
   guestCount: z.number().int().positive().optional(),
   customerId: z.string().optional(),
+  guestName: z.string().trim().min(1).max(60).optional(),
   notes: z.string().optional(),
   items: z.array(cartItemSchema).min(1),
 });
@@ -58,6 +59,14 @@ export const addOrderItemsSchema = z.object({
   items: z.array(cartItemSchema).min(1),
 });
 export type AddOrderItemsDto = z.infer<typeof addOrderItemsSchema>;
+
+// Guest self-order from a table's QR code — no account, so a name is the
+// only way staff can tell whose order this is (shown on KDS/order lists).
+export const publicOrderSchema = z.object({
+  guestName: z.string().trim().min(1, "Please enter your name").max(60),
+  items: z.array(cartItemSchema).min(1),
+});
+export type PublicOrderDto = z.infer<typeof publicOrderSchema>;
 
 export const checkoutSchema = z.object({
   customerId: z.string().optional(),

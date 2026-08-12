@@ -99,6 +99,7 @@ export class OrdersService {
           tableId: dto.tableId,
           guestCount: dto.guestCount,
           customerId: dto.customerId,
+          guestName: dto.guestName,
           notes: dto.notes,
           createdById: userId,
           subtotal: totals.subtotal,

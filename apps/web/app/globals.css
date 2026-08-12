@@ -162,3 +162,25 @@
     min-width: 44px;
   }
 }
+
+/* Small celebratory burst on the QR order confirmation screen — see
+   components/order/pop-burst.tsx. Each particle rotates to its own
+   --angle, then the keyframes only need to translate outward along one
+   axis for every particle to fan out in a circle. */
+@keyframes pop-burst {
+  0% {
+    transform: rotate(var(--angle)) translateY(0) scale(0);
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--angle)) translateY(-48px) scale(1);
+    opacity: 0;
+  }
+}
+
+.animate-pop-burst {
+  animation: pop-burst 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
