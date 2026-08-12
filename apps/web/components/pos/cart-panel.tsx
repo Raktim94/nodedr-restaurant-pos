@@ -28,6 +28,7 @@ export function CartPanel({
   onSubmit,
   isSubmitting,
   existingOrderNumber,
+  onViewExistingOrder,
 }: {
   lines: CartLine[];
   orderType: "DINE_IN" | "TAKEAWAY";
@@ -41,6 +42,7 @@ export function CartPanel({
   onSubmit: () => void;
   isSubmitting: boolean;
   existingOrderNumber?: string;
+  onViewExistingOrder?: () => void;
 }) {
   const subtotal = subtotalOf(lines.map((l) => l.unitPrice * l.quantity));
   const canSubmit = lines.length > 0 && (orderType === "TAKEAWAY" || !!tableId) && !isSubmitting;
@@ -74,10 +76,24 @@ export function CartPanel({
       )}
 
       {existingOrderNumber && (
-        <p className="rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-          This table already has open order <span className="font-medium text-foreground">#{existingOrderNumber}</span> —
-          these items will be added to it as a new round.
-        </p>
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+          <span>
+            This table already has open order{" "}
+            <span className="font-medium text-foreground">#{existingOrderNumber}</span>
+            {lines.length > 0 && " — these items will be added to it as a new round."}
+          </span>
+          {onViewExistingOrder && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 px-2 text-xs"
+              onClick={onViewExistingOrder}
+            >
+              View & pay
+            </Button>
+          )}
+        </div>
       )}
 
       <div className="flex-1 overflow-y-auto">

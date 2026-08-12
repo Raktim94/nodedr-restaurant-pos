@@ -1,7 +1,7 @@
 "use client";
 
 import type { PaymentMethodDto } from "@nodedr-restaurant/types";
-import { CheckCircle2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -146,15 +146,16 @@ export function CheckoutPanel({
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted-foreground">Order #{order.orderNumber} sent to kitchen</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-            {formatCurrency(order.subtotal)}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            incl. {formatCurrency(order.taxAmount)} tax
-          </p>
-        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="-ml-2 shrink-0 text-muted-foreground"
+          onClick={onDone}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
         <Button
           type="button"
           variant="outline"
@@ -165,6 +166,18 @@ export function CheckoutPanel({
         >
           Cancel order
         </Button>
+      </div>
+
+      <div>
+        <p className="text-sm text-muted-foreground">Order #{order.orderNumber} sent to kitchen</p>
+        <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+          {formatCurrency(order.subtotal)}
+        </p>
+        <p className="text-xs text-muted-foreground">incl. {formatCurrency(order.taxAmount)} tax</p>
+        <p className="mt-2 rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+          No need to pay right now — tap <span className="font-medium text-foreground">Back</span> to
+          help another table and come bill this one later from here or the Tables page.
+        </p>
       </div>
 
       <CustomerPicker branchId={branchId} customer={customer} onSelect={setCustomer} />

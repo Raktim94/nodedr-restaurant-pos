@@ -44,7 +44,7 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
   return (
     <Card
       className={cn(
-        "flex flex-col gap-3 p-4",
+        "flex shrink-0 flex-col gap-3 p-4",
         (isLate || ticket.isPriority) && "border-warning/50 ring-1 ring-warning/30",
       )}
     >

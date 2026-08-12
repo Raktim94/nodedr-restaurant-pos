@@ -131,6 +131,10 @@ function PosPageInner() {
     );
   };
 
+  const viewExistingOrder = () => {
+    if (existingOrder) setActiveOrder(existingOrder);
+  };
+
   const resetForNewOrder = () => {
     setActiveOrder(null);
     setLines([]);
@@ -165,6 +169,7 @@ function PosPageInner() {
             onSubmit={handleSubmit}
             isSubmitting={createOrder.isPending || addOrderItems.isPending}
             existingOrderNumber={existingOrder?.orderNumber}
+            onViewExistingOrder={existingOrder ? viewExistingOrder : undefined}
           />
         )}
       </Card>
