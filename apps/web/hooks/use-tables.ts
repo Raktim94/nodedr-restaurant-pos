@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  BulkTableCreateDto,
   TableDto,
   TableLayoutUpdateDto,
   TableStatusDto,
@@ -63,6 +64,14 @@ export function useCreateTable(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (dto: TableDto) => api.post(`/tables?branchId=${branchId}`, dto),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["floors", branchId] }),
+  });
+}
+
+export function useBulkCreateTables(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: BulkTableCreateDto) => api.post(`/tables/bulk?branchId=${branchId}`, dto),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["floors", branchId] }),
   });
 }

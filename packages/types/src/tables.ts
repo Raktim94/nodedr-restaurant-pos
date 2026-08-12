@@ -37,6 +37,15 @@ export type TableDto = z.infer<typeof tableSchema>;
 export const tableUpdateSchema = tableSchema.omit({ floorId: true }).partial();
 export type TableUpdateDto = z.infer<typeof tableUpdateSchema>;
 
+export const bulkTableCreateSchema = z.object({
+  floorId: z.string(),
+  numbers: z.array(z.string().min(1)).min(1).max(100),
+  capacity: z.number().int().positive().default(2),
+  shape: z.enum(["square", "round", "rect"]).default("square"),
+  color: z.string().optional(),
+});
+export type BulkTableCreateDto = z.infer<typeof bulkTableCreateSchema>;
+
 export const tableLayoutUpdateSchema = z.object({
   id: z.string(),
   posX: z.number(),

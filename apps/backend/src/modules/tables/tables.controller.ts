@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
+  bulkTableCreateSchema,
   floorSchema,
   floorUpdateSchema,
   tableSchema,
@@ -66,6 +67,18 @@ export class TablesController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.tablesService.createTable(branchId, body as never);
+  }
+
+  @Auth('tables.manage')
+  @Post('bulk')
+  @UsePipes(new ZodValidationPipe(bulkTableCreateSchema))
+  async createTables(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.createTables(branchId, body as never);
   }
 
   @Auth('tables.manage')

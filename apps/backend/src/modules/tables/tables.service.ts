@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type {
+  BulkTableCreateDto,
   FloorDto,
   FloorUpdateDto,
   TableDto,
@@ -48,6 +49,51 @@ export class TablesService {
     const table = await this.prisma.table.create({ data: dto });
     this.realtime.emitToBranch(branchId, 'table.updated', table);
     return table;
+  }
+
+  async createTables(branchId: string, dto: BulkTableCreateDto) {
+    await this.assertFloorInBranch(branchId, dto.floorId);
+
+    const numbers = dto.numbers.map((n) => n.trim()).filter(Boolean);
+    const duplicatesInBatch = numbers.filter(
+      (n, i) => numbers.indexOf(n) !== i,
+    );
+    if (duplicatesInBatch.length > 0) {
+      throw new BadRequestException(
+        `Table numbers must be unique: ${[...new Set(duplicatesInBatch)].join(', ')} ${duplicatesInBatch.length > 1 ? 'are' : 'is'} repeated.`,
+      );
+    }
+
+    const existing = await this.prisma.table.findMany({
+      where: { floorId: dto.floorId, number: { in: numbers } },
+      select: { number: true },
+    });
+    if (existing.length > 0) {
+      const clashes = existing.map((t) => t.number).join(', ');
+      throw new BadRequestException(
+        `These table numbers already exist on this floor: ${clashes}. Choose different numbers.`,
+      );
+    }
+
+    const tables = await this.prisma.$transaction(
+      numbers.map((number, index) =>
+        this.prisma.table.create({
+          data: {
+            floorId: dto.floorId,
+            number,
+            capacity: dto.capacity,
+            shape: dto.shape,
+            color: dto.color,
+            posX: 20 + (index % 5) * 100,
+            posY: 20 + Math.floor(index / 5) * 100,
+          },
+        }),
+      ),
+    );
+    tables.forEach((table) =>
+      this.realtime.emitToBranch(branchId, 'table.updated', table),
+    );
+    return tables;
   }
 
   async updateTable(branchId: string, id: string, dto: TableUpdateDto) {

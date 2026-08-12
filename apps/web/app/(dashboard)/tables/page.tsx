@@ -22,6 +22,10 @@ export default function TablesPage() {
   const [editMode, setEditMode] = useState(false);
   const [editorTable, setEditorTable] = useState<RestaurantTable | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  // Forces a fresh mount of TableEditorDialog every time it's opened, so its
+  // internal form state (number, bulk-mode toggle, etc.) never carries over
+  // stale values from a previous open.
+  const [editorKey, setEditorKey] = useState(0);
 
   const activeFloor = floors?.find((f) => f.id === (activeFloorId ?? floors[0]?.id));
   const allTables = floors?.flatMap((f) => f.tables) ?? [];
@@ -37,10 +41,12 @@ export default function TablesPage() {
   const openAddTable = () => {
     setEditorTable(null);
     setEditorOpen(true);
+    setEditorKey((k) => k + 1);
   };
   const openEditTable = (table: RestaurantTable) => {
     setEditorTable(table);
     setEditorOpen(true);
+    setEditorKey((k) => k + 1);
   };
 
   return (
@@ -151,6 +157,7 @@ export default function TablesPage() {
 
       {activeFloor && (
         <TableEditorDialog
+          key={editorKey}
           branchId={branchId}
           floorId={activeFloor.id}
           table={editorTable}
