@@ -5,14 +5,24 @@
 #   ./install.sh
 #
 # Generates a .env with random secrets (only if one doesn't already exist),
-# builds the backend + web Docker images, starts the stack, waits for the
-# backend to come up (migrations run automatically on container start), loads
-# demo data, then prints the URL and login to open. Safe to re-run any time
-# (after `git pull`, to rebuild, or just to reseed) — nothing here overwrites
+# builds the backend + web Docker images, starts the stack, and waits for the
+# backend to come up (migrations run automatically on container start). Safe
+# to re-run any time (after `git pull`, to rebuild) — nothing here overwrites
 # an existing .env or destroys existing data.
+#
+# Pass --demo to also load seed data (a sample restaurant, menu, and a
+# owner@demo.local login) for trying the app out. Without it, sign up your
+# own restaurant at /signup — no demo data is created.
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
+
+load_demo=false
+for arg in "$@"; do
+  case "$arg" in
+    --demo) load_demo=true ;;
+  esac
+done
 
 # --- 1. Check prerequisites -------------------------------------------------
 # Docker Engine must be installed and the `docker compose` plugin available
@@ -80,15 +90,21 @@ if [ "$ready" != "true" ]; then
   exit 1
 fi
 
-# --- 5. Load demo data -------------------------------------------------------
+# --- 5. Load demo data (only if --demo was passed) --------------------------
 # seed.ts is upsert-based throughout, so this is safe to run on every install/
 # re-install without duplicating or clobbering anything.
-echo "Loading demo data (restaurant, menu, staff logins)..."
-docker exec nodedr-restaurant-backend npx ts-node prisma/seed.ts
+if [ "$load_demo" = true ]; then
+  echo "Loading demo data (restaurant, menu, staff logins)..."
+  docker exec nodedr-restaurant-backend npx ts-node prisma/seed.ts
+fi
 
 # --- 6. Done -----------------------------------------------------------------
 echo ""
 echo "Nodedr OrderRestro is up and running."
-echo "Open http://localhost:${HOST_PORT} and sign in with:"
-echo "  owner@demo.local / Password123!"
-echo "(demo account — change the password or remove it before real use)"
+echo "Open http://localhost:${HOST_PORT}"
+if [ "$load_demo" = true ]; then
+  echo "Sign in with the demo account: owner@demo.local / Password123!"
+  echo "(demo account — change the password or remove it before real use)"
+else
+  echo "Create your restaurant account at http://localhost:${HOST_PORT}/signup"
+fi

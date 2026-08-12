@@ -18,7 +18,7 @@ export function BrandFooter() {
         rel="noopener noreferrer"
         className="text-center text-[11px] leading-tight text-sidebar-foreground/50 hover:text-sidebar-foreground/80 hover:underline"
       >
-        DRPOS · made by Nodedr Info Tech Private Limited
+        OrderRestro · made by Nodedr Infotech Private Limited
       </a>
     </div>
   );

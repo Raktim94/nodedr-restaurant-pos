@@ -49,7 +49,7 @@ export default function LoginPage() {
               id="email"
               type="email"
               autoComplete="email"
-              placeholder="owner@demo.local"
+              placeholder="you@restaurant.com"
               {...register("email")}
             />
             {errors.email && (
@@ -77,9 +77,6 @@ export default function LoginPage() {
         </form>
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
-          Demo credentials: owner@demo.local / Password123!
-        </p>
-        <p className="mt-2 text-center text-xs text-muted-foreground">
           New restaurant?{" "}
           <Link href="/signup" className="font-medium text-foreground hover:underline">
             Create an account

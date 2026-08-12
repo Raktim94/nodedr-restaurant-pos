@@ -238,12 +238,12 @@ git clone https://github.com/Raktim94/nodedr-restaurant-pos.git && cd nodedr-res
 
 [`install.sh`](install.sh) generates a `.env` with random secrets (only if
 one doesn't already exist — safe to re-run), builds the backend + web Docker
-images, starts the stack, waits for the backend to report healthy, loads
-demo data, then prints the URL and login. Re-run it any time after
-`git pull` to rebuild.
+images, starts the stack, and waits for the backend to report healthy. Re-run
+it any time after `git pull` to rebuild.
 
-Open **http://localhost:1995** and sign in with `owner@demo.local` /
-`Password123!` (seeded demo account — change or remove before real use).
+Open **http://localhost:1995** and create your restaurant at `/signup` — no
+demo data is loaded by default. To try the app with sample data instead, run
+`./install.sh --demo` and sign in with `owner@demo.local` / `Password123!`.
 
 The backend API and Swagger docs are reachable only through the web app's
 `/api` proxy, not published directly to the host.
@@ -258,7 +258,7 @@ git clone https://github.com/Raktim94/nodedr-restaurant-pos.git
 cd nodedr-restaurant-pos
 cp .env.example .env        # edit JWT_SECRET / POSTGRES_PASSWORD for anything beyond local dev
 docker compose up -d --build
-docker exec nodedr-restaurant-backend npx ts-node prisma/seed.ts   # demo data + login; upsert-based, safe to re-run
+docker exec nodedr-restaurant-backend npx ts-node prisma/seed.ts   # optional: demo data + login; upsert-based, safe to re-run
 ```
 
 ### Local dev (no Docker for the apps)

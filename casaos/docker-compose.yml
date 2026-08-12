@@ -93,7 +93,7 @@ x-casaos:
     - amd64
     - arm64
   main: web
-  author: Nodedr Info Tech Private Limited
+  author: Nodedr Infotech Private Limited
   developer: Raktim94
   category: Finance
   icon: https://cdn.jsdelivr.net/gh/Raktim94/nodedr-restaurant-pos@master/casaos/icon.png
