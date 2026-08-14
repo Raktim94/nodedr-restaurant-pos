@@ -11,6 +11,7 @@ import {
 } from "@/hooks/use-tables";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { TableShapeIcon } from "./table-shape-icon";
 
 export function EditableTableTile({
   table,
@@ -86,6 +87,7 @@ export function EditableTableTile({
       )}
       style={{ left: posX, top: posY, width: table.width, height: table.height }}
     >
+      <TableShapeIcon shape={table.shape} capacity={table.capacity} className="h-6 w-6" />
       <span className="text-sm font-semibold">{table.name ?? `T${table.number}`}</span>
       <span className="flex items-center gap-1 text-[11px] opacity-80">
         <Users className="h-3 w-3" />

@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { BillTableDialog } from "./bill-table-dialog";
 import { MergeTableDialog } from "./merge-table-dialog";
 import { TableQrDialog } from "./table-qr-dialog";
+import { TableShapeIcon } from "./table-shape-icon";
 
 const STATUS_STYLES: Record<TableStatusDto, string> = {
   AVAILABLE: "bg-success/10 border-success/30 text-success",
@@ -60,6 +61,7 @@ export function TableTile({
             STATUS_STYLES[table.status],
           )}
         >
+          <TableShapeIcon shape={table.shape} capacity={table.capacity} className="h-6 w-6" />
           <span className="text-sm font-semibold">{table.name ?? `T${table.number}`}</span>
           <span className="flex items-center gap-1 text-[11px] opacity-80">
             <Users className="h-3 w-3" />
