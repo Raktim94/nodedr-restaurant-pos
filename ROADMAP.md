@@ -3,6 +3,14 @@
 Checkboxes are the actual status — trust these (and `git log`) over prose in
 `PROJECT.md`. Update this file at the end of every work session.
 
+For the full public-facing feature taxonomy (POS/billing, tables, KDS,
+inventory, CRM, payments, security, AI, etc. — ~305 line items each marked
+Shipped/Partial/Planned against the real codebase) see
+[`FEATURE-CHECKLIST.md`](./FEATURE-CHECKLIST.md). This file tracks the same
+ground phase-by-phase for engineering; that one is organized by product
+category for anyone (including the website) that wants "what does OrderRestro
+actually do today."
+
 ## Current phase: 4 complete (incl. order deduction) → procurement depth + Phase 5 next
 
 Started 2026-08-03. Phases 0-3 finished and verified the same day. Phase 4's
