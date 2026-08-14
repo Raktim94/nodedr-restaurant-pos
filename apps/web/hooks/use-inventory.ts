@@ -6,8 +6,14 @@ import type {
   IngredientUnit,
   PurchaseOrderDto,
   PurchaseOrderStatus,
+  PurchaseRequestDto,
+  PurchaseRequestStatus,
+  QuotationStatus,
   StockAdjustmentDto,
   SupplierDto,
+  SupplierInvoiceDto,
+  SupplierPaymentDto,
+  SupplierQuotationDto,
   WasteLogDto,
   WasteReason,
 } from "@nodedr-restaurant/types";
@@ -114,6 +120,72 @@ export interface RecipeLine {
 export interface Recipe {
   lines: RecipeLine[];
   totalCost: number;
+}
+
+export interface PurchaseRequestItem {
+  id: string;
+  ingredientId: string;
+  ingredient: Ingredient;
+  quantityRequested: string;
+  notes: string | null;
+}
+
+export interface PurchaseRequest {
+  id: string;
+  requestNumber: string;
+  status: PurchaseRequestStatus;
+  notes: string | null;
+  requestedBy: { id: string; name: string };
+  approvedBy: { id: string; name: string } | null;
+  createdAt: string;
+  items: PurchaseRequestItem[];
+}
+
+export interface SupplierQuotationItem {
+  id: string;
+  ingredientId: string;
+  ingredient: Ingredient;
+  quantityQuoted: string;
+  unitPrice: string;
+}
+
+export interface SupplierQuotation {
+  id: string;
+  quotationNumber: string;
+  status: QuotationStatus;
+  validUntil: string | null;
+  notes: string | null;
+  supplier: { id: string; name: string };
+  createdAt: string;
+  items: SupplierQuotationItem[];
+}
+
+export interface SupplierInvoice {
+  id: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string | null;
+  totalAmount: string;
+  amountPaid: string;
+  status: "UNPAID" | "PARTIALLY_PAID" | "PAID" | "CANCELLED";
+  notes: string | null;
+  supplier: { id: string; name: string };
+  payments: {
+    id: string;
+    amount: string;
+    paymentMethod: string;
+    reference: string | null;
+    paidAt: string;
+  }[];
+}
+
+export interface SupplierPerformance {
+  supplierId: string;
+  supplierName: string;
+  totalPurchaseOrders: number;
+  totalSpend: number;
+  onTimeDeliveryRate: number | null;
+  avgLeadTimeDays: number | null;
 }
 
 // --- Ingredients -----------------------------------------------------------
@@ -307,5 +379,111 @@ export function useLogWaste(branchId: string | null) {
       qc.invalidateQueries({ queryKey: ["inventory", "waste", branchId] });
       qc.invalidateQueries({ queryKey: ["inventory", "ingredients", branchId] });
     },
+  });
+}
+
+// --- Purchase requests ----------------------------------------------------------
+
+export function usePurchaseRequests(branchId: string | null, status?: PurchaseRequestStatus) {
+  return useQuery({
+    queryKey: ["inventory", "purchase-requests", branchId, status],
+    queryFn: () =>
+      api.get<PurchaseRequest[]>(
+        `/inventory/purchase-requests?branchId=${branchId}${status ? `&status=${status}` : ""}`,
+      ),
+    enabled: !!branchId,
+  });
+}
+
+export function useCreatePurchaseRequest(branchId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: PurchaseRequestDto) =>
+      api.post<PurchaseRequest>(`/inventory/purchase-requests?branchId=${branchId}`, dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory", "purchase-requests", branchId] }),
+  });
+}
+
+export function useUpdatePurchaseRequestStatus(branchId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: PurchaseRequestStatus }) =>
+      api.patch<PurchaseRequest>(`/inventory/purchase-requests/${id}/status?branchId=${branchId}`, {
+        status,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory", "purchase-requests", branchId] }),
+  });
+}
+
+// --- Supplier quotations ---------------------------------------------------------
+
+export function useQuotations(branchId: string | null, ingredientId?: string) {
+  return useQuery({
+    queryKey: ["inventory", "quotations", branchId, ingredientId],
+    queryFn: () =>
+      api.get<SupplierQuotation[]>(
+        `/inventory/quotations?branchId=${branchId}${ingredientId ? `&ingredientId=${ingredientId}` : ""}`,
+      ),
+    enabled: !!branchId,
+  });
+}
+
+export function useCreateQuotation(branchId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: SupplierQuotationDto) =>
+      api.post<SupplierQuotation>(`/inventory/quotations?branchId=${branchId}`, dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory", "quotations", branchId] }),
+  });
+}
+
+export function useUpdateQuotationStatus(branchId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: QuotationStatus }) =>
+      api.patch<SupplierQuotation>(`/inventory/quotations/${id}/status?branchId=${branchId}`, {
+        status,
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory", "quotations", branchId] }),
+  });
+}
+
+// --- Supplier invoices & payments -------------------------------------------------
+
+export function useSupplierInvoices(branchId: string | null, supplierId?: string) {
+  return useQuery({
+    queryKey: ["inventory", "supplier-invoices", branchId, supplierId],
+    queryFn: () =>
+      api.get<SupplierInvoice[]>(
+        `/inventory/supplier-invoices?branchId=${branchId}${supplierId ? `&supplierId=${supplierId}` : ""}`,
+      ),
+    enabled: !!branchId,
+  });
+}
+
+export function useCreateSupplierInvoice(branchId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: SupplierInvoiceDto) =>
+      api.post<SupplierInvoice>(`/inventory/supplier-invoices?branchId=${branchId}`, dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory", "supplier-invoices", branchId] }),
+  });
+}
+
+export function useRecordSupplierPayment(branchId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ invoiceId, dto }: { invoiceId: string; dto: SupplierPaymentDto }) =>
+      api.post(`/inventory/supplier-invoices/${invoiceId}/payments?branchId=${branchId}`, dto),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory", "supplier-invoices", branchId] }),
+  });
+}
+
+export function useSupplierPerformance(branchId: string | null, supplierId: string | null) {
+  return useQuery({
+    queryKey: ["inventory", "supplier-performance", branchId, supplierId],
+    queryFn: () =>
+      api.get<SupplierPerformance>(`/inventory/suppliers/${supplierId}/performance?branchId=${branchId}`),
+    enabled: !!branchId && !!supplierId,
   });
 }

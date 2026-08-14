@@ -71,6 +71,11 @@ model Branch {
   stockMovements  StockMovement[]
   wasteLogs       WasteLog[]
 
+  purchaseRequests   PurchaseRequest[]
+  supplierQuotations SupplierQuotation[]
+  supplierInvoices   SupplierInvoice[]
+  supplierPayments   SupplierPayment[]
+
   @@index([restaurantId])
   @@map("branches")
 }
@@ -160,6 +165,12 @@ model User {
   goodsReceiptsReceived GoodsReceipt[]  @relation("GoodsReceiptReceivedBy")
   stockMovementsCreated StockMovement[] @relation("StockMovementCreatedBy")
   wasteLogsCreated      WasteLog[]      @relation("WasteLogCreatedBy")
+
+  purchaseRequestsRequested PurchaseRequest[]   @relation("PurchaseRequestRequestedBy")
+  purchaseRequestsApproved  PurchaseRequest[]   @relation("PurchaseRequestApprovedBy")
+  supplierQuotationsCreated SupplierQuotation[] @relation("SupplierQuotationCreatedBy")
+  supplierInvoicesRecorded  SupplierInvoice[]   @relation("SupplierInvoiceRecordedBy")
+  supplierPaymentsRecorded  SupplierPayment[]   @relation("SupplierPaymentRecordedBy")
 
   @@unique([restaurantId, email])
   @@index([restaurantId])
@@ -351,6 +362,9 @@ model Ingredient {
   stockMovements     StockMovement[]
   wasteLogs          WasteLog[]
 
+  purchaseRequestItems   PurchaseRequestItem[]
+  supplierQuotationItems SupplierQuotationItem[]
+
   @@unique([branchId, name])
   @@index([branchId])
   @@map("ingredients")
@@ -392,6 +406,9 @@ model Supplier {
   purchaseOrders PurchaseOrder[]
   goodsReceipts  GoodsReceipt[]
 
+  quotations SupplierQuotation[]
+  invoices   SupplierInvoice[]
+
   @@index([branchId])
   @@map("suppliers")
 }
@@ -425,6 +442,7 @@ model PurchaseOrder {
 
   items         PurchaseOrderItem[]
   goodsReceipts GoodsReceipt[]
+  invoices      SupplierInvoice[]
 
   @@unique([branchId, poNumber])
   @@index([branchId, status])
@@ -466,7 +484,8 @@ model GoodsReceipt {
   receivedAt   DateTime @default(now())
   createdAt    DateTime @default(now())
 
-  items GoodsReceiptItem[]
+  items    GoodsReceiptItem[]
+  invoices SupplierInvoice[]
 
   @@unique([branchId, grnNumber])
   @@index([branchId])
@@ -493,6 +512,162 @@ model GoodsReceiptItem {
 
   @@index([goodsReceiptId])
   @@map("goods_receipt_items")
+}
+
+// ---------------------------------------------------------------------------
+// Procurement depth — purchase requests, supplier quotations, vendor invoices
+// ---------------------------------------------------------------------------
+
+enum PurchaseRequestStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CONVERTED
+}
+
+model PurchaseRequest {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  requestNumber String
+  status        PurchaseRequestStatus @default(DRAFT)
+  notes         String?
+
+  requestedById String
+  requestedBy   User    @relation("PurchaseRequestRequestedBy", fields: [requestedById], references: [id])
+  approvedById  String?
+  approvedBy    User?   @relation("PurchaseRequestApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items PurchaseRequestItem[]
+
+  @@unique([branchId, requestNumber])
+  @@index([branchId, status])
+  @@map("purchase_requests")
+}
+
+model PurchaseRequestItem {
+  id                String          @id @default(cuid())
+  purchaseRequestId String
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  ingredientId      String
+  ingredient        Ingredient      @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  quantityRequested Decimal @db.Decimal(12, 3)
+  notes             String?
+
+  @@index([purchaseRequestId])
+  @@map("purchase_request_items")
+}
+
+enum QuotationStatus {
+  DRAFT
+  RECEIVED
+  ACCEPTED
+  REJECTED
+}
+
+model SupplierQuotation {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  quotationNumber String
+  status          QuotationStatus @default(DRAFT)
+  validUntil      DateTime?
+  notes           String?
+
+  createdById String
+  createdBy   User     @relation("SupplierQuotationCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items SupplierQuotationItem[]
+
+  @@unique([branchId, quotationNumber])
+  @@index([branchId, supplierId])
+  @@map("supplier_quotations")
+}
+
+model SupplierQuotationItem {
+  id                  String            @id @default(cuid())
+  supplierQuotationId String
+  supplierQuotation   SupplierQuotation @relation(fields: [supplierQuotationId], references: [id], onDelete: Cascade)
+  ingredientId        String
+  ingredient          Ingredient        @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  quantityQuoted Decimal @db.Decimal(12, 3)
+  unitPrice      Decimal @db.Decimal(12, 4)
+
+  @@index([supplierQuotationId])
+  @@map("supplier_quotation_items")
+}
+
+enum SupplierInvoiceStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+model SupplierInvoice {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  goodsReceiptId  String?
+  goodsReceipt    GoodsReceipt?  @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+
+  invoiceNumber String
+  invoiceDate   DateTime
+  dueDate       DateTime?
+  totalAmount   Decimal                @db.Decimal(12, 2)
+  amountPaid    Decimal                @default(0) @db.Decimal(12, 2)
+  status        SupplierInvoiceStatus  @default(UNPAID)
+  notes         String?
+
+  recordedById String
+  recordedBy   User     @relation("SupplierInvoiceRecordedBy", fields: [recordedById], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  payments SupplierPayment[]
+
+  @@unique([branchId, invoiceNumber])
+  @@index([branchId, supplierId, status])
+  @@map("supplier_invoices")
+}
+
+model SupplierPayment {
+  id                String          @id @default(cuid())
+  branchId          String
+  branch            Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  supplierInvoiceId String
+  supplierInvoice   SupplierInvoice @relation(fields: [supplierInvoiceId], references: [id], onDelete: Cascade)
+
+  amount        Decimal       @db.Decimal(12, 2)
+  paymentMethod PaymentMethod
+  reference     String?
+  paidAt        DateTime      @default(now())
+
+  recordedById String
+  recordedBy   User     @relation("SupplierPaymentRecordedBy", fields: [recordedById], references: [id])
+  createdAt    DateTime @default(now())
+
+  @@index([branchId, supplierInvoiceId])
+  @@map("supplier_payments")
 }
 
 model StockBatch {

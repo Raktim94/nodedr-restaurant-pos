@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { paymentMethodSchema } from "./orders";
 
 export const ingredientUnitSchema = z.enum([
   "KG",
@@ -109,3 +110,79 @@ export const wasteLogSchema = z.object({
   notes: z.string().optional(),
 });
 export type WasteLogDto = z.infer<typeof wasteLogSchema>;
+
+// ---------------------------------------------------------------------------
+// Procurement depth — purchase requests, supplier quotations, vendor invoices
+// ---------------------------------------------------------------------------
+
+export const purchaseRequestStatusSchema = z.enum([
+  "DRAFT",
+  "PENDING_APPROVAL",
+  "APPROVED",
+  "REJECTED",
+  "CONVERTED",
+]);
+export type PurchaseRequestStatus = z.infer<typeof purchaseRequestStatusSchema>;
+
+export const purchaseRequestItemSchema = z.object({
+  ingredientId: z.string(),
+  quantityRequested: z.coerce.number().positive(),
+  notes: z.string().optional(),
+});
+export type PurchaseRequestItemDto = z.infer<typeof purchaseRequestItemSchema>;
+
+export const purchaseRequestSchema = z.object({
+  notes: z.string().optional(),
+  items: z.array(purchaseRequestItemSchema).min(1),
+});
+export type PurchaseRequestDto = z.infer<typeof purchaseRequestSchema>;
+
+export const quotationStatusSchema = z.enum([
+  "DRAFT",
+  "RECEIVED",
+  "ACCEPTED",
+  "REJECTED",
+]);
+export type QuotationStatus = z.infer<typeof quotationStatusSchema>;
+
+export const supplierQuotationItemSchema = z.object({
+  ingredientId: z.string(),
+  quantityQuoted: z.coerce.number().positive(),
+  unitPrice: z.coerce.number().nonnegative(),
+});
+export type SupplierQuotationItemDto = z.infer<typeof supplierQuotationItemSchema>;
+
+export const supplierQuotationSchema = z.object({
+  supplierId: z.string(),
+  validUntil: z.coerce.date().optional(),
+  notes: z.string().optional(),
+  items: z.array(supplierQuotationItemSchema).min(1),
+});
+export type SupplierQuotationDto = z.infer<typeof supplierQuotationSchema>;
+
+export const supplierInvoiceStatusSchema = z.enum([
+  "UNPAID",
+  "PARTIALLY_PAID",
+  "PAID",
+  "CANCELLED",
+]);
+export type SupplierInvoiceStatus = z.infer<typeof supplierInvoiceStatusSchema>;
+
+export const supplierInvoiceSchema = z.object({
+  supplierId: z.string(),
+  purchaseOrderId: z.string().optional(),
+  goodsReceiptId: z.string().optional(),
+  invoiceNumber: z.string().min(1),
+  invoiceDate: z.coerce.date(),
+  dueDate: z.coerce.date().optional(),
+  totalAmount: z.coerce.number().positive(),
+  notes: z.string().optional(),
+});
+export type SupplierInvoiceDto = z.infer<typeof supplierInvoiceSchema>;
+
+export const supplierPaymentSchema = z.object({
+  amount: z.coerce.number().positive(),
+  paymentMethod: paymentMethodSchema,
+  reference: z.string().optional(),
+});
+export type SupplierPaymentDto = z.infer<typeof supplierPaymentSchema>;

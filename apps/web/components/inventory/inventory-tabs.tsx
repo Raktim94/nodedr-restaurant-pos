@@ -8,6 +8,7 @@ const TABS = [
   { label: "Ingredients", href: "/inventory" },
   { label: "Suppliers", href: "/inventory/suppliers" },
   { label: "Purchase Orders", href: "/inventory/purchase-orders" },
+  { label: "Procurement", href: "/inventory/procurement" },
   { label: "Waste", href: "/inventory/waste" },
 ];
 

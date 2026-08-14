@@ -14,11 +14,17 @@ import {
   goodsReceiptSchema,
   ingredientSchema,
   purchaseOrderSchema,
+  purchaseRequestSchema,
   setRecipeSchema,
   stockAdjustmentSchema,
+  supplierInvoiceSchema,
+  supplierPaymentSchema,
+  supplierQuotationSchema,
   supplierSchema,
   wasteLogSchema,
   type PurchaseOrderStatus,
+  type PurchaseRequestStatus,
+  type QuotationStatus,
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
@@ -28,7 +34,10 @@ import { BranchAccessService } from '../../common/services/branch-access.service
 import { GoodsReceiptsService } from './goods-receipts.service';
 import { InventoryService } from './inventory.service';
 import { PurchaseOrdersService } from './purchase-orders.service';
+import { PurchaseRequestsService } from './purchase-requests.service';
 import { StockService } from './stock.service';
+import { SupplierInvoicesService } from './supplier-invoices.service';
+import { SupplierQuotationsService } from './supplier-quotations.service';
 import { WasteService } from './waste.service';
 
 @ApiTags('inventory')
@@ -40,6 +49,9 @@ export class InventoryController {
     private readonly goodsReceiptsService: GoodsReceiptsService,
     private readonly wasteService: WasteService,
     private readonly stockService: StockService,
+    private readonly purchaseRequestsService: PurchaseRequestsService,
+    private readonly supplierQuotationsService: SupplierQuotationsService,
+    private readonly supplierInvoicesService: SupplierInvoicesService,
     private readonly branchAccess: BranchAccessService,
   ) {}
 
@@ -346,5 +358,215 @@ export class InventoryController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.wasteService.logWaste(branchId, user.id, body as never);
+  }
+
+  // --- Purchase requests ----------------------------------------------------------
+
+  @Auth('inventory.manage')
+  @Get('purchase-requests')
+  async listPurchaseRequests(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query('status') status?: PurchaseRequestStatus,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.purchaseRequestsService.listPurchaseRequests(branchId, status);
+  }
+
+  @Auth('inventory.manage')
+  @Get('purchase-requests/:id')
+  async getPurchaseRequest(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.purchaseRequestsService.getPurchaseRequest(branchId, id);
+  }
+
+  @Auth('inventory.manage')
+  @Post('purchase-requests')
+  @UsePipes(new ZodValidationPipe(purchaseRequestSchema))
+  async createPurchaseRequest(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.purchaseRequestsService.createPurchaseRequest(
+      branchId,
+      user.id,
+      body as never,
+    );
+  }
+
+  @Auth('inventory.manage')
+  @Patch('purchase-requests/:id/status')
+  async updatePurchaseRequestStatus(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: { status: PurchaseRequestStatus },
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.purchaseRequestsService.updateStatus(
+      branchId,
+      id,
+      user.id,
+      body.status,
+    );
+  }
+
+  // --- Supplier quotations ---------------------------------------------------------
+
+  @Auth('inventory.manage')
+  @Get('quotations')
+  async listQuotations(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query('ingredientId') ingredientId?: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierQuotationsService.listQuotations(
+      branchId,
+      ingredientId,
+    );
+  }
+
+  @Auth('inventory.manage')
+  @Get('quotations/compare')
+  async compareQuotations(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query('ingredientId') ingredientId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierQuotationsService.compareForIngredient(
+      branchId,
+      ingredientId,
+    );
+  }
+
+  @Auth('inventory.manage')
+  @Get('quotations/:id')
+  async getQuotation(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierQuotationsService.getQuotation(branchId, id);
+  }
+
+  @Auth('inventory.manage')
+  @Post('quotations')
+  @UsePipes(new ZodValidationPipe(supplierQuotationSchema))
+  async createQuotation(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierQuotationsService.createQuotation(
+      branchId,
+      user.id,
+      body as never,
+    );
+  }
+
+  @Auth('inventory.manage')
+  @Patch('quotations/:id/status')
+  async updateQuotationStatus(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: { status: QuotationStatus },
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierQuotationsService.updateStatus(
+      branchId,
+      id,
+      body.status,
+    );
+  }
+
+  // --- Supplier invoices & payments -------------------------------------------------
+
+  @Auth('inventory.manage')
+  @Get('supplier-invoices')
+  async listSupplierInvoices(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query('supplierId') supplierId?: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierInvoicesService.listInvoices(branchId, supplierId);
+  }
+
+  @Auth('inventory.manage')
+  @Get('supplier-invoices/:id')
+  async getSupplierInvoice(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierInvoicesService.getInvoice(branchId, id);
+  }
+
+  @Auth('inventory.manage')
+  @Post('supplier-invoices')
+  @UsePipes(new ZodValidationPipe(supplierInvoiceSchema))
+  async createSupplierInvoice(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierInvoicesService.createInvoice(
+      branchId,
+      user.id,
+      body as never,
+    );
+  }
+
+  @Auth('inventory.manage')
+  @Post('supplier-invoices/:id/payments')
+  @UsePipes(new ZodValidationPipe(supplierPaymentSchema))
+  async recordSupplierPayment(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierInvoicesService.recordPayment(
+      branchId,
+      id,
+      user.id,
+      body as never,
+    );
+  }
+
+  @Auth('inventory.manage')
+  @Patch('supplier-invoices/:id/cancel')
+  async cancelSupplierInvoice(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierInvoicesService.cancelInvoice(branchId, id);
+  }
+
+  @Auth('inventory.manage')
+  @Get('suppliers/:id/performance')
+  async getSupplierPerformance(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.supplierInvoicesService.getSupplierPerformance(branchId, id);
   }
 }
