@@ -6,7 +6,13 @@ RUN corepack enable
 WORKDIR /repo
 
 # --- deps ---
+# The workspace lockfile includes apps/backend's `usb` dependency (direct-USB
+# ESC/POS printing, see apps/backend/src/modules/orders/escpos-usb.ts) even
+# though this app never imports it — `pnpm install --frozen-lockfile` still
+# builds every workspace member's native addons. Same toolchain apps/backend/
+# Dockerfile needs, for the same reason (see that file's comment).
 FROM base AS deps
+RUN apk add --no-cache python3 make g++ linux-headers eudev-dev libusb-dev pkgconfig
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/backend/package.json apps/backend/package.json
 COPY apps/web/package.json apps/web/package.json

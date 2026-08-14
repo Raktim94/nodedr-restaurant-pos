@@ -18,6 +18,7 @@ import { CustomerPicker } from "@/components/pos/customer-picker";
 import type { Customer } from "@/hooks/use-customers";
 import { lookupGiftCard } from "@/hooks/use-gift-cards";
 import { useCancelOrder, useCheckoutOrder, type CreatedOrder } from "@/hooks/use-orders";
+import { usePrintOrderUsb } from "@/hooks/use-print";
 import { useSettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
@@ -48,6 +49,7 @@ export function CheckoutPanel({
   const [customer, setCustomer] = useState<Customer | null>(initialCustomer);
   const checkout = useCheckoutOrder(branchId);
   const cancelOrder = useCancelOrder(branchId);
+  const printUsb = usePrintOrderUsb(branchId);
   const [completed, setCompleted] = useState<CreatedOrder | null>(null);
   const { data: settings } = useSettings(branchId);
   const loyaltyPointValue = Number(settings?.restaurant.loyaltyPointValue ?? 1);
@@ -118,12 +120,25 @@ export function CheckoutPanel({
             {completed.loyaltyPointsRedeemed} points redeemed
           </p>
         )}
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           <Button
             variant="outline"
             onClick={() => branchId && openReceiptPrint(completed.id, branchId)}
           >
             Print receipt
+          </Button>
+          <Button
+            variant="outline"
+            disabled={printUsb.isPending}
+            onClick={() =>
+              printUsb.mutate(completed.id, {
+                onSuccess: () => toast.success("Sent to the USB printer"),
+                onError: (err) =>
+                  toast.error(err instanceof ApiError ? err.message : "Could not print to USB printer"),
+              })
+            }
+          >
+            {printUsb.isPending ? "Printing…" : "Print via USB"}
           </Button>
           <Button onClick={onDone}>New order</Button>
         </div>

@@ -25,7 +25,11 @@ export class PrismaExceptionFilter implements ExceptionFilter {
     const body = httpException.getResponse();
     response
       .status(httpException.getStatus())
-      .json(typeof body === 'string' ? { statusCode: httpException.getStatus(), message: body } : body);
+      .json(
+        typeof body === 'string'
+          ? { statusCode: httpException.getStatus(), message: body }
+          : body,
+      );
   }
 
   private toHttpException(exception: unknown): HttpException {
@@ -42,13 +46,17 @@ export class PrismaExceptionFilter implements ExceptionFilter {
             'This action references something that does not exist or was already removed.',
           );
         default:
-          return new InternalServerErrorException('Something went wrong. Please try again.');
+          return new InternalServerErrorException(
+            'Something went wrong. Please try again.',
+          );
       }
     }
     return new BadRequestException('The request could not be processed.');
   }
 
-  private uniqueConstraintMessage(exception: Prisma.PrismaClientKnownRequestError): string {
+  private uniqueConstraintMessage(
+    exception: Prisma.PrismaClientKnownRequestError,
+  ): string {
     const target = (exception.meta?.target as string[] | undefined) ?? [];
 
     if (target.includes('number') && target.includes('floorId')) {

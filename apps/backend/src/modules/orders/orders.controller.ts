@@ -6,6 +6,7 @@ import {
   Post,
   Query,
   Res,
+  ServiceUnavailableException,
   UsePipes,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
@@ -22,8 +23,57 @@ import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
+import {
+  buildReceiptEscPos,
+  buildTestSlip,
+  type EscposReceiptOrder,
+} from './escpos-receipt';
+import {
+  PrinterNotFoundError,
+  findPrinterDescriptor,
+  probeCharDevices,
+  sendRaw,
+} from './escpos-usb';
 import { OrdersService } from './orders.service';
 import { buildReceiptHtml } from './receipt.html';
+
+type ReceiptData = Awaited<ReturnType<OrdersService['getReceiptData']>>;
+
+function toEscposOrder(order: ReceiptData): EscposReceiptOrder {
+  return {
+    orderNumber: order.orderNumber,
+    type: order.type,
+    createdAt: order.createdAt,
+    table: order.table
+      ? { label: order.table.name ?? `#${order.table.number}` }
+      : null,
+    customer: order.customer
+      ? { name: order.customer.name ?? 'Guest', phone: order.customer.phone }
+      : null,
+    subtotal: Number(order.subtotal),
+    discountAmount: Number(order.discountAmount),
+    taxAmount: Number(order.taxAmount),
+    tipAmount: Number(order.tipAmount),
+    loyaltyPointsRedeemed: order.loyaltyPointsRedeemed,
+    loyaltyDiscountAmount: Number(order.loyaltyDiscountAmount),
+    totalAmount: Number(order.totalAmount),
+    items: order.items.map((item) => ({
+      nameSnapshot: item.nameSnapshot,
+      quantity: item.quantity,
+      unitPriceSnapshot: Number(item.unitPriceSnapshot),
+      lineTotal: Number(item.lineTotal),
+      taxRateSnapshot: Number(item.taxRateSnapshot),
+      modifiers: item.modifiers.map((m) => ({
+        nameSnapshot: m.nameSnapshot,
+        priceAdjSnapshot: Number(m.priceAdjSnapshot),
+      })),
+    })),
+    payments: order.payments.map((p) => ({
+      method: p.method,
+      amount: Number(p.amount),
+    })),
+  };
+}
 
 @ApiTags('orders')
 @Controller('v1/orders')
@@ -124,44 +174,81 @@ export class OrdersController {
         phone: order.branch.phone,
         gstNumber: order.branch.gstNumber,
       },
-      order: {
-        orderNumber: order.orderNumber,
-        type: order.type,
-        createdAt: order.createdAt,
-        table: order.table
-          ? { label: order.table.name ?? `#${order.table.number}` }
-          : null,
-        customer: order.customer
-          ? {
-              name: order.customer.name ?? 'Guest',
-              phone: order.customer.phone,
-            }
-          : null,
-        subtotal: Number(order.subtotal),
-        discountAmount: Number(order.discountAmount),
-        taxAmount: Number(order.taxAmount),
-        tipAmount: Number(order.tipAmount),
-        loyaltyPointsRedeemed: order.loyaltyPointsRedeemed,
-        loyaltyDiscountAmount: Number(order.loyaltyDiscountAmount),
-        totalAmount: Number(order.totalAmount),
-        items: order.items.map((item) => ({
-          nameSnapshot: item.nameSnapshot,
-          quantity: item.quantity,
-          unitPriceSnapshot: Number(item.unitPriceSnapshot),
-          lineTotal: Number(item.lineTotal),
-          taxRateSnapshot: Number(item.taxRateSnapshot),
-          modifiers: item.modifiers.map((m) => ({
-            nameSnapshot: m.nameSnapshot,
-            priceAdjSnapshot: Number(m.priceAdjSnapshot),
-          })),
-        })),
-        payments: order.payments.map((p) => ({
-          method: p.method,
-          amount: Number(p.amount),
-        })),
-      },
+      order: toEscposOrder(order),
     });
     res.type('html').send(html);
+  }
+
+  // --- Direct-USB thermal printing (ESC/POS) ---------------------------------
+  // Ported from nodedr-pos, which has real hardware to verify against; this
+  // app's transport/byte-building code is identical in structure (see
+  // escpos-usb.ts/escpos-receipt.ts file comments) but has only been
+  // structurally verified here (module loads, correct 503 with no printer
+  // attached) — no physical thermal printer in this dev environment.
+
+  @Auth('bills.print')
+  @Get('print/diagnostics')
+  async printDiagnostics() {
+    const lpDevices = await probeCharDevices();
+    const libusbPrinter = findPrinterDescriptor();
+    const canPrint = lpDevices.length > 0 || libusbPrinter !== null;
+    return {
+      lpDevices,
+      libusbPrinter,
+      canPrint,
+      notes: canPrint
+        ? []
+        : [
+            'No printer detected. On the till, check `lsusb` lists it and `ls -l /dev/usb/lp0` exists; the backend container needs the USB passthrough from docker-compose.yml (Linux host only).',
+          ],
+    };
+  }
+
+  @Auth('bills.print')
+  @Post('print/test')
+  async printTest() {
+    try {
+      await sendRaw(buildTestSlip());
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof PrinterNotFoundError) {
+        throw new ServiceUnavailableException(err.message);
+      }
+      throw err;
+    }
+  }
+
+  @Auth('bills.print')
+  @Post(':id/print/usb')
+  async printUsb(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Query('width') width?: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const order = await this.ordersService.getReceiptData(branchId, id);
+    const buffer = buildReceiptEscPos({
+      restaurantName: order.branch.restaurant.name,
+      currency: order.branch.restaurant.currency,
+      branch: {
+        name: order.branch.name,
+        address: order.branch.address,
+        phone: order.branch.phone,
+        gstNumber: order.branch.gstNumber,
+      },
+      order: toEscposOrder(order),
+      width: width === '58' ? 32 : 42,
+    });
+    try {
+      await sendRaw(buffer);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof PrinterNotFoundError) {
+        throw new ServiceUnavailableException(err.message);
+      }
+      throw err;
+    }
   }
 
   @Auth('refunds.process')

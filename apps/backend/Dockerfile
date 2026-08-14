@@ -7,8 +7,17 @@ RUN corepack enable
 WORKDIR /repo
 
 # --- deps: install with full workspace visible so pnpm can link @nodedr-restaurant/types ---
+# python3/make/g++/linux-headers/eudev-dev/libusb-dev/pkgconfig are for the
+# `usb` package's native addon (direct-USB ESC/POS printing, see
+# apps/backend/src/modules/orders/escpos-usb.ts). It ships a prebuilt
+# linux-x64 musl binary, but empirically its install script doesn't reliably
+# skip straight to that prebuild on Alpine — with no compiler present it
+# falls through to `node-gyp rebuild` and fails outright (verified building
+# this exact package in nodedr-pos, ported here unchanged). None of this is
+# needed at runtime — see the small eudev-libs/libstdc++ runtime deps below
+# instead of this whole toolchain.
 FROM base AS deps
-RUN apk add --no-cache openssl
+RUN apk add --no-cache openssl python3 make g++ linux-headers eudev-dev libusb-dev pkgconfig
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/backend/package.json apps/backend/package.json
 COPY apps/web/package.json apps/web/package.json
@@ -31,7 +40,13 @@ RUN pnpm --filter @nodedr-restaurant/backend build
 # (npx then can't find the local `prisma` binary and falls back to fetching
 # an arbitrary "latest" version from the registry at container start).
 FROM node:22-alpine AS runtime
-RUN apk add --no-cache openssl
+# eudev-libs (libudev.so, used by `usb`'s libusb backend for device
+# enumeration) and libstdc++ (the addon is a C++ build) are the only
+# runtime-side additions for direct-USB printing — libusb itself is
+# statically linked into the addon, so no separate libusb runtime package
+# is needed (same verification nodedr-pos already did for this exact
+# package).
+RUN apk add --no-cache openssl eudev-libs libstdc++
 WORKDIR /repo
 ENV NODE_ENV=production
 

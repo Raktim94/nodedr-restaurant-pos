@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { PrinterDiagnosticsCard } from "@/components/settings/printer-diagnostics-card";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -44,6 +45,8 @@ export default function SettingsPage() {
           branchId={branchId}
         />
       )}
+
+      <PrinterDiagnosticsCard />
     </div>
   );
 }

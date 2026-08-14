@@ -45,6 +45,30 @@ services:
       - "4000"
     volumes:
       - uploads_data:/data/uploads
+      # Direct-USB thermal printing (see apps/backend/src/modules/orders/
+      # escpos-usb.ts, ported from nodedr-pos's real hardware-verified
+      # transport) needs the backend to see the host's USB device nodes.
+      # Bind-mounting the whole /dev/bus/usb tree (not `devices:` with a
+      # literal path, which only handles nodes that exist at container
+      # start — USB bus/device numbers are dynamic and can renumber on
+      # reconnect) keeps this working across printer unplug/replug without
+      # a restart.
+      - /dev/bus/usb:/dev/bus/usb
+    # Grants read/write/mknod WITHOUT full `privileged: true` on the two
+    # device majors the printer needs, so the backend still can't see or
+    # touch anything else on the host:
+    #   189 — usbfs (/dev/bus/usb/BBB/DDD), used by the libusb transport.
+    #   180 — usblp, the kernel printer driver behind /dev/usb/lp0 — the
+    #         PRIMARY transport (see escpos-usb.ts): the same node a
+    #         working `echo > /dev/usb/lp0` writes to, and the one generic
+    #         vendor-class 80mm printers only expose through the kernel.
+    #         The 'm' (mknod) grant lets the backend create the lp node
+    #         inside the container on demand and write straight through to
+    #         the host kernel's already-bound printer — no host bind mount,
+    #         so nothing fails at `compose up` when no printer is attached.
+    device_cgroup_rules:
+      - 'c 189:* rmw'
+      - 'c 180:* rmw'
 
   web:
     build:
