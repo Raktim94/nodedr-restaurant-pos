@@ -11,17 +11,18 @@ ground phase-by-phase for engineering; that one is organized by product
 category for anyone (including the website) that wants "what does OrderRestro
 actually do today."
 
-## Current phase: 4 complete (incl. order deduction) → procurement depth + Phase 5 next
+## Current phase: 4 fully complete (incl. procurement depth) → Phase 5 next
 
 Started 2026-08-03. Phases 0-3 finished and verified the same day. Phase 4's
 core (ingredients, recipe costing, suppliers, purchase orders, GRN,
-batch/lot, waste) landed 2026-08-04, and automatic ingredient deduction on
-order checkout (the one Phase 4 item deferred that day) landed later the
-same day — both verified numerically end-to-end, not just built — see
-Session log. Procurement depth (vendor quotations, purchase requests,
-vendor invoices/payment tracking, supplier performance) and a few
-Phase-4-adjacent items are deliberately deferred — see the
-checkboxes below and "Explicitly deferred" for what and why.
+batch/lot, waste) landed 2026-08-04, automatic ingredient deduction on order
+checkout landed later the same day, and procurement depth (vendor
+quotations with price comparison, purchase requests, vendor invoices with
+payment tracking, supplier performance) landed 2026-08-14 — all verified
+numerically/via real Docker end-to-end, not just built — see Session log.
+Direct-USB ESC/POS thermal printing (a Phase 8 hardware item) was also
+ported from nodedr-pos the same day. A few small Phase-4-adjacent items
+remain deliberately deferred — see "Explicitly deferred" for what and why.
 
 ---
 
@@ -238,11 +239,10 @@ containers, not just "it compiles."
 - [x] Low-stock alerts: `GET /inventory/ingredients/low-stock` + a "Low
       stock" badge on the Ingredients page. No push/email notification yet
       (Phase 7 territory, same as expiry alerts).
-- [ ] Procurement: vendor quotations, purchase requests, vendor invoices,
-      payment tracking, supplier performance — **deferred**, not started
-      this session (the user's ask was scoped to inventory & store
-      management specifically; procurement-depth is its own real chunk of
-      work, tracked here rather than half-built).
+- [x] Procurement: vendor quotations, purchase requests, vendor invoices,
+      payment tracking, supplier performance — landed 2026-08-14, see
+      Session log. Purchase returns and automatic reorder suggestions
+      remain out of scope for this pass.
 
 ### Phase 5 — Delivery + Online/QR ordering
 
@@ -279,9 +279,10 @@ containers, not just "it compiles."
 
 ### Phase 8 — Hardening, integrations, packaging
 
-- [ ] Hardware: thermal/kitchen/label printers, cash drawer, barcode/QR
-      scanner, customer display, weighing scale, KDS screens — reuse
-      `nodedr-pos`'s USB/ESC-POS transport lessons directly
+- [x] Direct-USB ESC/POS thermal receipt printing — ported from
+      `nodedr-pos`'s hardware-verified transport 2026-08-14, see Session
+      log. Kitchen/label printers, cash drawer, barcode/QR scanner,
+      customer display, weighing scale, and KDS screens remain planned.
 - [ ] Payment gateway, SMS, email, WhatsApp, accounting-software,
       food-delivery-platform integrations
 - [ ] 2FA, full audit log, backup/restore utilities
@@ -322,6 +323,72 @@ reach it (tax code masters, delivery-platform rate cards, etc.).
   something to bolt on ad hoc here.
 
 ## Session log
+
+- **2026-08-14: Procurement depth + direct-USB ESC/POS printing.** Two
+  independent features, both shipped and pushed the same day.
+
+  **Procurement depth** (the Phase 4 item deferred on 2026-08-04): new
+  Prisma models `PurchaseRequest`/`PurchaseRequestItem`,
+  `SupplierQuotation`/`SupplierQuotationItem`, `SupplierInvoice`/
+  `SupplierPayment` (migration `add_procurement_depth`, additive only —
+  no existing table touched). Purchase requests get a DRAFT→
+  PENDING_APPROVAL→APPROVED/REJECTED status machine. Quotations get a
+  `GET /quotations/compare?ingredientId=` endpoint sorted cheapest-first —
+  the actual point of collecting more than one. Vendor invoices carry
+  payments with the same transactional read-modify-write Decimal-balance
+  discipline this project uses everywhere else (never a DB `increment`),
+  an overpayment guard, and a status that auto-derives from `amountPaid`
+  rather than being set by hand. Supplier performance (on-time delivery
+  rate, avg lead time, total spend) is computed on demand from existing
+  PO/GRN/invoice data, not a separately maintained metric that could
+  drift. New "Procurement" tab in Inventory (three sections: requests,
+  quotations, invoices) using the same list+dialog pattern as the
+  existing Purchase Orders page. **Verified with real curl scenarios
+  against a running Docker stack** (not just unit-level): partial
+  payment → `PARTIALLY_PAID`; an overpay attempt correctly rejected;
+  paying the exact remaining balance → `PAID`; cancel correctly blocked
+  once a payment exists; illegal status transitions on both purchase
+  requests and quotations correctly rejected. Frontend verified visually
+  via Playwright against seeded data.
+
+  **Direct-USB ESC/POS printing**, ported from `nodedr-pos`'s
+  hardware-verified transport (`escposUsb.js`) — same two-transport
+  structure (kernel `usblp` character device primary, libusb raw bulk
+  fallback), same hardware lessons encoded (vendor-class printers only
+  reachable via the kernel device; `usblp` claims the interface so
+  libusb needs a kernel-driver detach first). Receipt byte-building
+  (`escpos-receipt.ts`) adapted to this app's Order/OrderItem shape,
+  reusing the same GST-inclusive backed-out tax math as the existing HTML
+  receipt (`receipt.html.ts`) — both now share one `toEscposOrder()`
+  mapping in `orders.controller.ts` instead of duplicating the
+  Prisma-result-to-receipt-shape logic. New "Print via USB" button next
+  to the existing "Print receipt" button on the POS checkout-complete
+  screen, plus a Settings → USB thermal printer diagnostics card (device
+  detection, send test slip) so staff can verify hardware without ringing
+  up a sale. `usb@2.18.0` pinned to the exact version `nodedr-pos` already
+  proved working (not npm's newer 3.x major) — per this project's own
+  "don't assume latest is compatible" lesson. **Docker toolchain gotcha,
+  caught by an actual `docker compose up --build` failure, not assumed:**
+  `usb`'s native addon needs `python3 make g++ linux-headers eudev-dev
+  libusb-dev pkgconfig` at install time on Alpine even though it ships a
+  prebuilt binary — and BOTH `apps/backend/Dockerfile` and
+  `apps/web/Dockerfile` needed the toolchain, not just the backend, since
+  pnpm's `install --frozen-lockfile` builds every workspace member's
+  native addons regardless of which app actually imports the package.
+  `device_cgroup_rules` for majors 180 (`usblp`) and 189 (`usbfs`) added
+  to `docker-compose.yml`, same least-privilege grant as `nodedr-pos`
+  (not full `privileged: true`). **No physical thermal printer in this
+  dev environment** — verified structurally instead, the same bar
+  `nodedr-pos` itself used before its first real-hardware test: the
+  native addon compiling and the backend starting with the module
+  loaded; `print/diagnostics`, `print/test`, and `:id/print/usb` all
+  returning a clean 503 with an accurate "no printer found" message
+  rather than crashing; the ESC/POS byte buffer visually confirmed
+  correctly formatted (columns aligned at 42 cols, CGST/SGST split
+  summing exactly to the backed-out tax, grand total correct) via a
+  direct buffer dump; and a full Playwright click-through (add item →
+  checkout → Print via USB) confirming that exact 503 message surfaces
+  as a toast in the real UI, not a generic error.
 
 - **2026-08-04 (later same day)**: Automatic ingredient deduction on order
   checkout — the one Phase 4 item deferred earlier that day, picked up as

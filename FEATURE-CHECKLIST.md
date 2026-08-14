@@ -204,15 +204,18 @@ partially built, the note says what's missing.
 |---|---|---|
 | Supplier management | Shipped | |
 | Purchase orders | Shipped | Draft→sent→partially received→received/cancelled |
-| Purchase invoices | Planned | Deferred (procurement depth) |
+| Purchase invoices | Shipped | Vendor invoices, linkable to a PO/GRN, own status lifecycle (2026-08-14) |
 | Goods received (GRN) | Shipped | Linked or unlinked to PO |
 | Purchase returns | Planned | |
-| Supplier payments/credits | Planned | Deferred |
-| Supplier price history | Planned | |
+| Supplier payments/credits | Shipped | Partial payments, overpayment guard, auto UNPAID→PARTIALLY_PAID→PAID (2026-08-14) |
+| Supplier price history | Partial | Quotation history per supplier exists; no price-trend report yet |
 | Purchase history | Shipped | Via PO records |
 | Reorder levels | Shipped | Per-ingredient |
 | Automatic reorder suggestions | Planned | |
-| Vendor quotations, purchase requests, price variance, supplier comparison/performance | Planned | Explicitly deferred "procurement depth" in ROADMAP Phase 4 |
+| Vendor quotations | Shipped | Multi-supplier quotes + a cheapest-first comparison endpoint (2026-08-14) |
+| Purchase requests | Shipped | Staff-raised, DRAFT→PENDING_APPROVAL→APPROVED/REJECTED (2026-08-14) |
+| Supplier performance | Shipped | On-time delivery rate, avg lead time, total spend — computed on demand (2026-08-14) |
+| Price variance | Planned | |
 
 ## 🚚 Delivery Management
 
@@ -326,7 +329,7 @@ partially built, the note says what's missing.
 | Feature | Status | Note |
 |---|---|---|
 | Receipt printer (browser print) | Shipped | HTML receipt via print dialog |
-| Direct USB/ESC-POS printer | Planned | nodedr-pos has this transport built; not yet ported here (Phase 8) |
+| Direct USB/ESC-POS printer | Shipped | Ported from nodedr-pos (kernel usblp + libusb fallback), diagnostics + test-print in Settings (2026-08-14) |
 | Kitchen printers, label printers, weighing scales, payment terminals | Planned | |
 | Barcode scanners | Planned | |
 | Customer displays, kiosks, tablets as POS terminals | Planned | |
@@ -417,22 +420,23 @@ partially built, the note says what's missing.
 ## Summary
 
 Rough counts across all 29 categories (line-item granularity, not
-category granularity): **~95 Shipped, ~30 Partial, ~180 Planned** out of
-~305 line items in the pasted taxonomy.
+category granularity), updated 2026-08-14 after procurement depth and
+direct-USB printing shipped: **~100 Shipped, ~29 Partial, ~176 Planned**
+out of ~305 line items in the pasted taxonomy.
 
 **Closest to complete (of the 10 core modules):**
 1. **Tables / Floor Plan** — full status lifecycle, reservations, waitlist, QR tokens, shape-aware icons; missing mainly the drag-to-reposition designer UI and table-level analytics (turnover, revenue/seat).
-2. **Kitchen / KDS** — status columns, timers, priority, stations, performance widget all real; missing sound alerts, per-station column view, expediter screen.
-3. **POS / Billing** — correct India tax model, discounts, tips, refunds, combos, merge; missing split payment, item-level discounts/notes, hold/draft orders, digital/WhatsApp receipts.
-4. **Inventory** — genuinely deep (weighted-average costing, FIFO waste, batch/expiry, auto-deduction); missing yield/wastage-% reporting and procurement depth (quotations, vendor invoices).
-5. **Menu / Recipes** — solid (modifiers, combos, allergens, recipe costing); missing time-based/seasonal menu sets and per-branch menus.
+2. **Purchasing** — core PO/GRN/supplier flow plus the full procurement-depth layer (quotations with price comparison, purchase requests, vendor invoices with payment tracking, supplier performance) shipped 2026-08-14; missing purchase returns, price-variance, and automatic reorder suggestions.
+3. **Kitchen / KDS** — status columns, timers, priority, stations, performance widget all real; missing sound alerts, per-station column view, expediter screen.
+4. **POS / Billing** — correct India tax model, discounts, tips, refunds, combos, merge, and now direct-USB thermal printing alongside browser print; missing split payment, item-level discounts/notes, hold/draft orders, digital/WhatsApp receipts.
+5. **Inventory** — genuinely deep (weighted-average costing, FIFO waste, batch/expiry, auto-deduction); missing yield/wastage-% reporting.
 
 **Furthest from complete:**
 1. **Kiosk / QR Ordering** — QR *viewing* exists, but no ordering, payment, or self-service kiosk mode at all.
 2. **Analytics** — only a summary + trend widget exists; the entire reports catalog, exports, and KPI breakdowns are unbuilt.
-3. **Purchasing** — core PO/GRN/supplier flow works, but the "procurement depth" half (quotations, invoices, payment tracking, supplier performance) is explicitly deferred.
-4. **Payments** — methods are recorded, but no live payment-gateway/UPI-QR collection, no split payment.
-5. **Customers/Loyalty** — a real points ledger exists, but no tiers, campaigns, segmentation, or coupons.
+3. **Payments** — methods are recorded, but no live payment-gateway/UPI-QR collection, no split payment.
+4. **Customers/Loyalty** — a real points ledger exists, but no tiers, campaigns, segmentation, or coupons.
+5. **Menu / Recipes** — solid (modifiers, combos, allergens, recipe costing); missing time-based/seasonal menu sets and per-branch menus.
 
 Entirely unbuilt as standalone categories: **Delivery, Cash Drawer
 Management, Marketing, Accounting, AI Features, Self-Service Kiosk.** All
