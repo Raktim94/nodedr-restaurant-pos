@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -12,6 +13,7 @@ import type {
   RefundDto,
 } from '@nodedr-restaurant/types';
 import { AuditService } from '../../audit/audit.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -20,12 +22,15 @@ import { computeOrderTotals, priceLine, round2 } from './pricing';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     private readonly giftCards: GiftCardsService,
     private readonly inventory: InventoryService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async listOpen(branchId: string, tableId?: string) {
@@ -169,7 +174,32 @@ export class OrdersService {
     });
 
     this.realtime.emitToBranch(branchId, 'order.created', { id: order.id });
-    return this.getOrder(branchId, order.id);
+
+    const full = await this.getOrder(branchId, order.id);
+
+    // "New order" is targeted by permission, not a hardcoded role — any
+    // custom role holding kds.manage (the same key that gates the KDS
+    // screens themselves, see packages/types/src/permissions.ts) gets it,
+    // so a renamed/custom kitchen role never silently stops receiving
+    // orders. Best-effort: a notification failure must never fail order
+    // creation, which has already committed by this point — log and move on.
+    try {
+      await this.notifications.notifyByPermission(branchId, 'kds.manage', {
+        type: 'order.new',
+        title: 'New order',
+        body: full.table
+          ? `Order ${full.orderNumber} — Table ${full.table.number}`
+          : `Order ${full.orderNumber} (${full.type})`,
+        entity: 'Order',
+        entityId: full.id,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to send order.new notification for order ${full.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return full;
   }
 
   async addItems(branchId: string, orderId: string, items: CartItemDto[]) {
@@ -810,6 +840,15 @@ export class OrdersService {
   async updateKotStatus(branchId: string, kotId: string, status: string) {
     const kot = await this.prisma.kot.findFirst({
       where: { id: kotId, order: { branchId } },
+      include: {
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            table: { select: { assignedWaiterId: true, number: true } },
+          },
+        },
+      },
     });
     if (!kot) throw new NotFoundException('KOT not found');
 
@@ -831,6 +870,30 @@ export class OrdersService {
     });
 
     this.realtime.emitToBranch(branchId, 'kot.updated', updated);
+
+    // Waiter assignment lives on Table (assignedWaiterId), not Order — a
+    // KOT's order carries a table only for dine-in; takeaway/delivery orders
+    // have no table and therefore no assigned waiter to notify, which is
+    // exactly the "skip silently if not set" case.
+    const assignedWaiterId = kot.order.table?.assignedWaiterId;
+    if (status === 'READY' && assignedWaiterId) {
+      try {
+        await this.notifications.notifyUser(assignedWaiterId, branchId, {
+          type: 'order.ready',
+          title: 'Order ready',
+          body: kot.order.table
+            ? `Order ${kot.order.orderNumber} — Table ${kot.order.table.number} is ready to serve`
+            : `Order ${kot.order.orderNumber} is ready to serve`,
+          entity: 'Order',
+          entityId: kot.order.id,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Failed to send order.ready notification for order ${kot.order.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     return updated;
   }
 

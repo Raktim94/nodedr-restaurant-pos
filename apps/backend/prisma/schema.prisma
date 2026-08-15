@@ -17,18 +17,18 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Restaurant {
-  id        String   @id @default(cuid())
+  id        String  @id @default(cuid())
   name      String
   legalName String?
-  currency  String   @default("INR")
-  timezone  String   @default("Asia/Kolkata")
+  currency  String  @default("INR")
+  timezone  String  @default("Asia/Kolkata")
 
   // Loyalty program config — previously hardcoded constants in
   // OrdersService, now per-restaurant and settings-editable. Point value
   // is the currency amount 1 redeemed point is worth; earn rate is how
   // many currency units of net spend earn 1 point (floor division).
-  loyaltyPointValue     Decimal @default(1) @db.Decimal(6, 2)
-  loyaltyEarnPerCurrency Int    @default(100)
+  loyaltyPointValue      Decimal @default(1) @db.Decimal(6, 2)
+  loyaltyEarnPerCurrency Int     @default(100)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -76,6 +76,7 @@ model Branch {
   supplierQuotations SupplierQuotation[]
   supplierInvoices   SupplierInvoice[]
   supplierPayments   SupplierPayment[]
+  notifications      Notification[]
 
   @@index([restaurantId])
   @@map("branches")
@@ -109,8 +110,8 @@ model Role {
 
   name      String
   label     String
-  isSystem  Boolean       @default(true) // seeded default role vs. custom role
-  createdAt DateTime      @default(now())
+  isSystem  Boolean  @default(true) // seeded default role vs. custom role
+  createdAt DateTime @default(now())
 
   permissions RolePermission[]
   users       User[]
@@ -149,10 +150,11 @@ model User {
   updatedAt DateTime @updatedAt
 
   branches      UserBranch[]
-  waiterTables  Table[]      @relation("TableWaiter")
-  ordersCreated Order[]      @relation("OrderCreatedBy")
+  waiterTables  Table[]        @relation("TableWaiter")
+  ordersCreated Order[]        @relation("OrderCreatedBy")
   auditLogs     AuditLog[]
   refundsIssued Refund[]
+  notifications Notification[] @relation("NotificationRecipient")
 
   purchaseOrdersCreated PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
   goodsReceiptsReceived GoodsReceipt[]  @relation("GoodsReceiptReceivedBy")
@@ -192,6 +194,37 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@map("audit_logs")
+}
+
+// In-app notifications (Phase 3 of the RBAC/audit/backup plan) — bell icon +
+// sound/haptic in the dashboard topbar. Scoped by `branchId` only, not a
+// denormalized `restaurantId`, matching the rest of the schema's convention
+// (Order/Table/etc. derive restaurant via branch.restaurant rather than
+// storing both). `recipientUserId` is nullable in the model (room for a
+// future branch-wide broadcast row), but every current call site
+// (NotificationsService.notifyByPermission/notifyUser) always creates one
+// row per resolved recipient. `type` is free-form like AuditLog.action
+// (e.g. "order.new", "order.ready") — not an enum, so new trigger types
+// never need a migration.
+model Notification {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  recipientUserId String?
+  recipient       User?   @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  type     String
+  title    String
+  body     String
+  entity   String?
+  entityId String?
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([branchId, recipientUserId, readAt])
+  @@map("notifications")
 }
 
 // ---------------------------------------------------------------------------
@@ -626,9 +659,9 @@ model SupplierInvoice {
   invoiceNumber String
   invoiceDate   DateTime
   dueDate       DateTime?
-  totalAmount   Decimal                @db.Decimal(12, 2)
-  amountPaid    Decimal                @default(0) @db.Decimal(12, 2)
-  status        SupplierInvoiceStatus  @default(UNPAID)
+  totalAmount   Decimal               @db.Decimal(12, 2)
+  amountPaid    Decimal               @default(0) @db.Decimal(12, 2)
+  status        SupplierInvoiceStatus @default(UNPAID)
   notes         String?
 
   recordedById String

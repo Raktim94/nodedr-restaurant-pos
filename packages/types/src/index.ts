@@ -13,3 +13,4 @@ export * from "./settings";
 export * from "./staff";
 export * from "./audit";
 export * from "./roles";
+export * from "./notifications";

@@ -4,6 +4,7 @@ import type { SessionUser } from "@nodedr-restaurant/types";
 import { Menu } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { BrandFooter } from "./brand-footer";
 import { BranchSwitcher } from "./branch-switcher";
 import { Logo } from "./logo";
@@ -69,7 +70,10 @@ export function AppShell({
             <Menu className="h-5 w-5" />
           </button>
           <div className="hidden lg:block" />
-          <UserMenu user={user} />
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <UserMenu user={user} />
+          </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
       </div>

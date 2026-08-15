@@ -71,6 +71,15 @@ export class RealtimeGateway
       await this.branchAccess.assertAccess(user.restaurantId, branchId);
 
       await client.join(this.branchRoom(branchId));
+      // Every socket also joins a room keyed to its own authenticated user
+      // id, independent of which branch it's viewing — this is what lets
+      // notifications.service.ts target a specific user (or a resolved set
+      // of permission-holding users) without leaking to every other socket
+      // sitting in the same branch room. `emitToBranch` stays intentionally
+      // broad (table/KOT/order state genuinely is "everyone on this
+      // branch"); a permission-gated notification (e.g. "kitchen only") is
+      // NOT everyone-in-branch, so it must never go out via emitToBranch.
+      await client.join(this.userRoom(user.id));
     } catch (err) {
       this.logger.warn(
         `Rejecting realtime connection: ${err instanceof Error ? err.message : String(err)}`,
@@ -87,8 +96,22 @@ export class RealtimeGateway
     this.server.to(this.branchRoom(branchId)).emit(event, payload);
   }
 
+  // Targets exactly the given users' sockets (wherever/whichever branch
+  // they're currently viewing), regardless of branch-room membership. Used
+  // by NotificationsService so a permission-gated or single-recipient
+  // notification only reaches the staff it's actually meant for, not every
+  // socket connected to that branch.
+  emitToUsers(userIds: string[], event: string, payload: unknown) {
+    if (userIds.length === 0) return;
+    this.server.to(userIds.map((id) => this.userRoom(id))).emit(event, payload);
+  }
+
   private branchRoom(branchId: string) {
     return `branch:${branchId}`;
+  }
+
+  private userRoom(userId: string) {
+    return `user:${userId}`;
   }
 
   private extractSessionCookie(client: Socket): string | null {
