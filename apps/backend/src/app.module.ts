@@ -17,6 +17,7 @@ import { RestaurantsModule } from './modules/restaurants/restaurants.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { PublicModule } from './modules/public/public.module';
+import { DownloadsModule } from './modules/downloads/downloads.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { GiftCardsModule } from './modules/gift-cards/gift-cards.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -40,6 +41,7 @@ import { PermissionsModule } from './permissions/permissions.module';
     ReservationsModule,
     WaitlistModule,
     PublicModule,
+    DownloadsModule,
     CustomersModule,
     GiftCardsModule,
     InventoryModule,

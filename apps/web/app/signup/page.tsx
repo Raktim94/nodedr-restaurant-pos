@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { registerSchema, type RegisterDto } from "@nodedr-restaurant/types";
+import { motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -16,6 +17,7 @@ import { ApiError } from "@/lib/api";
 export default function SignupPage() {
   const router = useRouter();
   const register = useRegister();
+  const prefersReducedMotion = useReducedMotion();
   const {
     register: field,
     handleSubmit,
@@ -32,10 +34,21 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-background px-4 py-10">
-      <div className="w-full max-w-sm">
+    <main className="relative flex flex-1 items-center justify-center overflow-hidden bg-background px-4 py-10">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(50%_50%_at_50%_0%,color-mix(in_oklch,var(--primary),transparent_90%),transparent)]"
+      />
+      <motion.div
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+        className="w-full max-w-sm"
+      >
         <div className="mb-10 flex flex-col items-center gap-2 text-center">
-          <Logo size={44} />
+          <Link href="/">
+            <Logo size={44} />
+          </Link>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Nodedr OrderRestro
           </h1>
@@ -119,7 +132,7 @@ export default function SignupPage() {
             Sign in
           </Link>
         </p>
-      </div>
-    </div>
+      </motion.div>
+    </main>
   );
 }

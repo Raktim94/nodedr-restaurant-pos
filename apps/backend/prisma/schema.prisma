@@ -1204,3 +1204,21 @@ model Refund {
   @@index([orderId])
   @@map("refunds")
 }
+
+// ---------------------------------------------------------------------------
+// Public site: download tracking
+// ---------------------------------------------------------------------------
+
+// One row per distribution channel (git-clone, install-script, docker,
+// casaos, github, windows-msix, ...) — an aggregate counter, not a
+// per-visitor event log. Deliberately stores no IP address, user agent, or
+// any other visitor-identifying data: a raw click count needs none of that,
+// and not collecting it in the first place is simpler and safer under the
+// DPDP Act 2023 than collecting personal data and then having to justify
+// retention/consent/erasure for it (see docs/COMPLIANCE-INDIA.md).
+model DownloadStat {
+  channel String @id
+  count   Int    @default(0)
+
+  @@map("download_stats")
+}
