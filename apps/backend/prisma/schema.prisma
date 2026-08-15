@@ -85,19 +85,11 @@ model Branch {
 // Auth / RBAC
 // ---------------------------------------------------------------------------
 
-enum StaffRoleName {
-  OWNER
-  ADMINISTRATOR
-  RESTAURANT_MANAGER
-  CASHIER
-  WAITER
-  KITCHEN_STAFF
-  CHEF
-  BARTENDER
-  DELIVERY_STAFF
-  ACCOUNTANT
-  INVENTORY_MANAGER
-}
+// The fixed 11-role template used only at seed/signup time to bootstrap a
+// new restaurant's default roles now lives as `STAFF_ROLES` in
+// packages/types/src/permissions.ts (TS const array), not here. `Role.name`
+// below is a plain String — an Owner can create custom roles with any name
+// beyond that seeded set (e.g. "Display", "Host", "Valet").
 
 model Permission {
   id       String @id @default(cuid())
@@ -115,7 +107,7 @@ model Role {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
 
-  name      StaffRoleName
+  name      String
   label     String
   isSystem  Boolean       @default(true) // seeded default role vs. custom role
   createdAt DateTime      @default(now())

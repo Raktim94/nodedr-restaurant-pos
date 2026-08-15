@@ -12,3 +12,4 @@ export * from "./inventory";
 export * from "./settings";
 export * from "./staff";
 export * from "./audit";
+export * from "./roles";

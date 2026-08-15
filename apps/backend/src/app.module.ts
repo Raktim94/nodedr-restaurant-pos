@@ -25,6 +25,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { UsersModule } from './modules/users/users.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { AuditModule } from './audit/audit.module';
+import { RolesModule } from './roles/roles.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { AuditModule } from './audit/audit.module';
     UsersModule,
     PermissionsModule,
     AuditModule,
+    RolesModule,
   ],
   controllers: [AppController],
   providers: [
