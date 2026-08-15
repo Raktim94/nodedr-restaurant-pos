@@ -30,6 +30,20 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      # windows-latest ships the Windows 10/11 SDK (part of the VS Build
+      # Tools workload) but makeappx.exe/signtool.exe aren't on PATH by
+      # default outside a "Developer PowerShell for VS" prompt — locate the
+      # highest-versioned x64 SDK bin directory and add it for the rest of
+      # this job.
+      - name: Add Windows SDK tools (makeappx, signtool) to PATH
+        shell: pwsh
+        run: |
+          $sdkBin = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64" -Directory -ErrorAction Stop |
+            Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $sdkBin) { throw "No Windows 10/11 SDK bin directory found" }
+          Write-Host "Using SDK tools from: $($sdkBin.FullName)"
+          Add-Content -Path $env:GITHUB_PATH -Value $sdkBin.FullName
+
       - name: Build + package (self-signed test cert)
         shell: pwsh
         working-directory: windows/msix
