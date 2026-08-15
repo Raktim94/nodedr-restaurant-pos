@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { CreateStaffDto, UpdateStaffDto } from '@nodedr-restaurant/types';
 import * as bcrypt from 'bcrypt';
+import { AuditService } from '../../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const SELECT = {
@@ -22,7 +23,10 @@ const SELECT = {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   list(restaurantId: string) {
     return this.prisma.user.findMany({
@@ -39,7 +43,7 @@ export class UsersService {
     });
   }
 
-  async create(restaurantId: string, dto: CreateStaffDto) {
+  async create(restaurantId: string, actorId: string, dto: CreateStaffDto) {
     await this.assertRoleInRestaurant(restaurantId, dto.roleId);
     await this.assertBranchesInRestaurant(restaurantId, dto.branchIds);
 
@@ -69,10 +73,24 @@ export class UsersService {
       },
       select: SELECT,
     });
+
+    await this.audit.record({
+      userId: actorId,
+      action: 'staff.created',
+      entity: 'User',
+      entityId: user.id,
+      metadata: { name: user.name, email: user.email, roleId: user.roleId },
+    });
+
     return user;
   }
 
-  async update(restaurantId: string, id: string, dto: UpdateStaffDto) {
+  async update(
+    restaurantId: string,
+    actorId: string,
+    id: string,
+    dto: UpdateStaffDto,
+  ) {
     const existing = await this.prisma.user.findFirst({
       where: { id, restaurantId },
       include: { role: true },
@@ -111,7 +129,7 @@ export class UsersService {
       ? await bcrypt.hash(dto.password, 12)
       : undefined;
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: {
         name: dto.name,
@@ -131,6 +149,28 @@ export class UsersService {
       },
       select: SELECT,
     });
+
+    // Never log `dto.password`/`passwordHash` — only the fields it's safe
+    // for an owner reviewing history to see. `passwordChanged` is a boolean
+    // flag, not the value, so a password rotation is still visible in the
+    // trail without the audit log becoming a secondary place secrets leak.
+    await this.audit.record({
+      userId: actorId,
+      action: 'staff.updated',
+      entity: 'User',
+      entityId: id,
+      metadata: {
+        name: dto.name,
+        email: dto.email,
+        phone: dto.phone,
+        roleId: dto.roleId,
+        isActive: dto.isActive,
+        branchIds: dto.branchIds,
+        passwordChanged: Boolean(dto.password),
+      },
+    });
+
+    return updated;
   }
 
   private async assertRoleInRestaurant(restaurantId: string, roleId: string) {

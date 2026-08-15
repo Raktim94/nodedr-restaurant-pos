@@ -39,7 +39,7 @@ export class UsersController {
   @Post()
   @UsePipes(new ZodValidationPipe(createStaffSchema))
   create(@CurrentUser() user: SessionUser, @Body() body: unknown) {
-    return this.usersService.create(user.restaurantId, body as never);
+    return this.usersService.create(user.restaurantId, user.id, body as never);
   }
 
   @Auth('users.manage')
@@ -50,6 +50,11 @@ export class UsersController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    return this.usersService.update(user.restaurantId, id, body as never);
+    return this.usersService.update(
+      user.restaurantId,
+      user.id,
+      id,
+      body as never,
+    );
   }
 }

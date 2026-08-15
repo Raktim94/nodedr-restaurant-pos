@@ -11,6 +11,7 @@ import type {
   CreateOrderDto,
   RefundDto,
 } from '@nodedr-restaurant/types';
+import { AuditService } from '../../audit/audit.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -24,6 +25,7 @@ export class OrdersService {
     private readonly realtime: RealtimeGateway,
     private readonly giftCards: GiftCardsService,
     private readonly inventory: InventoryService,
+    private readonly audit: AuditService,
   ) {}
 
   async listOpen(branchId: string, tableId?: string) {
@@ -261,7 +263,7 @@ export class OrdersService {
   // floor — food already in progress must be voided/wasted through
   // inventory instead, not silently disappeared. Cancelling is only safe
   // while every KOT is still NEW/ACCEPTED (queued, not yet fired).
-  async cancelOrder(branchId: string, orderId: string) {
+  async cancelOrder(branchId: string, orderId: string, userId: string) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
       include: { kots: true },
@@ -315,6 +317,19 @@ export class OrdersService {
       status: 'CANCELLED',
     });
     this.realtime.emitToBranch(branchId, 'kot.updated', { orderId });
+
+    await this.audit.record({
+      userId,
+      action: 'order.cancelled',
+      entity: 'Order',
+      entityId: orderId,
+      metadata: {
+        orderNumber: order.orderNumber,
+        tableId: order.tableId,
+        type: order.type,
+      },
+    });
+
     return this.getOrder(branchId, orderId);
   }
 
@@ -603,6 +618,20 @@ export class OrdersService {
     });
 
     this.realtime.emitToBranch(branchId, 'order.updated', { id: orderId });
+
+    await this.audit.record({
+      userId,
+      action: 'order.refunded',
+      entity: 'Order',
+      entityId: orderId,
+      metadata: {
+        orderNumber: order.orderNumber,
+        amount: dto.amount,
+        method: dto.method,
+        reason: dto.reason,
+      },
+    });
+
     return refund;
   }
 

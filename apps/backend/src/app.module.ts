@@ -24,6 +24,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { UsersModule } from './modules/users/users.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { PermissionsModule } from './permissions/permissions.module';
     SettingsModule,
     UsersModule,
     PermissionsModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [

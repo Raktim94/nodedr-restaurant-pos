@@ -141,7 +141,7 @@ export class OrdersController {
     @Param('id') id: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.ordersService.cancelOrder(branchId, id);
+    return this.ordersService.cancelOrder(branchId, id, user.id);
   }
 
   @Auth('bills.print')

@@ -173,7 +173,7 @@ export class MenuController {
     @Body() body: unknown,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.menuService.updateItem(branchId, id, body as never);
+    return this.menuService.updateItem(branchId, id, user.id, body as never);
   }
 
   @Auth('menu.manage')

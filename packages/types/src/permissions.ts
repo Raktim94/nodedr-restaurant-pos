@@ -23,6 +23,7 @@ export const PERMISSIONS = [
   { key: "reservations.manage", label: "Manage Reservations", category: "Reservations" },
   { key: "settings.manage", label: "Manage Settings", category: "Admin" },
   { key: "customers.manage", label: "Manage Customers & Loyalty", category: "CRM" },
+  { key: "audit_log.view", label: "View Audit Log", category: "Admin" },
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]["key"];

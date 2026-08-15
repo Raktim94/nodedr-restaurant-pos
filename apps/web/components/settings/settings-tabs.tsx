@@ -2,19 +2,34 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 
-const TABS = [
+interface SettingsTab {
+  label: string;
+  href: string;
+  /** Omit to show the tab to anyone who can reach /settings at all. */
+  permission?: string;
+}
+
+const TABS: SettingsTab[] = [
   { label: "General", href: "/settings" },
-  { label: "Staff", href: "/settings/staff" },
+  { label: "Staff", href: "/settings/staff", permission: "users.manage" },
+  { label: "Audit Log", href: "/settings/audit-log", permission: "audit_log.view" },
 ];
 
 export function SettingsTabs() {
   const pathname = usePathname();
+  const { data } = useCurrentUser();
+  const user = data?.user;
+
+  const visibleTabs = TABS.filter(
+    (tab) => !tab.permission || hasPermission(user, tab.permission),
+  );
 
   return (
     <nav className="flex gap-1 border-b border-border">
-      {TABS.map((tab) => {
+      {visibleTabs.map((tab) => {
         const isActive =
           tab.href === "/settings" ? pathname === "/settings" : pathname?.startsWith(tab.href);
         return (

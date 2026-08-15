@@ -38,6 +38,7 @@ export class SettingsController {
   ) {
     return this.settingsService.updateRestaurant(
       user.restaurantId,
+      user.id,
       body as never,
     );
   }
@@ -51,6 +52,6 @@ export class SettingsController {
     @Body() body: unknown,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.settingsService.updateBranch(branchId, body as never);
+    return this.settingsService.updateBranch(branchId, user.id, body as never);
   }
 }

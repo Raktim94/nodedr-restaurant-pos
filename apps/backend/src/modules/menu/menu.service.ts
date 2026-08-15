@@ -8,11 +8,15 @@ import type {
   MenuItemDto,
   ModifierGroupDto,
 } from '@nodedr-restaurant/types';
+import { AuditService } from '../../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class MenuService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   // --- Categories ---------------------------------------------------------
 
@@ -109,14 +113,19 @@ export class MenuService {
     });
   }
 
-  async updateItem(branchId: string, id: string, dto: Partial<MenuItemDto>) {
-    await this.getItem(branchId, id);
+  async updateItem(
+    branchId: string,
+    id: string,
+    userId: string,
+    dto: Partial<MenuItemDto>,
+  ) {
+    const existing = await this.getItem(branchId, id);
     const { modifierGroupIds, ...rest } = dto;
     if (modifierGroupIds) {
       await this.assertModifierGroupsInBranch(branchId, modifierGroupIds);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       if (modifierGroupIds) {
         await tx.menuItemModifierGroup.deleteMany({
           where: { menuItemId: id },
@@ -131,6 +140,25 @@ export class MenuService {
       }
       return tx.menuItem.update({ where: { id }, data: rest });
     });
+
+    // Price is the single most owner-relevant field here, so it's logged
+    // explicitly (before → after) in addition to the raw change set —
+    // everything else in `rest` (name, availability, dietary flags, ...)
+    // still shows up via `changes`.
+    await this.audit.record({
+      userId,
+      action: 'menu_item.updated',
+      entity: 'MenuItem',
+      entityId: id,
+      metadata: {
+        name: updated.name,
+        priceBefore: Number(existing.price),
+        priceAfter: Number(updated.price),
+        changes: rest,
+      },
+    });
+
+    return updated;
   }
 
   private async assertModifierGroupsInBranch(
