@@ -69,6 +69,19 @@ export class StockService {
     });
     if (!ingredient) throw new NotFoundException('Ingredient not found');
 
+    // Row lock: FIFO batch consumption reads multiple StockBatch rows plus
+    // the Ingredient's own currentStock, then writes all of them based on
+    // what it read — unlike a single balance column, this can't be made
+    // safe with a guarded atomic decrement alone. Locking the ingredient
+    // row for the rest of this transaction serializes concurrent
+    // consumeStock calls for the SAME ingredient (e.g. two checkouts
+    // selling the same low-stock item at once), so the second call's reads
+    // above would otherwise be safe only by luck — without this lock they
+    // can both see the same pre-consumption batch quantities and each
+    // independently subtract from them, silently over-consuming stock
+    // beyond what was actually on hand.
+    await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${ingredientId} FOR UPDATE`;
+
     const batches = await tx.stockBatch.findMany({
       where: { branchId, ingredientId, quantityRemaining: { gt: 0 } },
       orderBy: { receivedAt: 'asc' },

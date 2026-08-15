@@ -47,9 +47,14 @@ export default function PublicMenuPage({
   // Read any name saved earlier this session after mount, not in the state
   // initializer — sessionStorage isn't available during server rendering,
   // so reading it there would make the client's first render disagree with
-  // the server-rendered HTML.
+  // the server-rendered HTML. This is the legitimate exception the
+  // set-state-in-effect rule carves out for genuine external-system reads
+  // (a browser storage API unavailable until after hydration), not the
+  // derive-state-from-already-available-data anti-pattern it otherwise
+  // flags.
   useEffect(() => {
     const saved = sessionStorage.getItem(nameStorageKey);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (saved) setGuestName(saved);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

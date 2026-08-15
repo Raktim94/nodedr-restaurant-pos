@@ -91,8 +91,9 @@ export class MenuService {
     return item;
   }
 
-  createItem(branchId: string, dto: MenuItemDto) {
+  async createItem(branchId: string, dto: MenuItemDto) {
     const { modifierGroupIds, ...rest } = dto;
+    await this.assertModifierGroupsInBranch(branchId, modifierGroupIds);
     return this.prisma.menuItem.create({
       data: {
         ...rest,
@@ -111,6 +112,9 @@ export class MenuService {
   async updateItem(branchId: string, id: string, dto: Partial<MenuItemDto>) {
     await this.getItem(branchId, id);
     const { modifierGroupIds, ...rest } = dto;
+    if (modifierGroupIds) {
+      await this.assertModifierGroupsInBranch(branchId, modifierGroupIds);
+    }
 
     return this.prisma.$transaction(async (tx) => {
       if (modifierGroupIds) {
@@ -129,6 +133,21 @@ export class MenuService {
     });
   }
 
+  private async assertModifierGroupsInBranch(
+    branchId: string,
+    modifierGroupIds: string[],
+  ) {
+    if (modifierGroupIds.length === 0) return;
+    const count = await this.prisma.modifierGroup.count({
+      where: { id: { in: modifierGroupIds }, branchId },
+    });
+    if (count !== new Set(modifierGroupIds).size) {
+      throw new BadRequestException(
+        'One or more modifier groups are invalid for this branch',
+      );
+    }
+  }
+
   async deleteItem(branchId: string, id: string) {
     await this.getItem(branchId, id);
     await this.prisma.menuItem.delete({ where: { id } });
@@ -137,21 +156,27 @@ export class MenuService {
 
   // --- Modifier groups --------------------------------------------------------
 
-  listModifierGroups() {
-    return this.prisma.modifierGroup.findMany({ include: { modifiers: true } });
-  }
-
-  createModifierGroup(dto: ModifierGroupDto) {
-    const { modifiers, ...rest } = dto;
-    return this.prisma.modifierGroup.create({
-      data: { ...rest, modifiers: { create: modifiers } },
+  listModifierGroups(branchId: string) {
+    return this.prisma.modifierGroup.findMany({
+      where: { branchId },
       include: { modifiers: true },
     });
   }
 
-  async updateModifierGroup(id: string, dto: Partial<ModifierGroupDto>) {
-    const group = await this.prisma.modifierGroup.findUnique({ where: { id } });
-    if (!group) throw new NotFoundException('Modifier group not found');
+  createModifierGroup(branchId: string, dto: ModifierGroupDto) {
+    const { modifiers, ...rest } = dto;
+    return this.prisma.modifierGroup.create({
+      data: { ...rest, branchId, modifiers: { create: modifiers } },
+      include: { modifiers: true },
+    });
+  }
+
+  async updateModifierGroup(
+    branchId: string,
+    id: string,
+    dto: Partial<ModifierGroupDto>,
+  ) {
+    await this.assertModifierGroupInBranch(branchId, id);
 
     const { modifiers, ...rest } = dto;
     return this.prisma.$transaction(async (tx) => {
@@ -169,11 +194,17 @@ export class MenuService {
     });
   }
 
-  async deleteModifierGroup(id: string) {
-    const group = await this.prisma.modifierGroup.findUnique({ where: { id } });
-    if (!group) throw new NotFoundException('Modifier group not found');
+  async deleteModifierGroup(branchId: string, id: string) {
+    await this.assertModifierGroupInBranch(branchId, id);
     await this.prisma.modifierGroup.delete({ where: { id } });
     return { ok: true };
+  }
+
+  private async assertModifierGroupInBranch(branchId: string, id: string) {
+    const group = await this.prisma.modifierGroup.findFirst({
+      where: { id, branchId },
+    });
+    if (!group) throw new NotFoundException('Modifier group not found');
   }
 
   // --- Combo meals -----------------------------------------------------------
@@ -188,6 +219,17 @@ export class MenuService {
       throw new BadRequestException(
         'A combo cannot include itself as a component',
       );
+    }
+    const componentIds = components.map((c) => c.componentItemId);
+    if (componentIds.length > 0) {
+      const count = await this.prisma.menuItem.count({
+        where: { id: { in: componentIds }, branchId },
+      });
+      if (count !== new Set(componentIds).size) {
+        throw new BadRequestException(
+          'One or more combo components are invalid for this branch',
+        );
+      }
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -210,7 +252,8 @@ export class MenuService {
     });
   }
 
-  getComboComponents(comboItemId: string) {
+  async getComboComponents(branchId: string, comboItemId: string) {
+    await this.getItem(branchId, comboItemId);
     return this.prisma.comboComponent.findMany({
       where: { comboItemId },
       include: {

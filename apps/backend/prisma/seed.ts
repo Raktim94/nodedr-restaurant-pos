@@ -157,6 +157,7 @@ async function main() {
     update: {},
     create: {
       id: "demo-mg-crust",
+      branchId: branch.id,
       name: "Crust Type",
       minSelect: 1,
       maxSelect: 1,

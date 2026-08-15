@@ -11,11 +11,14 @@ export interface ComboComponent {
   componentItem: { id: string; name: string; price: string };
 }
 
-export function useComboComponents(itemId: string | null) {
+export function useComboComponents(branchId: string | null, itemId: string | null) {
   return useQuery({
-    queryKey: ["menu", "combo-components", itemId],
-    queryFn: () => api.get<ComboComponent[]>(`/menu/items/${itemId}/combo-components`),
-    enabled: !!itemId,
+    queryKey: ["menu", "combo-components", itemId, branchId],
+    queryFn: () =>
+      api.get<ComboComponent[]>(
+        `/menu/items/${itemId}/combo-components?branchId=${branchId}`,
+      ),
+    enabled: !!itemId && !!branchId,
   });
 }
 

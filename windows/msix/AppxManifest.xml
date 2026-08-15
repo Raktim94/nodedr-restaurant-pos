@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <!--
+    Package identity. Publisher MUST exactly match the "Publisher" string
+    (the full CN=... value) issued to this developer account in Partner
+    Center — see README.md "Before you can build a signed package" for how
+    to get the real value and swap it in here. The placeholder below will
+    make Add-AppxPackage/signtool fail loudly rather than silently produce
+    an unsubmittable package, by design.
+  -->
+  <Identity
+    Name="NodedrInfotech.OrderRestro"
+    Publisher="CN=REPLACE-WITH-YOUR-PARTNER-CENTER-PUBLISHER-ID"
+    Version="1.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Nodedr OrderRestro</DisplayName>
+    <PublisherDisplayName>Nodedr Infotech Private Limited</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <!--
+    TargetDeviceFamily: Windows.Desktop only, minimum build reflects the
+    WebView2 Runtime's real support floor (Windows 10 1809+ / Server 2019+).
+  -->
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22631.0" />
+  </Dependencies>
+
+  <Applications>
+    <Application Id="OrderRestro" Executable="OrderRestro.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Nodedr OrderRestro"
+        Description="Offline-first restaurant POS, tables, kitchen display, and menu management."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" Square310x310Logo="Assets\Square310x310Logo.png">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#0F0F11" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <!--
+    Capabilities: deliberately minimal, per hardening brief sections 2/17/26.
+
+    - internetClient: outbound HTTP(S) to the restaurant's LAN/local
+      OrderRestro server. This is the ONLY capability the app needs.
+    - runFullTrust: required for any Win32/.NET desktop app packaged as
+      MSIX (this is what "EntryPoint=Windows.FullTrustApplication" above
+      declares) — this is NOT the same thing as elevation/admin rights.
+      It does not request UAC, does not grant broad filesystem/registry
+      access, and is unrelated to the "restricted capabilities" the brief
+      warns against (those are things like broadFileSystemAccess,
+      documentsLibrary, or device-class capabilities — none of which are
+      declared here).
+
+    Explicitly NOT requested, on purpose: usb/serial/bluetooth device
+    capabilities, broadFileSystemAccess, microphone, webcam, location,
+    or any restricted capability. If Windows printer access ever required
+    a capability at all (it does not — printing through an installed
+    Windows printer driver via the OS print dialog needs zero MSIX
+    capability declarations), it would be added here explicitly and
+    justified, not assumed.
+  -->
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

@@ -57,6 +57,7 @@ model Branch {
   users           UserBranch[]
   menuItems       MenuItem[]
   categories      MenuCategory[]
+  modifierGroups  ModifierGroup[]
   stations        KitchenStation[]
   orders          Order[]
   customers       Customer[]
@@ -806,7 +807,10 @@ model MenuItem {
 }
 
 model ModifierGroup {
-  id         String  @id @default(cuid())
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
   name       String // e.g. "Crust Type", "Extras"
   minSelect  Int     @default(0)
   maxSelect  Int     @default(1)
@@ -815,6 +819,7 @@ model ModifierGroup {
   modifiers Modifier[]
   menuItems MenuItemModifierGroup[]
 
+  @@index([branchId])
   @@map("modifier_groups")
 }
 

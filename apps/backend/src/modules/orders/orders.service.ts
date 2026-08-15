@@ -1,9 +1,10 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import type {
   CartItemDto,
   CheckoutDto,
@@ -81,6 +82,31 @@ export class OrdersService {
     const modifierById = new Map(modifiers.map((m) => [m.id, m]));
     if (modifiers.length !== modifierIds.length) {
       throw new BadRequestException('One or more modifiers are invalid');
+    }
+
+    // A client-supplied tableId/customerId that belongs to a different
+    // branch/restaurant must never be trusted directly: without this check,
+    // the order below would create a real FK link to another tenant's
+    // table (and flip its status to OCCUPIED) or customer, and this
+    // branch's own staff could then read that other tenant's table/customer
+    // details back out via getOrder()/getReceiptData()'s `include`.
+    if (dto.tableId) {
+      const table = await this.prisma.table.findFirst({
+        where: { id: dto.tableId, floor: { branchId } },
+        select: { id: true },
+      });
+      if (!table) {
+        throw new BadRequestException('Table is invalid for this branch');
+      }
+    }
+    if (dto.customerId) {
+      const customer = await this.prisma.customer.findFirst({
+        where: { id: dto.customerId, branchId },
+        select: { id: true },
+      });
+      if (!customer) {
+        throw new BadRequestException('Customer is invalid for this branch');
+      }
     }
 
     const lineInputs = dto.items.map((cartItem) =>
@@ -269,7 +295,11 @@ export class OrdersService {
 
       if (order.tableId) {
         const otherOpenOrders = await tx.order.count({
-          where: { tableId: order.tableId, status: 'OPEN', id: { not: orderId } },
+          where: {
+            tableId: order.tableId,
+            status: 'OPEN',
+            id: { not: orderId },
+          },
         });
         if (otherOpenOrders === 0) {
           await tx.table.update({
@@ -374,10 +404,24 @@ export class OrdersService {
         }
         actualPointsRedeemed = pointsToRedeem;
         loyaltyDiscountAmount = requestedLoyaltyDiscount;
-        await tx.customer.update({
-          where: { id: effectiveCustomerId },
-          data: { loyaltyPoints: customer.loyaltyPoints - pointsToRedeem },
+        // Guarded atomic decrement, not a read-then-write `set`: two
+        // concurrent checkouts redeeming points for the same customer could
+        // otherwise both read the same stale balance and one redemption
+        // would be silently lost (customer effectively spends the same
+        // points twice). The `loyaltyPoints: { gte }` guard only lets the
+        // update through if the balance is still sufficient at update time.
+        const redeemResult = await tx.customer.updateMany({
+          where: {
+            id: effectiveCustomerId,
+            loyaltyPoints: { gte: pointsToRedeem },
+          },
+          data: { loyaltyPoints: { decrement: pointsToRedeem } },
         });
+        if (redeemResult.count === 0) {
+          throw new BadRequestException(
+            'Customer loyalty balance changed — please retry checkout',
+          );
+        }
       }
 
       let giftCardAmountApplied = 0;
@@ -431,41 +475,62 @@ export class OrdersService {
       }
 
       // Loyalty earn on net spend (excluding tip), only once the sale is
-      // actually paid — read-modify-write with a plain integer, not a DB
-      // increment, so it stays consistent with the redeem path above.
+      // actually paid — an atomic increment (race-free by construction, no
+      // read-then-write window) rather than a computed `set`.
       if (effectiveCustomerId) {
         const netSpend = round2(totals.totalAmount - loyaltyDiscountAmount);
         const pointsEarned = Math.floor(netSpend / loyaltyEarnPerCurrency);
         if (pointsEarned > 0) {
-          const customer = await tx.customer.findUniqueOrThrow({
-            where: { id: effectiveCustomerId },
-          });
           await tx.customer.update({
             where: { id: effectiveCustomerId },
-            data: { loyaltyPoints: customer.loyaltyPoints + pointsEarned },
+            data: { loyaltyPoints: { increment: pointsEarned } },
           });
         }
       }
 
       // Table update runs first so the nested `table` include below reflects
       // the post-checkout status, not a stale pre-update snapshot.
-      return tx.order.update({
-        where: { id: orderId },
-        data: {
-          ...(effectiveCustomerId && !order.customerId
-            ? { customerId: effectiveCustomerId }
-            : {}),
-          discountAmount: totals.discountAmount,
-          loyaltyPointsRedeemed: actualPointsRedeemed,
-          loyaltyDiscountAmount,
-          tipAmount,
-          totalAmount: totalDue,
-          status: 'PAID',
-          billedAt: new Date(),
-          payments: { create: dto.payments },
-        },
-        include: { payments: true, table: true },
-      });
+      //
+      // `status: 'OPEN'` in the where clause (an "extended where" filter,
+      // supported since Prisma 4.5 for update/delete on a unique record) is
+      // the actual concurrency guard: the initial `order.status !== 'OPEN'`
+      // check above ran outside this transaction, so two simultaneous
+      // checkout requests for the same order could otherwise both pass it
+      // and both reach here, producing two payment rows, a double inventory
+      // deduction, and double loyalty points. This update only succeeds if
+      // the row is still OPEN at commit time; Prisma throws P2025 (caught
+      // below) for the loser, and the whole transaction — including the
+      // gift card debit and loyalty point changes already applied above —
+      // rolls back with it.
+      try {
+        return await tx.order.update({
+          where: { id: orderId, status: 'OPEN' },
+          data: {
+            ...(effectiveCustomerId && !order.customerId
+              ? { customerId: effectiveCustomerId }
+              : {}),
+            discountAmount: totals.discountAmount,
+            loyaltyPointsRedeemed: actualPointsRedeemed,
+            loyaltyDiscountAmount,
+            tipAmount,
+            totalAmount: totalDue,
+            status: 'PAID',
+            billedAt: new Date(),
+            payments: { create: dto.payments },
+          },
+          include: { payments: true, table: true },
+        });
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2025'
+        ) {
+          throw new ConflictException(
+            'This order was already checked out by another request.',
+          );
+        }
+        throw err;
+      }
     });
 
     this.realtime.emitToBranch(branchId, 'order.updated', {
@@ -483,24 +548,36 @@ export class OrdersService {
   ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
-      include: { refunds: true },
     });
     if (!order) throw new NotFoundException('Order not found');
     if (order.status !== 'PAID') {
       throw new BadRequestException('Only a paid order can be refunded');
     }
 
-    const alreadyRefunded = round2(
-      order.refunds.reduce((sum, r) => sum + Number(r.amount), 0),
-    );
-    const refundable = round2(Number(order.totalAmount) - alreadyRefunded);
-    if (dto.amount > refundable) {
-      throw new BadRequestException(
-        `Cannot refund ${dto.amount} — only ${refundable} remains refundable on this order`,
-      );
-    }
-
     const refund = await this.prisma.$transaction(async (tx) => {
+      // Row lock: bumping the order row here (rather than only reading it)
+      // holds a Postgres row lock for the rest of this transaction, so a
+      // second concurrent refund request on the same order blocks here
+      // until the first commits — then its own re-read of `refunds` below
+      // sees the first refund and correctly recomputes what's still
+      // refundable. Without this, two simultaneous refund requests could
+      // both read the same pre-refund `refundable` amount and together
+      // refund more than the order was ever paid for.
+      await tx.order.update({
+        where: { id: orderId },
+        data: { updatedAt: new Date() },
+      });
+      const refunds = await tx.refund.findMany({ where: { orderId } });
+      const alreadyRefunded = round2(
+        refunds.reduce((sum, r) => sum + Number(r.amount), 0),
+      );
+      const refundable = round2(Number(order.totalAmount) - alreadyRefunded);
+      if (dto.amount > refundable) {
+        throw new BadRequestException(
+          `Cannot refund ${dto.amount} — only ${refundable} remains refundable on this order`,
+        );
+      }
+
       const created = await tx.refund.create({
         data: {
           orderId,
@@ -512,14 +589,13 @@ export class OrdersService {
       });
 
       if (dto.method === 'STORE_CREDIT' && order.customerId) {
-        const customer = await tx.customer.findUniqueOrThrow({
-          where: { id: order.customerId },
-        });
+        // Atomic increment, not read-then-write: two concurrent
+        // STORE_CREDIT refunds for the same customer (from different
+        // orders) could otherwise both read the same stale walletBalance
+        // and one credit would be silently lost.
         await tx.customer.update({
           where: { id: order.customerId },
-          data: {
-            walletBalance: round2(Number(customer.walletBalance) + dto.amount),
-          },
+          data: { walletBalance: { increment: dto.amount } },
         });
       }
 

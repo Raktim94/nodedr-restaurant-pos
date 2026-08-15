@@ -39,6 +39,16 @@ export class WaitlistService {
     if (entry.status !== 'WAITING') {
       throw new BadRequestException('Entry is not waiting');
     }
+    // A client-supplied tableId from another branch/restaurant must never
+    // be trusted directly — without this check, this write would flip a
+    // foreign tenant's real table to OCCUPIED on their own live floor view.
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, floor: { branchId } },
+      select: { id: true },
+    });
+    if (!table) {
+      throw new BadRequestException('Table is invalid for this branch');
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.waitlistEntry.update({

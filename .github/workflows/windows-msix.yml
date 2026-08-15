@@ -1,0 +1,68 @@
+name: Windows MSIX build
+
+# Real build/package/install verification for the OrderRestro Windows
+# client, run on an actual windows-latest runner since no Windows machine
+# is available in local development. This is the authoritative PASS/FAIL
+# signal for "does the MSIX build and install" — see windows/msix/README.md
+# for what this does and does not prove (no physical hardware, no printer,
+# no Start Menu/UAC-prompt visual check — those need a human on real
+# hardware).
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'windows/**'
+      - '.github/workflows/windows-msix.yml'
+  pull_request:
+    paths:
+      - 'windows/**'
+  workflow_dispatch: {}
+
+jobs:
+  build-and-install:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build + package (self-signed test cert)
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          ./build-windows-msix.ps1 -Configuration Release -SelfSignedTest
+
+      - name: Validate package structure
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          ./validate-msix.ps1 -MsixPath ./out/OrderRestro.msix
+
+      - name: Install + verify Start Menu registration
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          Add-AppxPackage -Path ./out/OrderRestro.msix -ErrorAction Stop
+          $pkg = Get-AppxPackage -Name 'NodedrInfotech.OrderRestro'
+          if (-not $pkg) { throw "Package not found after install" }
+          Write-Host "PackageFullName: $($pkg.PackageFullName)"
+          Write-Host "InstallLocation: $($pkg.InstallLocation)"
+
+      - name: Uninstall (cleanup)
+        if: always()
+        shell: pwsh
+        run: |
+          $pkg = Get-AppxPackage -Name 'NodedrInfotech.OrderRestro' -ErrorAction SilentlyContinue
+          if ($pkg) { Remove-AppxPackage -Package $pkg.PackageFullName }
+
+      - name: Upload MSIX artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrderRestro-msix-${{ github.sha }}
+          path: windows/msix/out/OrderRestro.msix
+          if-no-files-found: warn

@@ -18,7 +18,8 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test"
+    "test": "turbo run test",
+    "build-windows-msix": "pwsh -NoProfile -File windows/msix/build-windows-msix.ps1 && pwsh -NoProfile -File windows/msix/validate-msix.ps1"
   },
   "devDependencies": {
     "turbo": "^2.10.9",

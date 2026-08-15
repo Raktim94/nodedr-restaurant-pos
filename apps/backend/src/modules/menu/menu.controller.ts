@@ -25,7 +25,10 @@ import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
-import { imageUploadOptions } from '../../common/upload/image-upload.config';
+import {
+  assertValidImageSignature,
+  imageUploadOptions,
+} from '../../common/upload/image-upload.config';
 import { MenuService } from './menu.service';
 
 @ApiTags('menu')
@@ -153,6 +156,11 @@ export class MenuController {
     if (!file) {
       throw new BadRequestException('No file uploaded');
     }
+    // fileFilter (imageUploadOptions) only saw the client-declared
+    // filename/mimetype before any bytes were read — verify the bytes
+    // actually on disk match a real image signature before this URL is
+    // ever handed back to be saved on a menu item and served publicly.
+    assertValidImageSignature(file.path);
     return { url: `/api/uploads/${file.filename}` };
   }
 
@@ -183,35 +191,60 @@ export class MenuController {
 
   @Auth('menu.manage')
   @Get('modifier-groups')
-  listModifierGroups() {
-    return this.menuService.listModifierGroups();
+  async listModifierGroups(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.menuService.listModifierGroups(branchId);
   }
 
   @Auth('menu.manage')
   @Post('modifier-groups')
   @UsePipes(new ZodValidationPipe(modifierGroupSchema))
-  createModifierGroup(@Body() body: unknown) {
-    return this.menuService.createModifierGroup(body as never);
+  async createModifierGroup(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.menuService.createModifierGroup(branchId, body as never);
   }
 
   @Auth('menu.manage')
   @Patch('modifier-groups/:id')
-  updateModifierGroup(@Param('id') id: string, @Body() body: unknown) {
-    return this.menuService.updateModifierGroup(id, body as never);
+  async updateModifierGroup(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.menuService.updateModifierGroup(branchId, id, body as never);
   }
 
   @Auth('menu.manage')
   @Delete('modifier-groups/:id')
-  deleteModifierGroup(@Param('id') id: string) {
-    return this.menuService.deleteModifierGroup(id);
+  async deleteModifierGroup(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.menuService.deleteModifierGroup(branchId, id);
   }
 
   // --- Combo meals -----------------------------------------------------------
 
   @Auth('menu.manage')
   @Get('items/:id/combo-components')
-  getComboComponents(@Param('id') id: string) {
-    return this.menuService.getComboComponents(id);
+  async getComboComponents(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.menuService.getComboComponents(branchId, id);
   }
 
   @Auth('menu.manage')

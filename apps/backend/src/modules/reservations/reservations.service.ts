@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   CreateReservationDto,
   ReservationStatusDto,
@@ -30,6 +34,19 @@ export class ReservationsService {
   }
 
   async create(branchId: string, dto: CreateReservationDto) {
+    // A client-supplied tableId from another branch/restaurant must never
+    // be trusted directly — without this check, this write would flip a
+    // foreign tenant's real table to RESERVED on their own live floor view.
+    if (dto.tableId) {
+      const table = await this.prisma.table.findFirst({
+        where: { id: dto.tableId, floor: { branchId } },
+        select: { id: true },
+      });
+      if (!table) {
+        throw new BadRequestException('Table is invalid for this branch');
+      }
+    }
+
     const created = await this.prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.create({
         data: { ...dto, branchId },

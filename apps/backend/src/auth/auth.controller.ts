@@ -54,6 +54,9 @@ export class AuthController {
     return { user };
   }
 
+  // Tighter than the app-wide default (see register above) — login is a
+  // classic credential-stuffing/brute-force target.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
   @UsePipes(new ZodValidationPipe(loginSchema))
   async login(
@@ -65,6 +68,13 @@ export class AuthController {
     return { user };
   }
 
+  // Much tighter than login: a PIN is a short numeric secret (4-8 digits,
+  // as low as 10,000 possibilities) rather than a full password, so the
+  // app-wide throttle alone (300 req/min/IP) would let an attacker exhaust
+  // a 4-digit PIN space in well under an hour against a known userId. This
+  // caps that to 5/min/IP — the same budget register() uses for its own
+  // higher-value target.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('pin-login')
   @UsePipes(new ZodValidationPipe(pinLoginSchema))
   async pinLogin(

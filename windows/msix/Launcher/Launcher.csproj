@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Minimal WebView2 launcher for the OrderRestro Windows client.
+
+    This is NOT Electron: it ships no bundled Chromium. It hosts the
+    OS-shared, evergreen WebView2 Runtime (present on Windows 11 and
+    auto-installed on Windows 10 by the WebView2 Bootstrapper if missing) —
+    the same runtime every Edge-based system webview uses.
+
+    Packaged as a plain self-contained WinForms publish, then wrapped into
+    an MSIX by ../build-windows-msix.ps1 via a manual `dotnet publish` +
+    stage + `makeappx pack` flow (not MSBuild's single-project-MSIX
+    tooling) — see that script for why: it's the more predictable, more
+    widely documented path for a WinForms/WPF ("Desktop Bridge") app, and
+    doesn't depend on MSBuild msix-packaging targets being present in every
+    build environment.
+
+    Runs as a normal desktop app: no elevation (see app.manifest,
+    requestedExecutionLevel="asInvoker"), no console window
+    (OutputType=WinExe), no admin/service/driver requirements. The MSIX
+    manifest (../AppxManifest.xml) declares runFullTrust — required for
+    ANY Win32-model desktop app (WinForms/WPF/WinUI3 alike) packaged via
+    Desktop Bridge; this is a "not AppContainer-sandboxed" flag, not an
+    elevation/admin request. See that file's own comment for the full
+    reasoning against the hardening brief's "no unnecessary restricted
+    capabilities" rule.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>OrderRestro.Launcher</RootNamespace>
+    <AssemblyName>OrderRestro</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\Assets\app.ico</ApplicationIcon>
+
+    <!-- Self-contained, single-file, trimmed win-x64 publish — no separate
+         .NET runtime install required on the target machine, and no
+         "install .NET first" step for the user (see build-windows-msix.ps1). -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <Version>1.0.0.0</Version>
+    <Product>Nodedr OrderRestro</Product>
+    <Company>Nodedr Infotech Private Limited</Company>
+    <Copyright>Copyright © Nodedr Infotech Private Limited</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2957.106" />
+  </ItemGroup>
+
+</Project>

@@ -166,7 +166,7 @@ export function ComboComponentsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { data: existing } = useComboComponents(item?.id ?? null);
+  const { data: existing } = useComboComponents(branchId, item?.id ?? null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

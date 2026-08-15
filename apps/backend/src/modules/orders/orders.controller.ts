@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Post,
@@ -17,6 +18,7 @@ import {
   createOrderSchema,
   mergeOrdersSchema,
   refundSchema,
+  type CheckoutDto,
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
@@ -152,7 +154,22 @@ export class OrdersController {
     @Body() body: unknown,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.ordersService.checkout(branchId, id, user.id, body as never);
+    const dto = body as CheckoutDto;
+    // `bills.print` (required above) only covers settling a bill at its
+    // already-priced total — discounting it further is a distinct,
+    // separately-grantable permission (see packages/types/src/permissions.ts;
+    // WAITER holds bills.print but not discounts.apply by default). Without
+    // this check, any role that can checkout could zero out a bill via
+    // discountPercent=100, bypassing the manager/cashier-only control.
+    if (
+      ((dto.discountPercent ?? 0) > 0 || (dto.discountFlat ?? 0) > 0) &&
+      !user.permissions.includes('discounts.apply')
+    ) {
+      throw new ForbiddenException(
+        'Missing permission to apply a discount at checkout',
+      );
+    }
+    return this.ordersService.checkout(branchId, id, user.id, dto);
   }
 
   @Auth('bills.print')
