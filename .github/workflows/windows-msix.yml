@@ -38,11 +38,22 @@ jobs:
       - name: Add Windows SDK tools (makeappx, signtool) to PATH
         shell: pwsh
         run: |
-          $sdkBin = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64" -Directory -ErrorAction Stop |
-            Sort-Object Name -Descending | Select-Object -First 1
-          if (-not $sdkBin) { throw "No Windows 10/11 SDK bin directory found" }
-          Write-Host "Using SDK tools from: $($sdkBin.FullName)"
-          Add-Content -Path $env:GITHUB_PATH -Value $sdkBin.FullName
+          # Not every "…\bin\<version>\x64" directory actually contains
+          # makeappx.exe (some SDK component subsets on hosted runners omit
+          # it) — search for the tool itself rather than assuming the
+          # highest-versioned directory has it.
+          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeappx) {
+            Write-Host "Windows Kits 10 bin dirs found:"
+            Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "  $($_.FullName): $((Get-ChildItem $_.FullName -Recurse -Filter '*.exe' -ErrorAction SilentlyContinue | Select-Object -First 5 -ExpandProperty Name) -join ', ')"
+            }
+            throw "makeappx.exe not found under any Windows 10/11 SDK bin directory"
+          }
+          $sdkBinDir = Split-Path $makeappx.FullName -Parent
+          Write-Host "Using SDK tools from: $sdkBinDir"
+          Add-Content -Path $env:GITHUB_PATH -Value $sdkBinDir
 
       - name: Build + package (self-signed test cert)
         shell: pwsh
