@@ -175,27 +175,27 @@ try {
     #
     # `prisma` the CLI is the one devDependency actually needed at RUNTIME
     # (apps/backend/dist/src/main.js doesn't need it, but ServerSupervisor
-    # separately runs `prisma migrate deploy` before starting it). The CLI
-    # itself isn't self-contained — it needs its @prisma/* scope siblings
-    # too (confirmed on real CI: pruning first, restoring only the
-    # `prisma` folder, left `migrate deploy` failing with "Cannot find
-    # module '@prisma/engines'" — a dependency of the CLI specifically,
-    # not of @prisma/client, so it isn't kept automatically by
-    # @prisma/client's own real-dependency status surviving the prune).
+    # separately runs `prisma migrate deploy` before starting it).
     #
-    # Where exactly pnpm actually puts @prisma/engines took two guesses to
-    # find empirically: NOT apps\backend\node_modules\@prisma (exists, but
-    # only holds @prisma/client), and NOT a plain node_modules\@prisma at
-    # the repo root either (doesn't exist as a real top-level folder at
-    # all under pnpm's non-hoisted layout). It's a purely transitive
-    # dependency reached only through `prisma`'s own internal require()
-    # calls, which resolves through pnpm's flat virtual-store bucket at
-    # node_modules\.pnpm\node_modules\@prisma instead — the same
-    # resolution layer that caused the earlier .env.example leak (see the
-    # "stray .env-shaped files" step below). Rather than guess a FOURTH
-    # location if this one also turns out wrong, every candidate is now
-    # backed up with -Optional (skips quietly if that particular location
-    # doesn't exist) and restored only if its backup actually exists.
+    # This turned out to be a PRE-EXISTING module-resolution gap, not
+    # something pruning caused: `require('@prisma/engines')` from
+    # apps\backend\node_modules\prisma\build\index.js failed identically
+    # on the very first attempt, before any pruning/restore logic existed
+    # at all. pnpm's non-hoisted layout only puts the real @prisma/engines
+    # content in its flat virtual-store bucket
+    # (node_modules\.pnpm\node_modules\@prisma\engines) — a path Node's
+    # require() resolution algorithm never visits directly (it only walks
+    # up through actual node_modules folders in the file's own ancestor
+    # directories, e.g. apps\backend\node_modules\@prisma, plain root
+    # node_modules\@prisma — neither of which pnpm populated with
+    # `engines` here, only `client`).
+    #
+    # Fix: back up every candidate location (whichever ones actually
+    # exist survive pnpm prune --prod's removal), then explicitly copy
+    # whichever backup contains a real "engines" subfolder into
+    # apps\backend\node_modules\@prisma\engines — a location Node's
+    # resolution algorithm DOES walk from prisma's own file location —
+    # regardless of where pnpm itself originally put it.
     $prismaPreserve = @(
         @{ Src = 'apps\backend\node_modules\prisma'; Name = '_prisma_cli_backup' }
         @{ Src = 'apps\backend\node_modules\@prisma'; Name = '_prisma_scope_backend_backup' }
@@ -216,11 +216,25 @@ try {
         $backupPath = Join-Path $StageDir $item.Name
         if (Test-Path $backupPath) {
             Copy-DirectoryRobust -Src $backupPath -Dst (Join-Path $RepoRoot $item.Src)
-            # These scratch holding areas live under $StageDir, which
-            # build-windows-msix.ps1 packs wholesale (`makeappx pack /d
-            # $stageDir`) — left uncleaned, they'd ship inside the .msix too.
-            Remove-Item -Recurse -Force $backupPath -ErrorAction SilentlyContinue
         }
+    }
+
+    Write-Host "-- Placing @prisma/engines where prisma's require() resolution actually looks" -ForegroundColor Yellow
+    $engineSource = $prismaPreserve | ForEach-Object {
+        $candidate = Join-Path (Join-Path $StageDir $_.Name) 'engines'
+        if (Test-Path $candidate) { $candidate }
+    } | Select-Object -First 1
+    if (-not $engineSource) {
+        throw "Could not find a real @prisma/engines folder in any backed-up @prisma location — cannot fix module resolution for prisma migrate deploy."
+    }
+    $engineDest = Join-Path $RepoRoot 'apps\backend\node_modules\@prisma\engines'
+    Copy-DirectoryRobust -Src $engineSource -Dst $engineDest
+
+    # These scratch holding areas live under $StageDir, which
+    # build-windows-msix.ps1 packs wholesale (`makeappx pack /d
+    # $stageDir`) — left uncleaned, they'd ship inside the .msix too.
+    foreach ($item in $prismaPreserve) {
+        Remove-Item -Recurse -Force (Join-Path $StageDir $item.Name) -ErrorAction SilentlyContinue
     }
 }
 finally {
@@ -257,18 +271,15 @@ foreach ($copy in $copies) {
 if (-not (Test-Path (Join-Path $backendStage 'apps\backend\dist\src\main.js'))) {
     throw "Backend staging looks wrong — apps\backend\dist\src\main.js not found under $backendStage"
 }
-$prismaEnginesCandidates = @(
-    'apps\backend\node_modules\@prisma\engines'
-    'node_modules\@prisma\engines'
-    'node_modules\.pnpm\node_modules\@prisma\engines'
-)
-$prismaEnginesFound = $prismaEnginesCandidates | Where-Object { Test-Path (Join-Path $backendStage $_) }
-if (-not $prismaEnginesFound) {
-    throw "Backend staging looks wrong — @prisma\engines not found under any of: " +
-          "$($prismaEnginesCandidates -join ', ') (all relative to $backendStage). " +
-          "This is a dependency of the prisma CLI specifically (not of @prisma/client), so it isn't kept " +
-          "automatically by @prisma/client's own real-dependency status surviving pnpm prune --prod — " +
-          "the @prisma scope backup/restore above must cover it explicitly."
+# apps\backend\node_modules\@prisma\engines specifically — the one
+# location the "Placing @prisma/engines..." step above guarantees,
+# because it's the one location prisma's own require() resolution
+# actually walks from apps\backend\node_modules\prisma\build\index.js
+# (see that step's comment for why the other candidates don't work).
+if (-not (Test-Path (Join-Path $backendStage 'apps\backend\node_modules\@prisma\engines'))) {
+    throw "Backend staging looks wrong — @prisma\engines not found under " +
+          "$backendStage\apps\backend\node_modules\@prisma. The 'Placing @prisma/engines...' " +
+          "step above should have put it there explicitly — check whether it actually ran."
 }
 # Functional smoke test, not just file-existence: a missing FURTHER
 # transitive dependency wouldn't be caught by checking individual files
