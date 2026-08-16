@@ -173,84 +173,21 @@ try {
     # multiplied by however many packages depend on each. Prune it now
     # that building is done, before anything gets copied for staging.
     #
-    # `prisma` the CLI is the one devDependency actually needed at RUNTIME
-    # (apps/backend/dist/src/main.js doesn't need it, but ServerSupervisor
-    # separately runs `prisma migrate deploy` before starting it).
-    #
-    # This turned out to be a PRE-EXISTING module-resolution gap, not
-    # something pruning caused: `require('@prisma/engines')` from
-    # apps\backend\node_modules\prisma\build\index.js failed identically
-    # on the very first attempt, before any pruning/restore logic existed
-    # at all. pnpm's non-hoisted layout only puts the real @prisma/engines
-    # content in its flat virtual-store bucket
-    # (node_modules\.pnpm\node_modules\@prisma\engines) — a path Node's
-    # require() resolution algorithm never visits directly (it only walks
-    # up through actual node_modules folders in the file's own ancestor
-    # directories, e.g. apps\backend\node_modules\@prisma, plain root
-    # node_modules\@prisma — neither of which pnpm populated with
-    # `engines` here, only `client`).
-    #
-    # Fix: back up every candidate location (whichever ones actually
-    # exist survive pnpm prune --prod's removal), then explicitly copy
-    # whichever backup contains a real "engines" subfolder into
-    # apps\backend\node_modules\@prisma\engines — a location Node's
-    # resolution algorithm DOES walk from prisma's own file location —
-    # regardless of where pnpm itself originally put it.
-    $prismaPreserve = @(
-        @{ Src = 'apps\backend\node_modules\prisma'; Name = '_prisma_cli_backup' }
-        @{ Src = 'apps\backend\node_modules\@prisma'; Name = '_prisma_scope_backend_backup' }
-        @{ Src = 'node_modules\@prisma'; Name = '_prisma_scope_root_backup' }
-        @{ Src = 'node_modules\.pnpm\node_modules\@prisma'; Name = '_prisma_scope_pnpmstore_backup' }
-    )
-    Write-Host "-- Preserving prisma CLI + @prisma/* (all known candidate locations) before pruning devDependencies" -ForegroundColor Yellow
-    foreach ($item in $prismaPreserve) {
-        Copy-DirectoryRobust -Src (Join-Path $RepoRoot $item.Src) -Dst (Join-Path $StageDir $item.Name) -Optional
-    }
-
+    # `prisma` the CLI (needed at RUNTIME — ServerSupervisor runs `prisma
+    # migrate deploy` before starting the backend) is a real `dependencies`
+    # entry in apps/backend/package.json, not a devDependency, specifically
+    # so this prune leaves its whole tree — including transitive @prisma/*
+    # siblings like @prisma/engines, @prisma/debug, and non-@prisma
+    # packages like `effect` that its CLI needs internally — completely
+    # untouched, the same as every other production dependency. An earlier
+    # version of this script tried to keep `prisma` as a devDependency and
+    # manually back up/restore/merge whichever of its dependencies pruning
+    # happened to remove, discovering them one CI failure at a time
+    # (engines, then debug, then effect...) — reclassifying it here was
+    # the actual fix; this prune step needs no special-casing at all now.
     Write-Host "-- Pruning devDependencies (keep only what's needed at runtime)" -ForegroundColor Yellow
     & pnpm prune --prod
     if ($LASTEXITCODE -ne 0) { throw "pnpm prune --prod failed with exit code $LASTEXITCODE" }
-
-    Write-Host "-- Restoring prisma CLI + @prisma/*" -ForegroundColor Yellow
-    foreach ($item in $prismaPreserve) {
-        $backupPath = Join-Path $StageDir $item.Name
-        if (Test-Path $backupPath) {
-            Copy-DirectoryRobust -Src $backupPath -Dst (Join-Path $RepoRoot $item.Src)
-        }
-    }
-
-    # Copying just "engines" wasn't enough — the next CI run immediately
-    # hit the identical problem for @prisma/debug, confirming the CLI
-    # needs its whole family of @prisma/* siblings (debug, engines,
-    # config, fetch-engine, get-platform, internals, etc. — however many
-    # there turn out to be), not one specific package. Merge the ENTIRE
-    # scope from the most complete backup (the .pnpm virtual-store
-    # bucket, since that's the one place that legitimately holds
-    # everything prisma transitively resolves) into
-    # apps\backend\node_modules\@prisma, rather than fix these one at a
-    # time across repeated CI round trips.
-    Write-Host "-- Merging the full @prisma/* scope where prisma's require() resolution actually looks" -ForegroundColor Yellow
-    $scopeBackups = $prismaPreserve | Where-Object { $_.Name -like '_prisma_scope_*' } |
-        ForEach-Object { Join-Path $StageDir $_.Name } | Where-Object { Test-Path $_ }
-    if (-not $scopeBackups) {
-        throw "Could not find any backed-up @prisma scope directory — cannot fix module resolution for prisma migrate deploy."
-    }
-    $prismaScopeDest = Join-Path $RepoRoot 'apps\backend\node_modules\@prisma'
-    foreach ($scopeBackup in $scopeBackups) {
-        # Copy each package folder individually (not the scope dir as a
-        # whole) so this MERGES siblings in rather than each backup
-        # wholesale-overwriting the previous one's contribution.
-        Get-ChildItem -Path $scopeBackup -Directory | ForEach-Object {
-            Copy-DirectoryRobust -Src $_.FullName -Dst (Join-Path $prismaScopeDest $_.Name)
-        }
-    }
-
-    # These scratch holding areas live under $StageDir, which
-    # build-windows-msix.ps1 packs wholesale (`makeappx pack /d
-    # $stageDir`) — left uncleaned, they'd ship inside the .msix too.
-    foreach ($item in $prismaPreserve) {
-        Remove-Item -Recurse -Force (Join-Path $StageDir $item.Name) -ErrorAction SilentlyContinue
-    }
 }
 finally {
     Pop-Location
@@ -286,29 +223,20 @@ foreach ($copy in $copies) {
 if (-not (Test-Path (Join-Path $backendStage 'apps\backend\dist\src\main.js'))) {
     throw "Backend staging looks wrong — apps\backend\dist\src\main.js not found under $backendStage"
 }
-# apps\backend\node_modules\@prisma\engines specifically — the one
-# location the "Placing @prisma/engines..." step above guarantees,
-# because it's the one location prisma's own require() resolution
-# actually walks from apps\backend\node_modules\prisma\build\index.js
-# (see that step's comment for why the other candidates don't work).
-if (-not (Test-Path (Join-Path $backendStage 'apps\backend\node_modules\@prisma\engines'))) {
-    throw "Backend staging looks wrong — @prisma\engines not found under " +
-          "$backendStage\apps\backend\node_modules\@prisma. The 'Placing @prisma/engines...' " +
-          "step above should have put it there explicitly — check whether it actually ran."
-}
-# Functional smoke test, not just file-existence: a missing FURTHER
-# transitive dependency wouldn't be caught by checking individual files
-# exist, but would still break `prisma migrate deploy` at runtime exactly
-# like the @prisma/engines gap this check is here to prevent a regression
-# of. Actually exercises the CLI's own require() chain.
-& node (Join-Path $backendStage 'apps\backend\node_modules\prisma\build\index.js') --version | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    throw "Backend staging looks wrong — the staged prisma CLI failed to even print --version (exit $LASTEXITCODE). " +
-          "It's likely missing a further @prisma/* runtime dependency beyond what this script currently backs up."
-}
-if (-not (Test-Path (Join-Path $backendStage 'apps\backend\node_modules\prisma\build\index.js'))) {
+$prismaCliPath = Join-Path $backendStage 'apps\backend\node_modules\prisma\build\index.js'
+if (-not (Test-Path $prismaCliPath)) {
     throw "Backend staging looks wrong — prisma CLI not found under $backendStage\apps\backend\node_modules\prisma. " +
-          "It's a devDependency, so this requires the FULL `pnpm install` above, not a --prod install."
+          "It's a real `dependencies` entry (see apps/backend/package.json), so pnpm prune --prod should never remove it."
+}
+# Functional smoke test, not just file-existence: a missing transitive
+# dependency (e.g. @prisma/engines, @prisma/debug — real gaps hit before
+# `prisma` was moved to a real dependency, see that package.json commit)
+# wouldn't be caught by checking individual files exist, but would still
+# break `prisma migrate deploy` at runtime. Actually exercises the CLI's
+# own require() chain.
+& node $prismaCliPath --version | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "Backend staging looks wrong — the staged prisma CLI failed to even print --version (exit $LASTEXITCODE)."
 }
 
 # --- 3. Stage web, mirroring apps/web/Dockerfile's runtime COPYs -----------
