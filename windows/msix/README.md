@@ -131,33 +131,79 @@ rather than just documented.
 
 Per this project's own "don't fake test results" rule:
 
-- **MSIX build (CI, windows-latest): see the latest run of
-  `windows-msix.yml`** — this actually publishes the WinForms project,
-  packs a real `.msix` via `makeappx`, runs `validate-msix.ps1`'s
+- **Install / uninstall / Start Menu registration (CI, windows-latest):
+  see the latest run of `windows-msix.yml`.** Publishes the WinForms
+  project, packs a real `.msix` via `makeappx`, runs `validate-msix.ps1`'s
   structural checks, installs it via `Add-AppxPackage` with a self-signed
   test cert, verifies the package registers (`Get-AppxPackage`), then
-  uninstalls. This is real, automated, machine-verified — not a manual
-  claim.
+  uninstalls. Real, automated, machine-verified — not a manual claim.
+- **Upgrade/update (CI, windows-latest): verified, not just implied.**
+  The workflow installs v1.0.0.0, writes a fake pre-existing
+  `%LOCALAPPDATA%\OrderRestro\config.json` (simulating a configured
+  server address), bumps to v1.0.0.1, reinstalls in place, then asserts
+  both that `Get-AppxPackage` reports the new version and that the
+  config file survived byte-for-byte. This used to be an assumption
+  ("`AppConfig` lives outside the install directory, so it should
+  survive") — it's now an actual round-trip test.
+- **Correct app identity/signing: verified.** `AppxManifest.xml` carries
+  the real Partner Center identity (`NODEDRINFOTECHLIMITED.orderrestro`,
+  `CN=11C721FC-E399-4888-B532-7BFCD5C491B3`); the CI self-signed test
+  cert's subject is read from that same manifest field so install
+  succeeds only when they genuinely match, the same constraint Windows
+  enforces for a real signed package.
+- **No forbidden capabilities: verified, and enforced, not just
+  documented.** `validate-msix.ps1`'s capability allow-list check
+  (`internetClient`, `runFullTrust` only) runs in CI on every push; it
+  fails the build if any device/USB/broad-filesystem capability is ever
+  added.
+- **WebView2 behavior: mostly verified, one path still real-hardware-only.**
+  Normal load/navigate/print/reload/change-server flows run against a
+  live self-hosted server as part of manual development, and dev
+  tools/context menu/status bar are explicitly disabled for the packaged
+  build (see `MainForm.cs`). The WebView2-Runtime-**absent** path is now
+  handled defensively (catches `WebView2RuntimeNotFoundException` and
+  shows an actionable message instead of crashing — see
+  `MainForm.InitializeAsync`), and a global `Program.cs` exception
+  handler catches anything else and logs to `AppConfig.LogDir` instead of
+  an unhandled-crash dialog. What's still NOT exercised is the actual
+  runtime-missing scenario on real hardware — `windows-latest` always has
+  WebView2 preinstalled, so only the code path (not the real device
+  behavior) is verified.
+- **Windows App Certification Kit (WACK): partially run for real in CI,
+  not just skipped.** `appcert.exe` turns out to be present on
+  `windows-latest` — the workflow runs `appcert.exe test -packagefullname
+  ... -reportoutputpath ...` against the installed package on every push.
+  Result as of the last run: 35 of 36 individual compliance tasks
+  (manifest correctness, banned-file analyzer, resource packages,
+  signed-executable checks, UAC run level, dependency info, branding,
+  blocked executables, private code signing, etc.) reported **success**.
+  The one failure, "Program inventory," is a known, documented false
+  positive for Desktop Bridge (Win32-packaged MSIX) apps — they don't
+  register an uninstall entry in classic "Programs and Features" the way
+  an MSI installer does, and this doesn't block Store certification for
+  this app class. WACK's own XML report-writer then errors
+  ("An error occurred while trying to create the report") in this
+  headless CI session, so a polished formal `OVERALL_RESULT` isn't
+  obtainable from CI — Microsoft's own WACK guidance notes it wants an
+  uninterrupted logged-in desktop session for reliable results, which a
+  CI runner doesn't fully provide. **Still NOT TESTED**: a full,
+  formally-reported WACK pass, which requires either a real interactive
+  Windows machine or Partner Center's own submission-time certification.
 - **NOT TESTED — physical Windows hardware.** No actual Windows desktop
-  was available to click through: Start Menu tile appearance, taskbar
-  icon, window chrome at various DPI scales, a real UAC-prompt-absence
-  visual check, sleep/reboot/relaunch behavior, or upgrade-in-place data
-  survival beyond what the code implies (`AppConfig` lives outside the
-  install directory, so it should survive — not empirically verified on
-  hardware).
-- **NOT TESTED — physical thermal printer.** No hardware in this
-  environment. The printing path itself is unchanged browser
-  `window.print()` behavior already used by the Linux/browser deployment;
-  what's specifically unverified is a real Windows-installed printer
-  driver + a real thermal printer physically producing a correctly
-  formatted 58mm/80mm receipt.
-- **NOT TESTED — Microsoft Store submission/certification.** Requires a
-  real Partner Center account, the real publisher identity, and the
-  Store's own certification pipeline (which includes WACK) — none of
-  which can be exercised without that account. The manifest and
-  capabilities above were hand-audited against current MSIX/Store
-  requirements, not run through WACK.
-- **NOT TESTED — WebView2 Runtime absence path.** `MainForm.cs` assumes
-  the evergreen runtime is present (true on Windows 11 and most Windows
-  10 systems); the failure path if it's genuinely absent was not
-  exercised against real hardware missing it.
+  was available to click through: Start Menu tile *appearance* (vs.
+  registration, which is CI-verified), taskbar icon, window chrome at
+  various DPI scales, a real UAC-prompt-absence visual check, or
+  sleep/reboot/relaunch behavior.
+- **NOT TESTED — printer behavior within Store restrictions.** Printing
+  requests no MSIX capability at all — `window.print()` inside WebView2
+  routes through the normal Windows Print Spooler exactly like Edge does,
+  which Store policy permits without any device-class capability
+  declaration (see `Capabilities` allow-list above). What's specifically
+  unverified is a real Windows-installed printer driver + a real thermal
+  printer physically producing a correctly formatted 58mm/80mm receipt —
+  no hardware in this environment.
+- **NOT TESTED — full Microsoft Store submission/certification.** Requires
+  actually submitting through Partner Center with this real identity,
+  which triggers the Store's own certification pipeline (effectively a
+  more thorough, hosted WACK run plus policy review) — not something
+  exercisable without submitting for real.
