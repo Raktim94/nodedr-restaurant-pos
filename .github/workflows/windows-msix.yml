@@ -273,10 +273,13 @@ jobs:
 
       - name: Launch in embedded-server mode and verify real health checks
         shell: pwsh
-        # First launch copies the whole embedded-server payload (a few
-        # hundred MB) out of the read-only MSIX install location before
-        # anything else can start — see ServerSupervisor.EnsureRuntimeCopyAsync.
-        timeout-minutes: 12
+        # First launch copies the whole embedded-server payload out of the
+        # read-only MSIX install location before anything else can start —
+        # confirmed ~2.8GB / 5+ minutes on CI hardware (see
+        # ServerSupervisor.EnsureRuntimeCopyAsync) — before Postgres,
+        # migrations, and the backend/web processes even get a chance to
+        # start and become healthy.
+        timeout-minutes: 20
         run: |
           [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
           $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
@@ -304,7 +307,7 @@ jobs:
               return $false
           }
 
-          $backendOk = Wait-Health 'http://localhost:4001/api/health' 480
+          $backendOk = Wait-Health 'http://localhost:4001/api/health' 900
           $webOk = if ($backendOk) { Wait-Health 'http://localhost:1995/api/health' 60 } else { $false }
 
           # Approximates "another LAN device reaching this PC": hosted

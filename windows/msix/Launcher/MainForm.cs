@@ -213,10 +213,11 @@ internal sealed class MainForm : Form
         {
             // Generous first-run budget: EnsureRuntimeCopyAsync copies the
             // whole embedded-server payload (Postgres + Node + backend +
-            // web, a few hundred MB) out of the read-only MSIX install
-            // location on the very first launch only — every launch after
-            // that skips it and starts in seconds.
-            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(8));
+            // web — ~2.8GB, confirmed ~5+ minutes on CI hardware) out of
+            // the read-only MSIX install location on the very first launch
+            // only, before Postgres/migrations/backend/web even start —
+            // every launch after that skips it and starts in seconds.
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
             await _supervisor.StartAsync(cts.Token);
         }
         catch (Exception ex)
