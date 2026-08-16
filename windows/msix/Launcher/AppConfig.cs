@@ -25,7 +25,7 @@ internal sealed class AppConfig
     private static string ConfigDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OrderRestro");
 
-    private static string ConfigPath => Path.Combine(ConfigDir, "config.json");
+    public static string ConfigPath => Path.Combine(ConfigDir, "config.json");
 
     public static string WebView2UserDataFolder => Path.Combine(ConfigDir, "WebView2");
 

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
@@ -100,6 +101,24 @@ internal sealed class ServerSupervisor : IDisposable
         // %LOCALAPPDATA%\OrderRestro\server\server-runtime forces a
         // fresh copy if ever needed.
         if (File.Exists(ServerPaths.NodeExePath)) return;
+
+        // This build's package genuinely has no embedded-server payload —
+        // either it was built without -IncludeEmbeddedServer (the default;
+        // see build-windows-msix.ps1), or an OLDER thin-client-only build
+        // got installed over a newer one. Without this check, robocopy
+        // just fails on a missing source directory with a bare "exit 16"
+        // — nothing here explains WHY, and config.json's Mode: embedded
+        // (written by FirstRunChoiceForm) persists in %LOCALAPPDATA%
+        // independently of whichever package is actually installed, so a
+        // stale choice from an earlier embedded install can silently
+        // outlive a later thin-client-only reinstall.
+        if (!Directory.Exists(ServerPaths.InstallServerDir) || !Directory.EnumerateFileSystemEntries(ServerPaths.InstallServerDir).Any())
+        {
+            throw new InvalidOperationException(
+                "This installed build does not include the embedded server (it was built without -IncludeEmbeddedServer), " +
+                "but this PC is configured to run in embedded mode — likely left over from a previous install.\n\n" +
+                $"Delete \"{AppConfig.ConfigPath}\" and relaunch to choose again, or reinstall using a package built with -IncludeEmbeddedServer.");
+        }
 
         Report("Setting up (first launch only — this can take a minute)…");
         if (Directory.Exists(ServerPaths.RuntimeServerDir))
