@@ -80,30 +80,39 @@ foreach ($tool in 'pnpm', 'node') {
 
 New-Item -ItemType Directory -Force -Path $serverDir, $DownloadCacheDir | Out-Null
 
-# Copy-Item -Recurse mishandles NTFS junctions/symlinks — pnpm's
-# node_modules is full of them (that's how it saves disk space) — and hit
-# an Access Denied failure on a runaway path in practice building this
-# script. robocopy's default behavior (deliberately NOT passing /SL)
-# follows symlinks/junctions and copies their real target content as
-# ordinary files, which is what's actually needed here: makeappx.exe
-# cannot pack a source tree containing real reparse points at all (hit
-# "0x80070005 - Access is denied" trying to process one directly) — every
-# file in the staged tree must be a real, ordinary file.
+# Enable Windows's native long-path support (registry, machine-wide) —
+# the officially documented fix for MAX_PATH (260 chars), which a
+# dereferenced pnpm tree exceeds easily (node_modules\.pnpm\node_modules\
+# <pkg>\... chains get long fast). Tried \\?\ (extended-length path)
+# prefixing instead first — it failed TWICE in different, seemingly
+# unrelated ways (ERROR 53 "network path not found" on both a shallow
+# reparse-point source AND, separately, a trivially short plain
+# destination folder), which means this robocopy build just doesn't
+# handle that prefix reliably here, not that path length itself was ever
+# the wrong diagnosis. This is safe on a CI runner (fresh VM per job) —
+# best-effort only for a local/non-admin run, where the copy still mostly
+# works for paths under 260 chars regardless.
+try {
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name 'LongPathsEnabled' -Value 1 -Type DWord -ErrorAction Stop
+    Write-Host "Enabled Windows long-path support (registry)." -ForegroundColor DarkGray
+} catch {
+    Write-Host "Could not enable long-path support ($($_.Exception.Message)) — continuing; only matters for very deeply nested paths." -ForegroundColor Yellow
+}
+
 function Copy-DirectoryRobust {
     param([string]$Src, [string]$Dst)
-    # \\?\ (extended-length path) prefix on the DESTINATION only, not the
-    # source. Two real failures established this asymmetry empirically:
-    # prefixing BOTH broke robocopy on a shallow reparse-point SOURCE
-    # (ERROR 53 "network path not found" on apps\backend\node_modules\
-    # prisma, a plain symlink — a known robocopy quirk with that prefix on
-    # reparse points); prefixing NEITHER hit ERROR 3 "path not found"
-    # creating deeply-nested DESTINATION directories once real copying of
-    # a dereferenced pnpm tree pushed paths past Windows's 260-char
-    # MAX_PATH (node_modules\.pnpm\node_modules\<pkg>\... chains get long
-    # fast). The destination is always a plain directory tree being
-    # created fresh, never a reparse point, so \\?\ is safe there.
-    $dstLong = if ($Dst -match '^\\\\') { $Dst } else { "\\?\$Dst" }
-    $output = & robocopy $Src $dstLong /E /NFL /NDL /NJH /NJS /R:1 /W:1 2>&1
+    # Plain paths, no \\?\ prefix — see the long-path-support comment
+    # above for why. Copy-Item -Recurse mishandles NTFS junctions/symlinks
+    # — pnpm's node_modules is full of them (that's how it saves disk
+    # space) — and hit an Access Denied failure on a runaway path in
+    # practice building this script. robocopy's default behavior
+    # (deliberately NOT passing /SL) follows symlinks/junctions and copies
+    # their real target content as ordinary files, which is what's
+    # actually needed here: makeappx.exe cannot pack a source tree
+    # containing real reparse points at all (hit "0x80070005 - Access is
+    # denied" trying to process one directly) — every file in the staged
+    # tree must be a real, ordinary file.
+    $output = & robocopy $Src $Dst /E /NFL /NDL /NJH /NJS /R:1 /W:1 2>&1
     # robocopy's exit codes are a bitmask where 0-7 are all "success"
     # variants (files copied / extra files present / etc.) — only 8+
     # means a real failure. Output is captured (not discarded) so a real
