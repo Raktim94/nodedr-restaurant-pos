@@ -98,6 +98,43 @@ machine exists in the environment this app was developed in.
 fails the build if any of these ever get added, so this stays enforced
 rather than just documented.
 
+### Partner Center: "restricted capabilities require approval" warning
+
+On upload, Partner Center's package acceptance validation flags:
+
+> The following restricted capabilities require approval before you can
+> use them in your app: runFullTrust.
+
+This is expected and not a rejection — `runFullTrust` is one of the
+"restricted" capability tier (alongside things like `broadFileSystemAccess`
+or device-class capabilities) that Microsoft gates behind a manual/automated
+review step before the submission can go live, regardless of how minimal
+or justified the actual usage is. Every Desktop Bridge (Win32-model) app
+packaged as MSIX declares it — see "Why WinForms, and why `runFullTrust`"
+above — so this warning surfaces on essentially all such submissions, not
+just this one.
+
+What to do about it:
+
+- It's a **warning**, not a validation error — it doesn't block uploading
+  the package itself (unlike the earlier package-identity-name error).
+- Continue through submission; Partner Center's certification pipeline
+  evaluates the `runFullTrust` request as part of the normal review that
+  already runs on every submission. It is commonly auto-approved for
+  ordinary desktop-shell apps like this one (no elevation, no UWP sandbox
+  escape, no other restricted capability alongside it).
+- If Partner Center's submission flow presents a **"Notes for
+  certification"** field, it's worth adding a short note there stating the
+  app is a WebView2-hosted desktop client that requires `runFullTrust`
+  solely because it's a Win32/WinForms app under the Desktop Bridge model,
+  and that it requests no elevation and no other restricted capability —
+  this mirrors the justification already in `AppxManifest.xml`'s own
+  capabilities comment.
+- If a submission is ever rejected specifically over this capability,
+  that's a signal to revisit here — it would mean the reviewer wants more
+  justification than the above, not that the capability itself is wrong to
+  declare (there is no non-restricted alternative for this app class).
+
 ## Before you submit to the Microsoft Store
 
 1. ~~`AppxManifest.xml` → `Identity/@Publisher`~~ — **done.** Set to the
