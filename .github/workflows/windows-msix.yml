@@ -295,6 +295,8 @@ jobs:
           Write-Host "Launching $exePath ..." -ForegroundColor Cyan
           $proc = Start-Process -FilePath $exePath -PassThru
 
+          $supervisorErrorLog = Join-Path $configDir 'server\logs\supervisor-error.log'
+
           function Wait-Health($url, $timeoutSec) {
               $deadline = (Get-Date).AddSeconds($timeoutSec)
               while ((Get-Date) -lt $deadline) {
@@ -302,6 +304,16 @@ jobs:
                       $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
                       if ($resp.StatusCode -eq 200) { return $true }
                   } catch { }
+                  # Fail fast instead of waiting out the full timeout: if the
+                  # app already gave up internally (see MainForm's
+                  # StartEmbeddedServerAsync catch block), polling an
+                  # endpoint that will never come up is pure wasted CI time
+                  # — a prior run burned the full 15 minutes this way.
+                  if (Test-Path $script:supervisorErrorLog) {
+                      Write-Host "supervisor-error.log appeared — the app already gave up internally, not waiting out the rest of the timeout." -ForegroundColor Red
+                      Write-Host (Get-Content $script:supervisorErrorLog -Raw) -ForegroundColor Red
+                      return $false
+                  }
                   Start-Sleep -Seconds 3
               }
               return $false

@@ -222,6 +222,20 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            // Without this, the ONLY place a startup failure was visible
+            // was this window's own UI text — invisible to CI (and to
+            // anyone troubleshooting without eyes on the actual screen).
+            // A prior CI run's "backend never became healthy" turned out
+            // to be exactly this: the supervisor had already failed and
+            // given up internally, but nothing on disk showed why.
+            try
+            {
+                File.AppendAllText(
+                    Path.Combine(ServerPaths.ServerLogDir, "supervisor-error.log"),
+                    $"{DateTime.UtcNow:O} {ex}\n");
+            }
+            catch { /* best-effort */ }
+
             ShowFatalError(
                 $"Could not start the embedded server.\n\n{ex.Message}\n\n" +
                 $"Logs: {ServerPaths.ServerLogDir}");
