@@ -65,7 +65,11 @@ jobs:
         shell: pwsh
         working-directory: windows/msix
         run: |
-          ./validate-msix.ps1 -MsixPath ./out/OrderRestro.msix
+          # -AllowPlaceholderPublisher: this job builds with -SelfSignedTest,
+          # which signs with a throwaway cert whose subject IS the
+          # placeholder CN (see build-windows-msix.ps1) — that's expected
+          # here, not a real shipping package.
+          ./validate-msix.ps1 -MsixPath ./out/OrderRestro.msix -AllowPlaceholderPublisher
 
       - name: Install + verify Start Menu registration
         shell: pwsh

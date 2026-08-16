@@ -30,13 +30,25 @@
     Path to the .msix to validate. Defaults to ./out/OrderRestro.msix (the
     build-windows-msix.ps1 default output location).
 
+.PARAMETER AllowPlaceholderPublisher
+    Downgrades the placeholder-Publisher check from a failure to a warning.
+    ONLY for a package built with build-windows-msix.ps1's -SelfSignedTest
+    (which deliberately signs with a throwaway cert whose subject is that
+    same placeholder CN, so Publisher == signer for a local/CI install
+    round-trip to succeed at all). Do not pass this when validating a
+    package meant for real sideload/Store submission — the default
+    (without this switch) is the loud, ship-blocking failure the
+    placeholder is meant to produce.
+
 .EXAMPLE
     ./validate-msix.ps1
     ./validate-msix.ps1 -MsixPath .\out\OrderRestro.msix
+    ./validate-msix.ps1 -AllowPlaceholderPublisher   # CI/local self-signed test builds only
 #>
 [CmdletBinding()]
 param(
-    [string]$MsixPath = (Join-Path $PSScriptRoot 'out\OrderRestro.msix')
+    [string]$MsixPath = (Join-Path $PSScriptRoot 'out\OrderRestro.msix'),
+    [switch]$AllowPlaceholderPublisher
 )
 
 $ErrorActionPreference = 'Stop'
@@ -79,7 +91,11 @@ try {
         $publisher = $manifest.Package.Identity.Publisher
         if ([string]::IsNullOrWhiteSpace($publisher)) { throw "Publisher is empty" }
         if ($publisher -match 'REPLACE-WITH-YOUR-PARTNER-CENTER-PUBLISHER-ID') {
-            throw "Publisher is still the placeholder — set the real Partner Center CN before shipping this package"
+            if ($AllowPlaceholderPublisher) {
+                $script:warnings += "Publisher is still the placeholder CN — expected for a -SelfSignedTest build, but this package must NOT be sideloaded/submitted as-is."
+            } else {
+                throw "Publisher is still the placeholder — set the real Partner Center CN before shipping this package (pass -AllowPlaceholderPublisher only for a -SelfSignedTest build)"
+            }
         }
     }
 
