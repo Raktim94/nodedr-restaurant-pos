@@ -97,6 +97,25 @@ login — there's no separate "cloud" mode to configure.
   see [`casaos/README.md`](casaos/README.md). Official app store submission
   pending.
 
+### Windows desktop client
+
+However you host the server above, tills that are Windows machines don't
+have to use a browser tab: `windows/msix/` packages a thin native client
+(WinForms + WebView2, not Electron — no bundled Chromium, no server, no
+Docker) with a Start Menu entry that points at your server's address and
+otherwise just shows the same web UI. See
+[`windows/msix/README.md`](windows/msix/README.md) for what it is/isn't,
+build instructions, and the full capability list.
+
+Status: the build, package, install, and Start Menu registration are all
+machine-verified on every push via GitHub Actions (`windows-msix.yml`,
+real `windows-latest` runner) — not just "it compiled." What that CI run
+does **not** cover: a physical Windows machine (Start Menu tile look,
+taskbar icon, DPI scaling, upgrade-in-place), a real thermal printer, or
+Microsoft Store certification (WACK) — see `windows/msix/README.md` and
+[`SECURITY-AUDIT-REPORT.md`](./SECURITY-AUDIT-REPORT.md) for the full
+verified-vs-not-tested breakdown before relying on it in production.
+
 ## Features
 
 Full field-level detail for every module lives in [`ROADMAP.md`](./ROADMAP.md).
@@ -328,6 +347,7 @@ docs/           Screenshots and supplementary docs
 | [`ROADMAP.md`](./ROADMAP.md) | Phased build plan / living TODO — checkboxes are the real status |
 | [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md) | Visual language, tokens, type scale, component inventory, per-surface UX notes |
 | [`casaos/README.md`](./casaos/README.md) | CasaOS/ZimaOS one-click install, image publishing, official app store submission steps |
+| [`windows/msix/README.md`](./windows/msix/README.md) | Windows MSIX desktop client — what it is/isn't, build/validate instructions, capabilities, what's CI-verified vs. not tested on real hardware |
 | [`ACCESSIBILITY.md`](./ACCESSIBILITY.md) | WCAG 2.1 AA target, what's implemented, testing methodology, known gaps |
 | [`COMPLIANCE-INDIA.md`](./COMPLIANCE-INDIA.md) | How the architecture relates to the DPDP Act 2023, IT Rules, GST invoicing, and CCPA dark-patterns guidelines |
 | [`SECURITY-AUDIT-REPORT.md`](./SECURITY-AUDIT-REPORT.md) | Full Critical/High/Medium/Low security audit findings + fixes, and Windows/MSIX Store-readiness status (what's verified vs. not tested) |
