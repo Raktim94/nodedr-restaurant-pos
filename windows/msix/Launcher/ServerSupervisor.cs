@@ -34,6 +34,8 @@ internal sealed class ServerSupervisor : IDisposable
 
         var firstRun = !File.Exists(ServerPaths.BackendEnvPath);
 
+        await EnsureRuntimeCopyAsync(ct);
+
         Report("Preparing local database…");
         await EnsurePostgresInitializedAsync(ct);
         await StartPostgresAsync(ct);
@@ -75,6 +77,57 @@ internal sealed class ServerSupervisor : IDisposable
                 CancellationToken.None);
         }
         _stopping = false;
+    }
+
+    // --- Runtime copy -------------------------------------------------------
+
+    // MSIX install directories (C:\Program Files\WindowsApps\...) carry
+    // restrictive ACLs that block spawning arbitrary bundled executables
+    // as child processes, even for a runFullTrust app — confirmed on real
+    // CI: initdb.exe failed with "Access is denied" trying to run
+    // postgres.exe -V directly from the install location. Only the
+    // package's own declared entry point (OrderRestro.exe itself) is
+    // actually launchable in place. The standard fix: copy the runtime
+    // payload to a writable location once, and execute everything from
+    // there instead — see ServerPaths.RuntimeServerDir.
+    private async Task EnsureRuntimeCopyAsync(CancellationToken ct)
+    {
+        // node.exe existing is the marker that a copy already completed —
+        // skipped on every launch after the first (this is a one-time,
+        // possibly slow — a few hundred MB — cost, not something to redo
+        // on every start). Known v1 limitation: doesn't detect an MSIX
+        // upgrade to a newer version and re-copy automatically; deleting
+        // %LOCALAPPDATA%\OrderRestro\server\server-runtime forces a
+        // fresh copy if ever needed.
+        if (File.Exists(ServerPaths.NodeExePath)) return;
+
+        Report("Setting up (first launch only — this can take a minute)…");
+        if (Directory.Exists(ServerPaths.RuntimeServerDir))
+        {
+            Directory.Delete(ServerPaths.RuntimeServerDir, recursive: true);
+        }
+        Directory.CreateDirectory(ServerPaths.RuntimeServerDir);
+
+        // robocopy, not a hand-rolled copy loop: this source tree is the
+        // final packaged/dereferenced output (see stage-server-assets.ps1)
+        // with no symlinks left in it, so none of the reparse-point issues
+        // that ruled out robocopy for STAGING apply here — a plain
+        // real-file-to-real-file bulk copy is exactly what robocopy is
+        // actually good at.
+        var exitCode = await RunToolAsync(
+            "robocopy.exe",
+            $"\"{ServerPaths.InstallServerDir}\" \"{ServerPaths.RuntimeServerDir}\" /E /R:2 /W:2",
+            workingDir: ServerPaths.DataDir,
+            env: null,
+            "runtime-copy",
+            ct);
+        // robocopy's exit codes are a bitmask where 0-7 are all "success"
+        // variants (files copied / extra files present / etc.) — only 8+
+        // means a real failure.
+        if (exitCode >= 8)
+        {
+            throw new InvalidOperationException($"Could not copy the embedded server runtime to a writable location (robocopy exit {exitCode}) — see {ServerPaths.ServerLogDir}\\runtime-copy.log");
+        }
     }
 
     // --- Postgres ---------------------------------------------------------

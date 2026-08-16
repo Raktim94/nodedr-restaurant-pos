@@ -31,15 +31,30 @@ internal static class ServerPaths
 
     /// <summary>
     /// Read-only runtime assets staged into the MSIX at build time (see
-    /// windows/msix/stage-server-assets.ps1) — never written to at
-    /// runtime, only read from. Resolved relative to the running exe's
-    /// directory so it works both from an installed MSIX location and a
-    /// local unpackaged test run.
+    /// windows/msix/stage-server-assets.ps1). Resolved relative to the
+    /// running exe's directory so it works both from an installed MSIX
+    /// location and a local unpackaged test run.
+    ///
+    /// NEVER executed from directly — see RuntimeServerDir. MSIX install
+    /// directories (C:\Program Files\WindowsApps\...) carry restrictive
+    /// ACLs that block spawning arbitrary bundled executables as child
+    /// processes even for a runFullTrust app (confirmed: initdb.exe
+    /// failed with "Access is denied" trying to run postgres.exe -V from
+    /// there) — only the package's own declared entry point (OrderRestro
+    /// .exe itself) is actually launchable in place.
     /// </summary>
     public static string InstallServerDir =>
         Path.Combine(AppContext.BaseDirectory, "server");
 
-    public static string PostgresBinDir => Path.Combine(InstallServerDir, "postgres", "bin");
+    /// <summary>
+    /// Writable copy of InstallServerDir under %LOCALAPPDATA%, made once
+    /// on first run (see ServerSupervisor.EnsureRuntimeCopyAsync) — this
+    /// is what actually gets executed from. Everything below derives
+    /// paths from here, not InstallServerDir.
+    /// </summary>
+    public static string RuntimeServerDir => Path.Combine(DataDir, "server-runtime");
+
+    public static string PostgresBinDir => Path.Combine(RuntimeServerDir, "postgres", "bin");
 
     // BackendDir is the staged equivalent of the monorepo ROOT (matches
     // apps/backend/Dockerfile's /repo), not a flattened single-package
@@ -49,7 +64,7 @@ internal static class ServerPaths
     // `npx` falls back to fetching an arbitrary "latest" package instead of
     // the local one). stage-server-assets.ps1 mirrors the Dockerfile's
     // exact COPY layout rooted here instead of flattening via `pnpm deploy`.
-    public static string BackendDir => Path.Combine(InstallServerDir, "backend");
+    public static string BackendDir => Path.Combine(RuntimeServerDir, "backend");
 
     // Working directory for node.exe when running the backend — matches
     // the Dockerfile's `WORKDIR /repo/apps/backend` before its CMD.
@@ -63,12 +78,12 @@ internal static class ServerPaths
     // same `node apps/web/server.js` invocation it uses, run with this
     // directory as the working directory, so this embedded path behaves
     // identically to the already-proven Docker deployment.
-    public static string WebDir => Path.Combine(InstallServerDir, "web");
+    public static string WebDir => Path.Combine(RuntimeServerDir, "web");
     public static string WebServerScriptRelativePath => Path.Combine("apps", "web", "server.js");
 
     // Portable Node.js runtime staged at build time — the target Windows
     // machine is not assumed to have Node.js installed.
-    public static string NodeExePath => Path.Combine(InstallServerDir, "node", "node.exe");
+    public static string NodeExePath => Path.Combine(RuntimeServerDir, "node", "node.exe");
 
     public static void EnsureDirectoriesExist()
     {

@@ -273,7 +273,10 @@ jobs:
 
       - name: Launch in embedded-server mode and verify real health checks
         shell: pwsh
-        timeout-minutes: 6
+        # First launch copies the whole embedded-server payload (a few
+        # hundred MB) out of the read-only MSIX install location before
+        # anything else can start — see ServerSupervisor.EnsureRuntimeCopyAsync.
+        timeout-minutes: 12
         run: |
           [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
           $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
@@ -301,7 +304,7 @@ jobs:
               return $false
           }
 
-          $backendOk = Wait-Health 'http://localhost:4001/api/health' 240
+          $backendOk = Wait-Health 'http://localhost:4001/api/health' 480
           $webOk = if ($backendOk) { Wait-Health 'http://localhost:1995/api/health' 60 } else { $false }
 
           # Approximates "another LAN device reaching this PC": hosted
@@ -351,14 +354,14 @@ jobs:
         shell: pwsh
         run: |
           Get-Process -Name 'OrderRestro' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-          [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
-          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name -ErrorAction SilentlyContinue
-          if ($pkg) {
-              $pgCtl = Join-Path $pkg.InstallLocation 'server\postgres\bin\pg_ctl.exe'
-              $pgData = Join-Path $env:LOCALAPPDATA 'OrderRestro\server\pgdata'
-              if ((Test-Path $pgCtl) -and (Test-Path $pgData)) {
-                  & $pgCtl stop -D $pgData -m immediate -w 2>&1 | Out-Null
-              }
+          # pg_ctl runs from the writable runtime copy, not the MSIX
+          # install location (see ServerPaths.RuntimeServerDir / the
+          # "Access is denied" comment on EnsureRuntimeCopyAsync) — use
+          # that same copy here too, not $pkg.InstallLocation.
+          $pgCtl = Join-Path $env:LOCALAPPDATA 'OrderRestro\server\server-runtime\postgres\bin\pg_ctl.exe'
+          $pgData = Join-Path $env:LOCALAPPDATA 'OrderRestro\server\pgdata'
+          if ((Test-Path $pgCtl) -and (Test-Path $pgData)) {
+              & $pgCtl stop -D $pgData -m immediate -w 2>&1 | Out-Null
           }
 
       - name: Uninstall (cleanup)
