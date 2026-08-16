@@ -306,6 +306,56 @@ if (-not (Test-Path (Join-Path $webStage 'apps\web\server.js'))) {
     throw "Web staging looks wrong — apps\web\server.js not found under $webStage"
 }
 
+# Next's own standalone-output file tracer (@vercel/nft) has a real gap:
+# confirmed via CI + local repro, it stubs in @swc/helpers's package.json
+# but not its actual cjs/esm files (a runtime require() next's own compiled
+# output makes), and separately drops @next/env's dist/ entirely — neither
+# is a pnpm/symlink artifact (reproduced identically under a hoisted
+# node-linker), it's the tracer itself under-tracing next's own runtime
+# deps. Rather than special-case each package the tracer happens to miss
+# (the exact whack-a-mole this staging script's backend section already
+# hit once with prisma's dependency graph), copy next's ENTIRE own sibling
+# node_modules context wholesale — the same directory pnpm placed @swc,
+# @next, react, react-dom, sharp, styled-jsx, postcss etc. into as next's
+# own resolution siblings — so whatever next actually needs at runtime is
+# present regardless of what the tracer chose to include. Verified locally:
+# without this, the staged server crashes with "Cannot find module
+# '@swc/helpers/_/_interop_require_default'"; with it, `node server.js`
+# starts cleanly and serves.
+Write-Host "-- Copying next's full sibling node_modules (works around @vercel/nft under-tracing)" -ForegroundColor Yellow
+$nextSiblingsDir = & node -e "
+const path = require('path');
+const nextPkgPath = require.resolve('next/package.json', { paths: [path.join(process.argv[1], 'apps', 'web')] });
+console.log(path.dirname(path.dirname(nextPkgPath)));
+" $RepoRoot
+if ($LASTEXITCODE -ne 0 -or -not $nextSiblingsDir) { throw "Could not resolve next's own node_modules context from $RepoRoot\apps\web" }
+Copy-DirectoryRobust -Src $nextSiblingsDir -Dst (Join-Path $webStage 'node_modules')
+
+# Functional smoke test, not just file-existence: actually boots the
+# staged server.js and confirms it gets past module resolution (a missing
+# transitive dep breaks at require-time, before any HTTP server starts).
+# Doesn't wait for full readiness — the backend it proxies /api/health to
+# isn't running here — just that it survives long enough to not be a
+# MODULE_NOT_FOUND crash.
+Write-Host "-- Smoke-testing staged web server startup" -ForegroundColor Yellow
+$webSmokeLog = Join-Path $StageDir 'web-smoke-test.log'
+$env:PORT = '19599'
+$env:HOSTNAME = '127.0.0.1'
+try {
+    $webSmokeProc = Start-Process -FilePath $env:ComSpec -ArgumentList '/c', "node server.js > `"$webSmokeLog`" 2>&1" `
+        -WorkingDirectory (Join-Path $webStage 'apps\web') -PassThru
+    Start-Sleep -Seconds 5
+    $webSmokeCrashed = $webSmokeProc.HasExited
+    Stop-Process -Id $webSmokeProc.Id -Force -ErrorAction SilentlyContinue
+}
+finally {
+    Remove-Item Env:\PORT, Env:\HOSTNAME -ErrorAction SilentlyContinue
+}
+if ($webSmokeCrashed) {
+    Write-Host (Get-Content $webSmokeLog -Raw) -ForegroundColor Red
+    throw "Staged web server exited on its own within 5s (module resolution or startup failure) — see log above."
+}
+
 # --- 4. Portable Node.js runtime -------------------------------------------
 Write-Host "-- Staging portable Node.js runtime" -ForegroundColor Yellow
 $nodeZip = Join-Path $DownloadCacheDir "node-v$NodeVersion-win-x64.zip"
