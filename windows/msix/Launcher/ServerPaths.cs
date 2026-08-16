@@ -56,19 +56,18 @@ internal static class ServerPaths
 
     public static string PostgresBinDir => Path.Combine(RuntimeServerDir, "postgres", "bin");
 
-    // BackendDir is the staged equivalent of the monorepo ROOT (matches
-    // apps/backend/Dockerfile's /repo), not a flattened single-package
-    // folder — pnpm's per-package node_modules/.bin/* entries are symlinks
-    // with RELATIVE paths back into the root node_modules/.pnpm store (see
-    // that Dockerfile's own comment: flattening breaks them silently and
-    // `npx` falls back to fetching an arbitrary "latest" package instead of
-    // the local one). stage-server-assets.ps1 mirrors the Dockerfile's
-    // exact COPY layout rooted here instead of flattening via `pnpm deploy`.
+    // BackendDir is a FLAT, standalone package root — stage-server-assets.ps1
+    // stages it via `pnpm deploy --prod` (pnpm's own tool for producing a
+    // correct, self-contained production node_modules for one workspace
+    // package), not a hand-copied mirror of the monorepo's directory
+    // structure. An earlier version of this mirrored apps/backend/
+    // Dockerfile's COPY layout by hand instead (BackendDir as the staged
+    // monorepo root, BackendWorkingDir nested at apps\backend under it) —
+    // switched because hand-copying couldn't correctly resolve prisma's
+    // multi-level pnpm dependency graph (see that script's own comment for
+    // the full story). BackendWorkingDir is now just BackendDir itself.
     public static string BackendDir => Path.Combine(RuntimeServerDir, "backend");
-
-    // Working directory for node.exe when running the backend — matches
-    // the Dockerfile's `WORKDIR /repo/apps/backend` before its CMD.
-    public static string BackendWorkingDir => Path.Combine(BackendDir, "apps", "backend");
+    public static string BackendWorkingDir => BackendDir;
     public static string BackendMainJsRelativePath => Path.Combine("dist", "src", "main.js");
     public static string BackendPrismaCliRelativePath => Path.Combine("node_modules", "prisma", "build", "index.js");
 

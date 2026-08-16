@@ -9,20 +9,21 @@
   constraint) — reference run is windows-msix.yml's windows-latest job.
 
 .DESCRIPTION
-  Mirrors apps/backend/Dockerfile and apps/web/Dockerfile's proven COPY
-  layouts (directory structure), not the dependency-graph-based flattening
-  `pnpm deploy` would do — see ServerPaths.cs's comment on BackendDir for
-  why: pnpm's per-package node_modules/.bin/* entries are symlinks with
-  relative paths back into the root node_modules/.pnpm store, and a wrong
-  kind of flattening breaks them silently (npx then can't find the local
-  `prisma` binary and fetches an arbitrary "latest" version instead).
-  Directory copies use dereference-copy.js via Copy-DirectoryRobust below,
-  which follows those same symlinks and copies their real target content
-  — makeappx.exe (the actual MSIX packer) cannot pack a source tree
-  containing real NTFS reparse points at all, so every file staged here
-  ends up a real, ordinary file (see Copy-DirectoryRobust's comment for
-  why Copy-Item -Recurse, then robocopy, then fs.cpSync were each tried
-  and replaced before landing on this).
+  Backend: staged via `pnpm deploy --prod` (pnpm's own tool for a correct,
+  self-contained production node_modules for one workspace package) — see
+  the "Stage backend" section's own comment for why an earlier hand-copied
+  mirror of apps/backend/Dockerfile's COPY list couldn't correctly resolve
+  prisma's multi-level pnpm dependency graph. Web: still mirrors apps/web/
+  Dockerfile's COPY layout directly, since that's just the already-
+  self-contained Next.js standalone build output, not a raw pnpm tree.
+  Either way, the result still contains pnpm's normal internal symlink
+  structure (real NTFS reparse points, since this runs on Windows) —
+  directory copies use dereference-copy.js via Copy-DirectoryRobust below,
+  which follows those into their real target content, because makeappx.exe
+  (the actual MSIX packer) cannot pack a source tree containing real
+  reparse points at all (see Copy-DirectoryRobust's comment for why
+  Copy-Item -Recurse, then robocopy, then fs.cpSync were each tried and
+  replaced before landing on this).
 
 .PARAMETER StageDir
   Output root — server assets land in $StageDir\server\...
@@ -163,77 +164,84 @@ try {
     # build-time value (see use-realtime.ts / notification-bell.tsx).
     & pnpm --filter web build
     if ($LASTEXITCODE -ne 0) { throw "web build failed with exit code $LASTEXITCODE" }
-
-    # Everything above needed the FULL (dev+prod) install — TypeScript,
-    # @nestjs/cli, ESLint, Jest, Turbo, etc. are all devDependencies that
-    # `next build`/`nest build` genuinely require. None of that is needed
-    # to just RUN the built output, but it was staged wholesale in an
-    # earlier version of this script and produced a package with over
-    # 300,000 files — every workspace member's full devDependency tree,
-    # multiplied by however many packages depend on each. Prune it now
-    # that building is done, before anything gets copied for staging.
-    #
-    # `prisma` the CLI (needed at RUNTIME — ServerSupervisor runs `prisma
-    # migrate deploy` before starting the backend) is a real `dependencies`
-    # entry in apps/backend/package.json, not a devDependency, specifically
-    # so this prune leaves its whole tree — including transitive @prisma/*
-    # siblings like @prisma/engines, @prisma/debug, and non-@prisma
-    # packages like `effect` that its CLI needs internally — completely
-    # untouched, the same as every other production dependency. An earlier
-    # version of this script tried to keep `prisma` as a devDependency and
-    # manually back up/restore/merge whichever of its dependencies pruning
-    # happened to remove, discovering them one CI failure at a time
-    # (engines, then debug, then effect...) — reclassifying it here was
-    # the actual fix; this prune step needs no special-casing at all now.
-    Write-Host "-- Pruning devDependencies (keep only what's needed at runtime)" -ForegroundColor Yellow
-    & pnpm prune --prod
-    if ($LASTEXITCODE -ne 0) { throw "pnpm prune --prod failed with exit code $LASTEXITCODE" }
 }
 finally {
     Pop-Location
 }
 
-# --- 2. Stage backend, mirroring apps/backend/Dockerfile's runtime COPYs ---
-Write-Host "-- Staging backend" -ForegroundColor Yellow
-Remove-Item -Recurse -Force $backendStage -ErrorAction SilentlyContinue
-$copies = @(
-    @{ Src = 'node_modules'; Dst = 'node_modules' }
-    @{ Src = 'apps\backend\node_modules'; Dst = 'apps\backend\node_modules' }
-    @{ Src = 'apps\backend\dist'; Dst = 'apps\backend\dist' }
-    @{ Src = 'apps\backend\prisma'; Dst = 'apps\backend\prisma' }
-    @{ Src = 'apps\backend\package.json'; Dst = 'apps\backend\package.json' }
-    @{ Src = 'packages\types\dist'; Dst = 'packages\types\dist' }
-    @{ Src = 'packages\types\package.json'; Dst = 'packages\types\package.json' }
-    @{ Src = 'packages\types\node_modules'; Dst = 'packages\types\node_modules' }
-)
-foreach ($copy in $copies) {
-    $src = Join-Path $RepoRoot $copy.Src
-    $dst = Join-Path $backendStage $copy.Dst
-    New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
-    if (Test-Path $src -PathType Container) {
-        Copy-DirectoryRobust -Src $src -Dst $dst
-    }
-    elseif (Test-Path $src) {
-        Copy-Item -Path $src -Destination $dst -Force
-    }
-    else {
-        throw "Expected build output missing: $src (did the build steps above actually run?)"
-    }
+# --- 2. Stage backend via `pnpm deploy` -------------------------------------
+# Hand-copying apps/backend/node_modules (mirroring the Dockerfile's own
+# COPY list — the approach this replaces) repeatedly failed to correctly
+# resolve prisma's multi-level dependency graph. pnpm's non-hoisted layout
+# resolves EACH package's own dependencies through ITS OWN
+# .pnpm/pkg@version/node_modules/ context — require('@prisma/engines')
+# from prisma's own files resolves through ANOTHER such context nested
+# inside @prisma/engines's own store folder, and so on recursively.
+# Manually copying/guessing which nested contexts to preserve turned into
+# an unwinnable one-missing-module-at-a-time chase (@prisma/engines, then
+# @prisma/debug, then the unrelated `effect` package). Reclassifying
+# `prisma` from a devDependency to a real dependency (see that
+# package.json commit) was necessary but NOT sufficient on its own either
+# — `pnpm prune --prod` at the workspace root still silently removed
+# apps/backend/node_modules/prisma's symlink specifically (confirmed
+# directly: the real content survived in the .pnpm store, only the
+# symlink pointing to it got deleted), even though prisma is correctly
+# classified as production in both package.json and the lockfile.
+#
+# `pnpm deploy` is pnpm's own purpose-built tool for producing a correct,
+# complete, self-contained production node_modules for exactly this
+# scenario (one workspace package, deployed standalone) — confirmed
+# directly: its output runs prisma's CLI correctly with zero manual
+# patching, sidestepping whatever exactly made in-place pruning misbehave
+# by building a fresh node_modules from scratch instead. `--legacy` avoids
+# needing an `inject-workspace-packages=true` pnpm-workspace.yaml change
+# pnpm v10+ otherwise requires for deploy.
+Write-Host "-- Staging backend (pnpm deploy --prod)" -ForegroundColor Yellow
+$backendDeployTemp = Join-Path $StageDir '_backend_deploy_temp'
+Remove-Item -Recurse -Force $backendDeployTemp, $backendStage -ErrorAction SilentlyContinue
+Push-Location $RepoRoot
+try {
+    & pnpm --filter '@nodedr-restaurant/backend' deploy --prod --legacy $backendDeployTemp
+    if ($LASTEXITCODE -ne 0) { throw "pnpm deploy failed with exit code $LASTEXITCODE" }
 }
-if (-not (Test-Path (Join-Path $backendStage 'apps\backend\dist\src\main.js'))) {
-    throw "Backend staging looks wrong — apps\backend\dist\src\main.js not found under $backendStage"
+finally {
+    Pop-Location
 }
-$prismaCliPath = Join-Path $backendStage 'apps\backend\node_modules\prisma\build\index.js'
+
+# deploy doesn't include build output (dist/ is gitignored, and deploy
+# follows the same file-inclusion rules as `npm pack`/publish) — copy the
+# already-built dist/ in separately, before the dereferencing copy below.
+Copy-Item -Path (Join-Path $RepoRoot 'apps\backend\dist') -Destination (Join-Path $backendDeployTemp 'dist') -Recurse -Force
+
+# deploy copies the full package source tree (src/, test/, Dockerfile,
+# README.md, .env.example, eslint config, tsconfig, etc.) — legitimate
+# for a real deploy, but bloat/leak risk for a shipped MSIX and would trip
+# validate-msix.ps1's dev-artifact checks. Keep only what's needed to run.
+$keepTopLevel = @('node_modules', 'dist', 'prisma', 'package.json')
+Get-ChildItem -Path $backendDeployTemp | Where-Object { $keepTopLevel -notcontains $_.Name } |
+    Remove-Item -Recurse -Force
+
+# Dereference into the real staging location: deploy's own node_modules
+# still uses pnpm's normal internal .pnpm-store structure (real NTFS
+# reparse points here, since this runs on Windows), which makeappx can't
+# pack (see Copy-DirectoryRobust's comment) — note the output layout is
+# FLAT (no more apps\backend\... nesting) since deploy's whole point is a
+# standalone package root; ServerPaths.BackendWorkingDir matches this.
+Copy-DirectoryRobust -Src $backendDeployTemp -Dst $backendStage
+Remove-Item -Recurse -Force $backendDeployTemp
+
+if (-not (Test-Path (Join-Path $backendStage 'dist\src\main.js'))) {
+    throw "Backend staging looks wrong — dist\src\main.js not found under $backendStage"
+}
+$prismaCliPath = Join-Path $backendStage 'node_modules\prisma\build\index.js'
 if (-not (Test-Path $prismaCliPath)) {
-    throw "Backend staging looks wrong — prisma CLI not found under $backendStage\apps\backend\node_modules\prisma. " +
-          "It's a real `dependencies` entry (see apps/backend/package.json), so pnpm prune --prod should never remove it."
+    throw "Backend staging looks wrong — prisma CLI not found under $backendStage\node_modules\prisma."
 }
 # Functional smoke test, not just file-existence: a missing transitive
-# dependency (e.g. @prisma/engines, @prisma/debug — real gaps hit before
-# `prisma` was moved to a real dependency, see that package.json commit)
-# wouldn't be caught by checking individual files exist, but would still
-# break `prisma migrate deploy` at runtime. Actually exercises the CLI's
-# own require() chain.
+# dependency (e.g. @prisma/engines, @prisma/debug, effect — real gaps hit
+# with the hand-copying approach this replaced) wouldn't be caught by
+# checking individual files exist, but would still break `prisma migrate
+# deploy` at runtime. Actually exercises the CLI's own require() chain.
 & node $prismaCliPath --version | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "Backend staging looks wrong — the staged prisma CLI failed to even print --version (exit $LASTEXITCODE)."

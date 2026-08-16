@@ -215,8 +215,8 @@ try {
                 'postgres\bin\initdb.exe',
                 'postgres\bin\postgres.exe',
                 'node\node.exe',
-                'backend\apps\backend\dist\src\main.js',
-                'backend\apps\backend\node_modules\prisma\build\index.js',
+                'backend\dist\src\main.js',
+                'backend\node_modules\prisma\build\index.js',
                 'web\apps\web\server.js'
             )
             foreach ($rel in $required) {
