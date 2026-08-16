@@ -87,6 +87,52 @@ jobs:
           Write-Host "PackageFullName: $($pkg.PackageFullName)"
           Write-Host "InstallLocation: $($pkg.InstallLocation)"
 
+      - name: Simulate existing user config (pre-upgrade)
+        shell: pwsh
+        run: |
+          $configDir = Join-Path $env:LOCALAPPDATA 'OrderRestro'
+          New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+          '{"ServerUrl":"http://192.168.1.50:1995"}' | Set-Content (Join-Path $configDir 'config.json')
+
+      - name: Bump version for upgrade-in-place test
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          # Scratch bump on the runner only (not committed) — proves
+          # Add-AppxPackage upgrades this identity in place (same
+          # Name+Publisher, higher Version) instead of requiring an
+          # uninstall first, and that %LOCALAPPDATA% user config survives.
+          [xml]$manifest = Get-Content ./AppxManifest.xml
+          $manifest.Package.Identity.Version = '1.0.0.1'
+          $manifest.Save((Resolve-Path ./AppxManifest.xml))
+          (Get-Content ./Launcher/Launcher.csproj -Raw) -replace '<Version>1\.0\.0\.0</Version>', '<Version>1.0.0.1</Version>' |
+            Set-Content ./Launcher/Launcher.csproj
+
+      - name: Build + package upgrade (v1.0.0.1)
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          ./build-windows-msix.ps1 -Configuration Release -SelfSignedTest
+
+      - name: Install upgrade in place and verify
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          Add-AppxPackage -Path ./out/OrderRestro.msix -ErrorAction Stop
+          [xml]$manifest = Get-Content ./AppxManifest.xml
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
+          if (-not $pkg) { throw "Package not found after upgrade install" }
+          if ($pkg.Version.ToString() -ne '1.0.0.1') {
+            throw "Expected version 1.0.0.1 after upgrade, got $($pkg.Version)"
+          }
+          $configPath = Join-Path $env:LOCALAPPDATA 'OrderRestro\config.json'
+          if (-not (Test-Path $configPath)) { throw "Pre-upgrade config.json did not survive the upgrade" }
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json
+          if ($config.ServerUrl -ne 'http://192.168.1.50:1995') {
+            throw "config.json content changed across upgrade: $($config.ServerUrl)"
+          }
+          Write-Host "Upgrade verified: now $($pkg.PackageFullName), user config survived." -ForegroundColor Green
+
       - name: Uninstall (cleanup)
         if: always()
         shell: pwsh
@@ -95,6 +141,20 @@ jobs:
           [xml]$manifest = Get-Content ./AppxManifest.xml
           $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name -ErrorAction SilentlyContinue
           if ($pkg) { Remove-AppxPackage -Package $pkg.PackageFullName }
+
+      - name: Check for Windows App Certification Kit (informational)
+        if: always()
+        shell: pwsh
+        run: |
+          # Non-blocking: just records whether WACK is present on this
+          # hosted runner so windows/msix/README.md's "not tested" claim
+          # about WACK is based on a real check, not an assumption.
+          $appcert = Get-ChildItem "C:\Program Files*\Windows Kits\10\App Certification Kit\appcert.exe" -ErrorAction SilentlyContinue
+          if ($appcert) {
+            Write-Host "appcert.exe FOUND at $($appcert.FullName)" -ForegroundColor Green
+          } else {
+            Write-Host "appcert.exe NOT found on this windows-latest runner — WACK is not preinstalled here, confirming it must be run elsewhere (a Windows dev machine with the SDK's App Certification Kit component, or via Partner Center's own submission-time certification)." -ForegroundColor Yellow
+          }
 
       - name: Upload MSIX artifact
         if: always()

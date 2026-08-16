@@ -63,9 +63,29 @@ internal sealed class MainForm : Form
         }
 
         Directory.CreateDirectory(AppConfig.WebView2UserDataFolder);
-        var env = await CoreWebView2Environment.CreateAsync(
-            userDataFolder: AppConfig.WebView2UserDataFolder);
-        await _webView.EnsureCoreWebView2Async(env);
+        try
+        {
+            var env = await CoreWebView2Environment.CreateAsync(
+                userDataFolder: AppConfig.WebView2UserDataFolder);
+            await _webView.EnsureCoreWebView2Async(env);
+        }
+        catch (WebView2RuntimeNotFoundException)
+        {
+            // Present on Windows 11 and most Windows 10 systems, but not
+            // guaranteed — show an actionable message instead of an
+            // unhandled crash (see Program.cs's last-resort handler for
+            // anything this doesn't catch).
+            ShowFatalError(
+                "The Microsoft Edge WebView2 Runtime is required but isn't installed on this PC.\n\n" +
+                "Install it from https://go.microsoft.com/fwlink/p/?LinkId=2124703 (Evergreen " +
+                "Bootstrapper), then reopen Nodedr OrderRestro.");
+            return;
+        }
+        catch (Exception ex)
+        {
+            ShowFatalError($"Could not start the embedded browser component.\n\n{ex.Message}");
+            return;
+        }
 
         // Minimum-privilege WebView2 settings: no dev tools / no default
         // context menu with "Inspect" for end users, no crash-reporting
@@ -116,6 +136,13 @@ internal sealed class MainForm : Form
             $"Could not reach {_config.ServerUrl}.\n\n" +
             "Check that the OrderRestro server is running and this device is on\n" +
             "the same network, then choose File → Reload, or File → Change server address…";
+        _errorLabel.Visible = true;
+    }
+
+    private void ShowFatalError(string message)
+    {
+        _webView.Visible = false;
+        _errorLabel.Text = message;
         _errorLabel.Visible = true;
     }
 
