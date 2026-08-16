@@ -201,44 +201,30 @@ $backendDeployTemp = Join-Path $StageDir '_backend_deploy_temp'
 Remove-Item -Recurse -Force $backendDeployTemp, $backendStage -ErrorAction SilentlyContinue
 Push-Location $RepoRoot
 try {
-    & pnpm --filter '@nodedr-restaurant/backend' deploy --prod --legacy $backendDeployTemp
+    # --config.node-linker=hoisted is the fix for a real bug found via a
+    # prior CI run + local repro: pnpm's default non-hoisted layout resolves
+    # a package's own transitive deps (e.g. prisma -> @prisma/engines) only
+    # as SIBLINGS inside its OWN .pnpm/pkg@version/node_modules/ store
+    # folder — Node's require() finds that fine through symlinks (which
+    # resolve via realpath, landing back in that same .pnpm folder), but
+    # dereference-copy.js's flattening of the TOP-LEVEL node_modules/prisma
+    # symlink copies only prisma's own files, independently of that sibling
+    # relationship, so the flattened copy loses @prisma/engines entirely
+    # (confirmed: node_modules/@prisma/engines never even existed at the
+    # deploy target's top level, only nested under
+    # node_modules/.pnpm/prisma@.../node_modules/). --config.node-linker
+    # =hoisted makes pnpm lay out a classic npm/yarn-style flat tree instead
+    # (confirmed locally: @prisma/engines lands as an ordinary top-level
+    # node_modules/@prisma/engines directory, sibling to node_modules
+    # /prisma, and the staged prisma CLI's own --version smoke test runs
+    # correctly) — sidesteps the whole class of bug rather than special-
+    # casing prisma, and leaves .pnpm as a ~100KB empty vestige instead of
+    # the full virtual store.
+    & pnpm --filter '@nodedr-restaurant/backend' deploy --prod --legacy --config.node-linker=hoisted $backendDeployTemp
     if ($LASTEXITCODE -ne 0) { throw "pnpm deploy failed with exit code $LASTEXITCODE" }
 }
 finally {
     Pop-Location
-}
-
-# Diagnostic: pin down (before any pruning/copying below could obscure it)
-# whether `pnpm deploy` itself produced a resolvable @prisma/engines, since
-# a prior CI run failed with "Cannot find module '@prisma/engines'" at the
-# functional smoke test further down and it's not yet known whether the gap
-# is at deploy time or in the later dereferencing copy.
-Write-Host "-- Diagnostic: @prisma/engines presence right after pnpm deploy" -ForegroundColor DarkGray
-$engineLinkPath = Join-Path $backendDeployTemp 'node_modules\@prisma\engines'
-if (Test-Path $engineLinkPath) {
-    $item = Get-Item $engineLinkPath -Force
-    Write-Host "   node_modules\@prisma\engines exists (LinkType=$($item.LinkType))" -ForegroundColor DarkGray
-    try {
-        $resolved = (Resolve-Path $engineLinkPath).Path
-        Write-Host "   resolves to: $resolved" -ForegroundColor DarkGray
-        Write-Host "   entry count at resolved target: $((Get-ChildItem $resolved -Force -ErrorAction SilentlyContinue | Measure-Object).Count)" -ForegroundColor DarkGray
-    } catch {
-        Write-Host "   could not resolve target: $($_.Exception.Message)" -ForegroundColor DarkGray
-    }
-} else {
-    Write-Host "   node_modules\@prisma\engines does NOT exist right after deploy." -ForegroundColor DarkGray
-}
-$pnpmDir = Join-Path $backendDeployTemp 'node_modules\.pnpm'
-if (Test-Path $pnpmDir) {
-    $engineStoreDirs = Get-ChildItem $pnpmDir -Directory -Filter '@prisma+engines@*' -ErrorAction SilentlyContinue
-    Write-Host "   .pnpm store dirs matching @prisma+engines@*: $($engineStoreDirs.Count) -> $(($engineStoreDirs | Select-Object -ExpandProperty Name) -join ', ')" -ForegroundColor DarkGray
-    $prismaStoreDirs = Get-ChildItem $pnpmDir -Directory -Filter 'prisma@*' -ErrorAction SilentlyContinue
-    foreach ($p in $prismaStoreDirs) {
-        $nestedEngineLink = Join-Path $p.FullName 'node_modules\@prisma\engines'
-        Write-Host "   $($p.Name) -> node_modules\@prisma\engines exists: $(Test-Path $nestedEngineLink)" -ForegroundColor DarkGray
-    }
-} else {
-    Write-Host "   node_modules\.pnpm does NOT exist right after deploy." -ForegroundColor DarkGray
 }
 
 # deploy doesn't include build output (dist/ is gitignored, and deploy
