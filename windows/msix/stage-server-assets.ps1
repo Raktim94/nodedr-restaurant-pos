@@ -176,19 +176,25 @@ try {
     # module '@prisma/engines'" — that package is a dependency of the CLI
     # specifically, not of @prisma/client, so it isn't kept automatically
     # by @prisma/client's own real-dependency status surviving the prune).
-    # Save fully self-contained copies of BOTH first (Copy-DirectoryRobust
-    # dereferences pnpm's symlinks into real files, so these survive the
-    # prune independent of whatever pnpm does to the shared .pnpm store)
-    # and restore both after — @prisma/client is already a kept real
-    # dependency, so restoring the same content there again is redundant
-    # but harmless, not incorrect.
+    # A first attempt backed up/restored apps\backend\node_modules\@prisma
+    # only — turns out @prisma/engines specifically is hoisted to the
+    # ROOT node_modules\@prisma instead (apps\backend's own @prisma
+    # folder exists but doesn't contain it), so both locations are backed
+    # up/restored now. Save fully self-contained copies first
+    # (Copy-DirectoryRobust dereferences pnpm's symlinks into real files,
+    # so these survive the prune independent of whatever pnpm does to the
+    # shared .pnpm store) — restoring @prisma/client's own already-kept
+    # content again afterward is redundant but harmless, not incorrect.
     $prismaCliDir = Join-Path $RepoRoot 'apps\backend\node_modules\prisma'
     $prismaCliBackup = Join-Path $StageDir '_prisma_cli_backup'
     $prismaScopeDir = Join-Path $RepoRoot 'apps\backend\node_modules\@prisma'
     $prismaScopeBackup = Join-Path $StageDir '_prisma_scope_backup'
-    Write-Host "-- Preserving prisma CLI + @prisma/* before pruning devDependencies" -ForegroundColor Yellow
+    $rootPrismaScopeDir = Join-Path $RepoRoot 'node_modules\@prisma'
+    $rootPrismaScopeBackup = Join-Path $StageDir '_root_prisma_scope_backup'
+    Write-Host "-- Preserving prisma CLI + @prisma/* (backend and root) before pruning devDependencies" -ForegroundColor Yellow
     Copy-DirectoryRobust -Src $prismaCliDir -Dst $prismaCliBackup
     Copy-DirectoryRobust -Src $prismaScopeDir -Dst $prismaScopeBackup
+    Copy-DirectoryRobust -Src $rootPrismaScopeDir -Dst $rootPrismaScopeBackup
 
     Write-Host "-- Pruning devDependencies (keep only what's needed at runtime)" -ForegroundColor Yellow
     & pnpm prune --prod
@@ -197,10 +203,11 @@ try {
     Write-Host "-- Restoring prisma CLI + @prisma/*" -ForegroundColor Yellow
     Copy-DirectoryRobust -Src $prismaCliBackup -Dst $prismaCliDir
     Copy-DirectoryRobust -Src $prismaScopeBackup -Dst $prismaScopeDir
+    Copy-DirectoryRobust -Src $rootPrismaScopeBackup -Dst $rootPrismaScopeDir
     # These scratch holding areas live under $StageDir, which
     # build-windows-msix.ps1 packs wholesale (`makeappx pack /d
     # $stageDir`) — left uncleaned, they ship inside the .msix too.
-    Remove-Item -Recurse -Force $prismaCliBackup, $prismaScopeBackup -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force $prismaCliBackup, $prismaScopeBackup, $rootPrismaScopeBackup -ErrorAction SilentlyContinue
 }
 finally {
     Pop-Location
@@ -236,8 +243,12 @@ foreach ($copy in $copies) {
 if (-not (Test-Path (Join-Path $backendStage 'apps\backend\dist\src\main.js'))) {
     throw "Backend staging looks wrong — apps\backend\dist\src\main.js not found under $backendStage"
 }
-if (-not (Test-Path (Join-Path $backendStage 'apps\backend\node_modules\@prisma\engines'))) {
-    throw "Backend staging looks wrong — @prisma\engines not found under $backendStage\apps\backend\node_modules\@prisma. " +
+$prismaEnginesInBackend = Test-Path (Join-Path $backendStage 'apps\backend\node_modules\@prisma\engines')
+$prismaEnginesInRoot = Test-Path (Join-Path $backendStage 'node_modules\@prisma\engines')
+if (-not $prismaEnginesInBackend -and -not $prismaEnginesInRoot) {
+    throw "Backend staging looks wrong — @prisma\engines not found under either " +
+          "$backendStage\apps\backend\node_modules\@prisma or $backendStage\node_modules\@prisma " +
+          "(pnpm hoists it to the root node_modules, not apps/backend's own, confirmed on real CI). " +
           "This is a dependency of the prisma CLI specifically (not of @prisma/client), so it isn't kept " +
           "automatically by @prisma/client's own real-dependency status surviving pnpm prune --prod — " +
           "the @prisma scope backup/restore above must cover it explicitly."
