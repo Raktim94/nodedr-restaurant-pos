@@ -197,13 +197,17 @@ internal sealed class ServerSupervisor : IDisposable
     {
         // Idempotent: createdb fails harmlessly if "orderrestro" already
         // exists (checked by exit code / stderr rather than treated as fatal).
-        var (exitCode, stderr) = await RunToolCapturedAsync(
-            Path.Combine(ServerPaths.PostgresBinDir, "createdb.exe"),
-            "-U orderrestro -h 127.0.0.1 -p " + ServerPaths.PostgresPort + " orderrestro",
-            ServerPaths.PostgresBinDir,
-            env: null,
-            "createdb",
-            ct);
+        // Scoped timeout (not just the overall StartAsync budget): a hang
+        // here previously burned the entire 15-minute outer budget with no
+        // way to tell which step was actually stuck — see WithTimeoutAsync.
+        var (exitCode, stderr) = await WithTimeoutAsync(ct, TimeSpan.FromSeconds(30), "createdb", innerCt =>
+            RunToolCapturedAsync(
+                Path.Combine(ServerPaths.PostgresBinDir, "createdb.exe"),
+                "-U orderrestro -h 127.0.0.1 -p " + ServerPaths.PostgresPort + " orderrestro",
+                ServerPaths.PostgresBinDir,
+                env: null,
+                "createdb",
+                innerCt));
         if (exitCode != 0 && !stderr.Contains("already exists", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException($"Could not create the database: {stderr}");
@@ -246,13 +250,14 @@ internal sealed class ServerSupervisor : IDisposable
     {
         var env = ReadBackendEnv();
         var prismaCli = Path.Combine(ServerPaths.BackendWorkingDir, ServerPaths.BackendPrismaCliRelativePath);
-        var exit = await RunToolAsync(
-            ServerPaths.NodeExePath,
-            $"\"{prismaCli}\" migrate deploy",
-            ServerPaths.BackendWorkingDir,
-            env,
-            "migrate",
-            ct);
+        var exit = await WithTimeoutAsync(ct, TimeSpan.FromMinutes(2), "prisma migrate deploy", innerCt =>
+            RunToolAsync(
+                ServerPaths.NodeExePath,
+                $"\"{prismaCli}\" migrate deploy",
+                ServerPaths.BackendWorkingDir,
+                env,
+                "migrate",
+                innerCt));
         if (exit != 0)
         {
             throw new InvalidOperationException($"Database migration failed (exit {exit}) — see {ServerPaths.ServerLogDir}");
@@ -325,6 +330,28 @@ internal sealed class ServerSupervisor : IDisposable
     }
 
     // --- Process/health helpers ---------------------------------------------
+
+    // Bounds an individual step to its own timeout instead of relying on
+    // the overall StartAsync budget — a hang here previously burned the
+    // entire outer timeout (minutes) with the only symptom being "backend
+    // never became healthy" and no way to tell which specific step never
+    // finished. Distinguishes an inner timeout (this helper's own
+    // CancelAfter firing) from the caller's own cancellation, so the
+    // resulting error message is actually attributable.
+    private static async Task<T> WithTimeoutAsync<T>(
+        CancellationToken ct, TimeSpan timeout, string label, Func<CancellationToken, Task<T>> action)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(timeout);
+        try
+        {
+            return await action(cts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"{label} did not complete within {timeout.TotalSeconds:0}s.");
+        }
+    }
 
     private static ProcessStartInfo BuildStartInfo(string exe, string args, string workingDir, Dictionary<string, string>? env)
     {
