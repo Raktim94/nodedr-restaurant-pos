@@ -91,14 +91,19 @@ New-Item -ItemType Directory -Force -Path $serverDir, $DownloadCacheDir | Out-Nu
 # file in the staged tree must be a real, ordinary file.
 function Copy-DirectoryRobust {
     param([string]$Src, [string]$Dst)
-    # NOT prefixing with \\?\ (extended-length path) here: tried that for
-    # a suspected MAX_PATH issue, but it broke robocopy outright on a
-    # shallow reparse-point source (ERROR 53 "network path not found" on
-    # apps\backend\node_modules\prisma, a plain symlink) — a known robocopy
-    # quirk with that prefix on reparse points, not a fix. Reverted; keep
-    # plain paths and rely on the captured output below to see the REAL
-    # error text next time instead of guessing at root causes blind.
-    $output = & robocopy $Src $Dst /E /NFL /NDL /NJH /NJS /R:1 /W:1 2>&1
+    # \\?\ (extended-length path) prefix on the DESTINATION only, not the
+    # source. Two real failures established this asymmetry empirically:
+    # prefixing BOTH broke robocopy on a shallow reparse-point SOURCE
+    # (ERROR 53 "network path not found" on apps\backend\node_modules\
+    # prisma, a plain symlink — a known robocopy quirk with that prefix on
+    # reparse points); prefixing NEITHER hit ERROR 3 "path not found"
+    # creating deeply-nested DESTINATION directories once real copying of
+    # a dereferenced pnpm tree pushed paths past Windows's 260-char
+    # MAX_PATH (node_modules\.pnpm\node_modules\<pkg>\... chains get long
+    # fast). The destination is always a plain directory tree being
+    # created fresh, never a reparse point, so \\?\ is safe there.
+    $dstLong = if ($Dst -match '^\\\\') { $Dst } else { "\\?\$Dst" }
+    $output = & robocopy $Src $dstLong /E /NFL /NDL /NJH /NJS /R:1 /W:1 2>&1
     # robocopy's exit codes are a bitmask where 0-7 are all "success"
     # variants (files copied / extra files present / etc.) — only 8+
     # means a real failure. Output is captured (not discarded) so a real
