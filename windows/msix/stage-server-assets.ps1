@@ -73,6 +73,24 @@ foreach ($tool in 'pnpm', 'node') {
 
 New-Item -ItemType Directory -Force -Path $serverDir, $DownloadCacheDir | Out-Null
 
+# Copy-Item -Recurse dereferences NTFS junctions/symlinks instead of
+# copying the link itself — pnpm's node_modules is full of them (that's
+# how it saves disk space), so a naive recursive copy either explodes into
+# a huge duplicated tree or fails outright with Access Denied on a
+# self-referential structure (both observed in practice building this
+# script). robocopy's /SL copies symlinks AS symlinks, which is what a
+# faithful copy of a pnpm-managed tree actually needs.
+function Copy-DirectoryRobust {
+    param([string]$Src, [string]$Dst)
+    & robocopy $Src $Dst /E /SL /NFL /NDL /NJH /NJS /R:1 /W:1 | Out-Null
+    # robocopy's exit codes are a bitmask where 0-7 are all "success"
+    # variants (files copied / extra files present / etc.) — only 8+
+    # means a real failure.
+    if ($LASTEXITCODE -ge 8) {
+        throw "robocopy failed copying '$Src' -> '$Dst' (exit code $LASTEXITCODE)"
+    }
+}
+
 # --- 1. Install + build (full workspace, not --prod — see file header) -----
 Push-Location $RepoRoot
 try {
@@ -126,7 +144,7 @@ foreach ($copy in $copies) {
     $dst = Join-Path $backendStage $copy.Dst
     New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
     if (Test-Path $src -PathType Container) {
-        Copy-Item -Path $src -Destination $dst -Recurse -Force
+        Copy-DirectoryRobust -Src $src -Dst $dst
     }
     elseif (Test-Path $src) {
         Copy-Item -Path $src -Destination $dst -Force
@@ -149,10 +167,10 @@ Remove-Item -Recurse -Force $webStage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $webStage | Out-Null
 $standaloneDir = Join-Path $RepoRoot 'apps\web\.next\standalone'
 if (-not (Test-Path $standaloneDir)) { throw "apps\web\.next\standalone not found — did `pnpm --filter web build` actually run with output:'standalone' configured?" }
-Copy-Item -Path (Join-Path $standaloneDir '*') -Destination $webStage -Recurse -Force
+Copy-DirectoryRobust -Src $standaloneDir -Dst $webStage
 New-Item -ItemType Directory -Force -Path (Join-Path $webStage 'apps\web') | Out-Null
-Copy-Item -Path (Join-Path $RepoRoot 'apps\web\public') -Destination (Join-Path $webStage 'apps\web\public') -Recurse -Force
-Copy-Item -Path (Join-Path $RepoRoot 'apps\web\.next\static') -Destination (Join-Path $webStage 'apps\web\.next\static') -Recurse -Force
+Copy-DirectoryRobust -Src (Join-Path $RepoRoot 'apps\web\public') -Dst (Join-Path $webStage 'apps\web\public')
+Copy-DirectoryRobust -Src (Join-Path $RepoRoot 'apps\web\.next\static') -Dst (Join-Path $webStage 'apps\web\.next\static')
 if (-not (Test-Path (Join-Path $webStage 'apps\web\server.js'))) {
     throw "Web staging looks wrong — apps\web\server.js not found under $webStage"
 }

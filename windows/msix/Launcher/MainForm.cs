@@ -222,7 +222,10 @@ internal sealed class MainForm : Form
             return false;
         }
 
-        _tray = new TrayIcon(Icon);
+        // Icon is always set in the constructor (ExtractAssociatedIcon
+        // falls back to SystemIcons.Application) — the compiler just can't
+        // see that far, hence the null-forgiving operator.
+        _tray = new TrayIcon(Icon!);
         _tray.OpenRequested += () =>
         {
             if (InvokeRequired) { BeginInvoke((Action)RestoreFromTray); return; }
