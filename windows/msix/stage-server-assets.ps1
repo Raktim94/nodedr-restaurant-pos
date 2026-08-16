@@ -208,6 +208,39 @@ finally {
     Pop-Location
 }
 
+# Diagnostic: pin down (before any pruning/copying below could obscure it)
+# whether `pnpm deploy` itself produced a resolvable @prisma/engines, since
+# a prior CI run failed with "Cannot find module '@prisma/engines'" at the
+# functional smoke test further down and it's not yet known whether the gap
+# is at deploy time or in the later dereferencing copy.
+Write-Host "-- Diagnostic: @prisma/engines presence right after pnpm deploy" -ForegroundColor DarkGray
+$engineLinkPath = Join-Path $backendDeployTemp 'node_modules\@prisma\engines'
+if (Test-Path $engineLinkPath) {
+    $item = Get-Item $engineLinkPath -Force
+    Write-Host "   node_modules\@prisma\engines exists (LinkType=$($item.LinkType))" -ForegroundColor DarkGray
+    try {
+        $resolved = (Resolve-Path $engineLinkPath).Path
+        Write-Host "   resolves to: $resolved" -ForegroundColor DarkGray
+        Write-Host "   entry count at resolved target: $((Get-ChildItem $resolved -Force -ErrorAction SilentlyContinue | Measure-Object).Count)" -ForegroundColor DarkGray
+    } catch {
+        Write-Host "   could not resolve target: $($_.Exception.Message)" -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "   node_modules\@prisma\engines does NOT exist right after deploy." -ForegroundColor DarkGray
+}
+$pnpmDir = Join-Path $backendDeployTemp 'node_modules\.pnpm'
+if (Test-Path $pnpmDir) {
+    $engineStoreDirs = Get-ChildItem $pnpmDir -Directory -Filter '@prisma+engines@*' -ErrorAction SilentlyContinue
+    Write-Host "   .pnpm store dirs matching @prisma+engines@*: $($engineStoreDirs.Count) -> $(($engineStoreDirs | Select-Object -ExpandProperty Name) -join ', ')" -ForegroundColor DarkGray
+    $prismaStoreDirs = Get-ChildItem $pnpmDir -Directory -Filter 'prisma@*' -ErrorAction SilentlyContinue
+    foreach ($p in $prismaStoreDirs) {
+        $nestedEngineLink = Join-Path $p.FullName 'node_modules\@prisma\engines'
+        Write-Host "   $($p.Name) -> node_modules\@prisma\engines exists: $(Test-Path $nestedEngineLink)" -ForegroundColor DarkGray
+    }
+} else {
+    Write-Host "   node_modules\.pnpm does NOT exist right after deploy." -ForegroundColor DarkGray
+}
+
 # deploy doesn't include build output (dist/ is gitignored, and deploy
 # follows the same file-inclusion rules as `npm pack`/publish) — copy the
 # already-built dist/ in separately, before the dereferencing copy below.
