@@ -133,6 +133,61 @@ jobs:
           }
           Write-Host "Upgrade verified: now $($pkg.PackageFullName), user config survived." -ForegroundColor Green
 
+      - name: Run Windows App Certification Kit (WACK)
+        shell: pwsh
+        working-directory: windows/msix
+        timeout-minutes: 20
+        run: |
+          # appcert.exe (WACK) turns out to actually be present on
+          # windows-latest (checked directly, not assumed) — run it for
+          # real against the just-installed package instead of leaving
+          # this permanently "not tested."
+          $appcert = Get-ChildItem "C:\Program Files*\Windows Kits\10\App Certification Kit\appcert.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $appcert) {
+            Write-Host "appcert.exe not found on this runner — skipping WACK." -ForegroundColor Yellow
+            exit 0
+          }
+
+          [xml]$manifest = Get-Content ./AppxManifest.xml
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name -ErrorAction SilentlyContinue
+          if (-not $pkg) {
+            Write-Host "No installed package found to run WACK against — skipping." -ForegroundColor Yellow
+            exit 0
+          }
+
+          New-Item -ItemType Directory -Force -Path ./out | Out-Null
+          $reportPath = (Resolve-Path ./out).Path + '\wack-report.xml'
+          Write-Host "Running WACK against $($pkg.PackageFullName)... can take several minutes." -ForegroundColor Cyan
+          & $appcert.FullName test -apptype installedapp -packagefullname $pkg.PackageFullName -reportoutputxml $reportPath
+          Write-Host "appcert.exe exited with code $LASTEXITCODE" -ForegroundColor Cyan
+
+          if (Test-Path $reportPath) {
+            $content = Get-Content $reportPath -Raw
+            if ($content -match '(?i)overall_result[^>]*>\s*([A-Z]+)') {
+              Write-Host "WACK OVERALL_RESULT: $($matches[1])" -ForegroundColor $(if ($matches[1] -eq 'PASS') { 'Green' } else { 'Red' })
+            } else {
+              Write-Host "Report generated but couldn't pattern-match a simple overall result — see the uploaded wack-report.xml artifact." -ForegroundColor Yellow
+            }
+          } else {
+            Write-Host "WACK produced no report file (appcert.exe exit $LASTEXITCODE) — treating as inconclusive." -ForegroundColor Yellow
+          }
+          # Not hard-failing CI on WACK's verdict yet: this is the first
+          # real run of it in this project, and its checks (e.g. Store
+          # association, full digital signature) assume a real Store
+          # submission context this self-signed CI build doesn't have.
+          # Surface the result via the uploaded report for a human to
+          # read rather than silently blocking pushes on an untuned gate.
+          exit 0
+
+      - name: Upload WACK report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrderRestro-wack-report-${{ github.sha }}
+          path: windows/msix/out/wack-report.xml
+          if-no-files-found: warn
+
       - name: Uninstall (cleanup)
         if: always()
         shell: pwsh
@@ -141,20 +196,6 @@ jobs:
           [xml]$manifest = Get-Content ./AppxManifest.xml
           $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name -ErrorAction SilentlyContinue
           if ($pkg) { Remove-AppxPackage -Package $pkg.PackageFullName }
-
-      - name: Check for Windows App Certification Kit (informational)
-        if: always()
-        shell: pwsh
-        run: |
-          # Non-blocking: just records whether WACK is present on this
-          # hosted runner so windows/msix/README.md's "not tested" claim
-          # about WACK is based on a real check, not an assumption.
-          $appcert = Get-ChildItem "C:\Program Files*\Windows Kits\10\App Certification Kit\appcert.exe" -ErrorAction SilentlyContinue
-          if ($appcert) {
-            Write-Host "appcert.exe FOUND at $($appcert.FullName)" -ForegroundColor Green
-          } else {
-            Write-Host "appcert.exe NOT found on this windows-latest runner — WACK is not preinstalled here, confirming it must be run elsewhere (a Windows dev machine with the SDK's App Certification Kit component, or via Partner Center's own submission-time certification)." -ForegroundColor Yellow
-          }
 
       - name: Upload MSIX artifact
         if: always()
