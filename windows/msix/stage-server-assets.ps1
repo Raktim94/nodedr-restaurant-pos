@@ -185,6 +185,10 @@ try {
 
     Write-Host "-- Restoring prisma CLI" -ForegroundColor Yellow
     Copy-DirectoryRobust -Src $prismaCliBackup -Dst $prismaCliDir
+    # This scratch holding area lives under $StageDir, which
+    # build-windows-msix.ps1 packs wholesale (`makeappx pack /d
+    # $stageDir`) — left uncleaned, it ships inside the .msix too.
+    Remove-Item -Recurse -Force $prismaCliBackup -ErrorAction SilentlyContinue
 }
 finally {
     Pop-Location
