@@ -216,3 +216,8 @@ if ($failures.Count -gt 0) {
 
 Write-Host "`nAll structural checks passed." -ForegroundColor Green
 Write-Host "This script does NOT replace the Windows App Certification Kit (WACK) or actual install/launch/print testing on real Windows hardware — see README.md `"Testing`" section." -ForegroundColor Yellow
+# Explicit exit 0: without this, the process exit code falls back to
+# whatever $LASTEXITCODE was left by the last native tool invocation
+# (signtool verify, which legitimately returns nonzero for an expected
+# unsigned test build) even though every check above actually passed.
+exit 0
