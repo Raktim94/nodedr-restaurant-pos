@@ -91,14 +91,14 @@ New-Item -ItemType Directory -Force -Path $serverDir, $DownloadCacheDir | Out-Nu
 # file in the staged tree must be a real, ordinary file.
 function Copy-DirectoryRobust {
     param([string]$Src, [string]$Dst)
-    # \\?\ (extended-length path) prefix bypasses the 260-char MAX_PATH
-    # limit — pnpm's content-addressable store produces long nested paths
-    # (node_modules\.pnpm\pkg@version_hash\node_modules\...), a known
-    # Windows pain point that caused a partial copy failure (robocopy exit
-    # 9 = some files copied, some failed) in practice building this script.
-    $srcLong = if ($Src -match '^\\\\') { $Src } else { "\\?\$Src" }
-    $dstLong = if ($Dst -match '^\\\\') { $Dst } else { "\\?\$Dst" }
-    $output = & robocopy $srcLong $dstLong /E /NFL /NDL /NJH /NJS /R:1 /W:1 2>&1
+    # NOT prefixing with \\?\ (extended-length path) here: tried that for
+    # a suspected MAX_PATH issue, but it broke robocopy outright on a
+    # shallow reparse-point source (ERROR 53 "network path not found" on
+    # apps\backend\node_modules\prisma, a plain symlink) — a known robocopy
+    # quirk with that prefix on reparse points, not a fix. Reverted; keep
+    # plain paths and rely on the captured output below to see the REAL
+    # error text next time instead of guessing at root causes blind.
+    $output = & robocopy $Src $Dst /E /NFL /NDL /NJH /NJS /R:1 /W:1 2>&1
     # robocopy's exit codes are a bitmask where 0-7 are all "success"
     # variants (files copied / extra files present / etc.) — only 8+
     # means a real failure. Output is captured (not discarded) so a real
