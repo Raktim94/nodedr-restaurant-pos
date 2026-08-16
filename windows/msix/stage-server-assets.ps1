@@ -101,25 +101,36 @@ try {
 
 function Copy-DirectoryRobust {
     param([string]$Src, [string]$Dst)
-    # Plain paths, no \\?\ prefix — see the long-path-support comment
-    # above for why. Copy-Item -Recurse mishandles NTFS junctions/symlinks
-    # — pnpm's node_modules is full of them (that's how it saves disk
-    # space) — and hit an Access Denied failure on a runaway path in
-    # practice building this script. robocopy's default behavior
-    # (deliberately NOT passing /SL) follows symlinks/junctions and copies
-    # their real target content as ordinary files, which is what's
-    # actually needed here: makeappx.exe cannot pack a source tree
-    # containing real reparse points at all (hit "0x80070005 - Access is
-    # denied" trying to process one directly) — every file in the staged
-    # tree must be a real, ordinary file.
-    $output = & robocopy $Src $Dst /E /NFL /NDL /NJH /NJS /R:1 /W:1 2>&1
-    # robocopy's exit codes are a bitmask where 0-7 are all "success"
-    # variants (files copied / extra files present / etc.) — only 8+
-    # means a real failure. Output is captured (not discarded) so a real
-    # failure is actually diagnosable instead of just "exit code N".
-    if ($LASTEXITCODE -ge 8) {
-        Write-Host ($output -join "`n") -ForegroundColor Red
-        throw "robocopy failed copying '$Src' -> '$Dst' (exit code $LASTEXITCODE) — see output above"
+    # Copy-Item -Recurse mishandles NTFS junctions/symlinks — pnpm's
+    # node_modules is full of them — and hit an Access Denied failure on a
+    # runaway path. robocopy was tried next and got much further (it does
+    # correctly dereference the TOP-level source argument), but reliably
+    # failed with ERROR 3 "path not found" on EVERY entry under
+    # node_modules\.pnpm\node_modules\* specifically — that directory is
+    # itself full of symlinks one level further indirected (pnpm's own
+    # cross-package resolution links), and robocopy appears unable to
+    # reliably walk that specific doubly-indirected structure regardless
+    # of path length (confirmed: it failed identically on both a
+    # deeply-nested path AND a trivially short one, and enabling Windows's
+    # native long-path support via registry didn't change the outcome —
+    # so this was never actually a MAX_PATH problem).
+    #
+    # Node's own fs.cpSync with dereference:true is a well-tested core API
+    # built for exactly this — following symlinks into real file copies —
+    # and Node is intimately familiar with its own package manager's
+    # virtual store layout in a way a generic Win32 copy tool isn't.
+    if (-not (Test-Path $Src)) { throw "Copy-DirectoryRobust: source does not exist: $Src" }
+    New-Item -ItemType Directory -Force -Path $Dst | Out-Null
+    $env:COPY_SRC = (Resolve-Path $Src).Path
+    $env:COPY_DST = $Dst
+    try {
+        & node -e "const fs=require('fs'); fs.cpSync(process.env.COPY_SRC, process.env.COPY_DST, {recursive:true, dereference:true, force:true});"
+        if ($LASTEXITCODE -ne 0) {
+            throw "node fs.cpSync failed copying '$Src' -> '$Dst' (exit code $LASTEXITCODE)"
+        }
+    }
+    finally {
+        Remove-Item Env:\COPY_SRC, Env:\COPY_DST -ErrorAction SilentlyContinue
     }
 }
 
