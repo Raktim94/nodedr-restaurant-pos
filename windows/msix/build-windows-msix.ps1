@@ -168,7 +168,7 @@ if ($InstallLocally) {
     }
     Write-Host "Installing $msixOut via Add-AppxPackage..." -ForegroundColor Cyan
     Add-AppxPackage -Path $msixOut -ErrorAction Stop
-    $installed = Get-AppxPackage -Name 'NodedrInfotech.OrderRestro'
+    $installed = Get-AppxPackage -Name $manifestForSubject.Package.Identity.Name
     if (-not $installed) { throw "Add-AppxPackage reported success but Get-AppxPackage found nothing." }
     Write-Host "Installed: $($installed.PackageFullName)" -ForegroundColor Green
     Write-Host "Verify manually (Start Menu entry, launch, no UAC prompt), then:" -ForegroundColor Cyan

@@ -100,20 +100,15 @@ rather than just documented.
 
 ## Before you submit to the Microsoft Store
 
-The following placeholders **must** be replaced with real values from
-Partner Center before this package will install anywhere except a
-self-signed local test:
-
-1. **`AppxManifest.xml` → `Identity/@Publisher`** — currently
-   `CN=REPLACE-WITH-YOUR-PARTNER-CENTER-PUBLISHER-ID`. Partner Center
-   assigns this string when you reserve the app name; it must match your
-   account's publisher identity exactly, or Store validation rejects the
-   package. `validate-msix.ps1` fails loudly if this placeholder is still
-   present.
-2. **`Identity/@Name`** — `NodedrInfotech.OrderRestro` is a placeholder
-   package identity name; confirm/reserve the actual name in Partner
-   Center (Store apps often require a Store-generated identity name
-   instead of a hand-picked one).
+1. ~~`AppxManifest.xml` → `Identity/@Publisher`~~ — **done.** Set to the
+   real Partner Center-issued value (`CN=11C721FC-E399-4888-B532-
+   7BFCD5C491B3`, PublisherDisplayName "NODEDR INFOTECH LIMITED").
+   `validate-msix.ps1` fails loudly if this ever regresses to the
+   placeholder.
+2. ~~`Identity/@Name`~~ — **done.** Set to the real Store-reserved package
+   identity `NODEDRINFOTECHLIMITED.orderrestro` (Store ID `9NVPNLWW2FZ4`,
+   Package Family Name `NODEDRINFOTECHLIMITED.orderrestro_wsh4jzg5a6682`),
+   from Partner Center's "View product identity" page.
 3. **Signing** — real Store submissions are signed automatically by the
    Store on ingestion; you do not need your own certificate for Store
    distribution. For direct/enterprise sideloading (outside the Store),

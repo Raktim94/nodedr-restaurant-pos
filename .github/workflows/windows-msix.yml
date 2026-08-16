@@ -77,7 +77,12 @@ jobs:
         working-directory: windows/msix
         run: |
           Add-AppxPackage -Path ./out/OrderRestro.msix -ErrorAction Stop
-          $pkg = Get-AppxPackage -Name 'NodedrInfotech.OrderRestro'
+          # Read the identity Name from the manifest rather than hardcoding
+          # it a second time here — a prior mismatch (manifest updated,
+          # this string left stale) made Get-AppxPackage silently find
+          # nothing even though install succeeded.
+          [xml]$manifest = Get-Content ./AppxManifest.xml
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
           if (-not $pkg) { throw "Package not found after install" }
           Write-Host "PackageFullName: $($pkg.PackageFullName)"
           Write-Host "InstallLocation: $($pkg.InstallLocation)"
@@ -85,8 +90,10 @@ jobs:
       - name: Uninstall (cleanup)
         if: always()
         shell: pwsh
+        working-directory: windows/msix
         run: |
-          $pkg = Get-AppxPackage -Name 'NodedrInfotech.OrderRestro' -ErrorAction SilentlyContinue
+          [xml]$manifest = Get-Content ./AppxManifest.xml
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name -ErrorAction SilentlyContinue
           if ($pkg) { Remove-AppxPackage -Package $pkg.PackageFullName }
 
       - name: Upload MSIX artifact
