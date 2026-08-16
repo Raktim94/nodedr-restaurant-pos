@@ -219,16 +219,31 @@ try {
         }
     }
 
-    Write-Host "-- Placing @prisma/engines where prisma's require() resolution actually looks" -ForegroundColor Yellow
-    $engineSource = $prismaPreserve | ForEach-Object {
-        $candidate = Join-Path (Join-Path $StageDir $_.Name) 'engines'
-        if (Test-Path $candidate) { $candidate }
-    } | Select-Object -First 1
-    if (-not $engineSource) {
-        throw "Could not find a real @prisma/engines folder in any backed-up @prisma location — cannot fix module resolution for prisma migrate deploy."
+    # Copying just "engines" wasn't enough — the next CI run immediately
+    # hit the identical problem for @prisma/debug, confirming the CLI
+    # needs its whole family of @prisma/* siblings (debug, engines,
+    # config, fetch-engine, get-platform, internals, etc. — however many
+    # there turn out to be), not one specific package. Merge the ENTIRE
+    # scope from the most complete backup (the .pnpm virtual-store
+    # bucket, since that's the one place that legitimately holds
+    # everything prisma transitively resolves) into
+    # apps\backend\node_modules\@prisma, rather than fix these one at a
+    # time across repeated CI round trips.
+    Write-Host "-- Merging the full @prisma/* scope where prisma's require() resolution actually looks" -ForegroundColor Yellow
+    $scopeBackups = $prismaPreserve | Where-Object { $_.Name -like '_prisma_scope_*' } |
+        ForEach-Object { Join-Path $StageDir $_.Name } | Where-Object { Test-Path $_ }
+    if (-not $scopeBackups) {
+        throw "Could not find any backed-up @prisma scope directory — cannot fix module resolution for prisma migrate deploy."
     }
-    $engineDest = Join-Path $RepoRoot 'apps\backend\node_modules\@prisma\engines'
-    Copy-DirectoryRobust -Src $engineSource -Dst $engineDest
+    $prismaScopeDest = Join-Path $RepoRoot 'apps\backend\node_modules\@prisma'
+    foreach ($scopeBackup in $scopeBackups) {
+        # Copy each package folder individually (not the scope dir as a
+        # whole) so this MERGES siblings in rather than each backup
+        # wholesale-overwriting the previous one's contribution.
+        Get-ChildItem -Path $scopeBackup -Directory | ForEach-Object {
+            Copy-DirectoryRobust -Src $_.FullName -Dst (Join-Path $prismaScopeDest $_.Name)
+        }
+    }
 
     # These scratch holding areas live under $StageDir, which
     # build-windows-msix.ps1 packs wholesale (`makeappx pack /d
