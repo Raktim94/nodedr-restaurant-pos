@@ -180,12 +180,14 @@ internal sealed class ServerSupervisor : IDisposable
 
         var logPath = Path.Combine(ServerPaths.ServerLogDir, "postgres.log");
         var opts = $"-p {ServerPaths.PostgresPort} -c listen_addresses=127.0.0.1";
-        var exit = await RunToolAsync(
+        // RunDetachedToolAsync, not RunToolAsync: pg_ctl spawns postgres.exe
+        // (a long-running detached child) — see that method's comment for
+        // why redirecting output here hangs forever instead of returning
+        // once pg_ctl's own -w/-t 30 wait completes.
+        var exit = await RunDetachedToolAsync(
             Path.Combine(ServerPaths.PostgresBinDir, "pg_ctl.exe"),
             $"start -D \"{ServerPaths.PgDataDir}\" -l \"{logPath}\" -w -t 30 -o \"{opts}\"",
             ServerPaths.PostgresBinDir,
-            env: null,
-            "pg_ctl-start",
             ct);
         if (exit != 0)
         {
@@ -402,6 +404,35 @@ internal sealed class ServerSupervisor : IDisposable
     {
         var (exitCode, _) = await RunToolCapturedAsync(exe, args, workingDir, env, logName, ct);
         return exitCode;
+    }
+
+    // For a command that spawns a genuinely long-running DETACHED child
+    // (specifically pg_ctl start, whose whole job is to launch postgres.exe
+    // and then exit once it's confirmed ready) — NOT redirected, unlike
+    // RunToolCapturedAsync/RunToolAsync above. Redirected stdout/stderr
+    // pipe handles are inherited by default into any child THAT child
+    // process spawns; postgres.exe never closes them (it's a server, not a
+    // one-shot tool), so ReadToEndAsync on that pipe blocks forever even
+    // after pg_ctl.exe itself has long since exited — confirmed on real
+    // CI: pg_ctl start (with its own -w -t 30 timeout) returned instantly,
+    // but the C# call reading its output hung for the full 15-minute
+    // outer budget waiting for EOF that postgres.exe's still-open handle
+    // was never going to produce. No log content is lost by not
+    // redirecting here — pg_ctl start's own -l flag already writes
+    // postgres's real diagnostic output to postgres.log directly.
+    private static async Task<int> RunDetachedToolAsync(string exe, string args, string workingDir, CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = exe,
+            Arguments = args,
+            WorkingDirectory = workingDir,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        using var proc = Process.Start(psi)!;
+        await proc.WaitForExitAsync(ct);
+        return proc.ExitCode;
     }
 
     private async Task WaitForHttpHealthAsync(string url, TimeSpan timeout, CancellationToken ct)
