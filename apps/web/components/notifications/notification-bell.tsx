@@ -21,7 +21,19 @@ import {
 } from "@/hooks/use-notifications";
 import { playNotificationFeedback } from "@/lib/notification-feedback";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "http://localhost:4001";
+// NEXT_PUBLIC_* vars are inlined at build time, so a literal default here
+// would bake in whatever host built the bundle — see use-realtime.ts's
+// resolveWsUrl for the full reasoning; falls back to the browser's own
+// current hostname at connect time so this works from any device that
+// loaded the page from the real server address, no per-deployment env
+// var required.
+function resolveWsUrl(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:4001`;
+  }
+  return "http://localhost:4001";
+}
 const MUTE_STORAGE_KEY = "nodedr_notifications_muted";
 
 function timeAgo(iso: string): string {
@@ -81,7 +93,7 @@ export function NotificationBell() {
   useEffect(() => {
     if (!branchId) return;
 
-    const socket = io(WS_URL, { query: { branchId }, withCredentials: true });
+    const socket = io(resolveWsUrl(), { query: { branchId }, withCredentials: true });
 
     socket.on("notification.created", () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });

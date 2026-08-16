@@ -11,8 +11,25 @@ import * as fs from 'fs';
 interface UsbModule {
   getDeviceList(): UsbDeviceLike[];
 }
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- `usb` has no usable ESM/TS types export shape for this narrow use
-const usb = require('usb') as UsbModule;
+
+// Lazy, not a top-level `require('usb')`: this is a native addon, and its
+// binding compatibility on a platform other than the Linux hosts this
+// feature actually targets (see README's "Linux hosts only" note) is
+// unverified — a top-level require would crash the whole backend process
+// at boot if the native binding ever fails to load, instead of just this
+// one printer feature being unavailable.
+let usbModule: UsbModule | null | undefined;
+function getUsb(): UsbModule | null {
+  if (usbModule === undefined) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- `usb` has no usable ESM/TS types export shape for this narrow use
+      usbModule = require('usb') as UsbModule;
+    } catch {
+      usbModule = null;
+    }
+  }
+  return usbModule;
+}
 
 const PRINTER_INTERFACE_CLASS = 7;
 const USBLP_MAJOR = 180; // major device number of the kernel usblp driver
@@ -176,6 +193,8 @@ function findPrinterInterface(): {
   device: UsbDeviceLike;
   iface: NonNullable<UsbDeviceLike['interfaces']>[number];
 } | null {
+  const usb = getUsb();
+  if (!usb) return null;
   for (const device of usb.getDeviceList()) {
     let opened = false;
     try {

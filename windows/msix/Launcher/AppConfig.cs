@@ -13,6 +13,15 @@ internal sealed class AppConfig
 {
     public string? ServerUrl { get; set; }
 
+    // "embedded" (this PC runs the server, ServerUrl is always
+    // localhost:1995 and never user-editable) or null/anything else
+    // (thin-client mode — unchanged from before this feature, prompts for
+    // a remote address via ServerSettingsForm). Set once at first run via
+    // FirstRunChoiceForm.
+    public string? Mode { get; set; }
+
+    public bool IsEmbedded => Mode == "embedded";
+
     private static string ConfigDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OrderRestro");
 

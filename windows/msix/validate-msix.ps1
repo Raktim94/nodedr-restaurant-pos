@@ -40,15 +40,29 @@
     (without this switch) is the loud, ship-blocking failure the
     placeholder is meant to produce.
 
+.PARAMETER ExpectEmbeddedServer
+    Set when validating a package built with build-windows-msix.ps1's
+    -IncludeEmbeddedServer. A real Node.js/Postgres dependency tree
+    legitimately contains package.json, node_modules, and test/ folders
+    by the thousand (every installed npm package ships its own) — the
+    generic dev-artifact check's node_modules/package.json/test-folder
+    patterns would be near-100%-false-positive against that, so this
+    switch scopes that check to skip the server\ subtree and instead runs
+    a small set of checks purpose-built for it (see "server assets" checks
+    below): the embedded runtime binaries are actually present, and
+    nothing that WOULD still be a real problem there (.env, .pdb, .git) is.
+
 .EXAMPLE
     ./validate-msix.ps1
     ./validate-msix.ps1 -MsixPath .\out\OrderRestro.msix
     ./validate-msix.ps1 -AllowPlaceholderPublisher   # CI/local self-signed test builds only
+    ./validate-msix.ps1 -ExpectEmbeddedServer        # packages built with -IncludeEmbeddedServer
 #>
 [CmdletBinding()]
 param(
     [string]$MsixPath = (Join-Path $PSScriptRoot 'out\OrderRestro.msix'),
-    [switch]$AllowPlaceholderPublisher
+    [switch]$AllowPlaceholderPublisher,
+    [switch]$ExpectEmbeddedServer
 )
 
 $ErrorActionPreference = 'Stop'
@@ -157,6 +171,13 @@ try {
             'appsettings.*.json'
         )
         $forbiddenDirs = @('node_modules', '.git', 'test', 'tests', '__tests__')
+        # A real Node/Postgres dependency tree under server\ legitimately
+        # contains thousands of package.json/node_modules/test folders —
+        # every installed npm package ships its own. This check keeps its
+        # full strictness for the Launcher\ half of the package (where none
+        # of that is ever legitimate) and is scoped to skip server\
+        # entirely — that subtree gets its own purpose-built checks below.
+        $serverDir = Join-Path $tempDir 'server'
         $hits = @()
         foreach ($pattern in $forbiddenPatterns) {
             $hits += Get-ChildItem -Path $tempDir -Filter $pattern -Recurse -File -ErrorAction SilentlyContinue
@@ -164,9 +185,50 @@ try {
         foreach ($dirName in $forbiddenDirs) {
             $hits += Get-ChildItem -Path $tempDir -Filter $dirName -Recurse -Directory -ErrorAction SilentlyContinue
         }
+        if ($ExpectEmbeddedServer) {
+            $hits = $hits | Where-Object { -not $_.FullName.StartsWith($serverDir, [StringComparison]::OrdinalIgnoreCase) }
+        }
         if ($hits.Count -gt 0) {
             $names = ($hits | Select-Object -First 10 -ExpandProperty FullName) -join "; "
             throw "Found $($hits.Count) forbidden dev/build artifact(s) in the package: $names"
+        }
+    }
+
+    if ($ExpectEmbeddedServer) {
+        Test-Check "Embedded server runtime assets are present" {
+            $serverDir = Join-Path $tempDir 'server'
+            $required = @(
+                'postgres\bin\pg_ctl.exe',
+                'postgres\bin\initdb.exe',
+                'postgres\bin\postgres.exe',
+                'node\node.exe',
+                'backend\apps\backend\dist\src\main.js',
+                'backend\apps\backend\node_modules\prisma\build\index.js',
+                'web\apps\web\server.js'
+            )
+            foreach ($rel in $required) {
+                if (-not (Test-Path (Join-Path $serverDir $rel))) {
+                    throw "Missing embedded server asset: server\$rel — stage-server-assets.ps1 likely failed silently or its output layout changed without this check being updated"
+                }
+            }
+        }
+
+        Test-Check "No real secrets baked into the embedded server assets" {
+            # backend.env (with the real, generated JWT_SECRET) is written
+            # at RUNTIME to %LOCALAPPDATA%\OrderRestro\server\ — it must
+            # never exist inside the built package itself. .pdb/.git
+            # likewise have no legitimate reason to appear even inside a
+            # real node_modules tree.
+            $serverDir = Join-Path $tempDir 'server'
+            $hits = @()
+            foreach ($pattern in '*.env', '.env*', '*.pdb') {
+                $hits += Get-ChildItem -Path $serverDir -Filter $pattern -Recurse -File -ErrorAction SilentlyContinue
+            }
+            $hits += Get-ChildItem -Path $serverDir -Filter '.git' -Recurse -Directory -ErrorAction SilentlyContinue
+            if ($hits.Count -gt 0) {
+                $names = ($hits | Select-Object -First 10 -ExpandProperty FullName) -join "; "
+                throw "Found $($hits.Count) forbidden file(s) under server\: $names"
+            }
         }
     }
 

@@ -209,3 +209,171 @@ jobs:
           name: OrderRestro-msix-${{ github.sha }}
           path: windows/msix/out/OrderRestro.msix
           if-no-files-found: warn
+
+  # Separate job (not a step added to build-and-install above) so the
+  # already-proven thin-client pipeline can't be broken by anything in
+  # here — this exercises the "this PC is the server too" embedded mode
+  # (see ServerSupervisor.cs), which bundles Postgres + a portable Node.js
+  # runtime + the built backend + the built web app into the package.
+  build-and-install-embedded-server:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Node.js + pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - shell: pwsh
+        run: corepack enable
+
+      # Node.js/Postgres portable-binary downloads (~80MB combined) —
+      # pinned versions live in stage-server-assets.ps1, so the cache key
+      # only needs to change when that file does.
+      - name: Cache portable Node.js/Postgres downloads
+        uses: actions/cache@v4
+        with:
+          path: windows/msix/out/download-cache
+          key: ${{ runner.os }}-orderrestro-server-downloads-${{ hashFiles('windows/msix/stage-server-assets.ps1') }}
+
+      - name: Add Windows SDK tools (makeappx, signtool) to PATH
+        shell: pwsh
+        run: |
+          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeappx) { throw "makeappx.exe not found under any Windows 10/11 SDK bin directory" }
+          Add-Content -Path $env:GITHUB_PATH -Value (Split-Path $makeappx.FullName -Parent)
+
+      - name: Build + package with embedded server assets
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          ./build-windows-msix.ps1 -Configuration Release -SelfSignedTest -IncludeEmbeddedServer
+
+      - name: Validate package structure
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          ./validate-msix.ps1 -MsixPath ./out/OrderRestro.msix -ExpectEmbeddedServer
+
+      - name: Install package
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          Add-AppxPackage -Path ./out/OrderRestro.msix -ErrorAction Stop
+          [xml]$manifest = Get-Content ./AppxManifest.xml
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
+          if (-not $pkg) { throw "Package not found after install" }
+          Write-Host "InstallLocation: $($pkg.InstallLocation)"
+
+      - name: Launch in embedded-server mode and verify real health checks
+        shell: pwsh
+        timeout-minutes: 6
+        run: |
+          [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
+          $exePath = Join-Path $pkg.InstallLocation 'OrderRestro.exe'
+
+          # Pre-seed config.json with Mode=embedded so InitializeAsync skips
+          # FirstRunChoiceForm (a modal dialog — nothing in this job can
+          # click through it) and goes straight into ServerSupervisor.
+          $configDir = Join-Path $env:LOCALAPPDATA 'OrderRestro'
+          New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+          '{"Mode":"embedded","ServerUrl":"http://localhost:1995"}' | Set-Content (Join-Path $configDir 'config.json')
+
+          Write-Host "Launching $exePath ..." -ForegroundColor Cyan
+          $proc = Start-Process -FilePath $exePath -PassThru
+
+          function Wait-Health($url, $timeoutSec) {
+              $deadline = (Get-Date).AddSeconds($timeoutSec)
+              while ((Get-Date) -lt $deadline) {
+                  try {
+                      $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
+                      if ($resp.StatusCode -eq 200) { return $true }
+                  } catch { }
+                  Start-Sleep -Seconds 3
+              }
+              return $false
+          }
+
+          $backendOk = Wait-Health 'http://localhost:4001/api/health' 240
+          $webOk = if ($backendOk) { Wait-Health 'http://localhost:1995/api/health' 60 } else { $false }
+
+          # Approximates "another LAN device reaching this PC": hosted
+          # runners have no second machine to test from, but connecting via
+          # the runner's own non-loopback IP (not 127.0.0.1/localhost) at
+          # least exercises real inbound Windows Firewall/network-stack
+          # filtering, unlike a pure loopback request. This is the
+          # empirical signal for whether runFullTrust alone is sufficient
+          # for inbound LAN connections, or whether the
+          # privateNetworkClientServer capability needs to be added.
+          $lanIp = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+              Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+              Select-Object -First 1 -ExpandProperty IPAddress)
+          $lanOk = $null
+          if ($webOk -and $lanIp) {
+              Write-Host "Testing non-loopback reachability via $lanIp ..." -ForegroundColor Cyan
+              $lanOk = Wait-Health "http://${lanIp}:1995/api/health" 20
+              Write-Host "Non-loopback ($lanIp) reachable: $lanOk" -ForegroundColor $(if ($lanOk) { 'Green' } else { 'Yellow' })
+              if (-not $lanOk) {
+                  Write-Host "This suggests runFullTrust alone may not be enough for inbound LAN connections on a packaged app — investigate adding the privateNetworkClientServer capability to AppxManifest.xml before relying on this for real multi-device use." -ForegroundColor Yellow
+              }
+          } else {
+              Write-Host "Skipping non-loopback check (no non-loopback IPv4 found or web wasn't healthy)." -ForegroundColor Yellow
+          }
+
+          if (-not $backendOk -or -not $webOk) {
+              Write-Host "Backend healthy: $backendOk / Web healthy: $webOk" -ForegroundColor Red
+              Write-Host "---- server logs ----" -ForegroundColor Yellow
+              Get-ChildItem (Join-Path $configDir 'server\logs') -ErrorAction SilentlyContinue | ForEach-Object {
+                  Write-Host "== $($_.Name) ==" -ForegroundColor Yellow
+                  Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -Last 80
+              }
+              throw "Embedded server did not become healthy in time"
+          }
+          Write-Host "Both backend and web health checks passed." -ForegroundColor Green
+
+          if (-not (Test-Path (Join-Path $configDir 'server\backend.env'))) {
+              throw "backend.env was not generated on first run"
+          }
+          if (-not (Test-Path (Join-Path $configDir 'server\pgdata\PG_VERSION'))) {
+              throw "Postgres data directory was not initialized (initdb didn't run)"
+          }
+          Write-Host "First-run secret generation and Postgres initdb both verified." -ForegroundColor Green
+
+      - name: Stop embedded server and app (cleanup)
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Process -Name 'OrderRestro' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name -ErrorAction SilentlyContinue
+          if ($pkg) {
+              $pgCtl = Join-Path $pkg.InstallLocation 'server\postgres\bin\pg_ctl.exe'
+              $pgData = Join-Path $env:LOCALAPPDATA 'OrderRestro\server\pgdata'
+              if ((Test-Path $pgCtl) -and (Test-Path $pgData)) {
+                  & $pgCtl stop -D $pgData -m immediate -w 2>&1 | Out-Null
+              }
+          }
+
+      - name: Uninstall (cleanup)
+        if: always()
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          [xml]$manifest = Get-Content ./AppxManifest.xml
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name -ErrorAction SilentlyContinue
+          if ($pkg) { Remove-AppxPackage -Package $pkg.PackageFullName }
+
+      - name: Upload embedded-server MSIX artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrderRestro-embedded-server-msix-${{ github.sha }}
+          path: windows/msix/out/OrderRestro.msix
+          if-no-files-found: warn
