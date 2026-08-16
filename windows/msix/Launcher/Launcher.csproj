@@ -38,13 +38,21 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>..\Assets\app.ico</ApplicationIcon>
 
-    <!-- Self-contained, single-file, trimmed win-x64 publish — no separate
-         .NET runtime install required on the target machine, and no
-         "install .NET first" step for the user (see build-windows-msix.ps1). -->
+    <!-- Self-contained win-x64 folder publish — no separate .NET runtime
+         install required on the target machine, and no "install .NET
+         first" step for the user (see build-windows-msix.ps1).
+
+         Deliberately NOT PublishSingleFile: WebView2's SDK does its own
+         LoadLibrary("WebView2Loader.dll") lookup next to the exe, which
+         bypasses .NET's single-file native-asset extraction — combining
+         WebView2 with PublishSingleFile is a known incompatibility
+         (WebView2Loader.dll ends up embedded in the exe instead of
+         present as a loose file, so CoreWebView2Environment creation
+         fails at runtime). MSIX already packages the whole output
+         folder into one .msix container, so single-file packaging
+         wasn't buying anything here anyway. -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
     <Version>1.0.0.0</Version>
     <Product>Nodedr OrderRestro</Product>

@@ -12,8 +12,8 @@
 .DESCRIPTION
   Uses the classic, widely-documented "Desktop Bridge" packaging flow for a
   plain WinForms app rather than MSBuild's single-project-MSIX tooling:
-    1. `dotnet publish` the WinForms launcher (self-contained, single-file,
-       win-x64).
+    1. `dotnet publish` the WinForms launcher (self-contained win-x64
+       folder publish — not single-file, see Launcher.csproj for why).
     2. Stage the published output + Assets/ + AppxManifest.xml into one
        folder (the exact shape Windows expects inside an .msix).
     3. `makeappx pack` that folder into OrderRestro.msix.
@@ -85,6 +85,10 @@ New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
 Copy-Item -Path (Join-Path $publishDir '*') -Destination $stageDir -Recurse -Force
 Copy-Item -Path $assetsSrc -Destination (Join-Path $stageDir 'Assets') -Recurse -Force
 Copy-Item -Path $manifestSrc -Destination (Join-Path $stageDir 'AppxManifest.xml') -Force
+
+# Never ship .pdb debug symbols inside the MSIX package (validate-msix.ps1
+# fails the build if any slip through here).
+Get-ChildItem -Path $stageDir -Filter '*.pdb' -Recurse -File | Remove-Item -Force
 
 # --- 3. Pack ------------------------------------------------------------------
 New-Item -ItemType Directory -Force -Path (Split-Path $msixOut) | Out-Null

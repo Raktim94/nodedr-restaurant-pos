@@ -103,11 +103,18 @@ try {
         if ($capNodes.Count -eq 0) { throw "No <Capabilities> declared — expected at least internetClient" }
         $declared = @()
         foreach ($node in $capNodes) {
-            $capName = $node.Name
-            if ($capName -notmatch '^(rescap:)?Capability$') {
+            # Use LocalName, not Name: PowerShell's XML adapter lets an
+            # attribute literally called "Name" (every Capability element
+            # has one) shadow XmlElement's real .Name property, so
+            # $node.Name here returns the attribute VALUE (e.g.
+            # "internetClient") instead of the tag name ("Capability").
+            # LocalName has no such conflict and also strips any rescap:
+            # prefix on its own, so a single check covers both.
+            $capName = $node.LocalName
+            if ($capName -ne 'Capability') {
                 throw "Unexpected capability element '$capName' — only Capability/rescap:Capability are expected"
             }
-            $declared += $node.Name
+            $declared += $capName
             $nameAttr = $node.GetAttribute('Name')
             if ($allowed -notcontains $nameAttr) {
                 throw "Capability '$nameAttr' is not on the minimal allow-list ($($allowed -join ', ')). If this is intentional, update this script's allow-list AND document why in AppxManifest.xml."
@@ -118,7 +125,11 @@ try {
     Test-Check "No USB/device/driver capabilities present" {
         $forbidden = 'usb|serialCommunication|bluetooth|pointOfService|deviceUnlock|broadFileSystemAccess|documentsLibrary'
         $raw = Get-Content $manifestPath -Raw
-        if ($raw -match $forbidden) {
+        # Strip XML comments first — AppxManifest.xml documents, in a
+        # comment, exactly which device capabilities are deliberately NOT
+        # requested, and a raw-text match matches that explanation too.
+        $rawNoComments = [regex]::Replace($raw, '<!--.*?-->', '', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+        if ($rawNoComments -match $forbidden) {
             throw "Manifest references a forbidden capability/keyword matching /$forbidden/ — Windows client must not request raw device access (see hardening brief section 2/17)"
         }
     }
