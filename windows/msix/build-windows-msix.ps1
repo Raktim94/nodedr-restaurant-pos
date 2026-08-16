@@ -105,7 +105,14 @@ if ($SelfSignedTest) {
     New-Item -ItemType Directory -Force -Path $certDir | Out-Null
     $pfxPath = Join-Path $certDir 'orderrestro-dev.pfx'
     $cerPath = Join-Path $certDir 'orderrestro-dev.cer'
-    $subject = 'CN=REPLACE-WITH-YOUR-PARTNER-CENTER-PUBLISHER-ID'
+
+    # Windows requires the signing cert's Subject to exactly equal the
+    # packaged manifest's Identity/Publisher, or Add-AppxPackage rejects
+    # the install even for a self-signed test build — so read it from the
+    # manifest we're about to pack rather than hardcoding it here.
+    [xml]$manifestForSubject = Get-Content $manifestSrc
+    $subject = $manifestForSubject.Package.Identity.Publisher
+    if ([string]::IsNullOrWhiteSpace($subject)) { throw "AppxManifest.xml Identity/@Publisher is empty" }
 
     $existing = Get-ChildItem Cert:\CurrentUser\My |
         Where-Object { $_.Subject -eq $subject -and $_.NotAfter -gt (Get-Date) } |

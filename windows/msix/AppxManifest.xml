@@ -6,22 +6,21 @@
   IgnorableNamespaces="uap rescap">
 
   <!--
-    Package identity. Publisher MUST exactly match the "Publisher" string
-    (the full CN=... value) issued to this developer account in Partner
-    Center — see README.md "Before you can build a signed package" for how
-    to get the real value and swap it in here. The placeholder below will
-    make Add-AppxPackage/signtool fail loudly rather than silently produce
-    an unsubmittable package, by design.
+    Package identity. Name/Publisher come from Partner Center's "View
+    product identity" page for this app (Store ID 9NVPNLWW2FZ4, PFN
+    NODEDRINFOTECHLIMITED.orderrestro_wsh4jzg5a6682) — Publisher MUST
+    exactly match the CN issued there, or Store validation and any
+    Add-AppxPackage install reject the package.
   -->
   <Identity
-    Name="NodedrInfotech.OrderRestro"
-    Publisher="CN=REPLACE-WITH-YOUR-PARTNER-CENTER-PUBLISHER-ID"
+    Name="NODEDRINFOTECHLIMITED.orderrestro"
+    Publisher="CN=11C721FC-E399-4888-B532-7BFCD5C491B3"
     Version="1.0.0.0"
     ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>Nodedr OrderRestro</DisplayName>
-    <PublisherDisplayName>Nodedr Infotech Private Limited</PublisherDisplayName>
+    <PublisherDisplayName>NODEDR INFOTECH LIMITED</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
