@@ -227,6 +227,32 @@ finally {
     Pop-Location
 }
 
+# `prisma generate`'s output (node_modules/.prisma/client — the actual
+# generated query engine bindings, distinct from the @prisma/client
+# package itself) is written into whatever node_modules happens to be
+# current working directory at generate time — it isn't part of the
+# published @prisma/client package tarball, so `pnpm deploy` doesn't carry
+# over the copy already generated during step 1's build (that one lives in
+# the MONOREPO ROOT's node_modules, an entirely different tree from this
+# deploy target, more so now under --config.node-linker=hoisted). Confirmed
+# via CI: without this, the backend crashes on startup with "@prisma/client
+# did not initialize yet." even though staging itself succeeds and the smoke
+# test below (which only checks the CLI's --version, not client generation)
+# passes. Needs DATABASE_URL set (schema.prisma's datasource references it
+# via env()) but not reachable — generate only parses the schema, it
+# doesn't connect.
+Write-Host "-- prisma generate inside the deploy target (Windows engine)" -ForegroundColor Yellow
+Push-Location $backendDeployTemp
+try {
+    $env:DATABASE_URL = 'postgresql://placeholder:placeholder@localhost:5432/placeholder'
+    & node (Join-Path $backendDeployTemp 'node_modules\prisma\build\index.js') generate
+    if ($LASTEXITCODE -ne 0) { throw "prisma generate (inside deploy target) failed with exit code $LASTEXITCODE" }
+}
+finally {
+    Remove-Item Env:\DATABASE_URL -ErrorAction SilentlyContinue
+    Pop-Location
+}
+
 # deploy doesn't include build output (dist/ is gitignored, and deploy
 # follows the same file-inclusion rules as `npm pack`/publish) — copy the
 # already-built dist/ in separately, before the dereferencing copy below.
