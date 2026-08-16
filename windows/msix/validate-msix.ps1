@@ -91,7 +91,21 @@ New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 try {
     $zipPath = Join-Path $tempDir 'package.zip'
     Copy-Item $MsixPath $zipPath
-    Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
+    # Expand-Archive's cmdlet layer adds real per-file overhead on an
+    # archive with tens of thousands of small files (an embedded-server
+    # build's node_modules) — call the same underlying API directly instead.
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
+
+    Write-Host "Enumerating package contents..." -ForegroundColor DarkGray
+    # One filesystem walk instead of ~15 separate `Get-ChildItem -Recurse`
+    # passes (one per forbidden pattern/dir, repeated per check below) —
+    # each full-tree walk was getting materially slower as the embedded-
+    # server package grew to tens of thousands of real (dereferenced)
+    # files. Every check below filters these in-memory lists instead.
+    $allFiles = Get-ChildItem -Path $tempDir -Recurse -File -ErrorAction SilentlyContinue
+    $allDirs = Get-ChildItem -Path $tempDir -Recurse -Directory -ErrorAction SilentlyContinue
+    Write-Host "  $($allFiles.Count) files, $($allDirs.Count) directories" -ForegroundColor DarkGray
 
     $manifestPath = Join-Path $tempDir 'AppxManifest.xml'
     [xml]$manifest = $null
@@ -165,12 +179,12 @@ try {
     }
 
     Test-Check "No development/build/secret artifacts shipped" {
-        $forbiddenPatterns = @(
+        $forbiddenFilePatterns = @(
             '*.pdb', '*.env', '.env*', '*.ts', '*.tsx', '*.cs', '*.csproj',
             'docker-compose*.yml', 'package.json', 'pnpm-lock.yaml',
             'appsettings.*.json'
         )
-        $forbiddenDirs = @('node_modules', '.git', 'test', 'tests', '__tests__')
+        $forbiddenDirNames = @('node_modules', '.git', 'test', 'tests', '__tests__')
         # A real Node/Postgres dependency tree under server\ legitimately
         # contains thousands of package.json/node_modules/test folders —
         # every installed npm package ships its own. This check keeps its
@@ -178,16 +192,15 @@ try {
         # of that is ever legitimate) and is scoped to skip server\
         # entirely — that subtree gets its own purpose-built checks below.
         $serverDir = Join-Path $tempDir 'server'
-        $hits = @()
-        foreach ($pattern in $forbiddenPatterns) {
-            $hits += Get-ChildItem -Path $tempDir -Filter $pattern -Recurse -File -ErrorAction SilentlyContinue
-        }
-        foreach ($dirName in $forbiddenDirs) {
-            $hits += Get-ChildItem -Path $tempDir -Filter $dirName -Recurse -Directory -ErrorAction SilentlyContinue
-        }
+        $scopeFiles = $allFiles
+        $scopeDirs = $allDirs
         if ($ExpectEmbeddedServer) {
-            $hits = $hits | Where-Object { -not $_.FullName.StartsWith($serverDir, [StringComparison]::OrdinalIgnoreCase) }
+            $scopeFiles = $scopeFiles | Where-Object { -not $_.FullName.StartsWith($serverDir, [StringComparison]::OrdinalIgnoreCase) }
+            $scopeDirs = $scopeDirs | Where-Object { -not $_.FullName.StartsWith($serverDir, [StringComparison]::OrdinalIgnoreCase) }
         }
+        $fileHits = $scopeFiles | Where-Object { $name = $_.Name; ($forbiddenFilePatterns | Where-Object { $name -like $_ }).Count -gt 0 }
+        $dirHits = $scopeDirs | Where-Object { $forbiddenDirNames -contains $_.Name }
+        $hits = @($fileHits) + @($dirHits)
         if ($hits.Count -gt 0) {
             $names = ($hits | Select-Object -First 10 -ExpandProperty FullName) -join "; "
             throw "Found $($hits.Count) forbidden dev/build artifact(s) in the package: $names"
@@ -220,11 +233,12 @@ try {
             # likewise have no legitimate reason to appear even inside a
             # real node_modules tree.
             $serverDir = Join-Path $tempDir 'server'
-            $hits = @()
-            foreach ($pattern in '*.env', '.env*', '*.pdb') {
-                $hits += Get-ChildItem -Path $serverDir -Filter $pattern -Recurse -File -ErrorAction SilentlyContinue
-            }
-            $hits += Get-ChildItem -Path $serverDir -Filter '.git' -Recurse -Directory -ErrorAction SilentlyContinue
+            $serverFiles = $allFiles | Where-Object { $_.FullName.StartsWith($serverDir, [StringComparison]::OrdinalIgnoreCase) }
+            $serverDirs = $allDirs | Where-Object { $_.FullName.StartsWith($serverDir, [StringComparison]::OrdinalIgnoreCase) }
+            $patterns = '*.env', '.env*', '*.pdb'
+            $fileHits = $serverFiles | Where-Object { $name = $_.Name; ($patterns | Where-Object { $name -like $_ }).Count -gt 0 }
+            $dirHits = $serverDirs | Where-Object { $_.Name -eq '.git' }
+            $hits = @($fileHits) + @($dirHits)
             if ($hits.Count -gt 0) {
                 $names = ($hits | Select-Object -First 10 -ExpandProperty FullName) -join "; "
                 throw "Found $($hits.Count) forbidden file(s) under server\: $names"
@@ -233,17 +247,15 @@ try {
     }
 
     Test-Check "Launcher executable and WebView2Loader.dll are present" {
-        $exe = Get-ChildItem -Path $tempDir -Filter 'OrderRestro.exe' -Recurse -File -ErrorAction SilentlyContinue
-        if (-not $exe) { throw "OrderRestro.exe not found in package — publish/staging likely failed silently" }
-        $loader = Get-ChildItem -Path $tempDir -Filter 'WebView2Loader.dll' -Recurse -File -ErrorAction SilentlyContinue
-        if (-not $loader) { throw "WebView2Loader.dll not found — the launcher will fail at runtime with no native WebView2 loader present" }
+        if (-not ($allFiles | Where-Object Name -eq 'OrderRestro.exe')) { throw "OrderRestro.exe not found in package — publish/staging likely failed silently" }
+        if (-not ($allFiles | Where-Object Name -eq 'WebView2Loader.dll')) { throw "WebView2Loader.dll not found — the launcher will fail at runtime with no native WebView2 loader present" }
     }
 
     Test-Check "Required visual assets are present" {
         $required = @('Square150x150Logo.png', 'Square44x44Logo.png', 'StoreLogo.png', 'SplashScreen.png')
+        $presentNames = $allFiles | Where-Object { $required -contains $_.Name } | Select-Object -ExpandProperty Name -Unique
         foreach ($name in $required) {
-            $found = Get-ChildItem -Path $tempDir -Filter $name -Recurse -File -ErrorAction SilentlyContinue
-            if (-not $found) { throw "Missing required asset: $name" }
+            if ($presentNames -notcontains $name) { throw "Missing required asset: $name" }
         }
     }
 
