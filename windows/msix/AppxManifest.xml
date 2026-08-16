@@ -8,12 +8,12 @@
   <!--
     Package identity. Name/Publisher come from Partner Center's "View
     product identity" page for this app (Store ID 9NVPNLWW2FZ4, PFN
-    NODEDRINFOTECHLIMITED.orderrestro_wsh4jzg5a6682) — Publisher MUST
+    NODEDRINFOTECHLIMITED.NodedrOrderRestro_wsh4jzg5a6682) — Publisher MUST
     exactly match the CN issued there, or Store validation and any
     Add-AppxPackage install reject the package.
   -->
   <Identity
-    Name="NODEDRINFOTECHLIMITED.orderrestro"
+    Name="NODEDRINFOTECHLIMITED.NodedrOrderRestro"
     Publisher="CN=11C721FC-E399-4888-B532-7BFCD5C491B3"
     Version="1.0.0.0"
     ProcessorArchitecture="x64" />
