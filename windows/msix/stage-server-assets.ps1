@@ -130,6 +130,33 @@ try {
     # build-time value (see use-realtime.ts / notification-bell.tsx).
     & pnpm --filter web build
     if ($LASTEXITCODE -ne 0) { throw "web build failed with exit code $LASTEXITCODE" }
+
+    # Everything above needed the FULL (dev+prod) install — TypeScript,
+    # @nestjs/cli, ESLint, Jest, Turbo, etc. are all devDependencies that
+    # `next build`/`nest build` genuinely require. None of that is needed
+    # to just RUN the built output, but it was staged wholesale in an
+    # earlier version of this script and produced a package with over
+    # 300,000 files — every workspace member's full devDependency tree,
+    # multiplied by however many packages depend on each. Prune it now
+    # that building is done, before anything gets copied for staging.
+    #
+    # `prisma` the CLI is the one devDependency actually needed at RUNTIME
+    # (apps/backend/dist/src/main.js doesn't need it, but ServerSupervisor
+    # separately runs `prisma migrate deploy` before starting it) — save a
+    # fully self-contained copy first (robocopy dereferences pnpm's
+    # symlinks into real files, so this survives the prune independent of
+    # whatever pnpm does to the shared .pnpm store) and restore it after.
+    $prismaCliDir = Join-Path $RepoRoot 'apps\backend\node_modules\prisma'
+    $prismaCliBackup = Join-Path $StageDir '_prisma_cli_backup'
+    Write-Host "-- Preserving prisma CLI before pruning devDependencies" -ForegroundColor Yellow
+    Copy-DirectoryRobust -Src $prismaCliDir -Dst $prismaCliBackup
+
+    Write-Host "-- Pruning devDependencies (keep only what's needed at runtime)" -ForegroundColor Yellow
+    & pnpm prune --prod
+    if ($LASTEXITCODE -ne 0) { throw "pnpm prune --prod failed with exit code $LASTEXITCODE" }
+
+    Write-Host "-- Restoring prisma CLI" -ForegroundColor Yellow
+    Copy-DirectoryRobust -Src $prismaCliBackup -Dst $prismaCliDir
 }
 finally {
     Pop-Location
@@ -221,6 +248,24 @@ foreach ($dir in 'bin', 'lib', 'share') {
 Remove-Item -Recurse -Force $pgExtractTemp
 if (-not (Test-Path (Join-Path $postgresStage 'bin\pg_ctl.exe'))) {
     throw "Postgres staging looks wrong — bin\pg_ctl.exe not found under $postgresStage"
+}
+
+# --- 6. Strip any stray .env-shaped files that leaked in ------------------
+# pnpm's virtual store links each workspace package's node_modules entry
+# back to its real source directory (that's how e.g. `require
+# ('@nodedr-restaurant/types')` resolves at runtime) — dereferencing those
+# via robocopy above pulls in whatever else lives in that source directory
+# too, including apps/backend/.env.example (a template with no real
+# secrets, but still not something that belongs in a shipped package).
+# Deleting the actual symlink targets wholesale would risk breaking that
+# resolution, so this sweeps the safer, narrower fix: remove any .env-
+# shaped file, wherever it ended up.
+Write-Host "-- Removing any stray .env-shaped files" -ForegroundColor Yellow
+$strayEnvFiles = Get-ChildItem -Path $serverDir -Recurse -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -eq '.env' -or $_.Name -like '.env.*' -or $_.Name -like '*.env' }
+if ($strayEnvFiles) {
+    Write-Host "   Removing $($strayEnvFiles.Count) file(s): $(($strayEnvFiles | Select-Object -First 5 -ExpandProperty Name) -join ', ')" -ForegroundColor DarkGray
+    $strayEnvFiles | Remove-Item -Force
 }
 
 Write-Host "Done staging server assets at $serverDir" -ForegroundColor Green
