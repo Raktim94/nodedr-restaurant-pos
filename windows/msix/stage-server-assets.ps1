@@ -16,13 +16,13 @@
   relative paths back into the root node_modules/.pnpm store, and a wrong
   kind of flattening breaks them silently (npx then can't find the local
   `prisma` binary and fetches an arbitrary "latest" version instead).
-  Directory copies use robocopy (see Copy-DirectoryRobust below), which
-  follows those same symlinks and copies their real target content —
-  makeappx.exe (the actual MSIX packer) cannot pack a source tree
+  Directory copies use dereference-copy.js via Copy-DirectoryRobust below,
+  which follows those same symlinks and copies their real target content
+  — makeappx.exe (the actual MSIX packer) cannot pack a source tree
   containing real NTFS reparse points at all, so every file staged here
-  ends up a real, ordinary file; robocopy just does that dereferencing
-  correctly where Copy-Item -Recurse does not (see that function's
-  comment).
+  ends up a real, ordinary file (see Copy-DirectoryRobust's comment for
+  why Copy-Item -Recurse, then robocopy, then fs.cpSync were each tried
+  and replaced before landing on this).
 
 .PARAMETER StageDir
   Output root — server assets land in $StageDir\server\...
@@ -103,34 +103,27 @@ function Copy-DirectoryRobust {
     param([string]$Src, [string]$Dst)
     # Copy-Item -Recurse mishandles NTFS junctions/symlinks — pnpm's
     # node_modules is full of them — and hit an Access Denied failure on a
-    # runaway path. robocopy was tried next and got much further (it does
-    # correctly dereference the TOP-level source argument), but reliably
-    # failed with ERROR 3 "path not found" on EVERY entry under
-    # node_modules\.pnpm\node_modules\* specifically — that directory is
-    # itself full of symlinks one level further indirected (pnpm's own
-    # cross-package resolution links), and robocopy appears unable to
-    # reliably walk that specific doubly-indirected structure regardless
-    # of path length (confirmed: it failed identically on both a
-    # deeply-nested path AND a trivially short one, and enabling Windows's
-    # native long-path support via registry didn't change the outcome —
-    # so this was never actually a MAX_PATH problem).
+    # runaway path. robocopy got much further (it does correctly
+    # dereference the TOP-level source argument) but reliably failed with
+    # ERROR 3 "path not found" on every node_modules\.pnpm\node_modules\*
+    # entry — that directory is itself full of symlinks one level further
+    # indirected (pnpm's own cross-package resolution links), which
+    # robocopy seems unable to walk regardless of path length. Node's
+    # fs.cpSync({dereference:true}) handled that fine but then crashed
+    # (exit -1073740791 / STATUS_STACK_BUFFER_OVERRUN — a native stack
+    # overflow in its recursive implementation) on apps/web/.next/
+    # standalone specifically.
     #
-    # Node's own fs.cpSync with dereference:true is a well-tested core API
-    # built for exactly this — following symlinks into real file copies —
-    # and Node is intimately familiar with its own package manager's
-    # virtual store layout in a way a generic Win32 copy tool isn't.
+    # dereference-copy.js (in this same directory) walks the tree
+    # iteratively — an explicit work-stack, not recursive calls — so
+    # there's no call-stack depth to overflow regardless of source
+    # structure, with proper per-branch cycle detection.
     if (-not (Test-Path $Src)) { throw "Copy-DirectoryRobust: source does not exist: $Src" }
     New-Item -ItemType Directory -Force -Path $Dst | Out-Null
-    $env:COPY_SRC = (Resolve-Path $Src).Path
-    $env:COPY_DST = $Dst
-    try {
-        & node -e "const fs=require('fs'); fs.cpSync(process.env.COPY_SRC, process.env.COPY_DST, {recursive:true, dereference:true, force:true});"
-        if ($LASTEXITCODE -ne 0) {
-            throw "node fs.cpSync failed copying '$Src' -> '$Dst' (exit code $LASTEXITCODE)"
-        }
-    }
-    finally {
-        Remove-Item Env:\COPY_SRC, Env:\COPY_DST -ErrorAction SilentlyContinue
+    $copyScript = Join-Path $PSScriptRoot 'dereference-copy.js'
+    & node $copyScript (Resolve-Path $Src).Path $Dst
+    if ($LASTEXITCODE -ne 0) {
+        throw "dereference-copy.js failed copying '$Src' -> '$Dst' (exit code $LASTEXITCODE)"
     }
 }
 
@@ -177,9 +170,10 @@ try {
     # `prisma` the CLI is the one devDependency actually needed at RUNTIME
     # (apps/backend/dist/src/main.js doesn't need it, but ServerSupervisor
     # separately runs `prisma migrate deploy` before starting it) — save a
-    # fully self-contained copy first (robocopy dereferences pnpm's
-    # symlinks into real files, so this survives the prune independent of
-    # whatever pnpm does to the shared .pnpm store) and restore it after.
+    # fully self-contained copy first (Copy-DirectoryRobust dereferences
+    # pnpm's symlinks into real files, so this survives the prune
+    # independent of whatever pnpm does to the shared .pnpm store) and
+    # restore it after.
     $prismaCliDir = Join-Path $RepoRoot 'apps\backend\node_modules\prisma'
     $prismaCliBackup = Join-Path $StageDir '_prisma_cli_backup'
     Write-Host "-- Preserving prisma CLI before pruning devDependencies" -ForegroundColor Yellow
