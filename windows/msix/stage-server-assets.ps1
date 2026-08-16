@@ -338,7 +338,11 @@ Copy-DirectoryRobust -Src $nextSiblingsDir -Dst (Join-Path $webStage 'node_modul
 # isn't running here — just that it survives long enough to not be a
 # MODULE_NOT_FOUND crash.
 Write-Host "-- Smoke-testing staged web server startup" -ForegroundColor Yellow
-$webSmokeLog = Join-Path $StageDir 'web-smoke-test.log'
+# Log lives OUTSIDE $StageDir deliberately — anything under $StageDir\server
+# is what build-windows-msix.ps1 packs into the MSIX payload, and a stray
+# file here (confirmed via CI) ends up shipped as a real package asset.
+$webSmokeLog = Join-Path ([System.IO.Path]::GetTempPath()) 'orderrestro-web-smoke-test.log'
+Remove-Item $webSmokeLog -ErrorAction SilentlyContinue
 $env:PORT = '19599'
 $env:HOSTNAME = '127.0.0.1'
 try {
@@ -346,15 +350,26 @@ try {
         -WorkingDirectory (Join-Path $webStage 'apps\web') -PassThru
     Start-Sleep -Seconds 5
     $webSmokeCrashed = $webSmokeProc.HasExited
-    Stop-Process -Id $webSmokeProc.Id -Force -ErrorAction SilentlyContinue
 }
 finally {
     Remove-Item Env:\PORT, Env:\HOSTNAME -ErrorAction SilentlyContinue
+    # Stop-Process on $webSmokeProc.Id only kills the cmd.exe wrapper, not
+    # the node.exe child it launched (Windows doesn't cascade-kill by
+    # default) — confirmed via CI: the orphaned node.exe kept the log file
+    # open, and makeappx failed later with "0x80070020 - The process
+    # cannot access the file because it is being used by another process"
+    # trying to pack it (before this file was even moved outside StageDir).
+    # taskkill /T kills the whole tree; the sleep gives Windows a moment to
+    # actually release file handles before this script (or a later step)
+    # touches anything the process had open.
+    & taskkill /F /T /PID $webSmokeProc.Id 2>&1 | Out-Null
+    Start-Sleep -Seconds 1
 }
 if ($webSmokeCrashed) {
     Write-Host (Get-Content $webSmokeLog -Raw) -ForegroundColor Red
     throw "Staged web server exited on its own within 5s (module resolution or startup failure) — see log above."
 }
+Remove-Item $webSmokeLog -ErrorAction SilentlyContinue
 
 # --- 4. Portable Node.js runtime -------------------------------------------
 Write-Host "-- Staging portable Node.js runtime" -ForegroundColor Yellow
