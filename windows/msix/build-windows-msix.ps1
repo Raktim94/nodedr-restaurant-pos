@@ -126,7 +126,18 @@ if ($SelfSignedTest) {
         # Trust it locally so Add-AppxPackage doesn't reject an untrusted
         # signer — this is what makes it a TEST-ONLY cert; never do this on
         # an end-user machine.
+        #
+        # This is a self-signed cert (its own root, not chained to a real
+        # CA), so CurrentUser\TrustedPeople alone is NOT enough — MSIX/AppX
+        # deployment validates the chain's root specifically, and rejects
+        # with HRESULT 0x800B0109 ("chain terminated in a root certificate
+        # which is not trusted") unless the cert is also trusted as a root.
         Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\CurrentUser\TrustedPeople | Out-Null
+        try {
+            Import-Certificate -FilePath $cerPath -CertStoreLocation Cert:\LocalMachine\Root -ErrorAction Stop | Out-Null
+        } catch {
+            Write-Host "WARNING: could not import test cert into LocalMachine\Root ($($_.Exception.Message)) — this store requires admin rights. Add-AppxPackage will likely fail with 0x800B0109 until this succeeds; re-run as Administrator." -ForegroundColor Yellow
+        }
     }
     elseif (-not (Test-Path $pfxPath)) {
         throw "Found existing cert '$subject' in the store but no matching .pfx at $pfxPath — delete the cert from Cert:\CurrentUser\My and re-run to regenerate both together."
