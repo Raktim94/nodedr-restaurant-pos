@@ -10,12 +10,19 @@
 
 .DESCRIPTION
   Mirrors apps/backend/Dockerfile and apps/web/Dockerfile's proven COPY
-  layouts exactly, rather than flattening via `pnpm deploy` — see
-  ServerPaths.cs's comment on BackendDir for why: pnpm's per-package
-  node_modules/.bin/* entries are symlinks with relative paths back into
-  the root node_modules/.pnpm store, and flattening breaks them silently
-  (npx then can't find the local `prisma` binary and fetches an arbitrary
-  "latest" version from the registry instead).
+  layouts (directory structure), not the dependency-graph-based flattening
+  `pnpm deploy` would do — see ServerPaths.cs's comment on BackendDir for
+  why: pnpm's per-package node_modules/.bin/* entries are symlinks with
+  relative paths back into the root node_modules/.pnpm store, and a wrong
+  kind of flattening breaks them silently (npx then can't find the local
+  `prisma` binary and fetches an arbitrary "latest" version instead).
+  Directory copies use robocopy (see Copy-DirectoryRobust below), which
+  follows those same symlinks and copies their real target content —
+  makeappx.exe (the actual MSIX packer) cannot pack a source tree
+  containing real NTFS reparse points at all, so every file staged here
+  ends up a real, ordinary file; robocopy just does that dereferencing
+  correctly where Copy-Item -Recurse does not (see that function's
+  comment).
 
 .PARAMETER StageDir
   Output root — server assets land in $StageDir\server\...
@@ -73,16 +80,18 @@ foreach ($tool in 'pnpm', 'node') {
 
 New-Item -ItemType Directory -Force -Path $serverDir, $DownloadCacheDir | Out-Null
 
-# Copy-Item -Recurse dereferences NTFS junctions/symlinks instead of
-# copying the link itself — pnpm's node_modules is full of them (that's
-# how it saves disk space), so a naive recursive copy either explodes into
-# a huge duplicated tree or fails outright with Access Denied on a
-# self-referential structure (both observed in practice building this
-# script). robocopy's /SL copies symlinks AS symlinks, which is what a
-# faithful copy of a pnpm-managed tree actually needs.
+# Copy-Item -Recurse mishandles NTFS junctions/symlinks — pnpm's
+# node_modules is full of them (that's how it saves disk space) — and hit
+# an Access Denied failure on a runaway path in practice building this
+# script. robocopy's default behavior (deliberately NOT passing /SL)
+# follows symlinks/junctions and copies their real target content as
+# ordinary files, which is what's actually needed here: makeappx.exe
+# cannot pack a source tree containing real reparse points at all (hit
+# "0x80070005 - Access is denied" trying to process one directly) — every
+# file in the staged tree must be a real, ordinary file.
 function Copy-DirectoryRobust {
     param([string]$Src, [string]$Dst)
-    & robocopy $Src $Dst /E /SL /NFL /NDL /NJH /NJS /R:1 /W:1 | Out-Null
+    & robocopy $Src $Dst /E /NFL /NDL /NJH /NJS /R:1 /W:1 | Out-Null
     # robocopy's exit codes are a bitmask where 0-7 are all "success"
     # variants (files copied / extra files present / etc.) — only 8+
     # means a real failure.
