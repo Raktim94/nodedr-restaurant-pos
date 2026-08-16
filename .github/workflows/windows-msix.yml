@@ -23,10 +23,10 @@ jobs:
   build-and-install:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
@@ -187,7 +187,7 @@ jobs:
 
       - name: Upload WACK report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OrderRestro-wack-report-${{ github.sha }}
           path: windows/msix/out/wack-report.xml
@@ -204,7 +204,7 @@ jobs:
 
       - name: Upload MSIX artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OrderRestro-msix-${{ github.sha }}
           path: windows/msix/out/OrderRestro.msix
@@ -218,15 +218,15 @@ jobs:
   build-and-install-embedded-server:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
       - name: Setup Node.js + pnpm
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22.x'
       - shell: pwsh
@@ -236,7 +236,7 @@ jobs:
       # pinned versions live in stage-server-assets.ps1, so the cache key
       # only needs to change when that file does.
       - name: Cache portable Node.js/Postgres downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: windows/msix/out/download-cache
           key: ${{ runner.os }}-orderrestro-server-downloads-${{ hashFiles('windows/msix/stage-server-assets.ps1') }}
@@ -375,7 +375,7 @@ jobs:
 
       - name: Upload embedded-server MSIX artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OrderRestro-embedded-server-msix-${{ github.sha }}
           path: windows/msix/out/OrderRestro.msix
