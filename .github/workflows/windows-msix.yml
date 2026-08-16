@@ -158,6 +158,15 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path ./out | Out-Null
           $reportPath = (Resolve-Path ./out).Path + '\wack-report.xml'
+
+          # Print real usage first — a prior attempt with
+          # `-reportoutputxml <path>` failed with "A valid report file
+          # name must be specified", so don't guess syntax twice.
+          Write-Host "---- appcert.exe /? ----" -ForegroundColor DarkGray
+          & $appcert.FullName /? 2>&1 | Out-String | Write-Host
+          Write-Host "---- appcert.exe test /? ----" -ForegroundColor DarkGray
+          & $appcert.FullName test /? 2>&1 | Out-String | Write-Host
+
           Write-Host "Running WACK against $($pkg.PackageFullName)... can take several minutes." -ForegroundColor Cyan
           & $appcert.FullName test -apptype installedapp -packagefullname $pkg.PackageFullName -reportoutputxml $reportPath
           Write-Host "appcert.exe exited with code $LASTEXITCODE" -ForegroundColor Cyan
