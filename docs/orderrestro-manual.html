@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>OrderRestro — User Manual</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Liberation Sans", Arial, sans-serif; color: #1a1a1a; font-size: 11pt; line-height: 1.5; }
+  h1 { font-size: 26pt; margin: 0 0 4pt; color: #0f172a; }
+  h2 { font-size: 15pt; margin: 22pt 0 6pt; padding-bottom: 3pt; border-bottom: 1.5pt solid #cbd5e1; color: #0f172a; page-break-after: avoid; }
+  h3 { font-size: 12pt; margin: 14pt 0 4pt; color: #1e293b; page-break-after: avoid; }
+  h4 { font-size: 10.5pt; margin: 10pt 0 3pt; color: #334155; page-break-after: avoid; }
+  p { margin: 6pt 0; }
+  ul, ol { margin: 6pt 0 6pt 0; padding-left: 20pt; }
+  li { margin: 3pt 0; }
+  code { font-family: "Liberation Mono", monospace; background: #f1f5f9; padding: 1pt 4pt; border-radius: 3px; font-size: 10pt; }
+  .lead { color: #475569; font-size: 12pt; }
+  .meta { color: #64748b; font-size: 10pt; margin-top: 2pt; }
+  .note { background: #f8fafc; border-left: 3pt solid #3b82f6; padding: 8pt 12pt; margin: 10pt 0; border-radius: 0 4px 4px 0; }
+  .warn { background: #fff7ed; border-left: 3pt solid #f97316; padding: 8pt 12pt; margin: 10pt 0; border-radius: 0 4px 4px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 8pt 0; font-size: 10pt; }
+  th, td { border: 0.75pt solid #cbd5e1; padding: 5pt 8pt; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; }
+  .cover { page-break-after: always; padding-top: 40pt; }
+  .toc li { margin: 2pt 0; }
+  .toc { column-count: 1; }
+
+  figure { margin: 10pt 0 14pt; page-break-inside: avoid; }
+  figure img { width: 100%; max-width: 100%; border: 0.75pt solid #cbd5e1; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: block; }
+  figcaption { font-size: 9.5pt; color: #64748b; margin-top: 4pt; text-align: center; font-style: italic; }
+  .steps { background: #f8fafc; border: 0.75pt solid #e2e8f0; border-radius: 6px; padding: 10pt 14pt; margin: 10pt 0; }
+  .steps h4 { margin-top: 0; }
+  .fields th { width: 28%; }
+  section { page-break-before: always; }
+  section:first-of-type { page-break-before: avoid; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>OrderRestro</h1>
+  <p class="lead">User Manual</p>
+  <p class="meta">A complete restaurant management system — dine-in POS, kitchen display, reservations, customer loyalty, and inventory &amp; procurement — for a single restaurant or branch.</p>
+  <p class="meta">Version 1.4.0 &middot; Last updated 19 August 2026</p>
+  <p class="meta">Nodedr Infotech Private Limited</p>
+
+  <h2 style="border:none">Contents</h2>
+  <ol class="toc">
+    <li>Getting started &amp; roles</li>
+    <li>Signing in</li>
+    <li>Dashboard</li>
+    <li>Menu management</li>
+    <li>Tables &amp; floors</li>
+    <li>Taking orders (Point of Sale)</li>
+    <li>Kitchen Display &amp; KOT</li>
+    <li>Checkout &amp; billing</li>
+    <li>Reservations &amp; waitlist</li>
+    <li>QR table ordering</li>
+    <li>Customers, loyalty &amp; gift cards</li>
+    <li>Inventory &amp; procurement</li>
+    <li>Settings — staff, roles &amp; audit log</li>
+  </ol>
+</div>
+
+<section>
+<h2>1. Getting started &amp; roles</h2>
+<p>OrderRestro runs as three linked pieces — a web app your staff use on a browser or tablet, a backend that enforces every rule (pricing, stock, permissions), and a database that holds everything. You only interact with the web app; everything described below happens inside it.</p>
+
+<p>Every action a staff member can take is gated by a <strong>role</strong>, and every role is a named bundle of individually-toggleable <strong>permissions</strong> (see Section&nbsp;13 for how to view or customize these). The seeded roles cover the common jobs in a restaurant:</p>
+
+<table class="fields">
+  <tr><th>Role</th><th>Typical use</th></tr>
+  <tr><td><strong>Owner</strong></td><td>Full access to everything — the account created at signup. Usually one per restaurant.</td></tr>
+  <tr><td><strong>Administrator</strong></td><td>Near-Owner access for a trusted manager who also needs Settings access.</td></tr>
+  <tr><td><strong>Restaurant Manager</strong></td><td>Day-to-day floor management — orders, tables, reservations, staff schedules, reports — without financial/Settings control.</td></tr>
+  <tr><td><strong>Cashier</strong></td><td>Takes payments and closes bills at the counter.</td></tr>
+  <tr><td><strong>Waiter</strong></td><td>Takes orders table-side, updates table status, serves food.</td></tr>
+  <tr><td><strong>Kitchen Staff</strong></td><td>Works the Kitchen Display — accepts, prepares, and marks tickets ready.</td></tr>
+  <tr><td><strong>Chef</strong></td><td>Same kitchen-facing access as Kitchen Staff, for the person running the pass.</td></tr>
+  <tr><td><strong>Bartender</strong></td><td>Kitchen-Display-equivalent access scoped to the bar station.</td></tr>
+  <tr><td><strong>Delivery Staff</strong></td><td>Sees orders assigned for delivery/takeaway pickup.</td></tr>
+  <tr><td><strong>Accountant</strong></td><td>Read access to financial reports and payment records, no order/menu editing.</td></tr>
+  <tr><td><strong>Inventory Manager</strong></td><td>Full access to Ingredients, Suppliers, Purchase Orders, and Procurement — no POS/Settings access needed.</td></tr>
+</table>
+
+<p>A staff member can also be a completely custom role built from scratch (Section&nbsp;13.2) — useful for a kitchen display screen with no login-worthy person behind it, a valet, or a host who only needs the Reservations page.</p>
+
+<div class="note">Every screen and every button in this manual is shown from the <strong>Owner</strong> account, which sees the full app. A Waiter or Kitchen Staff login will see a much smaller subset of the sidebar — that's expected, not a bug.</div>
+</section>
+
+<section>
+<h2>2. Signing in</h2>
+<ol>
+  <li>Open the app at your restaurant's address (e.g. <code>http://your-server:1995</code> on your local network, or whatever domain your administrator set up).</li>
+  <li>Enter the <strong>email</strong> and <strong>password</strong> your Owner or Administrator gave you, then click <strong>Sign in</strong>.</li>
+  <li>A brand-new restaurant instead visits <code>/signup</code> to create the Owner account and organization — there is no demo data on a fresh install.</li>
+</ol>
+
+<figure>
+  <img src="screenshots/login.png" alt="OrderRestro sign-in screen" />
+  <figcaption>The sign-in screen — email, password, and a link to create a new restaurant account.</figcaption>
+</figure>
+
+<p>Staff working directly at a POS terminal can also sign in with a short numeric <strong>PIN</strong> instead of typing an email and password every shift, once an Owner/Administrator has set one up for their account from Settings &gt; Staff.</p>
+</section>
+
+<section>
+<h2>3. Dashboard</h2>
+<p>The Dashboard is the first screen after signing in — a real-time summary of how the shift is going.</p>
+
+<figure>
+  <img src="screenshots/or-dashboard-final.png" alt="OrderRestro dashboard with live activity" />
+  <figcaption>Dashboard after some activity — revenue, orders, table and kitchen status all update live.</figcaption>
+</figure>
+
+<p>What each part shows:</p>
+<ul>
+  <li><strong>Today's Revenue / Today's Orders / Occupied Tables / Kitchen Queue</strong> — four stat tiles at the top, refreshed automatically (table and kitchen counts push live; revenue/orders currently refresh on a short poll, not push).</li>
+  <li><strong>Revenue — last 14 days</strong> chart — a quick trend line so you can spot an unusually slow or busy day at a glance.</li>
+  <li><strong>Food waste cost — last 14 days</strong> — pulls from the Waste log in Inventory (Section&nbsp;12.5); shows "No waste logged" until you log at least one entry.</li>
+  <li><strong>Tables</strong> panel — a live count of Available / Occupied / Reserved / Cleaning tables, mirroring the Tables page.</li>
+  <li><strong>Kitchen queue</strong> panel — a live count of tickets in each KOT status (New / Accepted / Preparing / Ready).</li>
+  <li><strong>Recent transactions</strong> — the latest paid orders, with a quick link to reprint each receipt.</li>
+</ul>
+</section>
+
+<section>
+<h2>4. Menu management</h2>
+<p>The Menu page is where you build out what customers can order — categories, items, prices, tax rates, kitchen routing, and modifiers.</p>
+
+<figure>
+  <img src="screenshots/or-menu-management.png" alt="Menu management screen with categories and items table" />
+  <figcaption>Menu &gt; Items — a categories sidebar on the left, the full item list with price and tax on the right.</figcaption>
+</figure>
+
+<div class="steps">
+<h4>Where to click</h4>
+<ul>
+  <li><strong>Add category</strong> (top of the Categories panel) — creates a new tab like "Starters" or "Drinks"; click any category chip to filter the items table to just that category, or <strong>All items</strong> to see everything.</li>
+  <li><strong>Add item</strong> (top-right of the Items panel) — opens the New menu item dialog.</li>
+  <li>Each row's rightmost icons are <strong>Combo components</strong> (the layers icon — see below) and an <strong>edit</strong> icon to change that item's details.</li>
+</ul>
+</div>
+
+<figure>
+  <img src="screenshots/or-menu-add-item-dialog.png" alt="New menu item dialog" />
+  <figcaption>Add item — name, category, price (tax-inclusive), tax rate, kitchen station, and a Vegetarian toggle.</figcaption>
+</figure>
+
+<p>Fields on a menu item:</p>
+<table class="fields">
+  <tr><th>Field</th><th>What it controls</th></tr>
+  <tr><td>Photo</td><td>Optional image shown in the POS product grid and the public QR menu.</td></tr>
+  <tr><td>Name / Category</td><td>Basic identity and which category tab it appears under.</td></tr>
+  <tr><td>Price (incl. tax)</td><td>The one price customers see — tax is calculated <em>out of</em> this number at checkout, never added on top.</td></tr>
+  <tr><td>Tax rate %</td><td>Used to back the tax amount out of the inclusive price on every bill.</td></tr>
+  <tr><td>Kitchen station</td><td>Which KOT/KDS station (e.g. Main Kitchen, Bar) this item's tickets print to.</td></tr>
+  <tr><td>Vegetarian</td><td>Drives the veg/non-veg indicator shown in the POS grid and the public QR menu.</td></tr>
+</table>
+
+<h3>4.1 Modifier groups (item customization)</h3>
+<p>A modifier group (like "Crust Type" or "Spice Level") is a set of choices attached to a menu item. Each modifier can carry its own price adjustment, and a group can require a minimum/maximum number of selections and mark one option as the pre-selected default. Once a modifier group is attached to an item, the POS shows a picker dialog the moment you tap that item (Section&nbsp;6.2).</p>
+
+<h3>4.2 Combo meals</h3>
+<p>Any menu item can be turned into a <strong>combo</strong> by giving it components — other menu items it's made of, each with its own quantity. The combo still sells at its own flat price; the components are informational and kitchen-facing (they don't create separate line items on the bill).</p>
+
+<figure>
+  <img src="screenshots/or-menu-combo-builder.png" alt="Combo components builder for Party Platter Combo" />
+  <figcaption>Combo components — click the layers icon on any item row to open this, add each component item and its quantity, then Save combo.</figcaption>
+</figure>
+
+<div class="steps">
+<h4>How to build a combo</h4>
+<ol>
+  <li>Create the combo's own menu item first (e.g. "Party Platter Combo") with its bundle price.</li>
+  <li>Click the <strong>Combo components</strong> (layers) icon on that item's row.</li>
+  <li>Click <strong>Add component</strong>, pick a menu item from the dropdown, and set its quantity. Repeat for every item in the bundle.</li>
+  <li>Click <strong>Save combo</strong>. The item now shows "isCombo" behavior automatically — no separate flag to remember.</li>
+</ol>
+</div>
+</section>
+
+<section>
+<h2>5. Tables &amp; floors</h2>
+<p>The Tables page is your live floor plan — every table's current status, plus the walk-in waitlist.</p>
+
+<figure>
+  <img src="screenshots/or-tables-floor.png" alt="Tables floor view" />
+  <figcaption>Tables — each tile is color-coded by status; tap one to change it or take an action.</figcaption>
+</figure>
+
+<p>Table colors: <strong>green</strong> = Available, a warmer color = Occupied, another = Reserved, and a neutral tone for Cleaning/out-of-service — the legend beneath the floor confirms which is which in your theme.</p>
+
+<div class="steps">
+<h4>Where to click</h4>
+<ul>
+  <li>Tap any table tile to open its status menu.</li>
+</ul>
+</div>
+
+<figure>
+  <img src="screenshots/or-tables-status-menu.png" alt="Table status menu with QR code and new order options" />
+  <figcaption>Tapping a table opens: change status (Available/Occupied/Reserved/Cleaning/Out of service), View QR code, or New order.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>Change status</strong> — click any status in the menu to set it directly (useful for marking a table Cleaning after guests leave, or Out of service for a broken chair).</li>
+  <li><strong>View QR code</strong> — see Section&nbsp;10.</li>
+  <li><strong>New order</strong> — jumps straight to the POS with this table pre-selected.</li>
+</ul>
+
+<h3>5.1 Waitlist</h3>
+<p>The Waitlist panel on the right of the Tables page holds walk-in guests who don't have a table yet.</p>
+
+<figure>
+  <img src="screenshots/or-tables-waitlist.png" alt="Waitlist panel with a waiting party" />
+  <figcaption>Waitlist — name, party size, and quoted wait time; Seat assigns a table, Remove clears the entry.</figcaption>
+</figure>
+
+<div class="steps">
+<h4>Where to click</h4>
+<ol>
+  <li>Click <strong>Add to waitlist</strong>, enter the guest's name, party size, quoted wait (minutes), and optionally a phone number, then <strong>Add</strong>.</li>
+  <li>When a table frees up, click <strong>Seat</strong> next to their name — this assigns them a table and marks it Occupied in one step.</li>
+  <li><strong>Remove</strong> clears an entry that was cancelled or left before being seated.</li>
+</ol>
+</div>
+
+<div class="note"><strong>Scope note:</strong> the floor plan shows tables at fixed seeded positions today — there isn't yet an in-app drag-and-drop editor to rearrange tile positions, even though the "Edit floor plan" button is present.</div>
+</section>
+
+<section>
+<h2>6. Taking orders (Point of Sale)</h2>
+<p>The POS screen is where every order — dine-in or takeaway — actually gets built and sent to the kitchen.</p>
+
+<figure>
+  <img src="screenshots/or-pos-order.png" alt="POS screen with product grid and empty cart" />
+  <figcaption>POS — search and category tabs on the left, order type / table picker and cart on the right.</figcaption>
+</figure>
+
+<div class="steps">
+<h4>Where to click — starting an order</h4>
+<ol>
+  <li>Choose <strong>Dine-in</strong> or <strong>Takeaway</strong> at the top of the right-hand panel.</li>
+  <li>For Dine-in, pick a table from the <strong>Select table</strong> dropdown — only then does the cart become active.</li>
+  <li>Use the category tabs (All / Starters / Main Course / Drinks…) or the search box to find items, then tap an item's tile to add it.</li>
+</ol>
+</div>
+
+<h3>6.1 Modifiers at the POS</h3>
+<p>Tapping an item that has a modifier group attached opens a picker before it's added to the cart:</p>
+
+<figure>
+  <img src="screenshots/or-pos-modifier-picker.png" alt="Modifier picker for Margherita Pizza" />
+  <figcaption>Modifier picker — "Choose 1" enforces the group's min/max rule; priced options show their add-on cost.</figcaption>
+</figure>
+<p>Pick the option(s) the group requires and click <strong>Add to cart</strong>. Plain items with no modifier group skip this dialog and add straight to the cart.</p>
+
+<h3>6.2 The cart</h3>
+<figure>
+  <img src="screenshots/or-pos-cart.png" alt="POS cart with two line items" />
+  <figcaption>Cart — each line shows its modifiers, a quantity stepper, and a running subtotal (tax-inclusive) at the bottom.</figcaption>
+</figure>
+<p>Use the <strong>−</strong> / <strong>+</strong> steppers to change quantity, or the trash icon to remove a line entirely. When ready, click <strong>Send to kitchen</strong> — this creates the order, generates KOTs split by kitchen station, and moves you into the checkout panel (Section&nbsp;8), where you don't have to collect payment immediately: tap <strong>Back</strong> to help another table and come bill this one later from here or the Tables page.</p>
+</section>
+
+<section>
+<h2>7. Kitchen Display &amp; KOT</h2>
+<p>Every order sent to the kitchen becomes one or more KOTs (Kitchen Order Tickets), split automatically by kitchen station (e.g. a pizza and a mojito on the same order produce a Main Kitchen ticket and a Bar ticket). The Kitchen Display shows every open ticket in real time.</p>
+
+<figure>
+  <img src="screenshots/or-kot-kds.png" alt="Kitchen Display board with New column populated" />
+  <figcaption>Kitchen Display — four columns (New / Accepted / Preparing / Ready), each ticket showing its items, elapsed time, and per-station average time-to-ready at the top.</figcaption>
+</figure>
+
+<div class="steps">
+<h4>Where to click, on each ticket</h4>
+<ul>
+  <li><strong>Accept</strong> (in New), then the same button relabels to move it Preparing, then Ready — a simple bump-forward action through the status flow.</li>
+  <li><strong>Mark priority</strong> — puts a highlighted ring around the ticket, the same visual used for the automatic 15-minute delay warning, so the kitchen knows to jump it in the queue.</li>
+  <li><strong>Reprint ticket</strong> — reprints the same KOT, incrementing its printed-count (useful if the kitchen printer jammed or a copy got lost).</li>
+</ul>
+</div>
+
+<figure>
+  <img src="screenshots/or-kot-kds-accepted.png" alt="Kitchen Display after accepting a ticket" />
+  <figcaption>After clicking Accept, the ticket moves into the Accepted column and the priority ring is visible on the marked ticket.</figcaption>
+</figure>
+
+<p>The board updates for every kitchen screen the moment any ticket changes status anywhere — no manual refresh needed.</p>
+<div class="note"><strong>Scope note:</strong> columns are grouped by ticket <em>status</em>, not by kitchen <em>station</em> — each ticket does show which station it belongs to, but there's no separate per-station tab yet if you run more than one kitchen screen.</div>
+</section>
+
+<section>
+<h2>8. Checkout &amp; billing</h2>
+<p>Once an order has been sent to the kitchen, the same screen becomes the checkout panel — reachable any time from the Tables page (tap the table &gt; New order) or straight from an in-progress POS session.</p>
+
+<figure>
+  <img src="screenshots/or-checkout-billing.png" alt="Checkout panel with customer attached, discount, tip and split-bill" />
+  <figcaption>Checkout — customer attached, a 10% discount and ₹50 tip applied, and the bill split three ways.</figcaption>
+</figure>
+
+<div class="steps">
+<h4>Where to click</h4>
+<ul>
+  <li><strong>Attach customer</strong> — type a name or phone number to search existing customers and tap the match, or <strong>New customer</strong> to create one inline without leaving checkout. This links the order to their profile for loyalty points and order history (Section&nbsp;11).</li>
+  <li><strong>Discount %</strong> — a percentage knocked off the subtotal before tax recalculation.</li>
+  <li><strong>Tip</strong> — added on top of the discounted subtotal; tip is never taxed.</li>
+  <li><strong>Gift card code</strong> — type a code and click <strong>Check</strong> to validate and apply it as a payment source (Section&nbsp;11.2).</li>
+  <li><strong>Payment method</strong> — Cash / Card / UPI / Wallet.</li>
+  <li><strong>Split between (guests)</strong> — a display-only calculator: it shows each guest's even share so the cashier can collect cash from each person, but it still produces one single paid order and one receipt, not separate per-guest checks.</li>
+  <li><strong>Complete payment</strong> — finalizes the order as PAID.</li>
+</ul>
+</div>
+
+<figure>
+  <img src="screenshots/or-checkout-complete.png" alt="Post-checkout screen with Print receipt options" />
+  <figcaption>After payment: Print receipt (browser print dialog, works with any printer or "Save as PDF"), Print via USB (direct ESC/POS thermal printer, Linux hosts), or start a New order.</figcaption>
+</figure>
+
+<h3>8.1 Refunds and merging orders</h3>
+<p>From a paid order's detail view, a refund can be issued up to whatever hasn't already been refunded on that order — never more — with an optional store-credit payout that credits the customer's wallet instead of cash. Two open dine-in orders can also be merged into one: their items and KOTs move together, the subtotal and tax recompute, the source order is cancelled, and its table is released.</p>
+</section>
+
+<section>
+<h2>9. Reservations &amp; waitlist</h2>
+<p>The Reservations page lists every upcoming booking across all floors.</p>
+
+<figure>
+  <img src="screenshots/or-reservations-list.png" alt="Empty reservations list" />
+  <figcaption>Reservations — empty state before any bookings exist.</figcaption>
+</figure>
+
+<div class="steps">
+<h4>Where to click</h4>
+<ol>
+  <li>Click <strong>New reservation</strong>.</li>
+  <li>Fill in the guest's name, phone, party size, date &amp; time, optionally assign a specific table, and any special requests (e.g. "window seat, birthday").</li>
+  <li>Click <strong>Save reservation</strong>.</li>
+</ol>
+</div>
+
+<figure>
+  <img src="screenshots/or-reservations-new-dialog.png" alt="New reservation dialog filled in" />
+  <figcaption>New reservation — table assignment is optional; leave it blank to decide closer to the booking time.</figcaption>
+</figure>
+
+<figure>
+  <img src="screenshots/or-reservations-list-filled.png" alt="Reservations list with one booking" />
+  <figcaption>A saved reservation shows the guest, party size, assigned table, phone, date/time, and its current status badge.</figcaption>
+</figure>
+
+<h3>9.1 Reservation status flow</h3>
+<p>Click the status badge on any reservation to move it through its lifecycle:</p>
+<figure>
+  <img src="screenshots/or-reservations-status-menu.png" alt="Reservation status dropdown menu" />
+  <figcaption>Status menu: Reserved → Confirmed → Arrived → Completed / Cancelled / No-show.</figcaption>
+</figure>
+<p>Assigning a table on creation marks that table Reserved; moving the reservation to Arrived occupies the table; any terminal status (Completed, Cancelled, No-show) releases the table back to Available automatically — you don't need to separately update the Tables page.</p>
+
+<div class="note">A quoted deposit field exists on the reservation record for future use, but there's no payment-collection UI for it yet — treat it as a note field for now, not a real charge.</div>
+</section>
+
+<section>
+<h2>10. QR table ordering</h2>
+<p>Every table can have its own QR code, generated from the table's status menu on the Tables page (Section&nbsp;5).</p>
+
+<figure>
+  <img src="screenshots/or-tables-qr-code-dialog.png" alt="QR code generated for a table" />
+  <figcaption>View QR code &gt; Generate QR code — gives you a printable link and a Print button for table tents.</figcaption>
+</figure>
+
+<div class="steps">
+<h4>Where to click</h4>
+<ol>
+  <li>On any table, open its status menu and click <strong>View QR code</strong>.</li>
+  <li>If none exists yet, click <strong>Generate QR code</strong>.</li>
+  <li>Click <strong>Print</strong> to print a table tent, or <strong>Generate new code</strong> to invalidate the old one and issue a fresh link (do this if a tent is lost or you suspect the code has been shared beyond that table).</li>
+</ol>
+</div>
+
+<p>Scanning the code (or opening the printed link) takes a guest to a public, unauthenticated menu view scoped to that table — no login required:</p>
+
+<figure>
+  <img src="screenshots/or-qr-table-menu.png" alt="Public QR menu view for a table" style="max-width:60%; margin:0 auto; display:block;" />
+  <figcaption>The public table menu — categories, items, prices, and the veg/non-veg indicator, read-only.</figcaption>
+</figure>
+
+<div class="warn"><strong>Scope note:</strong> today this is a <em>read-only</em> menu — a guest can browse it on their phone, but cannot place an order, customize items, request the waiter, or ask for the bill from this screen yet. Full self-service QR ordering is planned but not built; a staff member still has to take the order via the POS.</div>
+</section>
+
+<section>
+<h2>11. Customers, loyalty &amp; gift cards</h2>
+<p>The Customers page is your CRM — every guest's contact info, loyalty balance, gift cards, and order history in one place.</p>
+
+<figure>
+  <img src="screenshots/or-customers-list.png" alt="Empty customers list" />
+  <figcaption>Customers — empty state, with search and New customer.</figcaption>
+</figure>
+
+<div class="steps">
+<h4>Where to click</h4>
+<ol>
+  <li>Click <strong>New customer</strong>, fill in name, phone, and email, then <strong>Add customer</strong>.</li>
+  <li>Alternatively, attach a customer to an order directly from POS checkout (Section&nbsp;8) — typing a new name there also offers a <strong>New customer</strong> shortcut inline.</li>
+</ol>
+</div>
+
+<figure>
+  <img src="screenshots/or-customers-new-dialog.png" alt="New customer dialog" />
+  <figcaption>New customer — just name, phone, and email to start (address, birthday, anniversary and allergy notes can be added from their profile).</figcaption>
+</figure>
+
+<p>Click any customer's row to open their profile:</p>
+<figure>
+  <img src="screenshots/or-customer-profile.png" alt="Customer profile page with loyalty points and order history" />
+  <figcaption>Customer profile — loyalty points, store credit, gift card count, and full order history.</figcaption>
+</figure>
+
+<h3>11.1 Loyalty points</h3>
+<p>By default, a customer earns 1 point per ₹100 of net spend (excluding tip, rounded down), and 1 point redeems for ₹1 off a future bill — configurable per restaurant from Settings &gt; General (Section&nbsp;13). Redemption is capped at both the customer's actual balance and the bill total, so it can never take a bill negative. Points post automatically the moment an order attached to that customer is paid — nothing to click.</p>
+
+<h3>11.2 Gift cards</h3>
+<p>A gift card is a random code with its own balance that can be spent as a payment source at checkout, debiting only up to what's left owed on the bill and never more than its remaining balance.</p>
+<figure>
+  <img src="screenshots/or-customer-profile-giftcard.png" alt="Customer profile with an issued gift card" />
+  <figcaption>Once a gift card exists for a customer, it appears here with its code, balance, and issue date.</figcaption>
+</figure>
+<figure>
+  <img src="screenshots/or-pos-giftcard-redeem.png" alt="Redeeming a gift card at checkout" />
+  <figcaption>At checkout: type the code into "Gift card code" and click Check — a valid card is applied toward the total due.</figcaption>
+</figure>
+<div class="warn"><strong>Scope note:</strong> redemption at checkout is fully built and shown above, but there is currently no button anywhere in the app to <em>issue</em> a new gift card — the customer profile only displays cards that already exist. Issuing one today requires calling the backend API directly (<code>POST /api/v1/gift-cards</code>) rather than clicking through the UI; a front-end "Issue gift card" action would need to be added for staff to do this without developer help.</div>
+
+<h3>11.3 Store credit</h3>
+<p>Store credit is a customer's running wallet balance, currently populated only as an optional payout when processing a refund (Section&nbsp;8.1) — there's no direct "add store credit" action either, mirroring the gift-card gap above.</p>
+</section>
+
+<section>
+<h2>12. Inventory &amp; procurement</h2>
+<p>The Inventory section tracks raw ingredients from purchase through to the plate — suppliers, purchase orders, goods receipt, stock levels, recipe costing, and waste. It has five tabs.</p>
+
+<figure>
+  <img src="screenshots/or-inventory-overview.png" alt="Inventory tab navigation, empty ingredients list" />
+  <figcaption>Inventory's five tabs: Ingredients, Suppliers, Purchase Orders, Procurement, Waste.</figcaption>
+</figure>
+
+<h3>12.1 Suppliers</h3>
+<div class="steps">
+<h4>Where to click</h4>
+<ol>
+  <li>Go to the <strong>Suppliers</strong> tab, click <strong>New supplier</strong>.</li>
+  <li>Enter the business name, a contact person, phone, and email, then <strong>Add supplier</strong>.</li>
+</ol>
+</div>
+<figure>
+  <img src="screenshots/or-inventory-supplier-dialog.png" alt="New supplier dialog" />
+  <figcaption>New supplier — business name, contact person, phone, email.</figcaption>
+</figure>
+<figure>
+  <img src="screenshots/or-inventory-suppliers-list.png" alt="Suppliers list with one entry" />
+  <figcaption>The supplier directory — every supplier you buy from lives here before you can raise a purchase order against them.</figcaption>
+</figure>
+
+<h3>12.2 Ingredients</h3>
+<div class="steps">
+<h4>Where to click</h4>
+<ol>
+  <li>On the <strong>Ingredients</strong> tab, click <strong>New ingredient</strong>.</li>
+  <li>Enter a name, pick a unit (KG, litre, piece, etc.), and set a <strong>reorder level</strong> — the ingredient shows a "Low stock" badge once on-hand quantity falls to or below this.</li>
+</ol>
+</div>
+<figure>
+  <img src="screenshots/or-inventory-ingredient-dialog.png" alt="New ingredient dialog" />
+  <figcaption>New ingredient — name, unit, and reorder level.</figcaption>
+</figure>
+<figure>
+  <img src="screenshots/or-inventory-ingredients-list.png" alt="Ingredients list showing low stock" />
+  <figcaption>A freshly created ingredient starts at zero stock and immediately flags Low stock until a goods receipt brings it above the reorder level.</figcaption>
+</figure>
+<p>Each row's <strong>Adjust</strong> button opens a manual stock correction (for a stocktake mismatch, breakage not worth a formal waste entry, etc.) — every adjustment is ledgered, not a silent overwrite. Average cost per unit recalculates automatically as a weighted average every time new stock is received.</p>
+
+<h3>12.3 Purchase orders</h3>
+<div class="steps">
+<h4>Where to click — raising and receiving a PO</h4>
+<ol>
+  <li>On the <strong>Purchase Orders</strong> tab, click <strong>New purchase order</strong>.</li>
+  <li>Pick a <strong>Supplier</strong>, then for each line: pick an ingredient, enter <strong>Qty</strong> and <strong>Cost/unit</strong>, and click <strong>Add item</strong> (repeat for more lines). The running total updates as you go.</li>
+  <li>Click <strong>Create purchase order</strong> — it's created as <strong>DRAFT</strong>.</li>
+  <li>On the PO's detail page, click <strong>Mark as sent</strong> once you've actually placed the order with the supplier — this reveals the <strong>Receive items</strong> action.</li>
+  <li>When goods arrive, click <strong>Receive items</strong>, enter what actually arrived (quantity and cost can differ from what was ordered — enter the real numbers), optionally an expiry date, and click <strong>Record goods receipt</strong>.</li>
+</ol>
+</div>
+
+<figure>
+  <img src="screenshots/or-inventory-po-dialog.png" alt="New purchase order dialog with one line item" />
+  <figcaption>New purchase order — supplier, then one row per ingredient with quantity and cost.</figcaption>
+</figure>
+<figure>
+  <img src="screenshots/or-inventory-po-detail.png" alt="Purchase order detail page, DRAFT status" />
+  <figcaption>PO detail page — sequential PO number, line items, and the current status badge.</figcaption>
+</figure>
+<figure>
+  <img src="screenshots/or-inventory-grn-dialog.png" alt="Receive goods dialog" />
+  <figcaption>Receive against a PO — each line becomes its own batch with a lot number and optional expiry date, supporting FIFO costing later.</figcaption>
+</figure>
+<figure>
+  <img src="screenshots/or-inventory-po-received.png" alt="Purchase order after receiving" />
+  <figcaption>After receiving, the PO's Received column updates and the ingredient's on-hand stock and average cost recalculate immediately.</figcaption>
+</figure>
+
+<p>A PO moves through <strong>Draft → Sent → Partially received → Received</strong> (or <strong>Cancelled</strong>), with sequential PO numbers (PO-0001, PO-0002…) for easy reference with suppliers.</p>
+
+<h3>12.4 Procurement — quotations, requests &amp; vendor invoices</h3>
+<p>Beyond a simple PO, the Procurement tab adds three deeper tools for larger operations:</p>
+
+<figure>
+  <img src="screenshots/or-inventory-procurement.png" alt="Procurement tab with three empty sections" />
+  <figcaption>Procurement — Purchase requests, Supplier quotations, and Vendor invoices, each with its own list and a New… button.</figcaption>
+</figure>
+
+<h4>Purchase requests</h4>
+<p>Lets any staff member flag "we're running low on X" before a manager actually commits to a purchase order — a lightweight approval step for larger kitchens with more than one buyer.</p>
+<figure>
+  <img src="screenshots/or-procurement-request-dialog.png" alt="New purchase request dialog" />
+  <figcaption>New request — pick ingredient(s) and quantity, add a note, and it's logged as a sequential request (PR-0001…) for a manager to action.</figcaption>
+</figure>
+
+<h4>Supplier quotations</h4>
+<p>Records what a supplier has quoted for an ingredient, so you can compare prices across two or three suppliers side by side before committing to a PO.</p>
+<figure>
+  <img src="screenshots/or-procurement-quotation-dialog.png" alt="New supplier quotation dialog" />
+  <figcaption>New quotation — supplier, ingredient, quantity, and quoted price/unit; saved as QT-0001 etc.</figcaption>
+</figure>
+
+<h4>Vendor invoices &amp; payments</h4>
+<p>Tracks what a supplier has actually billed you against a purchase order — separate from the PO itself, since invoices and payments often lag behind delivery.</p>
+<div class="steps">
+<h4>Where to click</h4>
+<ol>
+  <li>Click <strong>New invoice</strong>, pick the supplier, enter the invoice number, invoice date, due date, and total amount, then <strong>Add invoice</strong>.</li>
+  <li>The invoice appears as <strong>UNPAID</strong>. Click <strong>Record payment</strong> on its row any time money goes out — enter the amount (a partial payment is fine, it just reduces what's remaining), payment method, and an optional reference (UTR/cheque number), then <strong>Record payment</strong>.</li>
+</ol>
+</div>
+<figure>
+  <img src="screenshots/or-procurement-invoice-dialog.png" alt="New vendor invoice dialog" />
+  <figcaption>New vendor invoice — supplier, invoice number, dates, and total amount.</figcaption>
+</figure>
+<figure>
+  <img src="screenshots/or-procurement-payment-dialog.png" alt="Record a payment dialog showing remaining balance" />
+  <figcaption>Record a payment — shows exactly how much of the invoice remains before you enter an amount.</figcaption>
+</figure>
+<figure>
+  <img src="screenshots/or-inventory-procurement-filled.png" alt="Procurement tab with populated request, quotation and invoice" />
+  <figcaption>All three procurement lists populated — a purchase request, a supplier quotation, and a vendor invoice with its payment status.</figcaption>
+</figure>
+
+<h3>12.5 Waste</h3>
+<div class="steps">
+<h4>Where to click</h4>
+<ol>
+  <li>On the <strong>Waste</strong> tab, click <strong>Log waste</strong>.</li>
+  <li>Pick the ingredient (its current stock level is shown right in the dropdown), enter the quantity, pick a <strong>Reason</strong> (Spoiled, Damaged, Expired, etc.), and optionally add notes.</li>
+  <li>Click <strong>Log waste</strong> to save.</li>
+</ol>
+</div>
+<figure>
+  <img src="screenshots/or-inventory-waste-dialog.png" alt="Log waste dialog" />
+  <figcaption>Log waste — the ingredient dropdown shows current stock so you can't accidentally over-log.</figcaption>
+</figure>
+<p>Waste is deducted FIFO from the oldest batch on hand and priced at that specific batch's own cost (not a blended average), so the waste-cost figure on the Dashboard (Section&nbsp;3) reflects what that stock actually cost you.</p>
+<figure>
+  <img src="screenshots/or-inventory-ingredients-final.png" alt="Ingredients list after a purchase order and waste entry" />
+  <figcaption>The full loop closed: an ingredient with real on-hand stock, an average cost, and a stock value — built up from a purchase order, a goods receipt, and a waste entry.</figcaption>
+</figure>
+
+<div class="note"><strong>Recipe costing:</strong> beyond what's shown here, a menu item can declare the ingredient quantities it consumes (a "recipe"). Once linked, checkout automatically deducts the right amount of each ingredient's stock (FIFO, expanding one level into a combo's components first), and the item's cost price on the Menu page updates live from the ingredient's current average cost — useful for real food-cost tracking, though building the recipe link itself isn't captured in the screenshots above.</div>
+</section>
+
+<section>
+<h2>13. Settings — staff, roles &amp; audit log</h2>
+<p>Settings has four tabs: General, Staff, Roles, and Audit Log.</p>
+
+<h3>13.1 General</h3>
+<figure>
+  <img src="screenshots/or-settings-general.png" alt="Settings General tab" />
+  <figcaption>General — restaurant name/currency/timezone, loyalty program rates, this branch's details, and USB thermal printer status.</figcaption>
+</figure>
+<ul>
+  <li><strong>Restaurant</strong> — name, legal name, currency, timezone, and the loyalty program's earn/redeem rates (Section&nbsp;11.1) — edit and click <strong>Save restaurant</strong>.</li>
+  <li><strong>This branch</strong> — branch name, address, phone, GST number — click <strong>Save branch</strong>.</li>
+  <li><strong>USB thermal printer</strong> — status of a direct-USB ESC/POS printer on Linux hosts, with a <strong>Send test print</strong> button. If none is detected, the panel tells you exactly what to check (<code>lsusb</code>, <code>/dev/usb/lp0</code>, the Docker USB passthrough).</li>
+</ul>
+
+<h3>13.2 Staff</h3>
+<figure>
+  <img src="screenshots/or-settings-staff.png" alt="Staff accounts list with one account" />
+  <figcaption>Staff accounts — name, contact, role, assigned branch(es), and an active/inactive toggle per row.</figcaption>
+</figure>
+<div class="steps">
+<h4>Where to click</h4>
+<ol>
+  <li>Click <strong>Add staff</strong>.</li>
+  <li>Enter name, email, phone, and a password, pick a <strong>Role</strong> from the full list (Section&nbsp;1's table), tick which branch(es) they work at, then <strong>Add staff</strong>.</li>
+</ol>
+</div>
+<figure>
+  <img src="screenshots/or-settings-staff-add-dialog.png" alt="New staff account dialog with role dropdown" />
+  <figcaption>New staff account — every seeded role is selectable here.</figcaption>
+</figure>
+<figure>
+  <img src="screenshots/or-settings-staff-list.png" alt="Staff list with two accounts" />
+  <figcaption>The switch in the Active column deactivates a login instantly without deleting the account or its history.</figcaption>
+</figure>
+
+<h3>13.3 Roles &amp; permissions</h3>
+<figure>
+  <img src="screenshots/or-settings-roles.png" alt="Roles and permissions table" />
+  <figcaption>Every seeded role with its permission count — click Create role to build a custom one from scratch.</figcaption>
+</figure>
+<p>Click <strong>Create role</strong> to build something the seeded list doesn't cover — a kitchen display screen with no real login behind it, a valet, or a host who only needs the Reservations page — with exactly the permissions it needs, individually toggled, not a bundle you have to accept wholesale.</p>
+
+<h3>13.4 Audit Log</h3>
+<figure>
+  <img src="screenshots/or-settings-audit-log.png" alt="Audit log viewer" />
+  <figcaption>Audit Log (Owner only) — a filterable record of every sensitive action taken in the system, for accountability.</figcaption>
+</figure>
+</section>
+
+</body>
+</html>
