@@ -8,6 +8,7 @@ overrides:
   '@nestjs/swagger>js-yaml': ^4.3.1
   hono: ^4.12.34
   nanoid: ^3.3.17
+  deepmerge-ts: ^8.0.0
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
