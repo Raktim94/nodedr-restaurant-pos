@@ -110,8 +110,14 @@ Set-Location $repoDir
 # default for either), so generate real random values here. Never overwrites
 # an existing .env, so re-running this script is safe.
 function New-HexSecret([int]$byteLength) {
+    # RandomNumberGenerator's static ::Fill() needs .NET 6+ and throws
+    # MethodNotFound on Windows PowerShell 5.1 (.NET Framework), which is
+    # what "powershell.exe" — and therefore `irm ... | iex` — runs by
+    # default. ::Create().GetBytes() is the instance API that has existed
+    # since .NET Framework 2.0, so it works on both.
     $buffer = New-Object byte[] $byteLength
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($buffer)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($buffer) } finally { $rng.Dispose() }
     -join ($buffer | ForEach-Object { $_.ToString("x2") })
 }
 
