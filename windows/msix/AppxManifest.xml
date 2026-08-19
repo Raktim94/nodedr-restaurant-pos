@@ -15,7 +15,7 @@
   <Identity
     Name="NODEDRINFOTECHLIMITED.NodedrOrderRestro"
     Publisher="CN=11C721FC-E399-4888-B532-7BFCD5C491B3"
-    Version="1.0.0.0"
+    Version="1.0.1.0"
     ProcessorArchitecture="x64" />
 
   <Properties>

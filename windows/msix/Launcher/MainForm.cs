@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -13,6 +14,7 @@ internal sealed class MainForm : Form
         Font = new Font("Segoe UI", 11f),
         Visible = false,
     };
+    private Panel? _fatalErrorPanel;
     private AppConfig _config;
     private ServerSupervisor? _supervisor;
     private TrayIcon? _tray;
@@ -237,8 +239,10 @@ internal sealed class MainForm : Form
             catch { /* best-effort */ }
 
             ShowFatalError(
-                $"Could not start the embedded server.\n\n{ex.Message}\n\n" +
-                $"Logs: {ServerPaths.ServerLogDir}");
+                technicalMessage: $"Could not start the embedded server.\n\n{ex.Message}\n\nLogs: {ServerPaths.ServerLogDir}",
+                friendlyHeadline: "OrderRestro couldn't start its local database",
+                friendlyBody: "Your restaurant data has not been deleted. OrderRestro was unable to start its local database service.",
+                retry: async () => { Controls.Remove(_fatalErrorPanel); _fatalErrorPanel = null; await InitializeAsync(); });
             return false;
         }
 
@@ -319,11 +323,109 @@ internal sealed class MainForm : Form
         _errorLabel.Visible = true;
     }
 
-    private void ShowFatalError(string message)
+    /// <summary>
+    /// Fatal-error UI: a friendly headline for non-technical users, with
+    /// the full technical detail still one click away (Copy Diagnostic
+    /// Information) and the log folder itself (Open Logs) — instead of
+    /// putting a raw Windows filesystem path front-and-center as the
+    /// primary experience. This is presentation only: it never changes
+    /// WHETHER something failed or WHY, only how that failure is shown —
+    /// the actual startup-lifecycle fix lives in ServerSupervisor.
+    /// </summary>
+    private void ShowFatalError(
+        string technicalMessage,
+        string? friendlyHeadline = null,
+        string? friendlyBody = null,
+        Func<Task>? retry = null)
     {
         _webView.Visible = false;
-        _errorLabel.Text = message;
-        _errorLabel.Visible = true;
+        _errorLabel.Visible = false;
+        _fatalErrorPanel?.Dispose();
+
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        var headline = new Label
+        {
+            Text = friendlyHeadline ?? "OrderRestro couldn't start",
+            Font = new Font("Segoe UI", 14f, FontStyle.Bold),
+            AutoSize = false,
+            Dock = DockStyle.Top,
+            Height = 50,
+            TextAlign = ContentAlignment.MiddleCenter,
+        };
+        var body = new Label
+        {
+            Text = friendlyBody ?? technicalMessage,
+            Font = new Font("Segoe UI", 10f),
+            AutoSize = false,
+            Dock = DockStyle.Top,
+            Height = 90,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Padding = new Padding(24, 0, 24, 0),
+        };
+
+        var buttons = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.LeftToRight,
+            AutoSize = true,
+            Dock = DockStyle.Top,
+            Anchor = AnchorStyles.None,
+        };
+
+        if (retry is not null)
+        {
+            var retryButton = new Button { Text = "Retry", AutoSize = true, Margin = new Padding(6) };
+            retryButton.Click += async (_, _) => await retry();
+            buttons.Controls.Add(retryButton);
+        }
+
+        var openLogsButton = new Button { Text = "Open Logs", AutoSize = true, Margin = new Padding(6) };
+        openLogsButton.Click += (_, _) =>
+        {
+            try
+            {
+                Directory.CreateDirectory(ServerPaths.ServerLogDir);
+                Process.Start(new ProcessStartInfo(ServerPaths.ServerLogDir) { UseShellExecute = true });
+            }
+            catch
+            {
+                // best-effort — the log path is also in the copyable diagnostic text below
+            }
+        };
+        buttons.Controls.Add(openLogsButton);
+
+        var copyButton = new Button { Text = "Copy Diagnostic Information", AutoSize = true, Margin = new Padding(6) };
+        copyButton.Click += (_, _) =>
+        {
+            try { Clipboard.SetText(technicalMessage); }
+            catch { /* best-effort */ }
+        };
+        buttons.Controls.Add(copyButton);
+
+        var buttonsWrapper = new Panel { Dock = DockStyle.Top, Height = 50 };
+        buttons.Left = 0;
+        buttons.Top = 0;
+        buttonsWrapper.Controls.Add(buttons);
+        buttonsWrapper.Resize += (_, _) => buttons.Left = Math.Max(0, (buttonsWrapper.Width - buttons.Width) / 2);
+
+        layout.Controls.Add(headline, 0, 0);
+        layout.Controls.Add(body, 0, 1);
+        layout.Controls.Add(buttonsWrapper, 0, 2);
+
+        var wrapper = new Panel { Dock = DockStyle.Fill };
+        wrapper.Controls.Add(layout);
+
+        Controls.Add(wrapper);
+        wrapper.BringToFront();
+        _fatalErrorPanel = wrapper;
     }
 
     private async Task ChangeServerAsync(bool isFirstRun = false)

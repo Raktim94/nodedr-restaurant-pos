@@ -102,13 +102,27 @@ jobs:
           # Add-AppxPackage upgrades this identity in place (same
           # Name+Publisher, higher Version) instead of requiring an
           # uninstall first, and that %LOCALAPPDATA% user config survives.
+          # Derived from whatever version is actually committed right now
+          # (bump the Revision field) rather than a hardcoded old->new
+          # literal pair — a literal pair silently stops matching (no
+          # error, the replace just does nothing) the moment the commited
+          # version changes, which would quietly turn this into a no-op
+          # "upgrade" from a version to itself instead of a real test.
           [xml]$manifest = Get-Content ./AppxManifest.xml
-          $manifest.Package.Identity.Version = '1.0.0.1'
+          $current = [Version]$manifest.Package.Identity.Version
+          $bumped = [Version]::new($current.Major, $current.Minor, $current.Build, $current.Revision + 1)
+          $bumpedStr = $bumped.ToString()
+          Write-Host "Bumping $current -> $bumpedStr for the upgrade-in-place test"
+          $manifest.Package.Identity.Version = $bumpedStr
           $manifest.Save((Resolve-Path ./AppxManifest.xml))
-          (Get-Content ./Launcher/Launcher.csproj -Raw) -replace '<Version>1\.0\.0\.0</Version>', '<Version>1.0.0.1</Version>' |
+          $csprojContent = Get-Content ./Launcher/Launcher.csproj -Raw
+          if ($csprojContent -notmatch '<Version>[\d.]+</Version>') {
+            throw "Launcher.csproj has no <Version> element to bump"
+          }
+          ($csprojContent -replace '<Version>[\d.]+</Version>', "<Version>$bumpedStr</Version>") |
             Set-Content ./Launcher/Launcher.csproj
 
-      - name: Build + package upgrade (v1.0.0.1)
+      - name: Build + package upgrade
         shell: pwsh
         working-directory: windows/msix
         run: |
@@ -122,8 +136,8 @@ jobs:
           [xml]$manifest = Get-Content ./AppxManifest.xml
           $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
           if (-not $pkg) { throw "Package not found after upgrade install" }
-          if ($pkg.Version.ToString() -ne '1.0.0.1') {
-            throw "Expected version 1.0.0.1 after upgrade, got $($pkg.Version)"
+          if ($pkg.Version.ToString() -ne $manifest.Package.Identity.Version) {
+            throw "Expected version $($manifest.Package.Identity.Version) after upgrade, got $($pkg.Version)"
           }
           $configPath = Join-Path $env:LOCALAPPDATA 'OrderRestro\config.json'
           if (-not (Test-Path $configPath)) { throw "Pre-upgrade config.json did not survive the upgrade" }
@@ -363,6 +377,75 @@ jobs:
               throw "Postgres data directory was not initialized (initdb didn't run)"
           }
           Write-Host "First-run secret generation and Postgres initdb both verified." -ForegroundColor Green
+
+      - name: Forced-shutdown recovery — kill the app, leave Postgres orphaned, relaunch
+        shell: pwsh
+        timeout-minutes: 10
+        # Regression coverage for the production incident this whole
+        # startup-lifecycle rework was written for: a forced kill (Task
+        # Manager, a crash, a Windows shutdown that doesn't run the app's
+        # own OnFormClosing/StopAsync path) leaves postgres.exe running
+        # orphaned with a postmaster.pid on disk. The next launch must
+        # detect and reuse that already-running Postgres via `pg_ctl
+        # status` (see ServerSupervisor.GetPostgresStatusAsync) rather than
+        # failing to start a second instance or mishandling the lock file.
+        # Nothing before this change ever exercised that path in CI.
+        run: |
+          [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
+          $exePath = Join-Path $pkg.InstallLocation 'OrderRestro.exe'
+          $configDir = Join-Path $env:LOCALAPPDATA 'OrderRestro'
+          $supervisorErrorLog = Join-Path $configDir 'server\logs\supervisor-error.log'
+
+          Write-Host "Force-killing OrderRestro.exe (simulating Task Manager / a crash)..." -ForegroundColor Cyan
+          Get-Process -Name 'OrderRestro' -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 2
+
+          $pgRunning = $false
+          try {
+              $conn = Test-NetConnection -ComputerName 127.0.0.1 -Port 55432 -WarningAction SilentlyContinue
+              $pgRunning = $conn.TcpTestSucceeded
+          } catch { }
+          if (-not $pgRunning) {
+              throw "Test setup invalid: Postgres was not still running after killing the app — this test needs Postgres orphaned, not stopped, to prove anything."
+          }
+          Write-Host "Confirmed: Postgres is still running orphaned (port 55432 reachable), app process is gone." -ForegroundColor Green
+
+          if (Test-Path $supervisorErrorLog) { Remove-Item $supervisorErrorLog -Force }
+
+          Write-Host "Relaunching OrderRestro against the orphaned Postgres..." -ForegroundColor Cyan
+          Start-Process -FilePath $exePath
+
+          function Wait-Health($url, $timeoutSec) {
+              $deadline = (Get-Date).AddSeconds($timeoutSec)
+              while ((Get-Date) -lt $deadline) {
+                  try {
+                      $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
+                      if ($resp.StatusCode -eq 200) { return $true }
+                  } catch { }
+                  if (Test-Path $supervisorErrorLog) {
+                      Write-Host "supervisor-error.log appeared on relaunch:" -ForegroundColor Red
+                      Write-Host (Get-Content $supervisorErrorLog -Raw) -ForegroundColor Red
+                      return $false
+                  }
+                  Start-Sleep -Seconds 3
+              }
+              return $false
+          }
+
+          $recovered = Wait-Health 'http://localhost:1995/api/health' 120
+          if (-not $recovered) {
+              Write-Host "---- startup.log ----" -ForegroundColor Yellow
+              Get-Content (Join-Path $configDir 'server\logs\startup.log') -ErrorAction SilentlyContinue | Select-Object -Last 40
+              throw "OrderRestro did not recover after a forced kill left Postgres orphaned"
+          }
+          Write-Host "Recovered cleanly: relaunch reused the orphaned Postgres instance." -ForegroundColor Green
+
+          $startupLog = Get-Content (Join-Path $configDir 'server\logs\startup.log') -Raw -ErrorAction SilentlyContinue
+          if ($startupLog -notmatch 'existing postgres process detection: Running') {
+              throw "startup.log doesn't show the relaunch detected the already-running Postgres instance — check GetPostgresStatusAsync"
+          }
+          Write-Host "Confirmed via startup.log: relaunch correctly detected and reused the existing Postgres instance (not a fresh start)." -ForegroundColor Green
 
       - name: Stop embedded server and app (cleanup)
         if: always()
