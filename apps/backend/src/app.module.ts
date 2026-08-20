@@ -31,6 +31,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { BackupModule } from './backup/backup.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { McpModule } from './mcp/mcp.module';
+import { SystemModule } from './system/system.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { McpModule } from './mcp/mcp.module';
     BackupModule,
     IntegrationsModule,
     McpModule,
+    SystemModule,
   ],
   controllers: [AppController],
   providers: [

@@ -108,8 +108,12 @@ jobs:
           # rewrites are resolved at build, not runtime) — see
           # apps/web/Dockerfile's own comment on this. Matches the
           # docker-compose.yml value used for local/self-hosted installs.
+          # APP_VERSION is only consumed by the backend image (self-update
+          # version check, see apps/backend/src/system/update.service.ts) —
+          # harmless as an unused build-arg on the web image.
           build-args: |
             BACKEND_URL=http://backend:4000
+            APP_VERSION=${{ steps.version.outputs.version }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |

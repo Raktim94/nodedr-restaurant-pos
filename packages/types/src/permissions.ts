@@ -26,6 +26,7 @@ export const PERMISSIONS = [
   { key: "audit_log.view", label: "View Audit Log", category: "Admin" },
   { key: "roles.manage", label: "Manage Roles", category: "Admin" },
   { key: "backup.manage", label: "Manage Backups", category: "Admin" },
+  { key: "system.update", label: "Manage App Updates", category: "Admin" },
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]["key"];

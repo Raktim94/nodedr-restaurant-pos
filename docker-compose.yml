@@ -25,6 +25,8 @@ services:
     build:
       context: .
       dockerfile: apps/backend/Dockerfile
+      args:
+        APP_VERSION: "${APP_VERSION:-dev}"
     container_name: nodedr-restaurant-backend
     restart: unless-stopped
     environment:
@@ -35,6 +37,14 @@ services:
       CORS_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:1995}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       UPLOADS_DIR: "/data/uploads"
+      # Self-update (Settings > Updates > "Update now", see
+      # src/system/update.service.ts) needs to know where its mounted repo
+      # checkout lives so it can `git pull && docker compose up --build -d`
+      # from a one-shot helper container it spawns via docker.sock — same
+      # design as Submify/Zulivio's own self-update. Deliberately NOT /repo
+      # — see the volumes comment below on why that path is reserved for
+      # the running app itself.
+      REPO_DIR: "/host-repo"
       # Optional: S3 backup config can also be set from Settings > Backup
       # (persisted to the `backup_config` DB row, which takes priority over
       # these). Uncomment for a headless/CasaOS-style deployment that
@@ -56,6 +66,18 @@ services:
       - "4000"
     volumes:
       - uploads_data:/data/uploads
+      # Self-update support: docker.sock lets the backend spawn a one-shot
+      # helper container to run `git pull && docker compose up --build -d`
+      # on the host (the backend container can't safely recreate itself —
+      # see src/system/update.service.ts). The repo bind mount is deliberately
+      # NOT at /repo — this image's own WORKDIR *is* /repo (node_modules,
+      # dist, the Alpine/musl-built Prisma engine all live there), so
+      # mounting the host repo there would shadow the running app with the
+      # host's own build artifacts (wrong OS/libc — breaks Prisma's native
+      # engine). /host-repo is a separate path used only as the update
+      # helper container's working directory, matching REPO_DIR above.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/host-repo
       # Direct-USB thermal printing (see apps/backend/src/modules/orders/
       # escpos-usb.ts, ported from nodedr-pos's real hardware-verified
       # transport) needs the backend to see the host's USB device nodes.
