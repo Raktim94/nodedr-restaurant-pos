@@ -6,7 +6,6 @@ import { TicketCard } from "@/components/kds/ticket-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
 import { useKdsTickets, type KotTicket } from "@/hooks/use-kds";
-import { useRealtime } from "@/hooks/use-realtime";
 
 const COLUMNS: { status: KotStatusDto; label: string }[] = [
   { status: "NEW", label: "New" },
@@ -18,7 +17,6 @@ const COLUMNS: { status: KotStatusDto; label: string }[] = [
 export default function KdsPage() {
   const { branchId } = useBranch();
   const { data: tickets, isLoading } = useKdsTickets(branchId);
-  useRealtime(branchId);
 
   const byStatus = (status: KotStatusDto): KotTicket[] =>
     tickets?.filter((t) => t.status === status) ?? [];
