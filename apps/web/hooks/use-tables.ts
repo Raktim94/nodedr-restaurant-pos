@@ -17,6 +17,7 @@ export interface RestaurantTable {
   name: string | null;
   capacity: number;
   status: TableStatusDto;
+  statusSince: string;
   posX: number;
   posY: number;
   width: number;

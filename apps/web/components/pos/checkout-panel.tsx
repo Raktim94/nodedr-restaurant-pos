@@ -1,7 +1,7 @@
 "use client";
 
 import type { PaymentMethodDto } from "@nodedr-restaurant/types";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Printer } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import { usePrintOrderUsb } from "@/hooks/use-print";
 import { useSettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
-import { openReceiptPrint } from "@/lib/print";
+import { openKotPrint, openReceiptPrint } from "@/lib/print";
 import { round2 } from "@/lib/pricing-preview";
 
 const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "WALLET"];
@@ -184,7 +184,19 @@ export function CheckoutPanel({
       </div>
 
       <div>
-        <p className="text-sm text-muted-foreground">Order #{order.orderNumber} sent to kitchen</p>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-sm text-muted-foreground">Order #{order.orderNumber} sent to kitchen</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => branchId && openKotPrint(order.id, branchId)}
+          >
+            <Printer className="h-4 w-4" />
+            Print KOT
+          </Button>
+        </div>
         <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
           {formatCurrency(order.subtotal)}
         </p>

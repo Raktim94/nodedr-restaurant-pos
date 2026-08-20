@@ -37,6 +37,7 @@ import {
   sendRaw,
 } from './escpos-usb';
 import { OrdersService } from './orders.service';
+import { buildKotHtml } from './kot.html';
 import { buildReceiptHtml } from './receipt.html';
 
 type ReceiptData = Awaited<ReturnType<OrdersService['getReceiptData']>>;
@@ -192,6 +193,37 @@ export class OrdersController {
         gstNumber: order.branch.gstNumber,
       },
       order: toEscposOrder(order),
+    });
+    res.type('html').send(html);
+  }
+
+  @Auth('orders.create')
+  @Get(':id/kot')
+  async kot(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const order = await this.ordersService.getReceiptData(branchId, id);
+    const html = buildKotHtml({
+      branchName: order.branch.name,
+      order: {
+        orderNumber: order.orderNumber,
+        type: order.type,
+        createdAt: order.createdAt,
+        table: order.table
+          ? { label: order.table.name ?? `#${order.table.number}` }
+          : null,
+        customer: order.customer ? { name: order.customer.name ?? 'Guest' } : null,
+        items: order.items.map((item) => ({
+          nameSnapshot: item.nameSnapshot,
+          quantity: item.quantity,
+          kitchenNote: item.kitchenNote,
+          modifiers: item.modifiers.map((m) => ({ nameSnapshot: m.nameSnapshot })),
+        })),
+      },
     });
     res.type('html').send(html);
   }

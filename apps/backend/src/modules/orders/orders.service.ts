@@ -164,7 +164,7 @@ export class OrdersService {
       if (dto.tableId) {
         await tx.table.update({
           where: { id: dto.tableId },
-          data: { status: 'OCCUPIED' },
+          data: { status: 'OCCUPIED', statusSince: new Date() },
         });
       }
 
@@ -336,7 +336,7 @@ export class OrdersService {
         if (otherOpenOrders === 0) {
           await tx.table.update({
             where: { id: order.tableId },
-            data: { status: 'AVAILABLE' },
+            data: { status: 'AVAILABLE', statusSince: new Date() },
           });
         }
       }
@@ -515,7 +515,7 @@ export class OrdersService {
       if (order.tableId) {
         await tx.table.update({
           where: { id: order.tableId },
-          data: { status: 'AVAILABLE' },
+          data: { status: 'AVAILABLE', statusSince: new Date() },
         });
       }
 
@@ -727,7 +727,7 @@ export class OrdersService {
       if (source.tableId && source.tableId !== target.tableId) {
         await tx.table.update({
           where: { id: source.tableId },
-          data: { status: 'AVAILABLE' },
+          data: { status: 'AVAILABLE', statusSince: new Date() },
         });
       }
 

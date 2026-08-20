@@ -383,10 +383,17 @@ model Table {
   floorId String
   floor   Floor  @relation(fields: [floorId], references: [id], onDelete: Cascade)
 
-  number   String
-  name     String?
-  capacity Int         @default(2)
-  status   TableStatus @default(AVAILABLE)
+  number      String
+  name        String?
+  capacity    Int         @default(2)
+  status      TableStatus @default(AVAILABLE)
+  // When `status` last changed — set automatically by a Prisma middleware
+  // (see PrismaService) on every write that includes a `status` field, not
+  // hand-maintained per call site (status changes from many places: table
+  // status dropdown, order creation/checkout, reservation arrival/cancel,
+  // waitlist seating). Powers the "how long has this table been occupied/
+  // reserved" timer on the floor view and POS table picker.
+  statusSince DateTime    @default(now())
 
   // Floor designer layout — percentage-based so any canvas size renders consistently
   posX     Float   @default(0)

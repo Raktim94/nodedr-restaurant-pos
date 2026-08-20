@@ -14,6 +14,7 @@ import {
 import { useUpdateTableStatus, type RestaurantTable } from "@/hooks/use-tables";
 import { cn } from "@/lib/utils";
 import { BillTableDialog } from "./bill-table-dialog";
+import { ElapsedTimer } from "./elapsed-timer";
 import { MergeTableDialog } from "./merge-table-dialog";
 import { TableQrDialog } from "./table-qr-dialog";
 import { TableShapeIcon } from "./table-shape-icon";
@@ -67,6 +68,9 @@ export function TableTile({
             <Users className="h-3 w-3" />
             {table.capacity}
           </span>
+          {(table.status === "OCCUPIED" || table.status === "RESERVED") && (
+            <ElapsedTimer since={table.statusSince} className="flex items-center gap-1 text-[10px] opacity-70" />
+          )}
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">

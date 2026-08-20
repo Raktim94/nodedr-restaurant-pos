@@ -132,7 +132,7 @@ export class TablesService {
     await this.assertTableInBranch(branchId, id);
     const table = await this.prisma.table.update({
       where: { id },
-      data: { status, ...(assignedWaiterId ? { assignedWaiterId } : {}) },
+      data: { status, statusSince: new Date(), ...(assignedWaiterId ? { assignedWaiterId } : {}) },
     });
     this.realtime.emitToBranch(branchId, 'table.updated', table);
     return table;

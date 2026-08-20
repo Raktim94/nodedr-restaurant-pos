@@ -57,7 +57,7 @@ export class WaitlistService {
       });
       await tx.table.update({
         where: { id: tableId },
-        data: { status: 'OCCUPIED' },
+        data: { status: 'OCCUPIED', statusSince: new Date() },
       });
       return result;
     });

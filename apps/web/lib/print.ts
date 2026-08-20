@@ -40,3 +40,18 @@ export function openReceiptPrint(orderId: string, branchId: string) {
   // Force a reload even if printing the same order twice in a row.
   frame.src = `/api/v1/orders/${orderId}/receipt?branchId=${branchId}&t=${Date.now()}`;
 }
+
+export function openKotPrint(orderId: string, branchId: string) {
+  const frame = getPrintFrame();
+  frame.onload = () => {
+    const win = frame.contentWindow;
+    if (!win) return;
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      win.postMessage("print", "*");
+    }
+  };
+  frame.src = `/api/v1/orders/${orderId}/kot?branchId=${branchId}&t=${Date.now()}`;
+}

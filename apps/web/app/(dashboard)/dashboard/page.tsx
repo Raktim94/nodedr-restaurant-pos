@@ -1,6 +1,7 @@
 "use client";
 
 import { ChefHat, ClipboardList, Flame, ReceiptText, Timer, TrendingUp, Trash2, Wallet } from "lucide-react";
+import { QuickActions } from "@/components/dashboard/quick-actions";
 import { TrendChart } from "@/components/dashboard/trend-chart";
 import { RefundDialog } from "@/components/orders/refund-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +68,8 @@ export default function DashboardPage() {
         <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Real-time overview of today&apos;s service</p>
       </div>
+
+      <QuickActions />
 
       {isLoading || !data ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

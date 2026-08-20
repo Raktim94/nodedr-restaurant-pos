@@ -63,7 +63,13 @@ export function CartPanel({
       {orderType === "DINE_IN" && (
         <Select value={tableId} onValueChange={(v) => onTableChange(v ?? "")}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select table" />
+            <SelectValue placeholder="Select table">
+              {(value: string | null) => {
+                const t = tables.find((table) => table.id === value);
+                if (!t) return "Select table";
+                return `${t.name ?? `Table ${t.number}`}${t.status === "OCCUPIED" ? " (occupied)" : ""}`;
+              }}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {tables.map((t) => (

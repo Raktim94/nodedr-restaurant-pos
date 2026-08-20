@@ -56,7 +56,7 @@ export class ReservationsService {
       if (reservation.tableId) {
         await tx.table.update({
           where: { id: reservation.tableId },
-          data: { status: 'RESERVED' },
+          data: { status: 'RESERVED', statusSince: new Date() },
         });
       }
       return reservation;
@@ -98,7 +98,7 @@ export class ReservationsService {
         if (status === 'ARRIVED') {
           await tx.table.update({
             where: { id: result.tableId },
-            data: { status: 'OCCUPIED' },
+            data: { status: 'OCCUPIED', statusSince: new Date() },
           });
         } else if (
           status === 'COMPLETED' ||
@@ -107,7 +107,7 @@ export class ReservationsService {
         ) {
           await tx.table.update({
             where: { id: result.tableId },
-            data: { status: 'AVAILABLE' },
+            data: { status: 'AVAILABLE', statusSince: new Date() },
           });
         }
       }
