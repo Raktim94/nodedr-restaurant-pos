@@ -15,6 +15,7 @@ const columns = [
     title: "Resources",
     links: [
       { href: downloadHref("github"), label: "GitHub" },
+      { href: "/docs/api", label: "API & MCP" },
       { href: "/docs/accessibility", label: "Accessibility statement" },
       { href: "/docs/compliance-india", label: "India compliance notes" },
     ],

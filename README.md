@@ -143,7 +143,7 @@ by phase.
 | 16 | Maintenance — equipment tracking, service schedules, requests, AMC | 🚧 Phase 7 |
 | 17 | Documents — digital invoices, purchase docs, contracts, recipes, SOPs | 🚧 Phase 7 |
 | 18 | Security — RBAC, audit logs, backup/restore, activity history, 2FA | ✅ RBAC · 🚧 rest, Phase 8 |
-| 19 | Integrations — payment gateways, SMS, email, WhatsApp, accounting software, thermal printers | ✅ browser/USB-driver receipt printing · 🚧 rest, Phase 8 |
+| 19 | Integrations — payment gateways, SMS, email, WhatsApp, accounting software, thermal printers | ✅ browser/USB-driver receipt printing, [API & MCP server](./docs/integrations-api.md) · 🚧 rest, Phase 8 |
 | 20 | Admin Panel — global settings, taxes, currencies, business hours, feature flags | ✅ restaurant & branch settings · 🚧 rest, Phase 8 |
 
 Already shipped and running against real Docker/Postgres today: auth +
@@ -351,6 +351,7 @@ docs/           Screenshots and supplementary docs
 | [`ACCESSIBILITY.md`](./ACCESSIBILITY.md) | WCAG 2.1 AA target, what's implemented, testing methodology, known gaps |
 | [`COMPLIANCE-INDIA.md`](./COMPLIANCE-INDIA.md) | How the architecture relates to the DPDP Act 2023, IT Rules, GST invoicing, and CCPA dark-patterns guidelines |
 | [`SECURITY-AUDIT-REPORT.md`](./SECURITY-AUDIT-REPORT.md) | Full Critical/High/Medium/Low security audit findings + fixes, and Windows/MSIX Store-readiness status (what's verified vs. not tested) |
+| [`docs/integrations-api.md`](./docs/integrations-api.md) | MCP server (for AI clients) and the public integration REST API (for an external website's backend) — auth, endpoints, examples |
 
 ## Development notes
 

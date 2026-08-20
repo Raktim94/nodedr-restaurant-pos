@@ -33,9 +33,10 @@ model Restaurant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branches Branch[]
-  roles    Role[]
-  users    User[]
+  branches           Branch[]
+  roles              Role[]
+  users              User[]
+  integrationApiKeys IntegrationApiKey[]
 
   @@map("restaurants")
 }
@@ -77,6 +78,7 @@ model Branch {
   supplierInvoices   SupplierInvoice[]
   supplierPayments   SupplierPayment[]
   notifications      Notification[]
+  integrationApiKeys IntegrationApiKey[]
 
   @@index([restaurantId])
   @@map("branches")
@@ -167,9 +169,68 @@ model User {
   supplierInvoicesRecorded  SupplierInvoice[]   @relation("SupplierInvoiceRecordedBy")
   supplierPaymentsRecorded  SupplierPayment[]   @relation("SupplierPaymentRecordedBy")
 
+  backupsTriggered Backup[] @relation("BackupTriggeredBy")
+
+  staffApiKeys              StaffApiKey[]
+  integrationApiKeysCreated IntegrationApiKey[] @relation("IntegrationApiKeyCreatedBy")
+
   @@unique([restaurantId, email])
   @@index([restaurantId])
   @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// API keys — two distinct kinds, deliberately not one model. See
+// docs/integrations-api.md for the full design rationale.
+// ---------------------------------------------------------------------------
+
+// A personal access token: resolves to its owning User exactly like a
+// logged-in session would, so every existing permission check (PermissionsGuard,
+// user.permissions) applies unchanged. Used by the MCP server (see src/mcp/)
+// and any other programmatic client acting as that staff member.
+model StaffApiKey {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name       String
+  tokenHash  String    @unique
+  lastFour   String
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@map("staff_api_keys")
+}
+
+// A restaurant-issued credential for an EXTERNAL system (a partner
+// website's own backend, an aggregator, a booking widget) — not tied to any
+// staff member's identity or permissions. Carries its own explicit `scopes`
+// and can be scoped to a single branch ("selected location") or the whole
+// restaurant. Consumed by src/integrations/'s public REST API.
+model IntegrationApiKey {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  branchId     String?
+  branch       Branch?    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name      String
+  tokenHash String   @unique
+  lastFour  String
+  scopes    String[]
+
+  createdById String
+  createdBy   User   @relation("IntegrationApiKeyCreatedBy", fields: [createdById], references: [id])
+
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([restaurantId])
+  @@index([branchId])
+  @@map("integration_api_keys")
 }
 
 model UserBranch {
@@ -225,6 +286,70 @@ model Notification {
 
   @@index([branchId, recipientUserId, readAt])
   @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// Backup / restore (Phase 4 of the RBAC/audit/backup plan)
+//
+// Both models are deliberately instance-wide — no restaurantId/branchId —
+// because a `pg_dump` of the shared Postgres instance covers every
+// Restaurant row on this server, not one tenant, and the uploads directory
+// (see UPLOADS_DIR / common/upload/image-upload.config.ts's `uploadsDir()`)
+// is likewise a single shared volume. Ported from zulivio's proven
+// BackupRecord/BackupConfig design (apps/backend/src/backup/) — see
+// backup.service.ts for the full restore-safety reasoning.
+// ---------------------------------------------------------------------------
+
+enum BackupStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+model Backup {
+  id     String       @id @default(cuid())
+  status BackupStatus @default(PENDING)
+
+  // Int, not BigInt: BigInt doesn't JSON-serialize without extra plumbing
+  // (JSON.stringify throws on it), and every real deployment target here
+  // (self-hosted restaurant DB + uploads dir) stays well under 2GB. Revisit
+  // if a real deployment's dump ever approaches that ceiling.
+  sizeBytes    Int?
+  s3KeyDb      String?
+  s3KeyUploads String?
+  sha256       String?
+
+  // Null for scheduled/cron-triggered runs (see backup.service.ts's
+  // @Cron job) — only manual triggers have an actor.
+  triggeredById String?
+  triggeredBy   User?   @relation("BackupTriggeredBy", fields: [triggeredById], references: [id], onDelete: SetNull)
+
+  failureReason String?
+  createdAt     DateTime  @default(now())
+  verifiedAt    DateTime?
+
+  @@index([status, createdAt])
+  @@map("backups")
+}
+
+// Singleton row (id is always the literal "singleton") holding S3 backup
+// credentials entered from Settings > Backup, so the app is self-contained
+// without requiring env-var/CasaOS config editing. Plaintext at rest — same
+// trust boundary as DATABASE_URL/JWT_SECRET already sitting in this app's
+// env — and never returned by the API after being set (masked in reads).
+model BackupConfig {
+  id              String   @id @default("singleton")
+  endpoint        String
+  bucket          String
+  accessKeyId     String
+  secretAccessKey String
+  region          String   @default("auto")
+  intervalDays    Int      @default(3)
+  retainCount     Int      @default(2)
+  updatedById     String?
+  updatedAt       DateTime @updatedAt
+
+  @@map("backup_config")
 }
 
 // ---------------------------------------------------------------------------

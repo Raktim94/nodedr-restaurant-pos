@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
@@ -27,10 +28,14 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { AuditModule } from './audit/audit.module';
 import { RolesModule } from './roles/roles.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { BackupModule } from './backup/backup.module';
+import { IntegrationsModule } from './integrations/integrations.module';
+import { McpModule } from './mcp/mcp.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     PrismaModule,
     RealtimeModule,
@@ -54,6 +59,9 @@ import { NotificationsModule } from './notifications/notifications.module';
     AuditModule,
     RolesModule,
     NotificationsModule,
+    BackupModule,
+    IntegrationsModule,
+    McpModule,
   ],
   controllers: [AppController],
   providers: [

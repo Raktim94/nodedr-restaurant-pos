@@ -45,8 +45,11 @@ FROM node:22-alpine AS runtime
 # runtime-side additions for direct-USB printing — libusb itself is
 # statically linked into the addon, so no separate libusb runtime package
 # is needed (same verification nodedr-pos already did for this exact
-# package).
-RUN apk add --no-cache openssl eudev-libs libstdc++
+# package). postgresql16-client (pg_dump/pg_restore) backs the Backup
+# module (apps/backend/src/backup/) — version-pinned to match the
+# postgres:16-alpine server in docker-compose.yml, since pg_dump's custom
+# format is not guaranteed compatible across major versions.
+RUN apk add --no-cache openssl eudev-libs libstdc++ postgresql16-client
 WORKDIR /repo
 ENV NODE_ENV=production
 

@@ -35,6 +35,17 @@ services:
       CORS_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:1995}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       UPLOADS_DIR: "/data/uploads"
+      # Optional: S3 backup config can also be set from Settings > Backup
+      # (persisted to the `backup_config` DB row, which takes priority over
+      # these). Uncomment for a headless/CasaOS-style deployment that
+      # configures backups purely from env vars instead.
+      # S3_BACKUP_ENDPOINT: "https://s3.example.com"
+      # S3_BACKUP_BUCKET: "orderrestro-backups"
+      # S3_BACKUP_ACCESS_KEY_ID: ""
+      # S3_BACKUP_SECRET_ACCESS_KEY: ""
+      # S3_BACKUP_REGION: "auto"
+      # S3_BACKUP_INTERVAL_DAYS: "3"
+      # S3_BACKUP_RETAIN_COUNT: "2"
     depends_on:
       postgres:
         condition: service_healthy

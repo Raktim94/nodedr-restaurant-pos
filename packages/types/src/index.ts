@@ -14,3 +14,5 @@ export * from "./staff";
 export * from "./audit";
 export * from "./roles";
 export * from "./notifications";
+export * from "./backup";
+export * from "./integrations";
