@@ -19,8 +19,10 @@ internal sealed class MainForm : Form
     private ServerSupervisor? _supervisor;
     private TrayIcon? _tray;
     private bool _allowClose;
+    private readonly EventWaitHandle _activateEvent;
+    private RegisteredWaitHandle? _activateWaitHandle;
 
-    public MainForm()
+    public MainForm(EventWaitHandle activateEvent)
     {
         Text = "Nodedr OrderRestro";
         StartPosition = FormStartPosition.CenterScreen;
@@ -29,6 +31,7 @@ internal sealed class MainForm : Form
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
 
         _config = AppConfig.Load();
+        _activateEvent = activateEvent;
 
         BuildMenu();
         Controls.Add(_errorLabel);
@@ -36,12 +39,25 @@ internal sealed class MainForm : Form
 
         Load += async (_, _) => await InitializeAsync();
         FormClosing += OnFormClosing;
+
+        // A second launch (see Program.cs's single-instance mutex) signals
+        // this event instead of starting its own process — bring THIS
+        // window to the front on a thread-pool callback thread, marshaled
+        // back to the UI thread the same way ServerSupervisor's own status
+        // events already are.
+        _activateWaitHandle = ThreadPool.RegisterWaitForSingleObject(
+            _activateEvent,
+            (_, _) => { if (InvokeRequired) BeginInvoke((Action)RestoreFromTray); else RestoreFromTray(); },
+            null,
+            Timeout.InfiniteTimeSpan,
+            false);
     }
 
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
+            _activateWaitHandle?.Unregister(null);
             // Safety net for any exit path other than the tray's explicit
             // "Stop Server & Exit" (which already awaits a graceful
             // pg_ctl/backend/web shutdown before closing) — e.g. Windows
@@ -69,6 +85,11 @@ internal sealed class MainForm : Form
             fileMenu.DropDownItems.Add(changeServer);
             fileMenu.DropDownItems.Add(new ToolStripSeparator());
         }
+
+        fileMenu.DropDownItems.Add(new ToolStripSeparator());
+        var removeData = new ToolStripMenuItem("Remove All Local Data && Uninstall…");
+        removeData.Click += async (_, _) => await RemoveAllDataAndUninstallAsync();
+        fileMenu.DropDownItems.Add(removeData);
 
         var exit = new ToolStripMenuItem("Exit");
         exit.Click += (_, _) => RequestRealExit();
@@ -260,6 +281,11 @@ internal sealed class MainForm : Form
             if (InvokeRequired) { BeginInvoke((Action)(async () => await StopServerAndExitAsync())); return; }
             await StopServerAndExitAsync();
         };
+        _tray.RemoveDataAndUninstallRequested += async () =>
+        {
+            if (InvokeRequired) { BeginInvoke((Action)(async () => await RemoveAllDataAndUninstallAsync())); return; }
+            await RemoveAllDataAndUninstallAsync();
+        };
         return true;
     }
 
@@ -280,6 +306,107 @@ internal sealed class MainForm : Form
     private void RequestRealExit()
     {
         _allowClose = true;
+        Close();
+    }
+
+    /// <summary>
+    /// MSIX/Desktop Bridge has no uninstall-hook mechanism (unlike a
+    /// classic MSI's uninstall custom actions) — Windows only auto-cleans
+    /// the package's own sandboxed %LOCALAPPDATA%\Packages\...\LocalState
+    /// folder on removal, which this app deliberately doesn't use (see
+    /// ServerPaths.cs/AppConfig.cs — writable state must survive an
+    /// MSIX upgrade-in-place, which requires a real, stable path). That
+    /// means the restaurant database, uploads, and server runtime under
+    /// %LOCALAPPDATA%\OrderRestro would otherwise survive an uninstall as
+    /// residue. This is the app's own equivalent of an uninstaller's
+    /// cleanup step — stop everything, delete it all, then hand off to
+    /// Windows' own "Apps & features" to remove the package itself.
+    /// </summary>
+    private async Task RemoveAllDataAndUninstallAsync()
+    {
+        RestoreFromTray();
+
+        var confirm = MessageBox.Show(
+            this,
+            "This permanently deletes ALL local OrderRestro data on this PC — your restaurant's " +
+            "database, uploaded images, and settings. This cannot be undone.\n\n" +
+            "Only do this if you're uninstalling OrderRestro from this PC, or want to start " +
+            "completely fresh.\n\nContinue?",
+            "Remove All Local Data",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+        if (confirm != DialogResult.Yes) return;
+
+        ShowStatus("Stopping server and removing local data…");
+        if (_supervisor is not null) await _supervisor.StopAsync();
+
+        // The WebView2 control's own profile lives INSIDE the directory
+        // we're about to delete (AppConfig.WebView2UserDataFolder) and is
+        // held open by WebView2's separate msedgewebview2.exe helper
+        // processes for as long as this control exists — deleting the tree
+        // while it's still alive would hit the exact same "file in use"
+        // class of failure this whole fix is about. Dispose it first, then
+        // still retry briefly: WebView2 process teardown on Dispose isn't
+        // guaranteed instantaneous.
+        _webView.Dispose();
+
+        // AppConfig.ConfigDir (%LOCALAPPDATA%\OrderRestro) is the single
+        // root for everything this app ever writes: config.json, the
+        // WebView2 profile, logs, and ServerPaths.DataDir (pgdata, uploads,
+        // server-runtime, backend.env) all live underneath it — deleting it
+        // once here is genuinely everything, not a partial cleanup.
+        var dataDir = AppConfig.ConfigDir;
+        string? deleteError = null;
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                if (Directory.Exists(dataDir)) Directory.Delete(dataDir, recursive: true);
+                deleteError = null;
+                break;
+            }
+            catch (Exception ex)
+            {
+                deleteError = ex.Message;
+                await Task.Delay(500);
+            }
+        }
+
+        _allowClose = true;
+        if (deleteError is null)
+        {
+            MessageBox.Show(
+                this,
+                "Local data removed. Windows Settings will now open — find \"Nodedr OrderRestro\" " +
+                "and click Uninstall to finish removing the app.",
+                "Nodedr OrderRestro",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        else
+        {
+            MessageBox.Show(
+                this,
+                $"The server was stopped, but some files could not be deleted automatically:\n\n{deleteError}\n\n" +
+                $"You can safely delete this folder by hand once OrderRestro is closed: {dataDir}\n\n" +
+                "Windows Settings will now open so you can uninstall the app.",
+                "Nodedr OrderRestro",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo("ms-settings:appsfeatures") { UseShellExecute = true });
+        }
+        catch
+        {
+            // Best-effort — local data is already fully cleaned up
+            // regardless of whether Settings opens; the user can still get
+            // there manually.
+        }
+
         Close();
     }
 

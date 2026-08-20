@@ -378,6 +378,57 @@ jobs:
           }
           Write-Host "First-run secret generation and Postgres initdb both verified." -ForegroundColor Green
 
+      - name: Single-instance guard — relaunch while still running must not crash
+        shell: pwsh
+        timeout-minutes: 5
+        # Regression coverage for the actual production report this guard
+        # was added for: embedded-mode installs minimize to the tray
+        # instead of exiting on window close, so a user who thinks they
+        # "closed" the app and reopens it is really launching a second
+        # process against an already-running first one. Before the
+        # Program.cs single-instance Mutex existed, that second process's
+        # own ServerSupervisor collided with the first instance's
+        # exclusively-held backend.log/web.log file handles — "Could not
+        # start the embedded server: The process cannot access the file
+        # ... because it is being used by another process."
+        run: |
+          [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
+          $exePath = Join-Path $pkg.InstallLocation 'OrderRestro.exe'
+          $configDir = Join-Path $env:LOCALAPPDATA 'OrderRestro'
+          $supervisorErrorLog = Join-Path $configDir 'server\logs\supervisor-error.log'
+
+          $firstProc = Get-Process -Name 'OrderRestro' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $firstProc) { throw "Test setup invalid: the first instance from the previous step isn't running" }
+          $firstPid = $firstProc.Id
+
+          if (Test-Path $supervisorErrorLog) { Remove-Item $supervisorErrorLog -Force }
+
+          Write-Host "Launching a second OrderRestro.exe while the first (PID $firstPid) is still running..." -ForegroundColor Cyan
+          $second = Start-Process -FilePath $exePath -PassThru
+          $exited = $second.WaitForExit(15000)
+          if (-not $exited) {
+              Stop-Process -Id $second.Id -Force -ErrorAction SilentlyContinue
+              throw "Second instance did not exit on its own within 15s — the single-instance mutex guard isn't working"
+          }
+          Write-Host "Second instance exited on its own (mutex guard worked)." -ForegroundColor Green
+
+          if (Test-Path $supervisorErrorLog) {
+              Write-Host (Get-Content $supervisorErrorLog -Raw) -ForegroundColor Red
+              throw "supervisor-error.log appeared — the second instance reached ServerSupervisor.StartAsync instead of being blocked by the mutex"
+          }
+
+          $stillRunning = Get-Process -Id $firstPid -ErrorAction SilentlyContinue
+          if (-not $stillRunning) { throw "The original first instance (PID $firstPid) is no longer running after the second launch" }
+
+          $healthy = $false
+          try {
+              $resp = Invoke-WebRequest -Uri 'http://localhost:1995/api/health' -UseBasicParsing -TimeoutSec 5
+              $healthy = $resp.StatusCode -eq 200
+          } catch { }
+          if (-not $healthy) { throw "The original instance stopped responding to health checks after the second launch attempt" }
+          Write-Host "Original instance (PID $firstPid) is still running and healthy after the second-launch attempt." -ForegroundColor Green
+
       - name: Forced-shutdown recovery — kill the app, leave Postgres orphaned, relaunch
         shell: pwsh
         timeout-minutes: 10

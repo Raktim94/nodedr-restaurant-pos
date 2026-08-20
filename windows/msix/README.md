@@ -62,6 +62,9 @@ windows/msix/
     MainForm.cs                  # WebView2 host + menu (change server / reload)
     ServerSettingsForm.cs        # first-run / change-server dialog
     AppConfig.cs                 # per-user server URL, %LOCALAPPDATA%\OrderRestro
+    TrayIcon.cs                   # embedded-mode system tray (minimize-to-tray, stop/exit, remove data)
+    ServerSupervisor.cs           # embedded-mode server lifecycle (Postgres/backend/web child processes)
+    ServerPaths.cs                # embedded-mode writable state layout, under AppConfig.ConfigDir
 ```
 
 ## Building
@@ -85,6 +88,53 @@ see root `package.json`).
 `windows/` — this is the actual, verified build/install signal for this
 project (see "What has and hasn't been tested" below), since no Windows
 machine exists in the environment this app was developed in.
+
+## Single-instance protection
+
+Embedded-mode installs minimize to the tray on window close instead of
+exiting (`MainForm.OnFormClosing`/`TrayIcon.cs`) — the server keeps running
+for other LAN devices even when the till window isn't visible. That means a
+user who thinks they "closed" the app and reopens it (Start Menu, desktop
+tile) is really launching a **second** process against an already-running
+first one.
+
+`Program.cs` guards against this with a named per-user `Mutex`
+(`Local\NodedrOrderRestro_SingleInstance_...`): a second launch never
+reaches `ServerSupervisor.StartAsync` at all — it signals the first
+instance (a named `EventWaitHandle`) to come to the foreground, then exits
+immediately. Without this guard, the second process's own
+`ServerSupervisor` would collide with the first instance's still-open,
+exclusively-held `backend.log`/`web.log` file handles
+(`ServerSupervisor.StartLongRunning` opens them with `FileShare.Read`,
+allowing readers but not a second writer), producing exactly:
+
+> Could not start the embedded server.
+> The process cannot access the file '...\backend.log' because it is being
+> used by another process.
+
+## Uninstalling OrderRestro
+
+MSIX/Desktop Bridge has no uninstall-hook mechanism — unlike a classic MSI
+installer's uninstall custom actions, Windows runs no app code when a
+package is removed. It only auto-deletes the package's own sandboxed
+`%LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalState` folder, which this
+app deliberately does **not** use: writable state (`AppConfig.ConfigDir` =
+`%LOCALAPPDATA%\OrderRestro`, covering config, the WebView2 profile, logs,
+and — in embedded mode — `ServerPaths.DataDir`'s Postgres data directory,
+uploads, and the ~2.8GB server runtime copy) must survive an MSIX
+upgrade-in-place, which requires a real, stable, non-sandboxed path (see
+`AppConfig.cs`/`ServerPaths.cs`). The tradeoff: that data would otherwise
+survive a normal uninstall as residue — a restaurant's live database left
+behind on disk indefinitely.
+
+To get a genuinely clean removal, the app provides its own equivalent of an
+uninstaller's cleanup step: **File → "Remove All Local Data & Uninstall…"**
+(also in the tray menu for embedded-mode installs). This stops the embedded
+server (Postgres/backend/web) if running, deletes `AppConfig.ConfigDir`
+entirely after a confirmation prompt, then opens Windows Settings →
+Apps so the user can click Uninstall on "Nodedr OrderRestro" to remove the
+package itself. Doing both steps — this menu action, then the actual
+package uninstall — leaves no residue on disk.
 
 ## Capabilities (why each one is declared)
 

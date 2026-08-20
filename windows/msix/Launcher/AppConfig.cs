@@ -22,7 +22,12 @@ internal sealed class AppConfig
 
     public bool IsEmbedded => Mode == "embedded";
 
-    private static string ConfigDir =>
+    // internal, not private: MainForm's "Remove All Local Data & Uninstall"
+    // action deletes this whole tree as the single root of everything this
+    // app ever writes (config, WebView2 profile, logs, and ServerPaths.
+    // DataDir underneath it) — see that method's own comment for why MSIX
+    // needs this at all (no uninstall-hook mechanism to do it automatically).
+    internal static string ConfigDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OrderRestro");
 
     public static string ConfigPath => Path.Combine(ConfigDir, "config.json");

@@ -14,6 +14,7 @@ internal sealed class TrayIcon : IDisposable
 
     public event Action? OpenRequested;
     public event Action? StopAndExitRequested;
+    public event Action? RemoveDataAndUninstallRequested;
 
     public TrayIcon(Icon appIcon)
     {
@@ -28,11 +29,14 @@ internal sealed class TrayIcon : IDisposable
         };
         var stopAndExit = new ToolStripMenuItem("Stop Server && Exit");
         stopAndExit.Click += (_, _) => StopAndExitRequested?.Invoke();
+        var removeData = new ToolStripMenuItem("Remove All Local Data && Uninstall…");
+        removeData.Click += (_, _) => RemoveDataAndUninstallRequested?.Invoke();
 
         menu.Items.Add(open);
         menu.Items.Add(viewLogs);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(stopAndExit);
+        menu.Items.Add(removeData);
 
         _icon = new NotifyIcon
         {

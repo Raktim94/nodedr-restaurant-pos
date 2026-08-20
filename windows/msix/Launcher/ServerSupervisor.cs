@@ -459,7 +459,26 @@ internal sealed class ServerSupervisor : IDisposable
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
         var logPath = Path.Combine(ServerPaths.ServerLogDir, $"{logName}.log");
-        var logWriter = new StreamWriter(File.Open(logPath, FileMode.Create, FileAccess.Write, FileShare.Read)) { AutoFlush = true };
+        StreamWriter logWriter;
+        try
+        {
+            logWriter = new StreamWriter(File.Open(logPath, FileMode.Create, FileAccess.Write, FileShare.Read)) { AutoFlush = true };
+        }
+        catch (IOException ex)
+        {
+            // Program.cs's single-instance mutex should make this
+            // unreachable in normal operation — a second launch never gets
+            // far enough to call StartAsync at all. This is a defense-in-
+            // depth diagnostic for whatever else could still hold the
+            // handle (antivirus/backup software scanning the log, a prior
+            // instance still inside its own StopAsync shutdown window) so
+            // the failure reads as actionable instead of a bare Win32
+            // "being used by another process" with no context.
+            throw new InvalidOperationException(
+                $"Could not open {logPath} — it's in use by another process. If OrderRestro is " +
+                "already running, check the system tray (it minimizes there instead of exiting) " +
+                $"before reopening it.\n\n({ex.Message})", ex);
+        }
         proc.OutputDataReceived += (_, e) => { if (e.Data is not null) logWriter.WriteLine(e.Data); };
         proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) logWriter.WriteLine(e.Data); };
         proc.Exited += (_, _) =>
