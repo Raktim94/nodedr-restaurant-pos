@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.0.2
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.1.0
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -74,7 +74,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.0.2
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.1.0
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -149,10 +149,23 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.0.2"
-  update_at: "2026-08-20"
+  version: "1.1.0"
+  update_at: "2026-08-21"
   release_notes:
     en_US: |-
+      1.1.0: fixes a real fresh-install boot failure — CasaOS's own
+      placeholder JWT_SECRET tripped a later safety check that made the
+      backend refuse to start, so every out-of-the-box install crash-looped
+      with an opaque "Internal Server Error" and no way to diagnose it. The
+      backend now generates a real random secret itself on first boot and
+      persists it, so a fresh install just works with nothing to configure.
+
+      Also adds: one-click self-update (check for updates and apply them
+      from Settings), table occupancy timers with dashboard quick actions
+      and click-to-order POS, an MCP server plus integration API keys and a
+      public integrations REST API, and realtime push kept live across the
+      whole dashboard.
+
       1.0.2: fixes an install that would silently fail to start ("Internal
       Server Error" on login) — login security is now generated
       automatically instead of requiring a manual config change.
