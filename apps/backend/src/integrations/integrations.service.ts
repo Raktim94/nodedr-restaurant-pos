@@ -131,7 +131,7 @@ export class IntegrationsService {
 
   async createReservation(ctx: IntegrationKeyContext, branchId: string, dto: CreateIntegrationReservationDto) {
     await this.assertBranch(ctx, branchId);
-    return this.reservations.create(branchId, dto);
+    return this.reservations.create(branchId, dto, { fromWebsite: true });
   }
 
   async getReservation(ctx: IntegrationKeyContext, branchId: string, reservationId: string) {

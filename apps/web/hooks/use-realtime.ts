@@ -3,22 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { io } from "socket.io-client";
-
-// NEXT_PUBLIC_* vars are inlined at build time, so a literal default here
-// would bake in whatever host built the bundle (e.g. "localhost") — every
-// OTHER device on the LAN (another till, a tablet) would then try to reach
-// its OWN localhost instead of the actual server, silently breaking
-// realtime push on every device but the one that ran `next build`. Falling
-// back to the browser's own current hostname at connect time instead means
-// this works correctly from any device that loaded the page from the real
-// server address, with no per-deployment env var required.
-function resolveWsUrl(): string {
-  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
-  if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:4001`;
-  }
-  return "http://localhost:4001";
-}
+import { resolveWsUrl } from "@/lib/ws-url";
 
 // One socket connection per mounted consumer, joined to the branch's room
 // server-side (see backend RealtimeGateway). Invalidates the relevant
@@ -42,6 +27,11 @@ export function useRealtime(branchId: string | null) {
     socket.on("table.layout.updated", () => invalidate([["floors", branchId]]));
     socket.on("order.created", () => invalidate([["dashboard"], ["floors", branchId]]));
     socket.on("order.updated", () => invalidate([["dashboard"], ["floors", branchId]]));
+    // Reservations list previously only loaded on mount / 30s poll — a
+    // reservation booked from another terminal (or the website via the
+    // integrations API) wouldn't show up until the next poll tick.
+    socket.on("reservation.created", () => invalidate([["reservations", branchId], ["dashboard"]]));
+    socket.on("reservation.updated", () => invalidate([["reservations", branchId], ["dashboard"]]));
 
     return () => {
       socket.disconnect();

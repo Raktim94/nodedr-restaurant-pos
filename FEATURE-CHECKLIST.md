@@ -126,7 +126,7 @@ partially built, the note says what's missing.
 | Priority orders | Shipped | Star toggle |
 | Order timers / prep timers | Shipped | Elapsed-time, warning ring past 15 min |
 | Color-coded urgency | Shipped | |
-| Sound notifications | Planned | |
+| Sound notifications | Shipped | Chime + toast on every new ticket, muted per-device from Settings > Notifications |
 | Item-level status | Planned | KOT/order-level only |
 | Order-level status | Shipped | |
 | Kitchen stations | Shipped | |
@@ -427,7 +427,7 @@ out of ~305 line items in the pasted taxonomy.
 **Closest to complete (of the 10 core modules):**
 1. **Tables / Floor Plan** — full status lifecycle, reservations, waitlist, QR tokens, shape-aware icons; missing mainly the drag-to-reposition designer UI and table-level analytics (turnover, revenue/seat).
 2. **Purchasing** — core PO/GRN/supplier flow plus the full procurement-depth layer (quotations with price comparison, purchase requests, vendor invoices with payment tracking, supplier performance) shipped 2026-08-14; missing purchase returns, price-variance, and automatic reorder suggestions.
-3. **Kitchen / KDS** — status columns, timers, priority, stations, performance widget all real; missing sound alerts, per-station column view, expediter screen.
+3. **Kitchen / KDS** — status columns, timers, priority, stations, performance widget, sound alerts all real; missing per-station column view, expediter screen.
 4. **POS / Billing** — correct India tax model, discounts, tips, refunds, combos, merge, and now direct-USB thermal printing alongside browser print; missing split payment, item-level discounts/notes, hold/draft orders, digital/WhatsApp receipts.
 5. **Inventory** — genuinely deep (weighted-average costing, FIFO waste, batch/expiry, auto-deduction); missing yield/wastage-% reporting.
 

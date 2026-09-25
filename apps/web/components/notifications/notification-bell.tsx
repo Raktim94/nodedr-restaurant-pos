@@ -1,8 +1,9 @@
 "use client";
 
 import { Bell, CheckCheck, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
+import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useBranch } from "@/hooks/use-branch";
+import { useNotificationMute } from "@/hooks/use-notification-mute";
 import {
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
@@ -20,21 +22,18 @@ import {
   type NotificationEntry,
 } from "@/hooks/use-notifications";
 import { playNotificationFeedback } from "@/lib/notification-feedback";
+import { resolveWsUrl } from "@/lib/ws-url";
 
-// NEXT_PUBLIC_* vars are inlined at build time, so a literal default here
-// would bake in whatever host built the bundle — see use-realtime.ts's
-// resolveWsUrl for the full reasoning; falls back to the browser's own
-// current hostname at connect time so this works from any device that
-// loaded the page from the real server address, no per-deployment env
-// var required.
-function resolveWsUrl(): string {
-  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
-  if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:4001`;
-  }
-  return "http://localhost:4001";
+// Mirrors the backend's NotifyPayload (notifications.service.ts) — the
+// lightweight "something changed" shape pushed over the socket, not a full
+// Notification row (see that file for why).
+interface NotifyPayload {
+  type: string;
+  title: string;
+  body: string;
+  entity?: string;
+  entityId?: string;
 }
-const MUTE_STORAGE_KEY = "nodedr_notifications_muted";
 
 function timeAgo(iso: string): string {
   const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
@@ -62,16 +61,11 @@ export function NotificationBell() {
   const markAllRead = useMarkAllNotificationsRead();
 
   // Per-device mute, not per-account — a loud kitchen expo screen and a
-  // quiet back-office laptop are different physical environments, so this
-  // is deliberately localStorage (this browser/device), not a user
-  // preference synced from the server. Lazy initializer (read once on
-  // mount), same pattern use-branch.tsx already uses, so no effect is
-  // needed to keep it in sync with a would-be `open` prop.
-  const [muted, setMuted] = useState(() =>
-    typeof window !== "undefined"
-      ? localStorage.getItem(MUTE_STORAGE_KEY) === "1"
-      : false,
-  );
+  // quiet back-office laptop are different physical environments. Shared
+  // with the KDS page and the Settings > Notifications toggle via
+  // use-notification-mute.ts, so muting from any of the three keeps the
+  // others in sync on this device.
+  const [muted, toggleMuted] = useNotificationMute();
   // Mirrors `muted` for the socket handler below, so toggling the mute
   // button takes effect immediately without tearing down and reopening the
   // socket connection just to rebind a listener.
@@ -80,24 +74,22 @@ export function NotificationBell() {
     mutedRef.current = muted;
   }, [muted]);
 
-  const toggleMuted = () => {
-    setMuted((prev) => {
-      const next = !prev;
-      if (typeof window !== "undefined") {
-        localStorage.setItem(MUTE_STORAGE_KEY, next ? "1" : "0");
-      }
-      return next;
-    });
-  };
-
   useEffect(() => {
     if (!branchId) return;
 
     const socket = io(resolveWsUrl(), { query: { branchId }, withCredentials: true });
 
-    socket.on("notification.created", () => {
+    socket.on("notification.created", (payload: NotifyPayload) => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       if (!mutedRef.current) playNotificationFeedback();
+      // The bell badge/dropdown is easy to miss while heads-down on another
+      // page — a toast surfaces new orders/reservations immediately
+      // wherever staff happen to be in the dashboard. Long-ish duration
+      // (order/reservation names are worth reading, not a flash).
+      toast(payload.title, {
+        description: payload.body,
+        duration: 6000,
+      });
     });
 
     return () => {

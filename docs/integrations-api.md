@@ -182,6 +182,14 @@ curl -X POST https://your-domain/api/v1/integrations/locations/<branchId>/reserv
   }'
 ```
 
+Online bookings through this endpoint are capped at what the location's two
+largest tables can seat (e.g. a location with 4- and 6-seat tables caps
+online bookings at 10 guests). A `guestCount` above that cap is rejected
+with `400` and a message asking the guest to call the restaurant directly —
+staff can still book any party size from the dashboard, where a host can
+merge tables or make a judgment call the API can't. A location with no
+tables configured yet has no cap applied.
+
 ### `GET /locations/:branchId/reservations/:reservationId`
 
 Scope: `reservations:read`. Returns the reservation's current status

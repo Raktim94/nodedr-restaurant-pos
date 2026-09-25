@@ -1,20 +1,33 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import type {
   CreateReservationDto,
   ReservationStatusDto,
 } from '@nodedr-restaurant/types';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 
+export interface CreateReservationOptions {
+  // True only for the public "website" booking path (integrations.service's
+  // createReservation, called with an `reservations:write` API key). Staff
+  // creating a reservation from the dashboard are never capped — they can
+  // always merge tables or make a judgment call the online flow can't.
+  fromWebsite?: boolean;
+}
+
 @Injectable()
 export class ReservationsService {
+  private readonly logger = new Logger(ReservationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly notifications: NotificationsService,
   ) {}
 
   list(branchId: string, date?: string) {
@@ -33,7 +46,11 @@ export class ReservationsService {
     });
   }
 
-  async create(branchId: string, dto: CreateReservationDto) {
+  async create(
+    branchId: string,
+    dto: CreateReservationDto,
+    options: CreateReservationOptions = {},
+  ) {
     // A client-supplied tableId from another branch/restaurant must never
     // be trusted directly — without this check, this write would flip a
     // foreign tenant's real table to RESERVED on their own live floor view.
@@ -45,6 +62,10 @@ export class ReservationsService {
       if (!table) {
         throw new BadRequestException('Table is invalid for this branch');
       }
+    }
+
+    if (options.fromWebsite) {
+      await this.assertWithinOnlineBookingCapacity(branchId, dto.guestCount);
     }
 
     const created = await this.prisma.$transaction(async (tx) => {
@@ -70,7 +91,63 @@ export class ReservationsService {
         id: created.tableId,
       });
     }
+
+    // Best-effort, same pattern as OrdersService.checkout()'s "order.new"
+    // notify: the reservation has already committed by this point, so a
+    // notification failure must never surface as a failed booking. Targeted
+    // by permission (reservations.manage), not a hardcoded role, so any
+    // custom front-of-house role holding it gets the alert.
+    try {
+      await this.notifications.notifyByPermission(
+        branchId,
+        'reservations.manage',
+        {
+          type: 'reservation.new',
+          title: options.fromWebsite
+            ? 'New online reservation'
+            : 'New reservation',
+          body: `${created.customerName} — party of ${created.guestCount}, ${new Date(
+            created.reservedAt,
+          ).toLocaleString()}`,
+          entity: 'Reservation',
+          entityId: created.id,
+        },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to send reservation.new notification for reservation ${created.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     return created;
+  }
+
+  // Online (website/API) bookings are capped at what roughly 2 tables can
+  // seat — a large party still gets in touch with the restaurant directly
+  // rather than the site silently accepting a booking no single pair of
+  // tables can actually hold. Computed from the branch's own configured
+  // table capacities (largest two), not a hardcoded guest count, since
+  // table sizes vary per restaurant. If the branch has no tables configured
+  // yet, there's nothing to compare against — fail open rather than block
+  // every online booking because the floor plan isn't set up.
+  private async assertWithinOnlineBookingCapacity(
+    branchId: string,
+    guestCount: number,
+  ) {
+    const tables = await this.prisma.table.findMany({
+      where: { floor: { branchId } },
+      select: { capacity: true },
+      orderBy: { capacity: 'desc' },
+      take: 2,
+    });
+    if (tables.length === 0) return;
+
+    const maxOnlineGuests = tables.reduce((sum, t) => sum + t.capacity, 0);
+    if (guestCount > maxOnlineGuests) {
+      throw new BadRequestException(
+        `Online booking is limited to ${maxOnlineGuests} guests (about 2 tables). For a larger party, please call the restaurant directly to reserve.`,
+      );
+    }
   }
 
   async updateStatus(

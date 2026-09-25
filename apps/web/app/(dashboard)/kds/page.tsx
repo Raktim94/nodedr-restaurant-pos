@@ -5,6 +5,7 @@ import { PerformanceWidget } from "@/components/kds/performance-widget";
 import { TicketCard } from "@/components/kds/ticket-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
+import { useKdsSound } from "@/hooks/use-kds-sound";
 import { useKdsTickets, type KotTicket } from "@/hooks/use-kds";
 
 const COLUMNS: { status: KotStatusDto; label: string }[] = [
@@ -17,6 +18,7 @@ const COLUMNS: { status: KotStatusDto; label: string }[] = [
 export default function KdsPage() {
   const { branchId } = useBranch();
   const { data: tickets, isLoading } = useKdsTickets(branchId);
+  useKdsSound(branchId);
 
   const byStatus = (status: KotStatusDto): KotTicket[] =>
     tickets?.filter((t) => t.status === status) ?? [];

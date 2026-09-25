@@ -9,7 +9,9 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { useBranch } from "@/hooks/use-branch";
+import { useNotificationMute } from "@/hooks/use-notification-mute";
 import {
   useSettings,
   useUpdateBranchSettings,
@@ -46,8 +48,40 @@ export default function SettingsPage() {
         />
       )}
 
+      <NotificationSettingsCard />
+
       <PrinterDiagnosticsCard />
     </div>
+  );
+}
+
+function NotificationSettingsCard() {
+  const [muted, toggleMuted] = useNotificationMute();
+
+  return (
+    <Card className="flex flex-col gap-4 p-6">
+      <div>
+        <h2 className="text-[18px] font-medium text-foreground">Notifications</h2>
+        <p className="text-sm text-muted-foreground">
+          New orders, table reservations, and kitchen tickets on this device.
+        </p>
+      </div>
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+        <div className="flex flex-col gap-0.5">
+          <Label htmlFor="notification-sound">Notification sound</Label>
+          <p className="text-xs text-muted-foreground">
+            Plays a chime for new orders, reservations, and kitchen display
+            tickets. This only affects this device/browser — mute the
+            kitchen display separately from the office if needed.
+          </p>
+        </div>
+        <Switch
+          id="notification-sound"
+          checked={!muted}
+          onCheckedChange={() => toggleMuted()}
+        />
+      </div>
+    </Card>
   );
 }
 
