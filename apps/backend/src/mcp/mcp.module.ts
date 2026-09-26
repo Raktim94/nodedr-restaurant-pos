@@ -4,11 +4,13 @@ import { StaffApiKeyGuard } from '../common/guards/staff-api-key.guard';
 import { OrdersModule } from '../modules/orders/orders.module';
 import { ReservationsModule } from '../modules/reservations/reservations.module';
 import { DashboardModule } from '../modules/dashboard/dashboard.module';
+import { MenuModule } from '../modules/menu/menu.module';
+import { TablesModule } from '../modules/tables/tables.module';
 import { McpController } from './mcp.controller';
 import { McpToolsBuilder } from './mcp-tools.builder';
 
 @Module({
-  imports: [OrdersModule, ReservationsModule, DashboardModule],
+  imports: [OrdersModule, ReservationsModule, DashboardModule, MenuModule, TablesModule],
   controllers: [McpController],
   providers: [McpToolsBuilder, StaffApiKeyGuard, BranchAccessService],
 })

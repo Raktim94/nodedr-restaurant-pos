@@ -8,6 +8,13 @@ import { BranchAccessService } from '../common/services/branch-access.service';
 import { OrdersService } from '../modules/orders/orders.service';
 import { ReservationsService } from '../modules/reservations/reservations.service';
 import { DashboardService } from '../modules/dashboard/dashboard.service';
+import { MenuService } from '../modules/menu/menu.service';
+import { TablesService } from '../modules/tables/tables.service';
+
+const SPICE_LEVEL_VALUES = ['NONE', 'MILD', 'MEDIUM', 'HOT', 'EXTRA_HOT'] as const;
+const TABLE_SHAPE_VALUES = ['square', 'round', 'rect'] as const;
+const TABLE_STATUS_VALUES = ['AVAILABLE', 'OCCUPIED', 'RESERVED', 'CLEANING', 'OUT_OF_SERVICE'] as const;
+const PAYMENT_METHOD_VALUES = ['CASH', 'CARD', 'UPI', 'WALLET', 'BANK_TRANSFER', 'GIFT_CARD', 'STORE_CREDIT'] as const;
 
 const RESERVATION_STATUS_VALUES = ['RESERVED', 'CONFIRMED', 'ARRIVED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'] as const;
 
@@ -43,6 +50,22 @@ class Args {
     if (value === undefined) return undefined;
     if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`"${key}" must be a number`);
     return value;
+  }
+
+  optionalBoolean(key: string): boolean | undefined {
+    const value = this.raw[key];
+    if (value === undefined) return undefined;
+    if (typeof value !== 'boolean') throw new Error(`"${key}" must be a boolean`);
+    return value;
+  }
+
+  stringArray(key: string): string[] {
+    const value = this.raw[key];
+    if (!Array.isArray(value) || value.length === 0) throw new Error(`"${key}" is required and must be a non-empty array of strings`);
+    return value.map((v, i) => {
+      if (typeof v !== 'string' || !v.trim()) throw new Error(`${key}[${i}] must be a non-empty string`);
+      return v;
+    });
   }
 
   items(key: string): Array<{ menuItemId: string; quantity: number; modifierIds: string[]; kitchenNote?: string }> {
@@ -92,11 +115,17 @@ interface ToolDef {
  * actor, and permission-gates itself with the same PermissionKey the
  * equivalent REST route requires (services don't self-check permissions —
  * only PermissionsGuard/HTTP layer does, see permissions.guard.ts — so each
- * tool below repeats that same check manually). Deliberately a curated
- * subset, not a 1:1 mirror of the REST API: nothing destructive (no delete-
- * order, no void/refund, no user/role management, no backup restore) is
- * reachable through MCP. See docs/integrations-api.md's "MCP server"
- * section for the full tool list and rationale.
+ * tool below repeats that same check manually). Covers orders (create,
+ * cancel, refund), reservations, menu (categories/items, including
+ * delete), and tables/floors (including delete) — full CRUD parity with
+ * what that staff member's role can already do via the UI. Deliberately
+ * still excluded, regardless of role: checkout/payment processing (needs
+ * a real payment terminal, not something an external client should
+ * fabricate), user/role management, and backup restore — each is a
+ * distinct, much higher-blast-radius action (account lockout, or wiping
+ * all current data) that a future tool should add on its own, not as a
+ * side effect of a general "full control" pass. See
+ * docs/integrations-api.md's "MCP server" section for the full tool list.
  *
  * Wired via the SDK's low-level server.setRequestHandler(ListTools/
  * CallToolRequestSchema, ...) and plain JSON Schema — not the convenience
@@ -117,6 +146,8 @@ export class McpToolsBuilder {
     private readonly orders: OrdersService,
     private readonly reservations: ReservationsService,
     private readonly dashboard: DashboardService,
+    private readonly menu: MenuService,
+    private readonly tables: TablesService,
   ) {}
 
   build(actor: SessionUser): McpServer {
@@ -331,6 +362,412 @@ export class McpToolsBuilder {
             throw new Error(`Invalid status "${status}". Must be one of: ${RESERVATION_STATUS_VALUES.join(', ')}`);
           }
           return json(await this.reservations.updateStatus(branchId, args.string('reservationId'), status));
+        },
+      },
+      {
+        name: 'create_menu_category',
+        title: 'Create menu category',
+        description: 'Create a new menu category (e.g. "Chicken", "Cocktail") at one location.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            name: { type: 'string' },
+            sortOrder: { type: 'number' },
+          },
+          required: ['branchId', 'name'],
+        },
+        readOnly: false,
+        requiredPermission: 'menu.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.menu.createCategory(branchId, {
+              name: args.string('name'),
+              sortOrder: args.optionalNumber('sortOrder') ?? 0,
+              isActive: true,
+            }),
+          );
+        },
+      },
+      {
+        name: 'create_menu_item',
+        title: 'Create menu item',
+        description: 'Create a new menu item (dish) inside an existing category, with price and optional image URL.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            categoryId: { type: 'string' },
+            name: { type: 'string' },
+            price: { type: 'number' },
+            description: { type: 'string' },
+            imageUrl: { type: 'string', description: 'Public HTTPS URL of a photo for this dish' },
+            isVeg: { type: 'boolean' },
+            spiceLevel: { type: 'string', enum: SPICE_LEVEL_VALUES },
+          },
+          required: ['branchId', 'categoryId', 'name', 'price'],
+        },
+        readOnly: false,
+        requiredPermission: 'menu.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const spiceLevel = args.optionalString('spiceLevel') ?? 'NONE';
+          if (!(SPICE_LEVEL_VALUES as readonly string[]).includes(spiceLevel)) {
+            throw new Error(`Invalid spiceLevel "${spiceLevel}". Must be one of: ${SPICE_LEVEL_VALUES.join(', ')}`);
+          }
+          return json(
+            await this.menu.createItem(branchId, {
+              categoryId: args.string('categoryId'),
+              name: args.string('name'),
+              price: args.number('price'),
+              description: args.optionalString('description'),
+              imageUrl: args.optionalString('imageUrl'),
+              taxRatePercent: 0,
+              isVeg: args.optionalBoolean('isVeg') ?? true,
+              isVegan: false,
+              isJain: false,
+              isHalal: false,
+              isGlutenFree: false,
+              spiceLevel: spiceLevel as never,
+              allergens: [],
+              isActive: true,
+              modifierGroupIds: [],
+            }),
+          );
+        },
+      },
+      {
+        name: 'create_floor',
+        title: 'Create floor / section',
+        description: 'Create a new floor or dining section (e.g. "Main Hall", "Bar") at one location.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            name: { type: 'string' },
+            sortOrder: { type: 'number' },
+          },
+          required: ['branchId', 'name'],
+        },
+        readOnly: false,
+        requiredPermission: 'tables.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.tables.createFloor(branchId, {
+              name: args.string('name'),
+              sortOrder: args.optionalNumber('sortOrder') ?? 0,
+            }),
+          );
+        },
+      },
+      {
+        name: 'create_tables_bulk',
+        title: 'Bulk-create tables',
+        description: 'Create multiple tables at once on one floor/section, given a list of table numbers.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            floorId: { type: 'string' },
+            numbers: { type: 'array', description: 'Table numbers/names, e.g. ["1","2","3"]' },
+            capacity: { type: 'number' },
+            shape: { type: 'string', enum: TABLE_SHAPE_VALUES },
+          },
+          required: ['branchId', 'floorId', 'numbers'],
+        },
+        readOnly: false,
+        requiredPermission: 'tables.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const shape = args.optionalString('shape') ?? 'square';
+          if (!(TABLE_SHAPE_VALUES as readonly string[]).includes(shape)) {
+            throw new Error(`Invalid shape "${shape}". Must be one of: ${TABLE_SHAPE_VALUES.join(', ')}`);
+          }
+          return json(
+            await this.tables.createTables(branchId, {
+              floorId: args.string('floorId'),
+              numbers: args.stringArray('numbers'),
+              capacity: args.optionalNumber('capacity') ?? 4,
+              shape: shape as never,
+            }),
+          );
+        },
+      },
+      {
+        name: 'cancel_order',
+        title: 'Cancel order',
+        description: 'Cancel an OPEN order the kitchen has not started yet. Fails if the kitchen already began preparing it, or if it is already paid (use refund_order instead).',
+        inputSchema: {
+          type: 'object',
+          properties: { branchId: { type: 'string' }, orderId: { type: 'string' } },
+          required: ['branchId', 'orderId'],
+        },
+        readOnly: false,
+        requiredPermission: 'orders.cancel',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(await this.orders.cancelOrder(branchId, args.string('orderId'), actor.id));
+        },
+      },
+      {
+        name: 'refund_order',
+        title: 'Refund order',
+        description: 'Refund some or all of a PAID order. Amount cannot exceed what remains refundable.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            orderId: { type: 'string' },
+            amount: { type: 'number' },
+            method: { type: 'string', enum: PAYMENT_METHOD_VALUES },
+            reason: { type: 'string' },
+          },
+          required: ['branchId', 'orderId', 'amount', 'method'],
+        },
+        readOnly: false,
+        requiredPermission: 'refunds.process',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const method = args.string('method');
+          if (!(PAYMENT_METHOD_VALUES as readonly string[]).includes(method)) {
+            throw new Error(`Invalid method "${method}". Must be one of: ${PAYMENT_METHOD_VALUES.join(', ')}`);
+          }
+          return json(
+            await this.orders.refund(branchId, args.string('orderId'), actor.id, {
+              amount: args.number('amount'),
+              method: method as never,
+              reason: args.optionalString('reason'),
+            }),
+          );
+        },
+      },
+      {
+        name: 'update_menu_category',
+        title: 'Update menu category',
+        description: 'Rename, reorder, or activate/deactivate an existing menu category.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            categoryId: { type: 'string' },
+            name: { type: 'string' },
+            sortOrder: { type: 'number' },
+            isActive: { type: 'boolean' },
+          },
+          required: ['branchId', 'categoryId'],
+        },
+        readOnly: false,
+        requiredPermission: 'menu.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const dto: Record<string, unknown> = {};
+          const name = args.optionalString('name');
+          const sortOrder = args.optionalNumber('sortOrder');
+          const isActive = args.optionalBoolean('isActive');
+          if (name !== undefined) dto.name = name;
+          if (sortOrder !== undefined) dto.sortOrder = sortOrder;
+          if (isActive !== undefined) dto.isActive = isActive;
+          return json(await this.menu.updateCategory(branchId, args.string('categoryId'), dto as never));
+        },
+      },
+      {
+        name: 'delete_menu_category',
+        title: 'Delete menu category',
+        description: 'Permanently delete a menu category. Fails if it still has items — delete or move those first.',
+        inputSchema: {
+          type: 'object',
+          properties: { branchId: { type: 'string' }, categoryId: { type: 'string' } },
+          required: ['branchId', 'categoryId'],
+        },
+        readOnly: false,
+        requiredPermission: 'menu.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(await this.menu.deleteCategory(branchId, args.string('categoryId')));
+        },
+      },
+      {
+        name: 'update_menu_item',
+        title: 'Update menu item',
+        description: 'Change any fields (price, name, description, image, availability, veg flag, spice level) on an existing menu item.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            itemId: { type: 'string' },
+            name: { type: 'string' },
+            price: { type: 'number' },
+            description: { type: 'string' },
+            imageUrl: { type: 'string' },
+            isVeg: { type: 'boolean' },
+            isActive: { type: 'boolean' },
+            spiceLevel: { type: 'string', enum: SPICE_LEVEL_VALUES },
+          },
+          required: ['branchId', 'itemId'],
+        },
+        readOnly: false,
+        requiredPermission: 'menu.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const dto: Record<string, unknown> = {};
+          const name = args.optionalString('name');
+          const price = args.optionalNumber('price');
+          const description = args.optionalString('description');
+          const imageUrl = args.optionalString('imageUrl');
+          const isVeg = args.optionalBoolean('isVeg');
+          const isActive = args.optionalBoolean('isActive');
+          const spiceLevel = args.optionalString('spiceLevel');
+          if (name !== undefined) dto.name = name;
+          if (price !== undefined) dto.price = price;
+          if (description !== undefined) dto.description = description;
+          if (imageUrl !== undefined) dto.imageUrl = imageUrl;
+          if (isVeg !== undefined) dto.isVeg = isVeg;
+          if (isActive !== undefined) dto.isActive = isActive;
+          if (spiceLevel !== undefined) {
+            if (!(SPICE_LEVEL_VALUES as readonly string[]).includes(spiceLevel)) {
+              throw new Error(`Invalid spiceLevel "${spiceLevel}". Must be one of: ${SPICE_LEVEL_VALUES.join(', ')}`);
+            }
+            dto.spiceLevel = spiceLevel;
+          }
+          return json(await this.menu.updateItem(branchId, args.string('itemId'), actor.id, dto as never));
+        },
+      },
+      {
+        name: 'delete_menu_item',
+        title: 'Delete menu item',
+        description: 'Permanently delete a menu item.',
+        inputSchema: {
+          type: 'object',
+          properties: { branchId: { type: 'string' }, itemId: { type: 'string' } },
+          required: ['branchId', 'itemId'],
+        },
+        readOnly: false,
+        requiredPermission: 'menu.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(await this.menu.deleteItem(branchId, args.string('itemId')));
+        },
+      },
+      {
+        name: 'update_floor',
+        title: 'Update floor / section',
+        description: 'Rename or reorder an existing floor/section.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            floorId: { type: 'string' },
+            name: { type: 'string' },
+            sortOrder: { type: 'number' },
+          },
+          required: ['branchId', 'floorId'],
+        },
+        readOnly: false,
+        requiredPermission: 'tables.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const dto: Record<string, unknown> = {};
+          const name = args.optionalString('name');
+          const sortOrder = args.optionalNumber('sortOrder');
+          if (name !== undefined) dto.name = name;
+          if (sortOrder !== undefined) dto.sortOrder = sortOrder;
+          return json(await this.tables.updateFloor(branchId, args.string('floorId'), dto as never));
+        },
+      },
+      {
+        name: 'update_table',
+        title: 'Update table',
+        description: 'Change a table\'s number, name, capacity, shape or notes.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            tableId: { type: 'string' },
+            number: { type: 'string' },
+            name: { type: 'string' },
+            capacity: { type: 'number' },
+            shape: { type: 'string', enum: TABLE_SHAPE_VALUES },
+            notes: { type: 'string' },
+          },
+          required: ['branchId', 'tableId'],
+        },
+        readOnly: false,
+        requiredPermission: 'tables.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const dto: Record<string, unknown> = {};
+          const number = args.optionalString('number');
+          const name = args.optionalString('name');
+          const capacity = args.optionalNumber('capacity');
+          const shape = args.optionalString('shape');
+          const notes = args.optionalString('notes');
+          if (number !== undefined) dto.number = number;
+          if (name !== undefined) dto.name = name;
+          if (capacity !== undefined) dto.capacity = capacity;
+          if (notes !== undefined) dto.notes = notes;
+          if (shape !== undefined) {
+            if (!(TABLE_SHAPE_VALUES as readonly string[]).includes(shape)) {
+              throw new Error(`Invalid shape "${shape}". Must be one of: ${TABLE_SHAPE_VALUES.join(', ')}`);
+            }
+            dto.shape = shape;
+          }
+          return json(await this.tables.updateTable(branchId, args.string('tableId'), dto as never));
+        },
+      },
+      {
+        name: 'update_table_status',
+        title: 'Update table status',
+        description: `Change a table's status: one of ${TABLE_STATUS_VALUES.join(', ')}.`,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            tableId: { type: 'string' },
+            status: { type: 'string', enum: TABLE_STATUS_VALUES },
+          },
+          required: ['branchId', 'tableId', 'status'],
+        },
+        readOnly: false,
+        requiredPermission: 'tables.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const status = args.string('status');
+          if (!(TABLE_STATUS_VALUES as readonly string[]).includes(status)) {
+            throw new Error(`Invalid status "${status}". Must be one of: ${TABLE_STATUS_VALUES.join(', ')}`);
+          }
+          return json(await this.tables.updateTableStatus(branchId, args.string('tableId'), status as never));
+        },
+      },
+      {
+        name: 'delete_table',
+        title: 'Delete table',
+        description: 'Permanently delete a table.',
+        inputSchema: {
+          type: 'object',
+          properties: { branchId: { type: 'string' }, tableId: { type: 'string' } },
+          required: ['branchId', 'tableId'],
+        },
+        readOnly: false,
+        requiredPermission: 'tables.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(await this.tables.deleteTable(branchId, args.string('tableId')));
         },
       },
     ];

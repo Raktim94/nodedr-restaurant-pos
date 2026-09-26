@@ -6,5 +6,6 @@ import { TablesService } from './tables.service';
 @Module({
   controllers: [TablesController],
   providers: [TablesService, BranchAccessService],
+  exports: [TablesService],
 })
 export class TablesModule {}

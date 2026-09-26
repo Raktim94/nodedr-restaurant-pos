@@ -34,12 +34,14 @@ session) — every request is authenticated independently by the key.
 
 ### Available tools
 
-MCP exposes a deliberately curated subset of what the app can do — nothing
-destructive (no delete-order, no void/refund, no user/role management, no
-backup restore) is reachable through MCP, regardless of what your account
-can otherwise do. Every tool below also re-checks the exact permission the
-equivalent page in the app would require, so an MCP client can never do more
-than you personally could through the UI.
+MCP has full CRUD parity with what your account can do via the UI for
+orders, reservations, menu, and tables/floors — every tool re-checks the
+exact permission the equivalent page in the app would require, so an MCP
+client can never do more than you personally could through the UI. Still
+deliberately excluded, regardless of role: checkout/payment processing
+(needs a real payment terminal), user/role management, and backup restore
+— each is a distinct, much higher-blast-radius action than the rest of
+this list.
 
 | Tool | Required permission | What it does |
 |---|---|---|
@@ -48,9 +50,15 @@ than you personally could through the UI.
 | `list_open_orders` | `orders.create` | List currently open orders, optionally filtered to one table |
 | `get_order` | `orders.create` | Full detail for one order (items, KOTs, payments) |
 | `create_order` | `orders.create` | Create a new dine-in/takeaway/delivery order |
+| `cancel_order` | `orders.cancel` | Cancel an OPEN order the kitchen hasn't started |
+| `refund_order` | `refunds.process` | Refund some or all of a PAID order |
 | `list_reservations` | `reservations.manage` | List reservations, optionally on one date |
 | `create_reservation` | `reservations.manage` | Book a table |
 | `update_reservation_status` | `reservations.manage` | Transition a reservation's status |
+| `create_menu_category` / `update_menu_category` / `delete_menu_category` | `menu.manage` | Manage menu categories |
+| `create_menu_item` / `update_menu_item` / `delete_menu_item` | `menu.manage` | Manage menu items (price, image, availability, etc.) |
+| `create_floor` / `update_floor` | `tables.manage` | Manage floors/sections |
+| `create_tables_bulk` / `update_table` / `update_table_status` / `delete_table` | `tables.manage` | Manage individual tables |
 
 ### Example: list tools
 
