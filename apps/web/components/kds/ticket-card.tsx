@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ContactDetailsDialog } from "@/components/contact-details-dialog";
 import {
   NEXT_STATUS,
   useReprintKot,
@@ -33,6 +34,14 @@ function useElapsedMinutes(createdAt: string) {
   return elapsed;
 }
 
+function customerDisplayName(order: KotTicket["order"]) {
+  return order.customer?.name || order.guestName || null;
+}
+
+function customerPhone(order: KotTicket["order"]) {
+  return order.customer?.phone || null;
+}
+
 export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: string | null }) {
   const elapsed = useElapsedMinutes(ticket.createdAt);
   const updateStatus = useUpdateKotStatus(branchId);
@@ -40,6 +49,7 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
   const reprint = useReprintKot(branchId);
   const nextStatus = NEXT_STATUS[ticket.status];
   const isLate = elapsed >= 15;
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   return (
     <Card
@@ -48,7 +58,21 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
         (isLate || ticket.isPriority) && "border-warning/50 ring-1 ring-warning/30",
       )}
     >
-      <div className="flex items-center justify-between">
+      <ContactDetailsDialog
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+        title={`Order #${ticket.order.orderNumber}`}
+        name={customerDisplayName(ticket.order)}
+        subtitle={ticket.order.table ? `Table ${ticket.order.table.number}` : ticket.order.type}
+        phone={customerPhone(ticket.order)}
+        waMessage={`Hi ${customerDisplayName(ticket.order) ?? ""}, this is regarding your order #${ticket.order.orderNumber}.`}
+      />
+      <button
+        type="button"
+        onClick={() => setDetailsOpen(true)}
+        className="flex items-center justify-between rounded-md text-left transition hover:opacity-80"
+        title="View customer details"
+      >
         <div>
           <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
             #{ticket.order.orderNumber}
@@ -57,6 +81,7 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
           <p className="text-xs text-muted-foreground">
             {ticket.order.table ? `Table ${ticket.order.table.number}` : ticket.order.type}
             {ticket.station && ` · ${ticket.station.name}`}
+            {customerDisplayName(ticket.order) && ` · ${customerDisplayName(ticket.order)}`}
           </p>
         </div>
         <div
@@ -68,7 +93,7 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
           <Timer className="h-3 w-3" />
           {elapsed}m
         </div>
-      </div>
+      </button>
 
       <div className="flex flex-col gap-2 border-t border-border pt-3">
         {ticket.items.map((item) => (

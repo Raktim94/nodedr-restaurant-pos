@@ -17,6 +17,8 @@ export interface KotTicket {
     orderNumber: string;
     type: string;
     table: { number: string; name: string | null } | null;
+    guestName: string | null;
+    customer: { name: string | null; phone: string | null } | null;
   };
   items: {
     id: string;

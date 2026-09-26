@@ -2,7 +2,9 @@
 
 import type { ReservationStatusDto } from "@nodedr-restaurant/types";
 import { Users } from "lucide-react";
+import { useState } from "react";
 import { AddReservationDialog } from "@/components/reservations/add-reservation-dialog";
+import { ContactDetailsDialog } from "@/components/contact-details-dialog";
 import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -12,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
-import { useReservations, useUpdateReservationStatus } from "@/hooks/use-reservations";
+import { useReservations, useUpdateReservationStatus, type Reservation } from "@/hooks/use-reservations";
 import { useFloors } from "@/hooks/use-tables";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +42,7 @@ export default function ReservationsPage() {
   const { data: floors } = useFloors(branchId);
   const tables = floors?.flatMap((f) => f.tables) ?? [];
   const updateStatus = useUpdateReservationStatus(branchId);
+  const [selected, setSelected] = useState<Reservation | null>(null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,6 +56,27 @@ export default function ReservationsPage() {
         <AddReservationDialog branchId={branchId} tables={tables} />
       </div>
 
+      {selected && (
+        <ContactDetailsDialog
+          open={!!selected}
+          onOpenChange={(open) => !open && setSelected(null)}
+          title={`Reservation for ${selected.guestCount} guests`}
+          name={selected.customerName}
+          subtitle={
+            selected.table
+              ? `Table ${selected.table.name ?? selected.table.number}`
+              : new Date(selected.reservedAt).toLocaleString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })
+          }
+          phone={selected.phone}
+          waMessage={`Hi ${selected.customerName}, this is regarding your reservation for ${selected.guestCount} guests at ${new Date(selected.reservedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.`}
+        />
+      )}
+
       <Card className="flex flex-col divide-y divide-border p-2">
         {isLoading ? (
           <div className="flex flex-col gap-2 p-4">
@@ -63,7 +87,12 @@ export default function ReservationsPage() {
         ) : reservations && reservations.length > 0 ? (
           reservations.map((r) => (
             <div key={r.id} className="flex items-center justify-between gap-4 px-4 py-3">
-              <div className="flex flex-col">
+              <button
+                type="button"
+                onClick={() => setSelected(r)}
+                className="flex flex-col text-left transition hover:opacity-80"
+                title="View customer details"
+              >
                 <span className="text-sm font-medium text-foreground">{r.customerName}</span>
                 <span className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Users className="h-3 w-3" />
@@ -71,7 +100,7 @@ export default function ReservationsPage() {
                   {r.table && <> · {r.table.name ?? `Table ${r.table.number}`}</>}
                   {r.phone && <> · {r.phone}</>}
                 </span>
-              </div>
+              </button>
               <div className="flex items-center gap-3">
                 <span className="text-sm tabular-nums text-muted-foreground">
                   {new Date(r.reservedAt).toLocaleString(undefined, {

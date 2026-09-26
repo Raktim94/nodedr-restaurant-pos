@@ -18,7 +18,15 @@ export class KdsService {
       },
       include: {
         station: true,
-        order: { select: { orderNumber: true, type: true, table: true } },
+        order: {
+          select: {
+            orderNumber: true,
+            type: true,
+            table: true,
+            guestName: true,
+            customer: { select: { name: true, phone: true } },
+          },
+        },
         items: { include: { orderItem: { include: { modifiers: true } } } },
       },
       orderBy: { createdAt: 'asc' },
