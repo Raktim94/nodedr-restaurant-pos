@@ -125,7 +125,7 @@ by phase.
 
 | | Module | Status |
 |---|---|---|
-| 1 | POS & Billing — dine-in/takeaway, split/merge bills, GST/VAT, discounts, gift cards, tips, multi-payment, refunds | ✅ |
+| 1 | POS & Billing — dine-in/takeaway, split/merge bills, multi-region tax (India GST, US Sales Tax, EU VAT, Spain IVA), discounts, gift cards, tips, multi-payment, refunds | ✅ |
 | 2 | Table & Reservation Management — visual floor plan, booking, waitlist, QR table ordering, table transfer | ✅ |
 | 3 | Kitchen Management (KDS) — display, KOTs, multi-station routing, prep tracking, performance reporting | ✅ |
 | 4 | Menu Management — categories, modifier groups, combos, seasonal menus, availability scheduling | ✅ |
@@ -144,7 +144,7 @@ by phase.
 | 17 | Documents — digital invoices, purchase docs, contracts, recipes, SOPs | 🚧 Phase 7 |
 | 18 | Security — RBAC, audit logs, backup/restore, activity history, 2FA | ✅ RBAC · 🚧 rest, Phase 8 |
 | 19 | Integrations — payment gateways, SMS, email, WhatsApp, accounting software, thermal printers | ✅ browser/USB-driver receipt printing, [API & MCP server](./docs/integrations-api.md) · 🚧 rest, Phase 8 |
-| 20 | Admin Panel — global settings, taxes, currencies, business hours, feature flags | ✅ restaurant & branch settings · 🚧 rest, Phase 8 |
+| 20 | Admin Panel — global settings, taxes, currencies, business hours, feature flags | ✅ restaurant & branch settings, per-branch tax regime · 🚧 rest, Phase 8 |
 
 Already shipped and running against real Docker/Postgres today: auth +
 RBAC, full menu management (incl. combo meals), floor/table view with
@@ -159,9 +159,12 @@ expiry tracking, FIFO waste logging, and automatic ingredient deduction
 on checkout (combo-aware, never blocks a sale on a stock shortfall).
 Also shipped: printable receipts (opens the browser's print dialog, same
 "any printer, or Save as PDF" approach as [`nodedr-pos`](https://github.com/Raktim94/nodedr-pos)),
-a Settings area (restaurant + branch details) and staff account
-management (create/deactivate staff, assign roles) under **Settings** in
-the sidebar, and photo upload on menu items.
+a Settings area (restaurant + branch details, per-branch tax regime — India
+GST/US Sales Tax/EU VAT/Spain IVA, tax-inclusive or -exclusive menu
+pricing) and staff account management (create/deactivate staff, assign
+roles) under **Settings** in the sidebar, photo upload on menu items, and
+an English/Spanish/French language switcher on the guest-facing QR
+ordering page and staff sidebar.
 
 ## Screenshots
 
@@ -206,7 +209,7 @@ Postgres over the originally-specced SQLite — is in
 | Tables | TanStack Table |
 | Charts | Recharts |
 | Drag & drop | dnd-kit (floor designer, KDS columns) |
-| i18n | next-intl |
+| i18n | Lightweight client-side context (`apps/web/lib/i18n`) — English/Spanish/French so far, no routing/middleware |
 | Auth | JWT (httpOnly cookie) + PIN quick-switch, optional TOTP 2FA |
 | Containers | Docker + Docker Compose |
 
@@ -355,9 +358,14 @@ docs/           Screenshots and supplementary docs
 
 ## Development notes
 
-- **Server-authoritative pricing** — menu prices are tax-inclusive; GST/VAT
-  is backed out, never added on top. See
-  `apps/backend/src/modules/orders/pricing.ts`.
+- **Server-authoritative pricing** — menu prices are tax-inclusive by
+  default (India GST/EU VAT/Spain IVA); GST/VAT is backed out, never added
+  on top. A branch set to `taxMode: EXCLUSIVE` (the US Sales Tax preset)
+  grosses the price up to an inclusive figure at the one conversion point
+  in `toEffectiveInclusiveUnitPrice` — everything downstream (stored line
+  totals, receipts, refunds) still works off an inclusive amount exactly
+  as before. See `apps/backend/src/modules/orders/pricing.ts` and
+  `packages/types/src/tax.ts` for the regime presets.
 - **Money balances are `set`, never `increment`** — any running balance
   (loyalty points, gift card balance, wallet credit) is updated via a
   rounded read-modify-write `set`; DB-side `increment` drifts on Float
