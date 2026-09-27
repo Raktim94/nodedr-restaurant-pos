@@ -3,11 +3,13 @@
 import { CheckCircle2, Leaf, Minus, Plus, UtensilsCrossed } from "lucide-react";
 import { use, useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { PopBurst } from "@/components/order/pop-burst";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useI18n } from "@/lib/i18n/context";
 import { api, ApiError } from "@/lib/api";
 import { playSuccessChime, vibrateSuccess } from "@/lib/celebrate";
 import { formatCurrency } from "@/lib/format";
@@ -38,6 +40,7 @@ export default function PublicMenuPage({
   params: Promise<{ qrToken: string }>;
 }) {
   const { qrToken } = use(params);
+  const { t } = useI18n();
   const nameStorageKey = `qr-guest-name:${qrToken}`;
   const [cart, setCart] = useState<Record<string, number>>({});
   const [placed, setPlaced] = useState<{ orderNumber: string } | null>(null);
@@ -115,9 +118,9 @@ export default function PublicMenuPage({
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
         <UtensilsCrossed className="h-10 w-10 text-muted-foreground" />
-        <p className="text-lg font-medium text-foreground">This QR code isn&apos;t recognized</p>
+        <p className="text-lg font-medium text-foreground">{t("order.qrNotRecognized")}</p>
         <p className="text-sm text-muted-foreground">
-          {error instanceof ApiError ? error.message : "Please ask a staff member for help."}
+          {error instanceof ApiError ? error.message : t("order.askStaffForHelp")}
         </p>
       </div>
     );
@@ -130,13 +133,17 @@ export default function PublicMenuPage({
           <PopBurst />
           <CheckCircle2 className="h-10 w-10 text-success" />
         </div>
-        <p className="text-lg font-medium text-foreground">Thank you, {guestName}!</p>
-        <p className="text-sm text-muted-foreground">
-          {data?.branchName ?? "The kitchen"} says thanks for your order 🎉
+        <p className="text-lg font-medium text-foreground">
+          {t("order.thankYouName", { name: guestName })}
         </p>
-        <p className="text-xs text-muted-foreground">Order #{placed.orderNumber} · sent to the kitchen</p>
+        <p className="text-sm text-muted-foreground">
+          {t("order.thanksMessage", { branch: data?.branchName ?? t("order.theKitchen") })}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {t("order.orderNumberSent", { number: placed.orderNumber })}
+        </p>
         <Button variant="outline" className="mt-2" onClick={() => setPlaced(null)}>
-          Order more
+          {t("order.orderMore")}
         </Button>
       </div>
     );
@@ -144,7 +151,10 @@ export default function PublicMenuPage({
 
   if (!guestName) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+      <div className="relative flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+        <div className="absolute right-4 top-4">
+          <LanguageSwitcher compact />
+        </div>
         <UtensilsCrossed className="h-8 w-8 text-primary" />
         {isLoading ? (
           <Skeleton className="h-7 w-40" />
@@ -164,18 +174,18 @@ export default function PublicMenuPage({
           }}
         >
           <div className="flex flex-col gap-2 text-left">
-            <Label htmlFor="guest-name">What&apos;s your name?</Label>
+            <Label htmlFor="guest-name">{t("order.whatsYourName")}</Label>
             <Input
               id="guest-name"
               value={nameDraft}
               onChange={(e) => setNameDraft(e.target.value)}
-              placeholder="e.g. Priya"
+              placeholder={t("order.namePlaceholder")}
               autoFocus
               maxLength={60}
             />
           </div>
           <Button type="submit" className="h-11" disabled={!nameDraft.trim()}>
-            Continue to menu
+            {t("order.continueToMenu")}
           </Button>
         </form>
       </div>
@@ -183,8 +193,11 @@ export default function PublicMenuPage({
   }
 
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div className="relative min-h-screen bg-background pb-24">
       <header className="border-b border-border px-5 py-6 text-center">
+        <div className="absolute right-4 top-4">
+          <LanguageSwitcher compact />
+        </div>
         {isLoading ? (
           <Skeleton className="mx-auto h-7 w-40" />
         ) : (
@@ -259,7 +272,7 @@ export default function PublicMenuPage({
                             className="shrink-0"
                             onClick={() => addToCart(item.id)}
                           >
-                            Add
+                            {t("order.add")}
                           </Button>
                         )}
                       </div>
@@ -273,7 +286,7 @@ export default function PublicMenuPage({
       </main>
 
       <footer className="border-t border-border px-5 py-6 text-center text-xs text-muted-foreground">
-        Prices include tax. A staff member will confirm your order shortly.
+        {t("order.pricesIncludeTax")}
       </footer>
 
       {cartCount > 0 && (
@@ -285,15 +298,15 @@ export default function PublicMenuPage({
               onClick={() => placeOrder.mutate()}
             >
               {placeOrder.isPending
-                ? "Placing order…"
-                : `Place order — ${cartCount} item${cartCount > 1 ? "s" : ""} · ${formatCurrency(cartTotal)}`}
+                ? t("order.placingOrder")
+                : `${t("order.placeOrder")} — ${cartCount} ${cartCount > 1 ? t("order.items") : t("order.item")} · ${formatCurrency(cartTotal)}`}
             </Button>
           </div>
           {placeOrder.isError && (
             <p className="mx-auto mt-2 max-w-lg text-center text-xs text-destructive">
               {placeOrder.error instanceof ApiError
                 ? placeOrder.error.message
-                : "Could not place order — please ask a staff member for help."}
+                : t("order.couldNotPlace")}
             </p>
           )}
         </div>

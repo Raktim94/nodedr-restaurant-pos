@@ -7,6 +7,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { BrandFooter } from "./brand-footer";
 import { BranchSwitcher } from "./branch-switcher";
+import { LanguageSwitcher } from "./language-switcher";
 import { Logo } from "./logo";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
@@ -71,6 +72,7 @@ export function AppShell({
           </button>
           <div className="hidden lg:block" />
           <div className="flex items-center gap-1">
+            <LanguageSwitcher compact />
             <NotificationBell />
             <UserMenu user={user} />
           </div>
