@@ -246,10 +246,13 @@ containers, not just "it compiles."
 
 ### Phase 5 — Delivery + Online/QR ordering
 
+- [x] Basic QR ordering: place order from the table — live (see
+      `apps/web/app/order/[qrToken]` + `POST /public/menu/:qrToken/order`).
+      Still open within this line item: modifier/customization selection
+      (the cart always sends `modifierIds: []`), request waiter, request
+      bill, live order-status tracking on the QR page itself.
 - [ ] Delivery zones/charges, delivery staff, order assignment, live
       status, ETA, delivery history
-- [ ] Full QR ordering: place order, customize items, request waiter,
-      request bill, track status — from the table
 - [ ] Online ordering surfaces: website, click & collect, scheduled orders
 
 ### Phase 6 — Staff, Payroll, Accounting, Multi-branch
