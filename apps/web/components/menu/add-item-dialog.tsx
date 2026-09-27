@@ -28,6 +28,7 @@ import {
   useUploadItemImage,
   type MenuCategory,
 } from "@/hooks/use-menu";
+import { useSettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
 
 export function AddItemDialog({
@@ -49,8 +50,11 @@ export function AddItemDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: stations } = useStations(branchId);
+  const { data: settings } = useSettings(branchId);
   const createItem = useCreateMenuItem(branchId);
   const uploadImage = useUploadItemImage();
+  const priceLabel =
+    settings?.branch.taxMode === "EXCLUSIVE" ? "Price (excl. tax)" : "Price (incl. tax)";
 
   const reset = () => {
     setName("");
@@ -206,7 +210,7 @@ export function AddItemDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="price">Price (incl. tax)</Label>
+              <Label htmlFor="price">{priceLabel}</Label>
               <Input
                 id="price"
                 type="number"

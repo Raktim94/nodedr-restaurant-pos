@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import type {
-  BranchSettingsDto,
-  RestaurantSettingsDto,
+import {
+  TAX_REGIME_PRESETS,
+  type BranchSettingsDto,
+  type RestaurantSettingsDto,
 } from '@nodedr-restaurant/types';
 import { AuditService } from '../../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -46,9 +47,17 @@ export class SettingsService {
   }
 
   async updateBranch(branchId: string, userId: string, dto: BranchSettingsDto) {
+    // Picking a new regime without also stating a mode gets that regime's
+    // own default (INDIA_GST/EU_VAT/ES_IVA -> inclusive, US_SALES_TAX ->
+    // exclusive) — a picker that silently kept the old mode across a
+    // regime switch would quietly mis-price every item on that branch.
+    const data =
+      dto.taxRegime && dto.taxMode === undefined
+        ? { ...dto, taxMode: TAX_REGIME_PRESETS[dto.taxRegime].defaultMode }
+        : dto;
     const updated = await this.prisma.branch.update({
       where: { id: branchId },
-      data: dto,
+      data,
     });
     await this.audit.record({
       userId,

@@ -1,6 +1,11 @@
 "use client";
 
-import type { BranchSettingsDto, RestaurantSettingsDto } from "@nodedr-restaurant/types";
+import type {
+  BranchSettingsDto,
+  RestaurantSettingsDto,
+  TaxMode,
+  TaxRegime,
+} from "@nodedr-restaurant/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -20,6 +25,11 @@ export interface BranchSettings {
   address: string | null;
   phone: string | null;
   gstNumber: string | null;
+  country: string;
+  taxRegime: TaxRegime;
+  taxMode: TaxMode;
+  taxLabel: string | null;
+  taxId: string | null;
 }
 
 export function useSettings(branchId: string | null) {

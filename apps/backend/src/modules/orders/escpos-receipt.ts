@@ -10,6 +10,18 @@
 // (usually CP437/PC850), not UTF-8. `toPrinterText` normalizes accented
 // Latin letters down to their base letter and replaces anything else with
 // "?" — a real, documented trade-off of the USB path specifically.
+//
+// Multi-region tax (2026-09-27): same regime/mode-aware labeling as
+// receipt.html.ts — see that file's note. order.subtotal/taxAmount/
+// totalAmount are unchanged here too; only which rows get printed differs.
+
+import {
+  resolveTaxIdLabel,
+  resolveTaxLabel,
+  TAX_REGIME_PRESETS,
+  type TaxMode,
+  type TaxRegime,
+} from '@nodedr-restaurant/types';
 
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -126,6 +138,10 @@ export function buildReceiptEscPos({
     address: string | null;
     phone: string | null;
     gstNumber: string | null;
+    taxRegime: TaxRegime;
+    taxMode: TaxMode;
+    taxLabel: string | null;
+    taxId: string | null;
   };
   currency: string;
   order: EscposReceiptOrder;
@@ -134,6 +150,10 @@ export function buildReceiptEscPos({
   const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
   const money = (n: number) => `${sym}${Number(n).toFixed(2)}`;
   const date = new Date(order.createdAt);
+  const taxLabel = resolveTaxLabel(branch.taxRegime, branch.taxLabel);
+  const taxIdValue =
+    branch.taxId || (branch.taxRegime === 'INDIA_GST' ? branch.gstNumber : null);
+  const taxIdLabel = resolveTaxIdLabel(branch.taxRegime);
 
   const lines: { text: string; bold?: boolean }[] = [];
   const push = (s = '', opts: { bold?: boolean } = {}) =>
@@ -144,8 +164,8 @@ export function buildReceiptEscPos({
   if (branch.address)
     for (const l of wrap(branch.address, width)) push(center(l, width));
   if (branch.phone) push(center(toPrinterText(`Ph: ${branch.phone}`), width));
-  if (branch.gstNumber)
-    push(center(toPrinterText(`GSTIN: ${branch.gstNumber}`), width));
+  if (taxIdValue)
+    push(center(toPrinterText(`${taxIdLabel}: ${taxIdValue}`), width));
   push(rule(width));
   push(toPrinterText(date.toLocaleString()));
   push(
@@ -173,21 +193,36 @@ export function buildReceiptEscPos({
       ),
     );
     if (Number(item.taxRateSnapshot) > 0) {
-      push(`  GST @ ${item.taxRateSnapshot}%`);
+      push(`  ${taxLabel} @ ${item.taxRateSnapshot}%`);
     }
   }
   push(rule(width));
 
-  push(row('Subtotal', money(order.subtotal), width));
-  if (order.discountAmount > 0) {
-    push(row('Discount', `-${money(order.discountAmount)}`, width));
-  }
-  if (order.taxAmount > 0) {
-    // Prices are tax-inclusive — this is a breakup of tax already inside
-    // the total above, not an additional charge (see ARCHITECTURE.md).
-    const half = Math.round((order.taxAmount / 2 + Number.EPSILON) * 100) / 100;
-    push(row('CGST (incl.)', money(half), width));
-    push(row('SGST (incl.)', money(order.taxAmount - half), width));
+  if (branch.taxMode === 'EXCLUSIVE') {
+    push(row('Subtotal', money(order.subtotal - order.taxAmount), width));
+    if (order.discountAmount > 0) {
+      push(row('Discount', `-${money(order.discountAmount)}`, width));
+    }
+    if (order.taxAmount > 0) {
+      push(row(taxLabel, money(order.taxAmount), width));
+    }
+  } else {
+    push(row('Subtotal', money(order.subtotal), width));
+    if (order.discountAmount > 0) {
+      push(row('Discount', `-${money(order.discountAmount)}`, width));
+    }
+    if (order.taxAmount > 0) {
+      // Prices are tax-inclusive — this is a breakup of tax already inside
+      // the total above, not an additional charge (see ARCHITECTURE.md).
+      if (TAX_REGIME_PRESETS[branch.taxRegime].splitCgstSgst) {
+        const half =
+          Math.round((order.taxAmount / 2 + Number.EPSILON) * 100) / 100;
+        push(row('CGST (incl.)', money(half), width));
+        push(row('SGST (incl.)', money(order.taxAmount - half), width));
+      } else {
+        push(row(`${taxLabel} (incl.)`, money(order.taxAmount), width));
+      }
+    }
   }
   if (order.loyaltyDiscountAmount > 0) {
     push(
