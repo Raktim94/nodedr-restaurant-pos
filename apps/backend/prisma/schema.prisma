@@ -16,6 +16,30 @@ datasource db {
 // Tenancy / Branch
 // ---------------------------------------------------------------------------
 
+// A branch's tax regime picks sensible defaults (display label, whether the
+// receipt splits into CGST/SGST, and the usual INCLUSIVE/EXCLUSIVE mode) —
+// see taxRegimes.ts. CUSTOM means every one of those is taken from the
+// branch's own taxLabel/taxMode instead of the preset.
+enum TaxRegime {
+  INDIA_GST
+  US_SALES_TAX
+  EU_VAT
+  ES_IVA
+  CUSTOM
+}
+
+// Whether MenuItem.price already has tax baked in (the nodedr-pos GST
+// lesson — India/EU/Spain all display tax-inclusive menu prices by
+// convention/regulation) or is a pre-tax price the checkout adds tax on
+// top of (the US norm). See pricing.ts's toEffectiveInclusiveUnitPrice —
+// this is the ONLY place the mode changes the pricing math; everything
+// downstream of that (OrderItem.lineTotal, receipts, refunds) keeps
+// working off an already-inclusive amount exactly as before.
+enum TaxMode {
+  INCLUSIVE
+  EXCLUSIVE
+}
+
 model Restaurant {
   id        String  @id @default(cuid())
   name      String
@@ -50,6 +74,23 @@ model Branch {
   address   String?
   phone     String?
   gstNumber String?
+
+  // Multi-region tax config (2026-09-27). country is an ISO 3166-1 alpha-2
+  // code driving default currency/locale suggestions in the UI; it does not
+  // itself change pricing math. taxRegime picks the preset (label, mode,
+  // CGST/SGST split) from taxRegimes.ts; taxMode/taxLabel/taxId override
+  // that preset when set (taxMode is always non-null — it defaults to the
+  // regime's own default and is what pricing.ts actually reads). taxId is
+  // the generic registration number (VAT No. / EIN / NIF-CIF); gstNumber
+  // is kept as the India-specific field pre-existing installs already
+  // populated and remains the fallback when taxRegime is INDIA_GST and
+  // taxId is empty.
+  country   String    @default("IN")
+  taxRegime TaxRegime @default(INDIA_GST)
+  taxMode   TaxMode   @default(INCLUSIVE)
+  taxLabel  String?
+  taxId     String?
+
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

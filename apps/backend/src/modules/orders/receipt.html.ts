@@ -4,6 +4,22 @@
 // after padding). Loaded into a hidden iframe by the frontend
 // (lib/print.ts), which calls window.print() itself; the inline script here
 // is only a fallback for engines that block that cross-frame call.
+//
+// Multi-region tax (2026-09-27): which tax rows get shown, and whether the
+// top line reads as a tax-inclusive subtotal or a pre-tax one, now follows
+// the branch's taxRegime/taxMode — see resolveTaxLabel/resolveTaxIdLabel
+// in @nodedr-restaurant/types. This file only changes labels and which
+// rows are shown; order.subtotal/taxAmount/totalAmount are unchanged
+// (computed once, correctly, in pricing.ts — see its own multi-region
+// note) and are never recomputed here.
+
+import {
+  resolveTaxIdLabel,
+  resolveTaxLabel,
+  TAX_REGIME_PRESETS,
+  type TaxMode,
+  type TaxRegime,
+} from '@nodedr-restaurant/types';
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
   INR: '₹',
@@ -58,6 +74,10 @@ export function buildReceiptHtml({
     address: string | null;
     phone: string | null;
     gstNumber: string | null;
+    taxRegime: TaxRegime;
+    taxMode: TaxMode;
+    taxLabel: string | null;
+    taxId: string | null;
   };
   currency: string;
   order: ReceiptOrder;
@@ -65,6 +85,13 @@ export function buildReceiptHtml({
   const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
   const money = (n: number) => `${sym}${Number(n).toFixed(2)}`;
   const dateStr = new Date(order.createdAt).toLocaleString();
+  const taxLabel = resolveTaxLabel(branch.taxRegime, branch.taxLabel);
+  // gstNumber is the pre-multi-region field every India install already
+  // has populated; taxId is the new generic one. India falls back to the
+  // old field so nothing already printed on file goes blank.
+  const taxIdValue =
+    branch.taxId || (branch.taxRegime === 'INDIA_GST' ? branch.gstNumber : null);
+  const taxIdLabel = resolveTaxIdLabel(branch.taxRegime);
 
   const itemRows = order.items
     .map((item) => {
@@ -75,7 +102,7 @@ export function buildReceiptHtml({
         <tr>
           <td>${esc(item.nameSnapshot)}${modifierLines}${
             Number(item.taxRateSnapshot) > 0
-              ? `<div class="sub">GST @ ${item.taxRateSnapshot}%</div>`
+              ? `<div class="sub">${esc(taxLabel)} @ ${item.taxRateSnapshot}%</div>`
               : ''
           }</td>
           <td class="num">${item.quantity}</td>
@@ -85,16 +112,37 @@ export function buildReceiptHtml({
     })
     .join('');
 
-  const totalRows: [string, string][] = [['Subtotal', money(order.subtotal)]];
-  if (order.discountAmount > 0) {
-    totalRows.push(['Discount', `- ${money(order.discountAmount)}`]);
-  }
-  if (order.taxAmount > 0) {
-    // Prices are tax-inclusive (see ARCHITECTURE.md) — this is a breakup of
-    // tax already inside the total above, not an additional charge.
-    const half = Math.round((order.taxAmount / 2 + Number.EPSILON) * 100) / 100;
-    totalRows.push(['CGST (incl.)', money(half)]);
-    totalRows.push(['SGST (incl.)', money(order.taxAmount - half)]);
+  const totalRows: [string, string][] = [];
+  if (branch.taxMode === 'EXCLUSIVE') {
+    // US-style: show the pre-tax subtotal, then add tax as its own line —
+    // order.subtotal/taxAmount are unchanged, this only reslices the
+    // display (see pricing.ts: the stored subtotal already has tax baked
+    // in, exactly like every other regime, so the pre-tax figure the
+    // customer expects to see is subtotal - taxAmount).
+    totalRows.push(['Subtotal', money(order.subtotal - order.taxAmount)]);
+    if (order.discountAmount > 0) {
+      totalRows.push(['Discount', `- ${money(order.discountAmount)}`]);
+    }
+    if (order.taxAmount > 0) {
+      totalRows.push([taxLabel, money(order.taxAmount)]);
+    }
+  } else {
+    totalRows.push(['Subtotal', money(order.subtotal)]);
+    if (order.discountAmount > 0) {
+      totalRows.push(['Discount', `- ${money(order.discountAmount)}`]);
+    }
+    if (order.taxAmount > 0) {
+      // Prices are tax-inclusive (see ARCHITECTURE.md) — this is a breakup
+      // of tax already inside the total above, not an additional charge.
+      if (TAX_REGIME_PRESETS[branch.taxRegime].splitCgstSgst) {
+        const half =
+          Math.round((order.taxAmount / 2 + Number.EPSILON) * 100) / 100;
+        totalRows.push(['CGST (incl.)', money(half)]);
+        totalRows.push(['SGST (incl.)', money(order.taxAmount - half)]);
+      } else {
+        totalRows.push([`${taxLabel} (incl.)`, money(order.taxAmount)]);
+      }
+    }
   }
   if (order.loyaltyDiscountAmount > 0) {
     totalRows.push([
@@ -150,7 +198,7 @@ export function buildReceiptHtml({
     <p class="center muted">
       ${esc(branch.name)}${branch.address ? `<br>${esc(branch.address)}` : ''}
       ${branch.phone ? `<br>Ph: ${esc(branch.phone)}` : ''}
-      ${branch.gstNumber ? `<br>GSTIN: ${esc(branch.gstNumber)}` : ''}
+      ${taxIdValue ? `<br>${esc(taxIdLabel)}: ${esc(taxIdValue)}` : ''}
     </p>
     <hr class="rule">
     <p class="muted">

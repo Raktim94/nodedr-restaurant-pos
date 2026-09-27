@@ -18,7 +18,13 @@ import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
-import { computeOrderTotals, priceLine, round2 } from './pricing';
+import {
+  computeOrderTotals,
+  priceLine,
+  round2,
+  toEffectiveInclusiveUnitPrice,
+} from './pricing';
+import type { TaxMode } from '@nodedr-restaurant/types';
 
 @Injectable()
 export class OrdersService {
@@ -70,6 +76,18 @@ export class OrdersService {
     return order;
   }
 
+  private async getBranchTaxMode(branchId: string): Promise<TaxMode> {
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: { taxMode: true },
+    });
+    // Falls back to INCLUSIVE (the schema default, and the only mode that
+    // existed before multi-region tax) if the branch somehow can't be
+    // found here — createOrder/addItems already 404 earlier when the
+    // branch itself is invalid, so this is just belt-and-suspenders.
+    return (branch?.taxMode as TaxMode | undefined) ?? 'INCLUSIVE';
+  }
+
   async createOrder(branchId: string, userId: string, dto: CreateOrderDto) {
     const menuItemIds = [...new Set(dto.items.map((i) => i.menuItemId))];
     const menuItems = await this.prisma.menuItem.findMany({
@@ -81,6 +99,7 @@ export class OrdersService {
       );
     }
     const menuItemById = new Map(menuItems.map((m) => [m.id, m]));
+    const taxMode = await this.getBranchTaxMode(branchId);
 
     const modifierIds = [...new Set(dto.items.flatMap((i) => i.modifierIds))];
     const modifiers = await this.prisma.modifier.findMany({
@@ -117,7 +136,7 @@ export class OrdersService {
     }
 
     const lineInputs = dto.items.map((cartItem) =>
-      this.buildLine(cartItem, menuItemById, modifierById),
+      this.buildLine(cartItem, menuItemById, modifierById, taxMode),
     );
     const totals = computeOrderTotals(lineInputs.map((l) => l.priced));
 
@@ -222,6 +241,7 @@ export class OrdersService {
       );
     }
     const menuItemById = new Map(menuItems.map((m) => [m.id, m]));
+    const taxMode = await this.getBranchTaxMode(branchId);
 
     const modifierIds = [...new Set(items.flatMap((i) => i.modifierIds))];
     const modifiers = await this.prisma.modifier.findMany({
@@ -233,7 +253,7 @@ export class OrdersService {
     }
 
     const lineInputs = items.map((cartItem) =>
-      this.buildLine(cartItem, menuItemById, modifierById),
+      this.buildLine(cartItem, menuItemById, modifierById, taxMode),
     );
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -747,6 +767,7 @@ export class OrdersService {
     cartItem: CartItemDto,
     menuItemById: Map<string, Prisma.MenuItemGetPayload<Record<string, never>>>,
     modifierById: Map<string, Prisma.ModifierGetPayload<Record<string, never>>>,
+    taxMode: TaxMode,
   ) {
     const menuItem = menuItemById.get(cartItem.menuItemId);
     if (!menuItem) throw new BadRequestException('Menu item not found');
@@ -762,12 +783,23 @@ export class OrdersService {
       (sum, m) => sum + Number(m.priceAdjustment),
       0,
     );
-    const unitPriceInclusive = round2(basePrice + modifierTotal);
+    const taxRatePercent = Number(menuItem.taxRatePercent);
+    // In EXCLUSIVE mode (US sales tax) menuItem.price + modifiers is the
+    // pre-tax price, so it's grossed up to the inclusive amount here — the
+    // one conversion point; everything past this line (priceLine, the
+    // stored lineTotal/unitPriceSnapshot, receipts) works off that
+    // inclusive figure exactly as the original India-only pricing did, so
+    // "qty × unit price" on a receipt still reconciles to the line total.
+    const unitPriceInclusive = toEffectiveInclusiveUnitPrice(
+      round2(basePrice + modifierTotal),
+      taxRatePercent,
+      taxMode,
+    );
 
     const priced = priceLine({
       quantity: cartItem.quantity,
       unitPriceInclusive,
-      taxRatePercent: Number(menuItem.taxRatePercent),
+      taxRatePercent,
     });
 
     return {
@@ -775,8 +807,8 @@ export class OrdersService {
       menuItem: {
         id: menuItem.id,
         name: menuItem.name,
-        price: basePrice,
-        taxRatePercent: Number(menuItem.taxRatePercent),
+        price: unitPriceInclusive - round2(modifierTotal),
+        taxRatePercent,
       },
       selectedModifiers,
       priced,
