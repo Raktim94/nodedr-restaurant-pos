@@ -324,6 +324,68 @@ reach it (tax code masters, delivery-platform rate cards, etc.).
 
 ## Session log
 
+- **2026-09-27: Multi-region tax + English/Spanish/French i18n.** Two
+  independent features.
+
+  **Multi-region tax.** `Branch` gained `country`, `taxRegime`
+  (`INDIA_GST`/`US_SALES_TAX`/`EU_VAT`/`ES_IVA`/`CUSTOM`), `taxMode`
+  (`INCLUSIVE`/`EXCLUSIVE`), `taxLabel`, `taxId` (migration
+  `multi_region_tax`, additive only — `gstNumber` kept as the India-specific
+  field existing installs already populated, used as the fallback tax-id
+  display when `taxRegime` is `INDIA_GST` and the new `taxId` is empty).
+  Regime presets (display name, default mode, receipt label, tax-id field
+  label, whether the receipt splits CGST/SGST) live in
+  `packages/types/src/tax.ts` so the API and web app never drift.
+  `pricing.ts` gained exactly one new function,
+  `toEffectiveInclusiveUnitPrice` — the single point where an
+  `EXCLUSIVE`-mode (US Sales Tax) menu price gets grossed up to the
+  inclusive figure the rest of the pricing engine has always worked off
+  of; `priceLine`/`computeOrderTotals` and every reconstruction site that
+  re-derives a line from a stored `lineTotal` (add-items, checkout,
+  refund/merge) needed zero changes, since they already worked from an
+  already-inclusive stored amount. Both receipt renderers (HTML + ESC/POS)
+  now derive their tax label/split from the branch's regime instead of a
+  hardcoded "GST"/CGST/SGST, and show a pre-tax subtotal + added-tax line
+  instead of an inclusive breakup when the branch is `EXCLUSIVE`. Settings
+  gained a Tax section on the branch card: region picker (resets
+  mode/country to that regime's own default on change, so switching
+  regions can't silently leave a stale mode mispricing every item),
+  mode picker, country code, tax-id field (label follows the regime), and
+  a receipt-label override. The menu item price field's label now reads
+  "Price (incl. tax)" or "Price (excl. tax)" depending on the branch's mode.
+
+  **i18n.** Deliberately *not* `next-intl` (despite that being this
+  README's original aspirational entry) — a lightweight client-side
+  locale context (`apps/web/lib/i18n`) instead, since this dashboard has
+  no per-locale routing/SEO need and a Context + localStorage + browser-
+  language-detection is enough for a business tool. Dictionaries for
+  en/es/fr live as flat-key JSON files; `t(key, vars?)` does `{var}`
+  interpolation and falls back to English then the raw key. Wired up on
+  the two highest-value surfaces given the scope of one session: the
+  guest-facing QR ordering page (the one screen an actual non-staff
+  guest reads) and the staff sidebar navigation, both with a language
+  switcher. Extending coverage to the rest of the back-office is
+  mechanical from here — same `t("namespace.key")` pattern, add the key
+  to all three dictionary files.
+
+  **Verified, with one real limitation to flag.** The dev sandbox this
+  work was done in had no route to Prisma's binary CDN
+  (`binaries.prisma.sh` — blocked by the environment's network policy),
+  so `prisma generate`/`migrate dev` could not be run here. The migration
+  SQL was hand-written to match Prisma's own output style exactly and
+  applied directly via `psql` against a real local Postgres (all prior
+  migrations replayed first) to confirm it's syntactically and
+  semantically correct against the actual schema — but **run
+  `pnpm --filter @nodedr-restaurant/types build && cd apps/backend && npx
+  prisma generate && npx prisma migrate deploy` for real once, and re-run
+  the backend's own test suite, before trusting this in production.**
+  `packages/types` and all of `apps/web` (including every file touched
+  here) do typecheck clean (`tsc --noEmit`) and lint clean (`eslint`) in
+  this sandbox — that part had no such blocker. The backend's own
+  `tsc`/tests could not be run here for the same Prisma-engine reason and
+  should be treated as unverified until someone runs them with normal
+  network access.
+
 - **2026-08-14: Procurement depth + direct-USB ESC/POS printing.** Two
   independent features, both shipped and pushed the same day.
 
