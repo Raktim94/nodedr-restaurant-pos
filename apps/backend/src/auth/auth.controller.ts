@@ -102,6 +102,17 @@ export class AuthController {
     return { user };
   }
 
+  // Public and unauthenticated — the marketing/login page needs this before
+  // anyone is signed in, to decide whether to show the full landing pitch
+  // (no restaurant registered on this instance yet) or just Sign in + View
+  // documentation (someone already completed setup, so this is a live
+  // business instance, not an unclaimed install).
+  @Get('setup-status')
+  async setupStatus() {
+    const isSetup = await this.authService.hasAnyRestaurant();
+    return { isSetup };
+  }
+
   private setSessionCookie(res: Response, token: string) {
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true,

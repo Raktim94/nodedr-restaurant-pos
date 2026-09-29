@@ -13,6 +13,7 @@ export interface RestaurantSettings {
   id: string;
   name: string;
   legalName: string | null;
+  logoUrl: string | null;
   currency: string;
   timezone: string;
   loyaltyPointValue: string;
@@ -48,6 +49,12 @@ export function useUpdateRestaurantSettings(branchId: string | null) {
   return useMutation({
     mutationFn: (dto: RestaurantSettingsDto) => api.patch("/settings/restaurant", dto),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings", branchId] }),
+  });
+}
+
+export function useUploadRestaurantLogo() {
+  return useMutation({
+    mutationFn: (file: File) => api.upload<{ url: string }>("/settings/restaurant/logo", file),
   });
 }
 

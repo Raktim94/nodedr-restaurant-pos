@@ -44,6 +44,11 @@ model Restaurant {
   id        String  @id @default(cuid())
   name      String
   legalName String?
+  // The restaurant's own branding, shown in the app shell (sidebar header,
+  // login screen) in place of the Nodedr OrderRestro product mark — this is
+  // white-label self-hosted software, so the operator's brand should lead;
+  // the product name stays as a small credit line instead (see BrandFooter).
+  logoUrl   String?
   currency  String  @default("INR")
   timezone  String  @default("Asia/Kolkata")
 

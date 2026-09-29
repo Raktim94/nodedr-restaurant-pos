@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { ImagePlus, X } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  RESTAURANT_NAME_MAX_LENGTH,
   TAX_REGIME_PRESETS,
   TAX_REGIMES,
   type TaxMode,
@@ -29,6 +31,7 @@ import {
   useSettings,
   useUpdateBranchSettings,
   useUpdateRestaurantSettings,
+  useUploadRestaurantLogo,
   type BranchSettings,
   type RestaurantSettings,
 } from "@/hooks/use-settings";
@@ -109,12 +112,15 @@ function GeneralSettingsForm({
 }) {
   const [name, setName] = useState(restaurant.name);
   const [legalName, setLegalName] = useState(restaurant.legalName ?? "");
+  const [logoUrl, setLogoUrl] = useState<string | null>(restaurant.logoUrl);
   const [currency, setCurrency] = useState(restaurant.currency);
   const [timezone, setTimezone] = useState(restaurant.timezone);
   const [loyaltyPointValue, setLoyaltyPointValue] = useState(restaurant.loyaltyPointValue);
   const [loyaltyEarnPerCurrency, setLoyaltyEarnPerCurrency] = useState(
     String(restaurant.loyaltyEarnPerCurrency),
   );
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const uploadLogo = useUploadRestaurantLogo();
 
   const [branchName, setBranchName] = useState(branch.name);
   const [address, setAddress] = useState(branch.address ?? "");
@@ -137,6 +143,7 @@ function GeneralSettingsForm({
       {
         name,
         legalName: legalName || undefined,
+        logoUrl,
         currency,
         timezone,
         loyaltyPointValue: Number(loyaltyPointValue) || 0,
@@ -186,8 +193,70 @@ function GeneralSettingsForm({
         <h2 className="text-[18px] font-medium text-foreground">Restaurant</h2>
         <form onSubmit={onSubmitRestaurant} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
+            <Label>Logo</Label>
+            <div className="flex items-center gap-4">
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  uploadLogo.mutate(file, {
+                    onSuccess: (res) => setLogoUrl(res.url),
+                    onError: (err) =>
+                      toast.error(err instanceof ApiError ? err.message : "Could not upload logo"),
+                  });
+                }}
+              />
+              {logoUrl ? (
+                <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-border bg-secondary">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- uploaded asset served from the backend, not a Next-optimizable remote source */}
+                  <img src={logoUrl} alt="" className="h-full w-full object-contain" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLogoUrl(null);
+                      if (logoInputRef.current) logoInputRef.current.value = "";
+                    }}
+                    className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-background/80 text-foreground"
+                    aria-label="Remove logo"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  disabled={uploadLogo.isPending}
+                  className="flex h-16 w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary"
+                >
+                  <ImagePlus className="h-4 w-4" />
+                  <span className="text-[10px]">
+                    {uploadLogo.isPending ? "Uploading…" : "Upload"}
+                  </span>
+                </button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Shows in the app sidebar and login screen instead of the OrderRestro mark.
+                Square, at least 256×256px, PNG with a transparent background works best.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
             <Label htmlFor="r-name">Name</Label>
-            <Input id="r-name" value={name} onChange={(e) => setName(e.target.value)} required />
+            <Input
+              id="r-name"
+              value={name}
+              onChange={(e) => setName(e.target.value.slice(0, RESTAURANT_NAME_MAX_LENGTH))}
+              maxLength={RESTAURANT_NAME_MAX_LENGTH}
+              required
+            />
+            <p className="text-right text-xs text-muted-foreground">
+              {name.length}/{RESTAURANT_NAME_MAX_LENGTH}
+            </p>
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="r-legal">Legal name</Label>

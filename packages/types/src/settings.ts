@@ -1,8 +1,18 @@
 import { z } from "zod";
 
+// The restaurant's brand name renders in the app shell's top-of-sidebar
+// header (fixed-width column, next to the logo) — a name much past this
+// starts wrapping/truncating there, so the settings form enforces the same
+// limit the layout was built around rather than letting it overflow.
+export const RESTAURANT_NAME_MAX_LENGTH = 40;
+
 export const restaurantSettingsSchema = z.object({
-  name: z.string().min(1).optional(),
+  name: z.string().min(1).max(RESTAURANT_NAME_MAX_LENGTH).optional(),
   legalName: z.string().optional(),
+  // Shown in place of the product logo in the app shell header and on the
+  // login screen once set. Square, ~256x256px+ PNG/SVG with a transparent
+  // background reads best in that slot — see the settings page hint text.
+  logoUrl: z.string().max(2048).optional().nullable(),
   currency: z.string().optional(),
   timezone: z.string().optional(),
   loyaltyPointValue: z.coerce.number().min(0).optional(),

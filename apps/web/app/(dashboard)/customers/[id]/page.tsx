@@ -1,41 +1,78 @@
 "use client";
 
-import { ArrowLeft, CreditCard, Gift, Star } from "lucide-react";
+import { ArrowLeft, CreditCard, Gift, Pencil, Star, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { use } from "react";
+import { useRouter } from "next/navigation";
+import { use, useState } from "react";
+import { toast } from "sonner";
+import { EditCustomerDialog } from "@/components/customers/edit-customer-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
-import { useCustomer } from "@/hooks/use-customers";
+import { useCustomer, useDeleteCustomer } from "@/hooks/use-customers";
+import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { branchId } = useBranch();
   const { data: customer, isLoading } = useCustomer(branchId, id);
+  const router = useRouter();
+  const deleteCustomer = useDeleteCustomer(branchId);
+  const [isEditing, setIsEditing] = useState(false);
 
   if (isLoading || !customer) {
     return <Skeleton className="h-96 rounded-2xl" />;
   }
 
+  const onDelete = () => {
+    if (!confirm(`Delete ${customer.name ?? "this customer"}? This cannot be undone.`)) return;
+    deleteCustomer.mutate(customer.id, {
+      onSuccess: () => {
+        toast.success(`${customer.name ?? "Customer"} deleted`);
+        router.replace("/customers");
+      },
+      onError: (err) =>
+        toast.error(err instanceof ApiError ? err.message : "Could not delete customer"),
+    });
+  };
+
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <Link
-          href="/customers"
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Customers
-        </Link>
-        <h1 className="mt-2 text-[32px] font-semibold tracking-tight text-foreground">
-          {customer.name ?? "Unnamed customer"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {[customer.phone, customer.email, customer.address].filter(Boolean).join(" · ") ||
-            "No contact info on file"}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <Link
+            href="/customers"
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Customers
+          </Link>
+          <h1 className="mt-2 text-[32px] font-semibold tracking-tight text-foreground">
+            {customer.name ?? "Unnamed customer"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {[customer.phone, customer.email, customer.address].filter(Boolean).join(" · ") ||
+              "No contact info on file"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:text-destructive"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -121,6 +158,14 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           <p className="py-4 text-sm text-muted-foreground">No paid orders yet.</p>
         )}
       </Card>
+
+      {isEditing && (
+        <EditCustomerDialog
+          branchId={branchId}
+          customer={customer}
+          onClose={() => setIsEditing(false)}
+        />
+      )}
     </div>
   );
 }

@@ -138,6 +138,13 @@ export class AuthService {
     return this.issueSession(owner);
   }
 
+  async hasAnyRestaurant(): Promise<boolean> {
+    const restaurant = await this.prisma.restaurant.findFirst({
+      select: { id: true },
+    });
+    return restaurant !== null;
+  }
+
   async pinLogin(dto: PinLoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { id: dto.userId },

@@ -1,19 +1,36 @@
 "use client";
 
-import { Gift, Star } from "lucide-react";
+import { Gift, Pencil, Star, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { toast } from "sonner";
 import { AddCustomerDialog } from "@/components/customers/add-customer-dialog";
+import { EditCustomerDialog } from "@/components/customers/edit-customer-dialog";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
-import { useCustomers } from "@/hooks/use-customers";
+import { useCustomers, useDeleteCustomer, type Customer } from "@/hooks/use-customers";
+import { ApiError } from "@/lib/api";
 
 export default function CustomersPage() {
   const { branchId } = useBranch();
   const [search, setSearch] = useState("");
   const { data: customers, isLoading } = useCustomers(branchId, search || undefined);
+  const deleteCustomer = useDeleteCustomer(branchId);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+
+  const onDelete = (e: React.MouseEvent, customer: Customer) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm(`Delete ${customer.name ?? "this customer"}? This cannot be undone.`)) return;
+    deleteCustomer.mutate(customer.id, {
+      onSuccess: () => toast.success(`${customer.name ?? "Customer"} deleted`),
+      onError: (err) =>
+        toast.error(err instanceof ApiError ? err.message : "Could not delete customer"),
+    });
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -64,6 +81,30 @@ export default function CustomersPage() {
                     <Gift className="h-3.5 w-3.5" />₹{c.walletBalance}
                   </span>
                 )}
+                <div className="flex items-center gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-primary"
+                    title="Edit customer"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setEditingCustomer(c);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    title="Delete customer"
+                    onClick={(e) => onDelete(e, c)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </Link>
           ))
@@ -76,6 +117,14 @@ export default function CustomersPage() {
           </div>
         )}
       </Card>
+
+      {editingCustomer && (
+        <EditCustomerDialog
+          branchId={branchId}
+          customer={editingCustomer}
+          onClose={() => setEditingCustomer(null)}
+        />
+      )}
     </div>
   );
 }

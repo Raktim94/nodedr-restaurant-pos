@@ -55,6 +55,16 @@ export class CustomersService {
     return this.prisma.customer.update({ where: { id }, data: dto });
   }
 
+  // Hard delete — Order.customerId and GiftCard.customerId are both
+  // optional with onDelete: SetNull (schema.prisma), so this never orphans
+  // or blocks on past orders/gift cards; it just detaches them from the
+  // profile being removed.
+  async remove(branchId: string, id: string) {
+    await this.assertInBranch(branchId, id);
+    await this.prisma.customer.delete({ where: { id } });
+    return { ok: true };
+  }
+
   private async assertInBranch(branchId: string, id: string) {
     const customer = await this.prisma.customer.findFirst({
       where: { id, branchId },

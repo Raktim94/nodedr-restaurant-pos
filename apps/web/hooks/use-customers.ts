@@ -48,3 +48,23 @@ export function useCreateCustomer(branchId: string | null) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["customers", branchId] }),
   });
 }
+
+export function useUpdateCustomer(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: Partial<CustomerDto> }) =>
+      api.patch<Customer>(`/customers/${id}?branchId=${branchId}`, dto),
+    onSuccess: (_data, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ["customers", branchId] });
+      queryClient.invalidateQueries({ queryKey: ["customers", branchId, "detail", id] });
+    },
+  });
+}
+
+export function useDeleteCustomer(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/customers/${id}?branchId=${branchId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["customers", branchId] }),
+  });
+}

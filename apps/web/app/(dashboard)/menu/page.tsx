@@ -1,11 +1,13 @@
 "use client";
 
-import { Layers, Leaf, Trash2 } from "lucide-react";
+import { Layers, Leaf, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AddCategoryDialog } from "@/components/menu/add-category-dialog";
 import { AddItemDialog } from "@/components/menu/add-item-dialog";
 import { ComboComponentsDialog } from "@/components/menu/combo-components-dialog";
+import { EditCategoryDialog } from "@/components/menu/edit-category-dialog";
+import { EditItemDialog } from "@/components/menu/edit-item-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,7 +21,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useBranch } from "@/hooks/use-branch";
-import { useCategories, useDeleteMenuItem, useMenuItems, type MenuItem } from "@/hooks/use-menu";
+import {
+  useCategories,
+  useDeleteCategory,
+  useDeleteMenuItem,
+  useMenuItems,
+  type MenuCategory,
+  type MenuItem,
+} from "@/hooks/use-menu";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -31,7 +40,24 @@ export default function MenuPage() {
   const { data: items, isLoading: itemsLoading } = useMenuItems(branchId, selectedCategoryId);
   const { data: allItems } = useMenuItems(branchId);
   const deleteItem = useDeleteMenuItem(branchId);
+  const deleteCategory = useDeleteCategory(branchId);
   const [comboItem, setComboItem] = useState<MenuItem | null>(null);
+  const [editingCategory, setEditingCategory] = useState<MenuCategory | null>(null);
+  const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+
+  const onDeleteCategory = (category: MenuCategory) => {
+    if (!confirm(`Delete the "${category.name}" category? This cannot be undone.`)) return;
+    deleteCategory.mutate(category.id, {
+      onSuccess: () => {
+        toast.success(`"${category.name}" deleted`);
+        if (selectedCategoryId === category.id) setSelectedCategoryId(undefined);
+      },
+      onError: (err) =>
+        toast.error(
+          err instanceof ApiError ? err.message : "Could not delete category — remove its items first",
+        ),
+    });
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -70,19 +96,45 @@ export default function MenuPage() {
                 All items
               </button>
               {categories?.map((cat) => (
-                <button
+                <div
                   key={cat.id}
-                  onClick={() => setSelectedCategoryId(cat.id)}
                   className={cn(
-                    "flex items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors",
+                    "group flex items-center justify-between rounded-lg pl-3 pr-1 py-1 text-left text-sm font-medium transition-colors",
                     selectedCategoryId === cat.id
                       ? "bg-accent text-accent-foreground"
                       : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                   )}
                 >
-                  <span>{cat.name}</span>
-                  <span className="text-xs text-muted-foreground">{cat._count.items}</span>
-                </button>
+                  <button
+                    onClick={() => setSelectedCategoryId(cat.id)}
+                    className="min-w-0 flex-1 truncate py-1 text-left"
+                  >
+                    {cat.name}
+                  </button>
+                  <span className="shrink-0 text-xs text-muted-foreground group-hover:hidden">
+                    {cat._count.items}
+                  </span>
+                  <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-primary"
+                      title="Edit category"
+                      onClick={() => setEditingCategory(cat)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      title="Delete category"
+                      onClick={() => onDeleteCategory(cat)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -166,7 +218,17 @@ export default function MenuPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-primary"
+                          title="Edit item"
+                          onClick={() => setEditingItem(item)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          title="Delete item"
                           onClick={() =>
                             deleteItem.mutate(item.id, {
                               onSuccess: () => toast.success(`${item.name} removed`),
@@ -201,6 +263,23 @@ export default function MenuPage() {
         open={!!comboItem}
         onOpenChange={(open) => !open && setComboItem(null)}
       />
+
+      {editingCategory && (
+        <EditCategoryDialog
+          branchId={branchId}
+          category={editingCategory}
+          onClose={() => setEditingCategory(null)}
+        />
+      )}
+
+      {editingItem && (
+        <EditItemDialog
+          branchId={branchId}
+          item={editingItem}
+          categories={categories ?? []}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
     </div>
   );
 }
