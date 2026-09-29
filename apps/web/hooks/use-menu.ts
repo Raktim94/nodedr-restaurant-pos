@@ -85,6 +85,26 @@ export function useCreateCategory(branchId: string | null) {
   });
 }
 
+export function useUpdateCategory(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: Partial<MenuCategoryDto> }) =>
+      api.patch(`/menu/categories/${id}?branchId=${branchId}`, dto),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["menu", "categories", branchId] }),
+  });
+}
+
+export function useDeleteCategory(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/menu/categories/${id}?branchId=${branchId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["menu", "categories", branchId] });
+      queryClient.invalidateQueries({ queryKey: ["menu", "items", branchId] });
+    },
+  });
+}
+
 export function useUploadItemImage() {
   return useMutation({
     mutationFn: (file: File) => api.upload<{ url: string }>("/menu/items/upload-image", file),

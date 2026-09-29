@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -60,6 +61,7 @@ export class CustomersController {
 
   @Auth('customers.manage')
   @Patch(':id')
+  @UsePipes(new ZodValidationPipe(customerSchema))
   async update(
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId: string,
@@ -68,5 +70,16 @@ export class CustomersController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.customersService.update(branchId, id, body as never);
+  }
+
+  @Auth('customers.manage')
+  @Delete(':id')
+  async remove(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.customersService.remove(branchId, id);
   }
 }

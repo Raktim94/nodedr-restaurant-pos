@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Patch, Query, UsePipes } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+  UsePipes,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags } from '@nestjs/swagger';
 import {
   branchSettingsSchema,
@@ -9,6 +21,10 @@ import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
+import {
+  assertValidImageSignature,
+  imageUploadOptions,
+} from '../../common/upload/image-upload.config';
 import { SettingsService } from './settings.service';
 
 @ApiTags('settings')
@@ -41,6 +57,20 @@ export class SettingsController {
       user.id,
       body as never,
     );
+  }
+
+  @Auth('settings.manage')
+  @Post('restaurant/logo')
+  @UseInterceptors(FileInterceptor('file', imageUploadOptions))
+  uploadRestaurantLogo(@UploadedFile() file?: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+    // See menu.controller.ts's uploadItemImage — same rationale for
+    // checking the bytes on disk before this URL is saved and served back
+    // publicly as the restaurant's branding.
+    assertValidImageSignature(file.path);
+    return { url: `/api/uploads/${file.filename}` };
   }
 
   @Auth('settings.manage')

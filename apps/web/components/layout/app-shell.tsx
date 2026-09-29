@@ -5,12 +5,51 @@ import { Menu } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { useBranch } from "@/hooks/use-branch";
+import { useSettings } from "@/hooks/use-settings";
 import { BrandFooter } from "./brand-footer";
 import { BranchSwitcher } from "./branch-switcher";
 import { LanguageSwitcher } from "./language-switcher";
 import { Logo } from "./logo";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
+
+// The restaurant's own logo + name lead the sidebar header — this is
+// white-label self-hosted software, so the operator's branding takes the
+// prime spot an operator actually looks at. The Nodedr OrderRestro product
+// mark moves to a small credit line at the bottom (BrandFooter) instead of
+// competing with it up here. Falls back to the product mark only until the
+// restaurant sets its own logo/name under Settings.
+function RestaurantBrand() {
+  const { branchId } = useBranch();
+  const { data } = useSettings(branchId);
+  const restaurant = data?.restaurant;
+
+  if (restaurant?.logoUrl) {
+    return (
+      <>
+        {/* eslint-disable-next-line @next/next/no-img-element -- uploaded asset served from the backend, not a Next-optimizable remote source */}
+        <img
+          src={restaurant.logoUrl}
+          alt={restaurant.name}
+          className="h-8 w-8 shrink-0 rounded-lg object-contain"
+        />
+        <span className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
+          {restaurant.name}
+        </span>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Logo />
+      <span className="truncate text-sm font-semibold tracking-tight text-sidebar-foreground">
+        {restaurant?.name ?? "Nodedr OrderRestro"}
+      </span>
+    </>
+  );
+}
 
 export function AppShell({
   user,
@@ -26,10 +65,7 @@ export function AppShell({
       {/* Desktop sidebar */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <div className="flex h-16 items-center gap-2 px-5">
-          <Logo />
-          <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
-            Nodedr OrderRestro
-          </span>
+          <RestaurantBrand />
         </div>
         <div className="px-3 pb-3">
           <BranchSwitcher />
@@ -45,10 +81,7 @@ export function AppShell({
         <SheetContent side="left" className="w-72 bg-sidebar p-0">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <div className="flex h-16 items-center gap-2 px-5">
-            <Logo />
-            <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
-              Nodedr OrderRestro
-            </span>
+            <RestaurantBrand />
           </div>
           <div className="px-3 pb-3">
             <BranchSwitcher />
