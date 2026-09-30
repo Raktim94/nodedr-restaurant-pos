@@ -52,6 +52,7 @@ export class OrdersService {
       where: { id, branchId },
       include: {
         table: true,
+        customer: true,
         items: { include: { modifiers: true, menuItem: true } },
         kots: { include: { items: true, station: true } },
         payments: true,
@@ -85,7 +86,7 @@ export class OrdersService {
     // existed before multi-region tax) if the branch somehow can't be
     // found here — createOrder/addItems already 404 earlier when the
     // branch itself is invalid, so this is just belt-and-suspenders.
-    return (branch?.taxMode as TaxMode | undefined) ?? 'INCLUSIVE';
+    return branch?.taxMode ?? 'INCLUSIVE';
   }
 
   async createOrder(branchId: string, userId: string, dto: CreateOrderDto) {

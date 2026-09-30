@@ -9,41 +9,52 @@ export class DashboardService {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    const [revenueAgg, ordersToday, tableCounts, kitchenQueue, recentOrders] =
-      await Promise.all([
-        this.prisma.order.aggregate({
-          where: { branchId, status: 'PAID', billedAt: { gte: startOfDay } },
-          _sum: { totalAmount: true },
-        }),
-        this.prisma.order.count({
-          where: { branchId, createdAt: { gte: startOfDay } },
-        }),
-        this.prisma.table.groupBy({
-          by: ['status'],
-          where: { floor: { branchId } },
-          _count: true,
-        }),
-        this.prisma.kot.groupBy({
-          by: ['status'],
-          where: {
-            order: { branchId },
-            status: { notIn: ['SERVED', 'CANCELLED'] },
-          },
-          _count: true,
-        }),
-        this.prisma.order.findMany({
-          where: { branchId, status: 'PAID' },
-          orderBy: { billedAt: 'desc' },
-          take: 10,
-          select: {
-            id: true,
-            orderNumber: true,
-            type: true,
-            totalAmount: true,
-            billedAt: true,
-          },
-        }),
-      ]);
+    const [
+      revenueAgg,
+      ordersToday,
+      orderTypeCounts,
+      tableCounts,
+      kitchenQueue,
+      recentOrders,
+    ] = await Promise.all([
+      this.prisma.order.aggregate({
+        where: { branchId, status: 'PAID', billedAt: { gte: startOfDay } },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.order.count({
+        where: { branchId, createdAt: { gte: startOfDay } },
+      }),
+      this.prisma.order.groupBy({
+        by: ['type'],
+        where: { branchId, createdAt: { gte: startOfDay } },
+        _count: true,
+      }),
+      this.prisma.table.groupBy({
+        by: ['status'],
+        where: { floor: { branchId } },
+        _count: true,
+      }),
+      this.prisma.kot.groupBy({
+        by: ['status'],
+        where: {
+          order: { branchId },
+          status: { notIn: ['SERVED', 'CANCELLED'] },
+        },
+        _count: true,
+      }),
+      this.prisma.order.findMany({
+        where: { branchId, status: 'PAID' },
+        orderBy: { billedAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          orderNumber: true,
+          type: true,
+          totalAmount: true,
+          billedAt: true,
+        },
+      }),
+    ]);
 
     const tableStatusMap = Object.fromEntries(
       tableCounts.map((row) => [row.status, row._count]),
@@ -51,10 +62,26 @@ export class DashboardService {
     const kitchenQueueMap = Object.fromEntries(
       kitchenQueue.map((row) => [row.status, row._count]),
     );
+    // Guests place QR/kiosk orders themselves without a staff member
+    // keying anything in — everything else (dine-in, takeaway, drive-thru,
+    // phone) was rung up by staff at the counter or table.
+    const ONLINE_ORDER_TYPES = new Set(['QR_ORDER', 'KIOSK']);
+    const channels = orderTypeCounts.reduce(
+      (acc, row) => {
+        if (ONLINE_ORDER_TYPES.has(row.type)) {
+          acc.online += row._count;
+        } else {
+          acc.offline += row._count;
+        }
+        return acc;
+      },
+      { online: 0, offline: 0 },
+    );
 
     return {
       todayRevenue: Number(revenueAgg._sum.totalAmount ?? 0),
       todayOrders: ordersToday,
+      channels,
       tables: {
         available: tableStatusMap.AVAILABLE ?? 0,
         occupied: tableStatusMap.OCCUPIED ?? 0,

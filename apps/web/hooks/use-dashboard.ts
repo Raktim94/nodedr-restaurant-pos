@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 export interface DashboardSummary {
   todayRevenue: number;
   todayOrders: number;
+  channels: { online: number; offline: number };
   tables: {
     available: number;
     occupied: number;

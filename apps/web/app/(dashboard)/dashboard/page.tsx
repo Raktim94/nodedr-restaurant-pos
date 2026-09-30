@@ -1,8 +1,10 @@
 "use client";
 
-import { ChefHat, ClipboardList, Flame, ReceiptText, Timer, TrendingUp, Trash2, Wallet } from "lucide-react";
+import { ChefHat, ClipboardList, Flame, Globe, ReceiptText, Store, Timer, TrendingUp, Trash2, Wallet } from "lucide-react";
+import { useState } from "react";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { TrendChart } from "@/components/dashboard/trend-chart";
+import { OrderDetailDialog } from "@/components/orders/order-detail-dialog";
 import { RefundDialog } from "@/components/orders/refund-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -11,6 +13,8 @@ import { useBranch } from "@/hooks/use-branch";
 import { useDashboardSummary, useDashboardTrends } from "@/hooks/use-dashboard";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+const ONLINE_ORDER_TYPES = new Set(["QR_ORDER", "KIOSK"]);
 
 function StatCard({
   label,
@@ -61,6 +65,7 @@ export default function DashboardPage() {
   const { branchId } = useBranch();
   const { data, isLoading } = useDashboardSummary(branchId);
   const { data: trends, isLoading: trendsLoading } = useDashboardTrends(branchId);
+  const [viewingOrderId, setViewingOrderId] = useState<string | null>(null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -68,6 +73,13 @@ export default function DashboardPage() {
         <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Real-time overview of today&apos;s service</p>
       </div>
+
+      <OrderDetailDialog
+        branchId={branchId}
+        orderId={viewingOrderId}
+        open={!!viewingOrderId}
+        onOpenChange={(open) => !open && setViewingOrderId(null)}
+      />
 
       <QuickActions />
 
@@ -125,7 +137,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="flex flex-col gap-1 p-6 lg:col-span-1">
           <h2 className="mb-3 text-[18px] font-medium text-foreground">Tables</h2>
           {data && (
@@ -162,28 +174,85 @@ export default function DashboardPage() {
             {data?.recentOrders.length === 0 && (
               <p className="py-4 text-sm text-muted-foreground">No sales yet today.</p>
             )}
-            {data?.recentOrders.map((order) => (
-              <div key={order.id} className="flex items-center justify-between py-2.5 text-sm">
-                <div className="flex flex-col">
-                  <span className="font-medium text-foreground">#{order.orderNumber}</span>
-                  <Badge variant="secondary" className="mt-0.5 w-fit text-[11px] font-normal">
-                    {order.type.replace("_", " ")}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="font-medium tabular-nums text-foreground">
-                    {formatCurrency(order.totalAmount)}
-                  </span>
-                  <RefundDialog
-                    branchId={branchId}
-                    orderId={order.id}
-                    orderNumber={order.orderNumber}
-                    maxAmount={Number(order.totalAmount)}
-                  />
-                </div>
-              </div>
-            ))}
+            {data?.recentOrders.map((order) => {
+              const isOnline = ONLINE_ORDER_TYPES.has(order.type);
+              return (
+                <button
+                  key={order.id}
+                  type="button"
+                  onClick={() => setViewingOrderId(order.id)}
+                  className="flex items-center justify-between py-2.5 text-left text-sm transition hover:opacity-80"
+                  title="View order details"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium text-foreground">#{order.orderNumber}</span>
+                    <Badge
+                      variant="secondary"
+                      className={cn(
+                        "mt-0.5 w-fit text-[11px] font-normal",
+                        isOnline && "bg-primary/10 text-primary",
+                      )}
+                    >
+                      {order.type.replace("_", " ")}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="font-medium tabular-nums text-foreground">
+                      {formatCurrency(order.totalAmount)}
+                    </span>
+                    <RefundDialog
+                      branchId={branchId}
+                      orderId={order.id}
+                      orderNumber={order.orderNumber}
+                      maxAmount={Number(order.totalAmount)}
+                    />
+                  </div>
+                </button>
+              );
+            })}
           </div>
+        </Card>
+
+        <Card className="flex flex-col gap-3 p-6 lg:col-span-1">
+          <h2 className="flex items-center gap-2 text-[18px] font-medium text-foreground">
+            <ReceiptText className="h-[18px] w-[18px] text-muted-foreground" />
+            Order channels
+          </h2>
+          <p className="text-xs text-muted-foreground">Today, self-serve vs staff-entered</p>
+          {data && (
+            <>
+              <div className="flex items-center justify-between py-1.5 text-sm">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Globe className="h-3.5 w-3.5" />
+                  Online (QR / kiosk)
+                </div>
+                <span className="font-medium tabular-nums text-foreground">
+                  {data.channels.online}
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-1.5 text-sm">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Store className="h-3.5 w-3.5" />
+                  Offline (dine-in / takeaway / phone)
+                </div>
+                <span className="font-medium tabular-nums text-foreground">
+                  {data.channels.offline}
+                </span>
+              </div>
+              <div className="mt-1 h-2 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{
+                    width: `${
+                      data.channels.online + data.channels.offline === 0
+                        ? 0
+                        : (data.channels.online / (data.channels.online + data.channels.offline)) * 100
+                    }%`,
+                  }}
+                />
+              </div>
+            </>
+          )}
         </Card>
       </div>
     </div>
