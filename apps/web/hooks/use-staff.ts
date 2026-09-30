@@ -52,3 +52,11 @@ export function useUpdateStaff() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["staff"] }),
   });
 }
+
+export function useDeleteStaff() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/users/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["staff"] }),
+  });
+}
