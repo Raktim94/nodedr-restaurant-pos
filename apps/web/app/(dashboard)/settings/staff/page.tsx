@@ -1,9 +1,11 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AddStaffDialog } from "@/components/settings/add-staff-dialog";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -15,12 +17,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useStaff, useUpdateStaff } from "@/hooks/use-staff";
+import { useCurrentUser } from "@/hooks/use-auth";
+import { useDeleteStaff, useStaff, useUpdateStaff, type StaffMember } from "@/hooks/use-staff";
 import { ApiError } from "@/lib/api";
 
 export default function StaffPage() {
   const { data: staff, isLoading } = useStaff();
+  const { data: currentUser } = useCurrentUser();
   const updateStaff = useUpdateStaff();
+  const deleteStaff = useDeleteStaff();
+
+  const onDelete = (member: StaffMember) => {
+    if (!confirm(`Delete ${member.name}? This cannot be undone.`)) return;
+    deleteStaff.mutate(member.id, {
+      onSuccess: () => toast.success(`${member.name} deleted`),
+      onError: (err) =>
+        toast.error(err instanceof ApiError ? err.message : "Could not delete staff account"),
+    });
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -52,6 +66,7 @@ export default function StaffPage() {
                 <TableHead>Role</TableHead>
                 <TableHead>Branches</TableHead>
                 <TableHead className="text-right">Active</TableHead>
+                <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -84,6 +99,19 @@ export default function StaffPage() {
                         )
                       }
                     />
+                  </TableCell>
+                  <TableCell>
+                    {member.id !== currentUser?.user.id && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        title="Delete staff account"
+                        onClick={() => onDelete(member)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

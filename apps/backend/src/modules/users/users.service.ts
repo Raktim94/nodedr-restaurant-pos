@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { CreateStaffDto, UpdateStaffDto } from '@nodedr-restaurant/types';
+import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuditService } from '../../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -171,6 +172,62 @@ export class UsersService {
     });
 
     return updated;
+  }
+
+  async remove(restaurantId: string, actorId: string, id: string) {
+    if (id === actorId) {
+      throw new BadRequestException('You cannot delete your own account');
+    }
+
+    const existing = await this.prisma.user.findFirst({
+      where: { id, restaurantId },
+      include: { role: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('Staff account not found');
+    }
+
+    if (existing.role.name === 'OWNER') {
+      const otherActiveOwners = await this.prisma.user.count({
+        where: {
+          restaurantId,
+          isActive: true,
+          id: { not: id },
+          role: { name: 'OWNER' },
+        },
+      });
+      if (otherActiveOwners === 0) {
+        throw new BadRequestException('Cannot delete the last active owner');
+      }
+    }
+
+    try {
+      await this.prisma.user.delete({ where: { id } });
+    } catch (err) {
+      // Order/Refund/PurchaseOrder/... all keep a required, non-cascading
+      // reference to the staff member who created them, so history is never
+      // silently lost. Once a staffer has touched a real order they can no
+      // longer be hard-deleted — disable them instead (`isActive: false`).
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2003'
+      ) {
+        throw new BadRequestException(
+          'This staff account has order, purchase, or inventory history and cannot be deleted. Disable it instead.',
+        );
+      }
+      throw err;
+    }
+
+    await this.audit.record({
+      userId: actorId,
+      action: 'staff.deleted',
+      entity: 'User',
+      entityId: id,
+      metadata: { name: existing.name, email: existing.email },
+    });
+
+    return { ok: true };
   }
 
   private async assertRoleInRestaurant(restaurantId: string, roleId: string) {

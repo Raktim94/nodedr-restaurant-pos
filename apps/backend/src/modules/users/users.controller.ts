@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -56,5 +57,11 @@ export class UsersController {
       id,
       body as never,
     );
+  }
+
+  @Auth('users.manage')
+  @Delete(':id')
+  remove(@CurrentUser() user: SessionUser, @Param('id') id: string) {
+    return this.usersService.remove(user.restaurantId, user.id, id);
   }
 }
