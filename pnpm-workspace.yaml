@@ -28,3 +28,6 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   usb: true
+minimumReleaseAgeExclude:
+  - brace-expansion@1.1.19 || 1.1.20 || 1.1.21 || 2.1.5 || 2.1.6 || 2.1.7 || 5.0.10 || 5.0.11 || 5.0.12
+  - engine.io@6.6.10
