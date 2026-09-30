@@ -16,9 +16,9 @@ export function BrandFooter() {
         href="https://orderrestro.nodedr.com/"
         target="_blank"
         rel="noopener noreferrer"
-        className="text-center text-xs font-medium leading-tight text-sidebar-foreground/70 hover:text-sidebar-foreground hover:underline"
+        className="text-left text-xs font-medium leading-tight text-sidebar-foreground/70 hover:text-sidebar-foreground hover:underline"
       >
-        Powered by OrderRestro · Nodedr Infotech Private Limited
+        Nodedr OrderRestro
       </a>
     </div>
   );

@@ -1,10 +1,11 @@
 "use client";
 
 import type { ReservationStatusDto } from "@nodedr-restaurant/types";
-import { Users } from "lucide-react";
+import { Check, X, Users } from "lucide-react";
 import { useState } from "react";
 import { AddReservationDialog } from "@/components/reservations/add-reservation-dialog";
 import { ContactDetailsDialog } from "@/components/contact-details-dialog";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -110,6 +111,28 @@ export default function ReservationsPage() {
                     minute: "2-digit",
                   })}
                 </span>
+                {r.status === "RESERVED" && (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="secondary"
+                      size="icon-sm"
+                      className="text-success hover:bg-success/10"
+                      title="Accept reservation"
+                      onClick={() => updateStatus.mutate({ id: r.id, status: "CONFIRMED" })}
+                    >
+                      <Check className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="icon-sm"
+                      className="text-destructive hover:bg-destructive/10"
+                      title="Reject reservation"
+                      onClick={() => updateStatus.mutate({ id: r.id, status: "CANCELLED" })}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     className={cn(

@@ -57,6 +57,39 @@ export interface OpenOrder {
   customer: Customer | null;
 }
 
+export interface OrderDetail {
+  id: string;
+  orderNumber: string;
+  type: string;
+  status: string;
+  subtotal: string;
+  taxAmount: string;
+  discountAmount: string;
+  tipAmount: string;
+  totalAmount: string;
+  createdAt: string;
+  billedAt: string | null;
+  table: { id: string; name: string | null; number: number } | null;
+  customer: Customer | null;
+  items: {
+    id: string;
+    name: string;
+    quantity: number;
+    unitPrice: string;
+    totalPrice: string;
+    modifiers: { id: string; name: string; price: string }[];
+  }[];
+  payments: { id: string; method: string; amount: string }[];
+}
+
+export function useOrder(branchId: string | null, orderId: string | null) {
+  return useQuery({
+    queryKey: ["orders", "detail", branchId, orderId],
+    queryFn: () => api.get<OrderDetail>(`/orders/${orderId}?branchId=${branchId}`),
+    enabled: !!branchId && !!orderId,
+  });
+}
+
 export function useOpenOrders(branchId: string | null) {
   return useQuery({
     queryKey: ["orders", "open", branchId],
