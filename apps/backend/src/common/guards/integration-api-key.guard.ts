@@ -28,25 +28,33 @@ export class IntegrationApiKeyGuard implements CanActivate {
     const request: Request = context.switchToHttp().getRequest();
 
     const header = request.headers.authorization;
-    const rawToken = header?.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : null;
+    const rawToken = header?.startsWith('Bearer ')
+      ? header.slice('Bearer '.length).trim()
+      : null;
     if (!rawToken) {
-      throw new UnauthorizedException('Missing Authorization: Bearer <api key> header');
+      throw new UnauthorizedException(
+        'Missing Authorization: Bearer <api key> header',
+      );
     }
 
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-    const key = await this.prisma.integrationApiKey.findUnique({ where: { tokenHash } });
+    const key = await this.prisma.integrationApiKey.findUnique({
+      where: { tokenHash },
+    });
     if (!key || key.revokedAt) {
       throw new UnauthorizedException('Invalid or revoked API key');
     }
 
-    const required = this.reflector.getAllAndOverride<string[]>(INTEGRATION_SCOPES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const required = this.reflector.getAllAndOverride<string[]>(
+      INTEGRATION_SCOPES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     if (required?.length) {
       const missing = required.filter((scope) => !key.scopes.includes(scope));
       if (missing.length > 0) {
-        throw new ForbiddenException(`This API key is missing required scope(s): ${missing.join(', ')}`);
+        throw new ForbiddenException(
+          `This API key is missing required scope(s): ${missing.join(', ')}`,
+        );
       }
     }
 
