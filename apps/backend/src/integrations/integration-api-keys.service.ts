@@ -1,6 +1,13 @@
 import { randomBytes, createHash } from 'node:crypto';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { CreateIntegrationApiKeyDto, SessionUser } from '@nodedr-restaurant/types';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import type {
+  CreateIntegrationApiKeyDto,
+  SessionUser,
+} from '@nodedr-restaurant/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { BranchAccessService } from '../common/services/branch-access.service';
 
@@ -21,7 +28,11 @@ export class IntegrationApiKeysService {
 
   private generateToken(): { raw: string; hash: string; lastFour: string } {
     const raw = `${TOKEN_PREFIX}${randomBytes(24).toString('base64url')}`;
-    return { raw, hash: createHash('sha256').update(raw).digest('hex'), lastFour: raw.slice(-4) };
+    return {
+      raw,
+      hash: createHash('sha256').update(raw).digest('hex'),
+      lastFour: raw.slice(-4),
+    };
   }
 
   async create(actor: SessionUser, dto: CreateIntegrationApiKeyDto) {
@@ -88,7 +99,10 @@ export class IntegrationApiKeysService {
     });
     if (!key) throw new NotFoundException('API key not found');
     if (!key.revokedAt) {
-      await this.prisma.integrationApiKey.update({ where: { id }, data: { revokedAt: new Date() } });
+      await this.prisma.integrationApiKey.update({
+        where: { id },
+        data: { revokedAt: new Date() },
+      });
     }
     return { ok: true };
   }

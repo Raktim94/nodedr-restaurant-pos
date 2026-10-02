@@ -90,7 +90,8 @@ export function buildReceiptHtml({
   // has populated; taxId is the new generic one. India falls back to the
   // old field so nothing already printed on file goes blank.
   const taxIdValue =
-    branch.taxId || (branch.taxRegime === 'INDIA_GST' ? branch.gstNumber : null);
+    branch.taxId ||
+    (branch.taxRegime === 'INDIA_GST' ? branch.gstNumber : null);
   const taxIdLabel = resolveTaxIdLabel(branch.taxRegime);
 
   const itemRows = order.items

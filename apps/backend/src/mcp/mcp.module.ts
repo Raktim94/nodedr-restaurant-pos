@@ -10,7 +10,13 @@ import { McpController } from './mcp.controller';
 import { McpToolsBuilder } from './mcp-tools.builder';
 
 @Module({
-  imports: [OrdersModule, ReservationsModule, DashboardModule, MenuModule, TablesModule],
+  imports: [
+    OrdersModule,
+    ReservationsModule,
+    DashboardModule,
+    MenuModule,
+    TablesModule,
+  ],
   controllers: [McpController],
   providers: [McpToolsBuilder, StaffApiKeyGuard, BranchAccessService],
 })

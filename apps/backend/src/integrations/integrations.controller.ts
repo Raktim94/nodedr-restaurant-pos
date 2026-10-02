@@ -1,7 +1,18 @@
-import { Body, Controller, Get, Param, Post, UseGuards, UsePipes } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+  UsePipes,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { createIntegrationOrderSchema, createIntegrationReservationSchema } from '@nodedr-restaurant/types';
+import {
+  createIntegrationOrderSchema,
+  createIntegrationReservationSchema,
+} from '@nodedr-restaurant/types';
 import { CurrentIntegrationKey } from '../common/decorators/current-integration-key.decorator';
 import { RequireScope } from '../common/decorators/require-scope.decorator';
 import { IntegrationApiKeyGuard } from '../common/guards/integration-api-key.guard';
@@ -31,7 +42,10 @@ export class IntegrationsController {
 
   @RequireScope('menu:read')
   @Get('locations/:branchId/menu')
-  getMenu(@CurrentIntegrationKey() key: IntegrationKeyContext, @Param('branchId') branchId: string) {
+  getMenu(
+    @CurrentIntegrationKey() key: IntegrationKeyContext,
+    @Param('branchId') branchId: string,
+  ) {
     return this.integrations.getMenu(key, branchId);
   }
 

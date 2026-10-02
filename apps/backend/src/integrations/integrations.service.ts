@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   CreateIntegrationOrderDto,
   CreateIntegrationReservationDto,
@@ -33,7 +37,9 @@ export class IntegrationsService {
 
   private async assertBranch(ctx: IntegrationKeyContext, branchId: string) {
     if (ctx.branchId && ctx.branchId !== branchId) {
-      throw new ForbiddenException('This API key is scoped to a different location');
+      throw new ForbiddenException(
+        'This API key is scoped to a different location',
+      );
     }
     const branch = await this.prisma.branch.findFirst({
       where: { id: branchId, restaurantId: ctx.restaurantId, isActive: true },
@@ -82,14 +88,20 @@ export class IntegrationsService {
     return { locationId: branch.id, locationName: branch.name, categories };
   }
 
-  async createOrder(ctx: IntegrationKeyContext, branchId: string, dto: CreateIntegrationOrderDto) {
+  async createOrder(
+    ctx: IntegrationKeyContext,
+    branchId: string,
+    dto: CreateIntegrationOrderDto,
+  ) {
     await this.assertBranch(ctx, branchId);
 
     // find-or-attach a lightweight Customer record so repeat integration
     // orders from the same phone number accumulate under one profile —
     // same idea as the in-app POS's walk-in customer capture, just keyed
     // by phone since that's the only identity an external order carries.
-    const existing = await this.prisma.customer.findFirst({ where: { branchId, phone: dto.customerPhone } });
+    const existing = await this.prisma.customer.findFirst({
+      where: { branchId, phone: dto.customerPhone },
+    });
     const customer = existing
       ? await this.prisma.customer.update({
           where: { id: existing.id },
@@ -104,10 +116,15 @@ export class IntegrationsService {
     // (every branch has at least its owner), same fallback the QR
     // self-order flow already uses for the identical reason.
     const createdById = (
-      await this.prisma.userBranch.findFirst({ where: { branchId }, orderBy: { userId: 'asc' } })
+      await this.prisma.userBranch.findFirst({
+        where: { branchId },
+        orderBy: { userId: 'asc' },
+      })
     )?.userId;
     if (!createdById) {
-      throw new NotFoundException('This location has no staff to receive the order');
+      throw new NotFoundException(
+        'This location has no staff to receive the order',
+      );
     }
 
     return this.orders.createOrder(branchId, createdById, {
@@ -124,19 +141,33 @@ export class IntegrationsService {
     });
   }
 
-  async getOrder(ctx: IntegrationKeyContext, branchId: string, orderId: string) {
+  async getOrder(
+    ctx: IntegrationKeyContext,
+    branchId: string,
+    orderId: string,
+  ) {
     await this.assertBranch(ctx, branchId);
     return this.orders.getOrder(branchId, orderId);
   }
 
-  async createReservation(ctx: IntegrationKeyContext, branchId: string, dto: CreateIntegrationReservationDto) {
+  async createReservation(
+    ctx: IntegrationKeyContext,
+    branchId: string,
+    dto: CreateIntegrationReservationDto,
+  ) {
     await this.assertBranch(ctx, branchId);
     return this.reservations.create(branchId, dto, { fromWebsite: true });
   }
 
-  async getReservation(ctx: IntegrationKeyContext, branchId: string, reservationId: string) {
+  async getReservation(
+    ctx: IntegrationKeyContext,
+    branchId: string,
+    reservationId: string,
+  ) {
     await this.assertBranch(ctx, branchId);
-    const reservation = await this.prisma.reservation.findFirst({ where: { id: reservationId, branchId } });
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { id: reservationId, branchId },
+    });
     if (!reservation) throw new NotFoundException('Reservation not found');
     return reservation;
   }

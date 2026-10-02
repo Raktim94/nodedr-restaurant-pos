@@ -1,6 +1,14 @@
 import { randomBytes, createHash } from 'node:crypto';
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import type { CreateStaffApiKeyDto, SessionUser } from '@nodedr-restaurant/types';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import type {
+  CreateStaffApiKeyDto,
+  SessionUser,
+} from '@nodedr-restaurant/types';
 import { PrismaService } from '../prisma/prisma.service';
 
 const TOKEN_PREFIX = 'ordr_staff_';
@@ -17,7 +25,11 @@ export class StaffApiKeysService {
 
   private generateToken(): { raw: string; hash: string; lastFour: string } {
     const raw = `${TOKEN_PREFIX}${randomBytes(24).toString('base64url')}`;
-    return { raw, hash: createHash('sha256').update(raw).digest('hex'), lastFour: raw.slice(-4) };
+    return {
+      raw,
+      hash: createHash('sha256').update(raw).digest('hex'),
+      lastFour: raw.slice(-4),
+    };
   }
 
   async create(actor: SessionUser, dto: CreateStaffApiKeyDto) {
@@ -37,7 +49,13 @@ export class StaffApiKeysService {
 
     // The only point in this key's lifetime the raw token is ever
     // available — every other read returns the masked summary below.
-    return { id: key.id, name: key.name, token: raw, lastFour: key.lastFour, createdAt: key.createdAt };
+    return {
+      id: key.id,
+      name: key.name,
+      token: raw,
+      lastFour: key.lastFour,
+      createdAt: key.createdAt,
+    };
   }
 
   async list(actor: SessionUser) {
@@ -62,7 +80,10 @@ export class StaffApiKeysService {
       throw new ForbiddenException('You can only revoke your own API keys');
     }
     if (!key.revokedAt) {
-      await this.prisma.staffApiKey.update({ where: { id }, data: { revokedAt: new Date() } });
+      await this.prisma.staffApiKey.update({
+        where: { id },
+        data: { revokedAt: new Date() },
+      });
     }
     return { ok: true };
   }

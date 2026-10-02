@@ -152,7 +152,8 @@ export function buildReceiptEscPos({
   const date = new Date(order.createdAt);
   const taxLabel = resolveTaxLabel(branch.taxRegime, branch.taxLabel);
   const taxIdValue =
-    branch.taxId || (branch.taxRegime === 'INDIA_GST' ? branch.gstNumber : null);
+    branch.taxId ||
+    (branch.taxRegime === 'INDIA_GST' ? branch.gstNumber : null);
   const taxIdLabel = resolveTaxIdLabel(branch.taxRegime);
 
   const lines: { text: string; bold?: boolean }[] = [];

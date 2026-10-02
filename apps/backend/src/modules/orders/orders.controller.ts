@@ -220,12 +220,16 @@ export class OrdersController {
         table: order.table
           ? { label: order.table.name ?? `#${order.table.number}` }
           : null,
-        customer: order.customer ? { name: order.customer.name ?? 'Guest' } : null,
+        customer: order.customer
+          ? { name: order.customer.name ?? 'Guest' }
+          : null,
         items: order.items.map((item) => ({
           nameSnapshot: item.nameSnapshot,
           quantity: item.quantity,
           kitchenNote: item.kitchenNote,
-          modifiers: item.modifiers.map((m) => ({ nameSnapshot: m.nameSnapshot })),
+          modifiers: item.modifiers.map((m) => ({
+            nameSnapshot: m.nameSnapshot,
+          })),
         })),
       },
     });
