@@ -36,6 +36,10 @@ interface NotifyPayload {
   entityId?: string;
 }
 
+// How many alerts the live socket already rang for but the refresh has not
+// listed yet (module-level: only one bell is ever mounted).
+const socketAnnounce = { pending: 0 };
+
 function timeAgo(iso: string): string {
   const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
   if (seconds < 60) return "just now";
@@ -83,7 +87,7 @@ export function NotificationBell() {
     socket.on("notification.created", (payload: NotifyPayload) => {
       // The refresh below will list this one; remember its id (via the poll
       // effect) as already announced by skipping it there.
-      pendingSocketAnnounce.current.n += 1;
+      socketAnnounce.pending += 1;
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       if (!mutedRef.current) playNotificationFeedback();
       // The bell badge/dropdown is easy to miss while heads-down on another
@@ -114,7 +118,6 @@ export function NotificationBell() {
   // refresh turns up an unread notification we haven't announced yet, ring
   // and toast for it so a new order is never silent.
   const announced = useRef<Set<string> | null>(null);
-  const pendingSocketAnnounce = useRef({ n: 0 });
   useEffect(() => {
     if (!data) return;
     if (announced.current === null) {
@@ -124,8 +127,8 @@ export function NotificationBell() {
     const fresh = data.data.filter((n) => !n.readAt && !announced.current!.has(n.id));
     fresh.forEach((n) => announced.current!.add(n.id));
     // Ones the live socket already rang/toasted for are skipped here.
-    const skip = Math.min(pendingSocketAnnounce.current.n, fresh.length);
-    pendingSocketAnnounce.current.n -= skip;
+    const skip = Math.min(socketAnnounce.pending, fresh.length);
+    socketAnnounce.pending -= skip;
     const toAnnounce = fresh.slice(skip);
     if (toAnnounce.length === 0) return;
     if (!mutedRef.current) playNotificationFeedback();
