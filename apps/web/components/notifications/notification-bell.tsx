@@ -81,6 +81,9 @@ export function NotificationBell() {
     const socket = io(resolveWsUrl(), { query: { branchId }, withCredentials: true });
 
     socket.on("notification.created", (payload: NotifyPayload) => {
+      // The refresh below will list this one; remember its id (via the poll
+      // effect) as already announced by skipping it there.
+      pendingSocketAnnounce.current.n += 1;
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       if (!mutedRef.current) playNotificationFeedback();
       // The bell badge/dropdown is easy to miss while heads-down on another
@@ -106,6 +109,38 @@ export function NotificationBell() {
       socket.disconnect();
     };
   }, [branchId, queryClient]);
+
+  // Fallback for when the live socket is down or was asleep: if the periodic
+  // refresh turns up an unread notification we haven't announced yet, ring
+  // and toast for it so a new order is never silent.
+  const announced = useRef<Set<string> | null>(null);
+  const pendingSocketAnnounce = useRef({ n: 0 });
+  useEffect(() => {
+    if (!data) return;
+    if (announced.current === null) {
+      announced.current = new Set(data.data.map((n) => n.id));
+      return;
+    }
+    const fresh = data.data.filter((n) => !n.readAt && !announced.current!.has(n.id));
+    fresh.forEach((n) => announced.current!.add(n.id));
+    // Ones the live socket already rang/toasted for are skipped here.
+    const skip = Math.min(pendingSocketAnnounce.current.n, fresh.length);
+    pendingSocketAnnounce.current.n -= skip;
+    const toAnnounce = fresh.slice(skip);
+    if (toAnnounce.length === 0) return;
+    if (!mutedRef.current) playNotificationFeedback();
+    for (const n of toAnnounce.slice(0, 3)) {
+      const kind = n.entity === "Order" || n.entity === "Reservation" ? n.entity : null;
+      const entityId = n.entityId;
+      toast(n.title, {
+        description: n.body,
+        duration: n.type === "order.pending" ? 30_000 : 8000,
+        ...(kind && entityId
+          ? { action: { label: "View", onClick: () => openEntity(kind, entityId) } }
+          : {}),
+      });
+    }
+  }, [data]);
 
   const unreadCount = data?.unreadCount ?? 0;
   const notifications = data?.data ?? [];

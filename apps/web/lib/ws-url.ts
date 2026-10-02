@@ -11,6 +11,10 @@
 export function resolveWsUrl(): string {
   if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
   if (typeof window !== "undefined") {
+    // Behind HTTPS (a real deployment through a tunnel/proxy) the backend's
+    // own port isn't reachable from the browser — use this same origin,
+    // where next.config.ts proxies /socket.io to the backend.
+    if (window.location.protocol === "https:") return window.location.origin;
     return `${window.location.protocol}//${window.location.hostname}:4001`;
   }
   return "http://localhost:4001";

@@ -25,7 +25,7 @@ export class DashboardService {
         where: { branchId, createdAt: { gte: startOfDay } },
       }),
       this.prisma.order.groupBy({
-        by: ['type'],
+        by: ['channel'],
         where: { branchId, createdAt: { gte: startOfDay } },
         _count: true,
       }),
@@ -62,13 +62,11 @@ export class DashboardService {
     const kitchenQueueMap = Object.fromEntries(
       kitchenQueue.map((row) => [row.status, row._count]),
     );
-    // Guests place QR/kiosk orders themselves without a staff member
-    // keying anything in — everything else (dine-in, takeaway, drive-thru,
-    // phone) was rung up by staff at the counter or table.
-    const ONLINE_ORDER_TYPES = new Set(['QR_ORDER', 'KIOSK']);
+    // Online = placed by a guest through the website or QR (Order.channel),
+    // everything else was rung up by staff.
     const channels = orderTypeCounts.reduce(
       (acc, row) => {
-        if (ONLINE_ORDER_TYPES.has(row.type)) {
+        if (row.channel === 'ONLINE') {
           acc.online += row._count;
         } else {
           acc.offline += row._count;

@@ -11,7 +11,13 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:4001";
 const nextConfig: NextConfig = {
   output: "standalone",
   async rewrites() {
-    return [{ source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` }];
+    return [
+      { source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` },
+      // Realtime push (socket.io) goes through the same origin too: in
+      // production only this web server is reachable, never the backend's
+      // own port. socket.io starts with long-polling, which proxies fine.
+      { source: "/socket.io/:path*", destination: `${BACKEND_URL}/socket.io/:path*` },
+    ];
   },
 };
 
