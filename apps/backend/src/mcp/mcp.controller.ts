@@ -1,4 +1,12 @@
-import { Controller, Delete, Get, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { StaffApiKeyGuard } from '../common/guards/staff-api-key.guard';
@@ -26,7 +34,9 @@ export class McpController {
     const user = (req as AuthenticatedRequest).user;
     const server = this.toolsBuilder.build(user);
     try {
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);
       res.on('close', () => {
@@ -35,22 +45,36 @@ export class McpController {
       });
     } catch {
       if (!res.headersSent) {
-        res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal server error' }, id: null });
+        res.status(500).json({
+          jsonrpc: '2.0',
+          error: { code: -32603, message: 'Internal server error' },
+          id: null,
+        });
       }
     }
   }
 
   @Get()
   handleGet(@Res() res: Response) {
-    res
-      .status(405)
-      .json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed (stateless server).' }, id: null });
+    res.status(405).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32000,
+        message: 'Method not allowed (stateless server).',
+      },
+      id: null,
+    });
   }
 
   @Delete()
   handleDelete(@Res() res: Response) {
-    res
-      .status(405)
-      .json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed (stateless server).' }, id: null });
+    res.status(405).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32000,
+        message: 'Method not allowed (stateless server).',
+      },
+      id: null,
+    });
   }
 }
