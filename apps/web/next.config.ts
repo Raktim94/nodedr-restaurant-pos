@@ -10,6 +10,9 @@ const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:4001";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // socket.io's endpoint is literally "/socket.io/" — the backend 404s on the
+  // slash-less form, so Next must not redirect it.
+  skipTrailingSlashRedirect: true,
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` },
