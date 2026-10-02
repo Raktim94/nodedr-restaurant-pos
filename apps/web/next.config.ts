@@ -19,7 +19,9 @@ const nextConfig: NextConfig = {
       // Realtime push (socket.io) goes through the same origin too: in
       // production only this web server is reachable, never the backend's
       // own port. socket.io starts with long-polling, which proxies fine.
-      { source: "/socket.io/:path*", destination: `${BACKEND_URL}/socket.io/:path*` },
+      // Literal first: an empty :path* would drop the trailing slash.
+      { source: "/socket.io/", destination: `${BACKEND_URL}/socket.io/` },
+      { source: "/socket.io/:path+", destination: `${BACKEND_URL}/socket.io/:path+` },
     ];
   },
 };
