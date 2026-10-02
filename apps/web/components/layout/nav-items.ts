@@ -2,6 +2,7 @@ import {
   CalendarClock,
   ChefHat,
   LayoutDashboard,
+  ClipboardList,
   LayoutGrid,
   Package,
   Settings,
@@ -21,6 +22,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.dashboard", href: "/dashboard", icon: LayoutDashboard },
   { labelKey: "nav.pos", href: "/pos", icon: ShoppingCart, permission: "orders.create" },
+  { labelKey: "nav.orders", href: "/orders", icon: ClipboardList, permission: "orders.create" },
   { labelKey: "nav.tables", href: "/tables", icon: LayoutGrid, permission: "tables.manage" },
   {
     labelKey: "nav.reservations",

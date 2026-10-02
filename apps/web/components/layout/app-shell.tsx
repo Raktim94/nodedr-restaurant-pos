@@ -4,6 +4,7 @@ import type { SessionUser } from "@nodedr-restaurant/types";
 import { Menu } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { EntityDialogHost } from "@/components/layout/entity-dialog-host";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useBranch } from "@/hooks/use-branch";
 import { useSettings } from "@/hooks/use-settings";
@@ -111,6 +112,7 @@ export function AppShell({
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
+        <EntityDialogHost />
       </div>
     </div>
   );

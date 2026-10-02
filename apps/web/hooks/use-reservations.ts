@@ -20,6 +20,7 @@ export interface Reservation {
   specialRequests: string | null;
   deposit: string | null;
   status: ReservationStatusDto;
+  channel: "STAFF" | "ONLINE";
 }
 
 export function useReservations(branchId: string | null, date?: string) {

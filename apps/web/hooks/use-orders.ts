@@ -57,11 +57,18 @@ export interface OpenOrder {
   customer: Customer | null;
 }
 
+export type OrderChannel = "STAFF" | "ONLINE";
+export type AcceptanceStatus = "NOT_REQUIRED" | "PENDING" | "ACCEPTED" | "REJECTED";
+
 export interface OrderDetail {
   id: string;
   orderNumber: string;
   type: string;
   status: string;
+  channel: OrderChannel;
+  acceptance: AcceptanceStatus;
+  guestName: string | null;
+  notes: string | null;
   subtotal: string;
   taxAmount: string;
   discountAmount: string;
@@ -87,6 +94,65 @@ export function useOrder(branchId: string | null, orderId: string | null) {
     queryKey: ["orders", "detail", branchId, orderId],
     queryFn: () => api.get<OrderDetail>(`/orders/${orderId}?branchId=${branchId}`),
     enabled: !!branchId && !!orderId,
+  });
+}
+
+export interface ManagedOrder {
+  id: string;
+  orderNumber: string;
+  type: string;
+  status: string;
+  channel: OrderChannel;
+  acceptance: AcceptanceStatus;
+  guestName: string | null;
+  totalAmount: string;
+  createdAt: string;
+  table: { id: string; name: string | null; number: number } | null;
+  customer: Customer | null;
+  items: { id: string; nameSnapshot: string; quantity: number }[];
+}
+
+export type OrderTab = "pending" | "active" | "history";
+
+export function useManagedOrders(
+  branchId: string | null,
+  tab: OrderTab,
+  channel?: OrderChannel,
+  type?: string,
+) {
+  return useQuery({
+    queryKey: ["orders", "manage", branchId, tab, channel ?? "", type ?? ""],
+    queryFn: () => {
+      const q = new URLSearchParams({ branchId: branchId ?? "", tab });
+      if (channel) q.set("channel", channel);
+      if (type) q.set("type", type);
+      return api.get<ManagedOrder[]>(`/orders/manage?${q.toString()}`);
+    },
+    enabled: !!branchId,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useAcceptOrder(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => api.post(`/orders/${orderId}/accept?branchId=${branchId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export function useRejectOrder(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => api.post(`/orders/${orderId}/reject?branchId=${branchId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
   });
 }
 
@@ -137,7 +203,7 @@ export function useCancelOrder(branchId: string | null) {
     mutationFn: (orderId: string) =>
       api.post<CreatedOrder>(`/orders/${orderId}/cancel?branchId=${branchId}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders", "open", branchId] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
       queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] });
     },

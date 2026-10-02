@@ -91,6 +91,6 @@ export class PublicMenuService {
       tableId: table.id,
       guestName,
       items,
-    });
+    }, { channel: 'ONLINE' });
   }
 }

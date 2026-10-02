@@ -64,10 +64,68 @@ export default function SettingsPage() {
         />
       )}
 
+      {data && <OnlineOrdersCard key={data.branch.id} branchId={branchId} branch={data.branch} />}
+
       <NotificationSettingsCard />
 
       <PrinterDiagnosticsCard />
     </div>
+  );
+}
+
+function OnlineOrdersCard({
+  branchId,
+  branch,
+}: {
+  branchId: string | null;
+  branch: { autoConfirmOrders: boolean; autoConfirmReservations: boolean };
+}) {
+  const update = useUpdateBranchSettings(branchId);
+  const save = (dto: { autoConfirmOrders?: boolean; autoConfirmReservations?: boolean }) =>
+    update.mutate(dto, {
+      onSuccess: () => toast.success("Saved"),
+      onError: (err) => toast.error(err instanceof Error ? err.message : "Could not save"),
+    });
+
+  return (
+    <Card className="flex flex-col gap-4 p-6">
+      <div>
+        <h2 className="text-[18px] font-medium text-foreground">Online orders &amp; table bookings</h2>
+        <p className="text-sm text-muted-foreground">
+          Choose whether orders and bookings from your website are accepted automatically or wait for
+          you to accept them. You can always cancel an order or booking from its window.
+        </p>
+      </div>
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+        <div className="flex flex-col gap-0.5">
+          <Label htmlFor="auto-confirm-orders">Auto-confirm online orders</Label>
+          <p className="text-xs text-muted-foreground">
+            Off = each new order rings, then waits for you to Accept or Reject before it reaches the
+            kitchen. On = sent to the kitchen straight away.
+          </p>
+        </div>
+        <Switch
+          id="auto-confirm-orders"
+          checked={branch.autoConfirmOrders}
+          disabled={update.isPending}
+          onCheckedChange={(v) => save({ autoConfirmOrders: v })}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+        <div className="flex flex-col gap-0.5">
+          <Label htmlFor="auto-confirm-bookings">Auto-confirm table bookings</Label>
+          <p className="text-xs text-muted-foreground">
+            Off = new bookings wait for you to Accept. On = confirmed automatically.
+          </p>
+        </div>
+        <Switch
+          id="auto-confirm-bookings"
+          checked={branch.autoConfirmReservations}
+          disabled={update.isPending}
+          onCheckedChange={(v) => save({ autoConfirmReservations: v })}
+        />
+      </div>
+    </Card>
   );
 }
 

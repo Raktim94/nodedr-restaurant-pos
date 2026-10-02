@@ -31,6 +31,8 @@ export interface BranchSettings {
   taxMode: TaxMode;
   taxLabel: string | null;
   taxId: string | null;
+  autoConfirmOrders: boolean;
+  autoConfirmReservations: boolean;
 }
 
 export function useSettings(branchId: string | null) {
