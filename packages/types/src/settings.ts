@@ -34,5 +34,8 @@ export const branchSettingsSchema = z.object({
   taxMode: z.enum(TAX_MODES).optional(),
   taxLabel: z.string().max(30).optional().nullable(),
   taxId: z.string().max(50).optional().nullable(),
+  // Online order / table-booking handling (false = staff accept manually).
+  autoConfirmOrders: z.boolean().optional(),
+  autoConfirmReservations: z.boolean().optional(),
 });
 export type BranchSettingsDto = z.infer<typeof branchSettingsSchema>;

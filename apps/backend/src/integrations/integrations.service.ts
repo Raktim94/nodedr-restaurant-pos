@@ -121,7 +121,7 @@ export class IntegrationsService {
         modifierIds: item.modifierIds,
         kitchenNote: item.kitchenNote,
       })),
-    });
+    }, { channel: 'ONLINE', requireAcceptance: true });
   }
 
   async getOrder(ctx: IntegrationKeyContext, branchId: string, orderId: string) {

@@ -98,6 +98,19 @@ export class OrdersController {
   }
 
   @Auth('orders.create')
+  @Get('manage')
+  async listForManagement(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query('tab') tab?: 'pending' | 'active' | 'history',
+    @Query('channel') channel?: 'STAFF' | 'ONLINE',
+    @Query('type') type?: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.ordersService.listForManagement(branchId, { tab, channel, type });
+  }
+
+  @Auth('orders.create')
   @Get(':id')
   async getOrder(
     @CurrentUser() user: SessionUser,
@@ -132,6 +145,28 @@ export class OrdersController {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     const { items } = body as { items: never };
     return this.ordersService.addItems(branchId, id, items);
+  }
+
+  @Auth('orders.edit')
+  @Post(':id/accept')
+  async accept(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.ordersService.acceptOrder(branchId, id, user.id);
+  }
+
+  @Auth('orders.cancel')
+  @Post(':id/reject')
+  async reject(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.ordersService.rejectOrder(branchId, id, user.id);
   }
 
   @Auth('orders.cancel')

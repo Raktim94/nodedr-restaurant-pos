@@ -68,9 +68,25 @@ export class ReservationsService {
       await this.assertWithinOnlineBookingCapacity(branchId, dto.guestCount);
     }
 
+    // Website bookings are "online"; with auto-confirm on they skip the
+    // manual Accept step and go straight to CONFIRMED.
+    const autoConfirm = options.fromWebsite
+      ? (
+          await this.prisma.branch.findUnique({
+            where: { id: branchId },
+            select: { autoConfirmReservations: true },
+          })
+        )?.autoConfirmReservations
+      : false;
+
     const created = await this.prisma.$transaction(async (tx) => {
       const reservation = await tx.reservation.create({
-        data: { ...dto, branchId },
+        data: {
+          ...dto,
+          branchId,
+          ...(options.fromWebsite ? { channel: 'ONLINE' as const } : {}),
+          ...(autoConfirm ? { status: 'CONFIRMED' as const } : {}),
+        },
       });
       // Holding a table for a reservation marks it RESERVED on the floor
       // view immediately, not just when the guest physically arrives.

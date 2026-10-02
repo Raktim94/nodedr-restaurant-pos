@@ -4,7 +4,8 @@ import type { ReservationStatusDto } from "@nodedr-restaurant/types";
 import { Check, X, Users } from "lucide-react";
 import { useState } from "react";
 import { AddReservationDialog } from "@/components/reservations/add-reservation-dialog";
-import { ContactDetailsDialog } from "@/components/contact-details-dialog";
+import { ChannelBadge } from "@/components/orders/channel-badges";
+import { ReservationManageDialog } from "@/components/reservations/reservation-manage-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -44,6 +45,8 @@ export default function ReservationsPage() {
   const tables = floors?.flatMap((f) => f.tables) ?? [];
   const updateStatus = useUpdateReservationStatus(branchId);
   const [selected, setSelected] = useState<Reservation | null>(null);
+  const [channel, setChannel] = useState<"all" | "ONLINE" | "STAFF">("all");
+  const visible = reservations?.filter((r) => channel === "all" || r.channel === channel);
 
   return (
     <div className="flex flex-col gap-6">
@@ -57,26 +60,36 @@ export default function ReservationsPage() {
         <AddReservationDialog branchId={branchId} tables={tables} />
       </div>
 
-      {selected && (
-        <ContactDetailsDialog
-          open={!!selected}
-          onOpenChange={(open) => !open && setSelected(null)}
-          title={`Reservation for ${selected.guestCount} guests`}
-          name={selected.customerName}
-          subtitle={
-            selected.table
-              ? `Table ${selected.table.name ?? selected.table.number}`
-              : new Date(selected.reservedAt).toLocaleString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                })
-          }
-          phone={selected.phone}
-          waMessage={`Hi ${selected.customerName}, this is regarding your reservation for ${selected.guestCount} guests at ${new Date(selected.reservedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}.`}
-        />
-      )}
+      <ReservationManageDialog
+        branchId={branchId}
+        reservation={selected}
+        open={!!selected}
+        onOpenChange={(open) => !open && setSelected(null)}
+      />
+
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            ["all", "All"],
+            ["ONLINE", "Online"],
+            ["STAFF", "Offline / walk-in"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setChannel(key)}
+            className={cn(
+              "rounded-full border px-3.5 py-1 text-xs transition-colors",
+              channel === key
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border text-muted-foreground hover:bg-secondary",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       <Card className="flex flex-col divide-y divide-border p-2">
         {isLoading ? (
@@ -85,16 +98,19 @@ export default function ReservationsPage() {
               <Skeleton key={i} className="h-14 rounded-lg" />
             ))}
           </div>
-        ) : reservations && reservations.length > 0 ? (
-          reservations.map((r) => (
+        ) : visible && visible.length > 0 ? (
+          visible.map((r) => (
             <div key={r.id} className="flex items-center justify-between gap-4 px-4 py-3">
               <button
                 type="button"
                 onClick={() => setSelected(r)}
                 className="flex flex-col text-left transition hover:opacity-80"
-                title="View customer details"
+                title="Manage booking"
               >
-                <span className="text-sm font-medium text-foreground">{r.customerName}</span>
+                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  {r.customerName}
+                  <ChannelBadge channel={r.channel} />
+                </span>
                 <span className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Users className="h-3 w-3" />
                   {r.guestCount} guests

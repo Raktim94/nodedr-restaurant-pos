@@ -21,6 +21,7 @@ import {
   useNotifications,
   type NotificationEntry,
 } from "@/hooks/use-notifications";
+import { openEntity } from "@/lib/entity-events";
 import { playNotificationFeedback } from "@/lib/notification-feedback";
 import { resolveWsUrl } from "@/lib/ws-url";
 
@@ -86,9 +87,18 @@ export function NotificationBell() {
       // page — a toast surfaces new orders/reservations immediately
       // wherever staff happen to be in the dashboard. Long-ish duration
       // (order/reservation names are worth reading, not a flash).
+      const kind =
+        payload.entity === "Order" || payload.entity === "Reservation"
+          ? payload.entity
+          : null;
+      const entityId = payload.entityId;
+      // Actionable alerts (pending orders) stay up until handled.
       toast(payload.title, {
         description: payload.body,
-        duration: 6000,
+        duration: payload.type === "order.pending" ? 30_000 : 8000,
+        ...(kind && entityId
+          ? { action: { label: "View", onClick: () => openEntity(kind, entityId) } }
+          : {}),
       });
     });
 
@@ -102,6 +112,12 @@ export function NotificationBell() {
 
   const handleSelect = (notification: NotificationEntry) => {
     if (!notification.readAt) markRead.mutate(notification.id);
+    if (
+      (notification.entity === "Order" || notification.entity === "Reservation") &&
+      notification.entityId
+    ) {
+      openEntity(notification.entity, notification.entityId);
+    }
   };
 
   return (

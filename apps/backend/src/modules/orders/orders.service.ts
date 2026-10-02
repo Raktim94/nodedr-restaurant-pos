@@ -89,7 +89,23 @@ export class OrdersService {
     return branch?.taxMode ?? 'INCLUSIVE';
   }
 
-  async createOrder(branchId: string, userId: string, dto: CreateOrderDto) {
+  async createOrder(
+    branchId: string,
+    userId: string,
+    dto: CreateOrderDto,
+    options: { channel?: 'STAFF' | 'ONLINE'; requireAcceptance?: boolean } = {},
+  ) {
+    const channel = options.channel ?? 'STAFF';
+    // Online orders wait for a staff member to accept them unless this
+    // branch is set to auto-confirm (Settings > Online orders).
+    let acceptance: 'NOT_REQUIRED' | 'PENDING' | 'ACCEPTED' = 'NOT_REQUIRED';
+    if (options.requireAcceptance) {
+      const branch = await this.prisma.branch.findUnique({
+        where: { id: branchId },
+        select: { autoConfirmOrders: true },
+      });
+      acceptance = branch?.autoConfirmOrders ? 'ACCEPTED' : 'PENDING';
+    }
     const menuItemIds = [...new Set(dto.items.map((i) => i.menuItemId))];
     const menuItems = await this.prisma.menuItem.findMany({
       where: { id: { in: menuItemIds }, branchId },
@@ -149,6 +165,8 @@ export class OrdersService {
           branchId,
           orderNumber,
           type: dto.type,
+          channel,
+          acceptance,
           tableId: dto.tableId,
           guestCount: dto.guestCount,
           customerId: dto.customerId,
@@ -188,7 +206,11 @@ export class OrdersService {
         });
       }
 
-      await this.generateKots(tx, created.id, branchId, created.items);
+      // A pending online order must not reach the kitchen until accepted
+      // (acceptOrder() generates the tickets then).
+      if (acceptance !== 'PENDING') {
+        await this.generateKots(tx, created.id, branchId, created.items);
+      }
 
       return created;
     });
@@ -204,18 +226,30 @@ export class OrdersService {
     // orders. Best-effort: a notification failure must never fail order
     // creation, which has already committed by this point — log and move on.
     try {
-      await this.notifications.notifyByPermission(branchId, 'kds.manage', {
-        type: 'order.new',
-        title: 'New order',
-        body: full.table
-          ? `Order ${full.orderNumber} — Table ${full.table.number}`
-          : `Order ${full.orderNumber} (${full.type})`,
-        entity: 'Order',
-        entityId: full.id,
-      });
+      const who = full.guestName ?? full.customer?.name ?? undefined;
+      if (acceptance === 'PENDING') {
+        // Needs a decision: goes to anyone who can accept/cancel orders.
+        await this.notifications.notifyByPermission(branchId, 'orders.cancel', {
+          type: 'order.pending',
+          title: 'New online order — accept?',
+          body: `Order ${full.orderNumber} (${full.type.replace('_', ' ')})${who ? ` — ${who}` : ''} · ₹${full.totalAmount}`,
+          entity: 'Order',
+          entityId: full.id,
+        });
+      } else {
+        await this.notifications.notifyByPermission(branchId, 'kds.manage', {
+          type: 'order.new',
+          title: channel === 'ONLINE' ? 'New online order' : 'New order',
+          body: full.table
+            ? `Order ${full.orderNumber} — Table ${full.table.number}`
+            : `Order ${full.orderNumber} (${full.type})`,
+          entity: 'Order',
+          entityId: full.id,
+        });
+      }
     } catch (err) {
       this.logger.warn(
-        `Failed to send order.new notification for order ${full.id}: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to send new-order notification for order ${full.id}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
 
@@ -314,6 +348,102 @@ export class OrdersService {
   // floor — food already in progress must be voided/wasted through
   // inventory instead, not silently disappeared. Cancelling is only safe
   // while every KOT is still NEW/ACCEPTED (queued, not yet fired).
+  // Dashboard Orders page. `tab` picks the lifecycle bucket; `channel`/`type`
+  // are the Online/Offline and Takeaway/Delivery/Dine-in classifiers.
+  async listForManagement(
+    branchId: string,
+    filters: {
+      tab?: 'pending' | 'active' | 'history';
+      channel?: 'STAFF' | 'ONLINE';
+      type?: string;
+    },
+  ) {
+    const tab = filters.tab ?? 'active';
+    const statusWhere: Prisma.OrderWhereInput =
+      tab === 'pending'
+        ? { status: 'OPEN', acceptance: 'PENDING' }
+        : tab === 'active'
+          ? { status: { in: ['OPEN', 'BILLED'] }, acceptance: { not: 'PENDING' } }
+          : {
+              OR: [
+                { status: { in: ['PAID', 'CANCELLED'] } },
+                { acceptance: 'REJECTED' },
+              ],
+              createdAt: { gte: new Date(Date.now() - 7 * 86_400_000) },
+            };
+    return this.prisma.order.findMany({
+      where: {
+        branchId,
+        ...statusWhere,
+        ...(filters.channel ? { channel: filters.channel } : {}),
+        ...(filters.type ? { type: filters.type as never } : {}),
+      },
+      include: { table: true, customer: true, items: true },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  }
+
+  async acceptOrder(branchId: string, orderId: string, userId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, branchId },
+      include: { items: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'OPEN' || order.acceptance !== 'PENDING') {
+      throw new BadRequestException('This order is not waiting for acceptance');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: orderId },
+        data: { acceptance: 'ACCEPTED' },
+      });
+      await this.generateKots(tx, orderId, branchId, order.items);
+    });
+    this.realtime.emitToBranch(branchId, 'order.updated', {
+      id: orderId,
+      acceptance: 'ACCEPTED',
+    });
+    this.realtime.emitToBranch(branchId, 'kot.updated', { orderId });
+    await this.audit.record({
+      userId,
+      action: 'order.accepted',
+      entity: 'Order',
+      entityId: orderId,
+      metadata: { orderNumber: order.orderNumber, type: order.type },
+    });
+    try {
+      await this.notifications.notifyByPermission(branchId, 'kds.manage', {
+        type: 'order.new',
+        title: 'New online order',
+        body: `Order ${order.orderNumber} (${order.type.replace('_', ' ')})`,
+        entity: 'Order',
+        entityId: orderId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to notify kitchen of accepted order ${orderId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    return this.getOrder(branchId, orderId);
+  }
+
+  async rejectOrder(branchId: string, orderId: string, userId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, branchId },
+      select: { status: true, acceptance: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'OPEN' || order.acceptance !== 'PENDING') {
+      throw new BadRequestException('This order is not waiting for acceptance');
+    }
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { acceptance: 'REJECTED' },
+    });
+    return this.cancelOrder(branchId, orderId, userId);
+  }
+
   async cancelOrder(branchId: string, orderId: string, userId: string) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
