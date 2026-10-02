@@ -35,7 +35,7 @@ export function useNotifications() {
   return useQuery({
     queryKey: QUERY_KEY,
     queryFn: () => api.get<NotificationPage>("/notifications?pageSize=20"),
-    refetchInterval: 60_000,
+    refetchInterval: 10_000,
   });
 }
 

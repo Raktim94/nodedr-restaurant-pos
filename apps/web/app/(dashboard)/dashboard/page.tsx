@@ -1,6 +1,7 @@
 "use client";
 
 import { ChefHat, ClipboardList, Flame, Globe, ReceiptText, Store, Timer, TrendingUp, Trash2, Wallet } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { TrendChart } from "@/components/dashboard/trend-chart";
@@ -10,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
+import { useManagedOrders } from "@/hooks/use-orders";
+import { openEntity } from "@/lib/entity-events";
 import { useDashboardSummary, useDashboardTrends } from "@/hooks/use-dashboard";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -81,6 +84,8 @@ export default function DashboardPage() {
         onOpenChange={(open) => !open && setViewingOrderId(null)}
       />
 
+      <PendingOrdersBanner branchId={branchId} />
+
       <QuickActions />
 
       {isLoading || !data ? (
@@ -97,7 +102,9 @@ export default function DashboardPage() {
             icon={Wallet}
             accent="success"
           />
-          <StatCard label="Today's Orders" value={String(data.todayOrders)} icon={ReceiptText} />
+          <Link href="/orders" className="block rounded-xl transition hover:opacity-90" title="Manage orders">
+            <StatCard label="Today's Orders" value={String(data.todayOrders)} icon={ReceiptText} />
+          </Link>
           <StatCard
             label="Occupied Tables"
             value={String(data.tables.occupied)}
@@ -256,5 +263,33 @@ export default function DashboardPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+// Online orders waiting for a decision — shown on top so they can't be missed.
+function PendingOrdersBanner({ branchId }: { branchId: string | null }) {
+  const { data } = useManagedOrders(branchId, "pending");
+  if (!data || data.length === 0) return null;
+  return (
+    <Card className="flex flex-col gap-3 border-primary/40 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="text-sm font-semibold text-foreground">
+          {data.length} online order{data.length === 1 ? "" : "s"} waiting for you
+        </p>
+        <p className="text-xs text-muted-foreground">Accept or reject so the kitchen can start.</p>
+      </div>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => openEntity("Order", data[0].id)}
+          className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+        >
+          Review #{data[0].orderNumber}
+        </button>
+        <Link href="/orders" className="rounded-lg border border-border px-3 py-1.5 text-sm">
+          All orders
+        </Link>
+      </div>
+    </Card>
   );
 }
