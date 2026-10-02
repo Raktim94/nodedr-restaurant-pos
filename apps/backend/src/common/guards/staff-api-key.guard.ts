@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { SessionUser } from '@nodedr-restaurant/types';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -22,9 +27,13 @@ export class StaffApiKeyGuard implements CanActivate {
     const request: AuthenticatedRequest = context.switchToHttp().getRequest();
 
     const header = request.headers.authorization;
-    const rawToken = header?.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : null;
+    const rawToken = header?.startsWith('Bearer ')
+      ? header.slice('Bearer '.length).trim()
+      : null;
     if (!rawToken) {
-      throw new UnauthorizedException('Missing Authorization: Bearer <api key> header');
+      throw new UnauthorizedException(
+        'Missing Authorization: Bearer <api key> header',
+      );
     }
 
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
@@ -32,7 +41,11 @@ export class StaffApiKeyGuard implements CanActivate {
       where: { tokenHash },
       include: {
         user: {
-          include: { role: { include: { permissions: { include: { permission: true } } } } },
+          include: {
+            role: {
+              include: { permissions: { include: { permission: true } } },
+            },
+          },
         },
       },
     });

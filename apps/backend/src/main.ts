@@ -34,10 +34,14 @@ const MIN_JWT_SECRET_LENGTH = 32;
 // UPLOADS_DIR (that directory is served as static files at /api/uploads/,
 // see below; a secret has no business living anywhere web-servable even
 // if today's static middleware happens to ignore dotfiles).
-const JWT_SECRET_STATE_FILE = process.env.JWT_SECRET_STATE_FILE ?? '/data/state/jwt-secret';
+const JWT_SECRET_STATE_FILE =
+  process.env.JWT_SECRET_STATE_FILE ?? '/data/state/jwt-secret';
 
 function isUsableSecret(secret: string): boolean {
-  return secret.length >= MIN_JWT_SECRET_LENGTH && !KNOWN_PLACEHOLDER_JWT_SECRETS.has(secret.toLowerCase());
+  return (
+    secret.length >= MIN_JWT_SECRET_LENGTH &&
+    !KNOWN_PLACEHOLDER_JWT_SECRETS.has(secret.toLowerCase())
+  );
 }
 
 // Resolves the JWT signing secret and returns it — also sets

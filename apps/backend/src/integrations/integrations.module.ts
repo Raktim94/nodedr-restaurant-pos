@@ -12,7 +12,11 @@ import { StaffApiKeysService } from './staff-api-keys.service';
 
 @Module({
   imports: [OrdersModule, ReservationsModule],
-  controllers: [IntegrationsController, IntegrationApiKeysController, StaffApiKeysController],
+  controllers: [
+    IntegrationsController,
+    IntegrationApiKeysController,
+    StaffApiKeysController,
+  ],
   providers: [
     IntegrationsService,
     IntegrationApiKeysService,

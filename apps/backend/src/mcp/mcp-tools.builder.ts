@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { ReservationStatusDto, SessionUser } from '@nodedr-restaurant/types';
+import type {
+  ReservationStatusDto,
+  SessionUser,
+} from '@nodedr-restaurant/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { BranchAccessService } from '../common/services/branch-access.service';
 import { OrdersService } from '../modules/orders/orders.service';
@@ -11,12 +17,39 @@ import { DashboardService } from '../modules/dashboard/dashboard.service';
 import { MenuService } from '../modules/menu/menu.service';
 import { TablesService } from '../modules/tables/tables.service';
 
-const SPICE_LEVEL_VALUES = ['NONE', 'MILD', 'MEDIUM', 'HOT', 'EXTRA_HOT'] as const;
+const SPICE_LEVEL_VALUES = [
+  'NONE',
+  'MILD',
+  'MEDIUM',
+  'HOT',
+  'EXTRA_HOT',
+] as const;
 const TABLE_SHAPE_VALUES = ['square', 'round', 'rect'] as const;
-const TABLE_STATUS_VALUES = ['AVAILABLE', 'OCCUPIED', 'RESERVED', 'CLEANING', 'OUT_OF_SERVICE'] as const;
-const PAYMENT_METHOD_VALUES = ['CASH', 'CARD', 'UPI', 'WALLET', 'BANK_TRANSFER', 'GIFT_CARD', 'STORE_CREDIT'] as const;
+const TABLE_STATUS_VALUES = [
+  'AVAILABLE',
+  'OCCUPIED',
+  'RESERVED',
+  'CLEANING',
+  'OUT_OF_SERVICE',
+] as const;
+const PAYMENT_METHOD_VALUES = [
+  'CASH',
+  'CARD',
+  'UPI',
+  'WALLET',
+  'BANK_TRANSFER',
+  'GIFT_CARD',
+  'STORE_CREDIT',
+] as const;
 
-const RESERVATION_STATUS_VALUES = ['RESERVED', 'CONFIRMED', 'ARRIVED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'] as const;
+const RESERVATION_STATUS_VALUES = [
+  'RESERVED',
+  'CONFIRMED',
+  'ARRIVED',
+  'COMPLETED',
+  'CANCELLED',
+  'NO_SHOW',
+] as const;
 
 function isReservationStatus(value: string): value is ReservationStatusDto {
   return (RESERVATION_STATUS_VALUES as readonly string[]).includes(value);
@@ -28,7 +61,8 @@ class Args {
 
   string(key: string): string {
     const value = this.raw[key];
-    if (typeof value !== 'string' || value.length === 0) throw new Error(`"${key}" is required and must be a string`);
+    if (typeof value !== 'string' || value.length === 0)
+      throw new Error(`"${key}" is required and must be a string`);
     return value;
   }
 
@@ -41,49 +75,69 @@ class Args {
 
   number(key: string): number {
     const value = this.raw[key];
-    if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`"${key}" is required and must be a number`);
+    if (typeof value !== 'number' || !Number.isFinite(value))
+      throw new Error(`"${key}" is required and must be a number`);
     return value;
   }
 
   optionalNumber(key: string): number | undefined {
     const value = this.raw[key];
     if (value === undefined) return undefined;
-    if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`"${key}" must be a number`);
+    if (typeof value !== 'number' || !Number.isFinite(value))
+      throw new Error(`"${key}" must be a number`);
     return value;
   }
 
   optionalBoolean(key: string): boolean | undefined {
     const value = this.raw[key];
     if (value === undefined) return undefined;
-    if (typeof value !== 'boolean') throw new Error(`"${key}" must be a boolean`);
+    if (typeof value !== 'boolean')
+      throw new Error(`"${key}" must be a boolean`);
     return value;
   }
 
   stringArray(key: string): string[] {
     const value = this.raw[key];
-    if (!Array.isArray(value) || value.length === 0) throw new Error(`"${key}" is required and must be a non-empty array of strings`);
+    if (!Array.isArray(value) || value.length === 0)
+      throw new Error(
+        `"${key}" is required and must be a non-empty array of strings`,
+      );
     return value.map((v, i) => {
-      if (typeof v !== 'string' || !v.trim()) throw new Error(`${key}[${i}] must be a non-empty string`);
+      if (typeof v !== 'string' || !v.trim())
+        throw new Error(`${key}[${i}] must be a non-empty string`);
       return v;
     });
   }
 
-  items(key: string): Array<{ menuItemId: string; quantity: number; modifierIds: string[]; kitchenNote?: string }> {
+  items(key: string): Array<{
+    menuItemId: string;
+    quantity: number;
+    modifierIds: string[];
+    kitchenNote?: string;
+  }> {
     const value = this.raw[key];
-    if (!Array.isArray(value) || value.length === 0) throw new Error(`"${key}" is required and must be a non-empty array`);
+    if (!Array.isArray(value) || value.length === 0)
+      throw new Error(`"${key}" is required and must be a non-empty array`);
     return value.map((raw, i) => {
       const item = raw as Record<string, unknown>;
       if (typeof item.menuItemId !== 'string' || !item.menuItemId) {
-        throw new Error(`${key}[${i}].menuItemId is required and must be a string`);
+        throw new Error(
+          `${key}[${i}].menuItemId is required and must be a string`,
+        );
       }
       if (typeof item.quantity !== 'number' || item.quantity <= 0) {
-        throw new Error(`${key}[${i}].quantity is required and must be a positive number`);
+        throw new Error(
+          `${key}[${i}].quantity is required and must be a positive number`,
+        );
       }
       return {
         menuItemId: item.menuItemId,
         quantity: item.quantity,
-        modifierIds: Array.isArray(item.modifierIds) ? (item.modifierIds as string[]) : [],
-        kitchenNote: typeof item.kitchenNote === 'string' ? item.kitchenNote : undefined,
+        modifierIds: Array.isArray(item.modifierIds)
+          ? (item.modifierIds as string[])
+          : [],
+        kitchenNote:
+          typeof item.kitchenNote === 'string' ? item.kitchenNote : undefined,
       };
     });
   }
@@ -95,14 +149,21 @@ function json(data: unknown): CallToolResult {
 
 function errorResult(err: unknown): CallToolResult {
   const message = err instanceof Error ? err.message : String(err);
-  return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
+  return {
+    content: [{ type: 'text', text: `Error: ${message}` }],
+    isError: true,
+  };
 }
 
 interface ToolDef {
   name: string;
   title: string;
   description: string;
-  inputSchema: { type: 'object'; properties?: Record<string, unknown>; required?: string[] };
+  inputSchema: {
+    type: 'object';
+    properties?: Record<string, unknown>;
+    required?: string[];
+  };
   readOnly: boolean;
   requiredPermission?: string;
   handler: (args: Args) => Promise<CallToolResult>;
@@ -151,7 +212,10 @@ export class McpToolsBuilder {
   ) {}
 
   build(actor: SessionUser): McpServer {
-    const server = new McpServer({ name: 'orderrestro', version: '1.0.0' }, { capabilities: { tools: {} } });
+    const server = new McpServer(
+      { name: 'orderrestro', version: '1.0.0' },
+      { capabilities: { tools: {} } },
+    );
     const tools = this.toolDefs(actor);
 
     server.server.setRequestHandler(ListToolsRequestSchema, () => ({
@@ -166,9 +230,15 @@ export class McpToolsBuilder {
 
     server.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const tool = tools.find((t) => t.name === request.params.name);
-      if (!tool) return errorResult(new Error(`Unknown tool "${request.params.name}"`));
-      if (tool.requiredPermission && !actor.permissions.includes(tool.requiredPermission)) {
-        return errorResult(new Error(`Missing permission: ${tool.requiredPermission}`));
+      if (!tool)
+        return errorResult(new Error(`Unknown tool "${request.params.name}"`));
+      if (
+        tool.requiredPermission &&
+        !actor.permissions.includes(tool.requiredPermission)
+      ) {
+        return errorResult(
+          new Error(`Missing permission: ${tool.requiredPermission}`),
+        );
       }
       try {
         return await tool.handler(new Args(request.params.arguments ?? {}));
@@ -189,7 +259,8 @@ export class McpToolsBuilder {
       {
         name: 'list_locations',
         title: 'List locations',
-        description: "List the caller's restaurant's active locations (branches) — id, name, address, phone.",
+        description:
+          "List the caller's restaurant's active locations (branches) — id, name, address, phone.",
         inputSchema: { type: 'object' },
         readOnly: true,
         handler: async () =>
@@ -220,10 +291,14 @@ export class McpToolsBuilder {
       {
         name: 'list_open_orders',
         title: 'List open orders',
-        description: 'List currently open orders for one location, optionally filtered to one table.',
+        description:
+          'List currently open orders for one location, optionally filtered to one table.',
         inputSchema: {
           type: 'object',
-          properties: { branchId: { type: 'string' }, tableId: { type: 'string' } },
+          properties: {
+            branchId: { type: 'string' },
+            tableId: { type: 'string' },
+          },
           required: ['branchId'],
         },
         readOnly: true,
@@ -231,7 +306,12 @@ export class McpToolsBuilder {
         handler: async (args) => {
           const branchId = args.string('branchId');
           await this.assertBranch(actor, branchId);
-          return json(await this.orders.listOpen(branchId, args.optionalString('tableId')));
+          return json(
+            await this.orders.listOpen(
+              branchId,
+              args.optionalString('tableId'),
+            ),
+          );
         },
       },
       {
@@ -240,7 +320,10 @@ export class McpToolsBuilder {
         description: 'Get full detail (items, KOTs, payments) for one order.',
         inputSchema: {
           type: 'object',
-          properties: { branchId: { type: 'string' }, orderId: { type: 'string' } },
+          properties: {
+            branchId: { type: 'string' },
+            orderId: { type: 'string' },
+          },
           required: ['branchId', 'orderId'],
         },
         readOnly: true,
@@ -248,24 +331,31 @@ export class McpToolsBuilder {
         handler: async (args) => {
           const branchId = args.string('branchId');
           await this.assertBranch(actor, branchId);
-          return json(await this.orders.getOrder(branchId, args.string('orderId')));
+          return json(
+            await this.orders.getOrder(branchId, args.string('orderId')),
+          );
         },
       },
       {
         name: 'create_order',
         title: 'Create order',
-        description: 'Create a new takeaway/delivery/dine-in order at one location.',
+        description:
+          'Create a new takeaway/delivery/dine-in order at one location.',
         inputSchema: {
           type: 'object',
           properties: {
             branchId: { type: 'string' },
-            type: { type: 'string', enum: ['DINE_IN', 'TAKEAWAY', 'DELIVERY', 'PHONE'] },
+            type: {
+              type: 'string',
+              enum: ['DINE_IN', 'TAKEAWAY', 'DELIVERY', 'PHONE'],
+            },
             tableId: { type: 'string' },
             guestName: { type: 'string' },
             notes: { type: 'string' },
             items: {
               type: 'array',
-              description: 'Cart items: [{ menuItemId, quantity, modifierIds?, kitchenNote? }]',
+              description:
+                'Cart items: [{ menuItemId, quantity, modifierIds?, kitchenNote? }]',
             },
           },
           required: ['branchId', 'items'],
@@ -289,10 +379,14 @@ export class McpToolsBuilder {
       {
         name: 'list_reservations',
         title: 'List reservations',
-        description: 'List reservations for one location, optionally on one date (YYYY-MM-DD).',
+        description:
+          'List reservations for one location, optionally on one date (YYYY-MM-DD).',
         inputSchema: {
           type: 'object',
-          properties: { branchId: { type: 'string' }, date: { type: 'string' } },
+          properties: {
+            branchId: { type: 'string' },
+            date: { type: 'string' },
+          },
           required: ['branchId'],
         },
         readOnly: true,
@@ -300,7 +394,9 @@ export class McpToolsBuilder {
         handler: async (args) => {
           const branchId = args.string('branchId');
           await this.assertBranch(actor, branchId);
-          return json(await this.reservations.list(branchId, args.optionalString('date')));
+          return json(
+            await this.reservations.list(branchId, args.optionalString('date')),
+          );
         },
       },
       {
@@ -359,15 +455,24 @@ export class McpToolsBuilder {
           await this.assertBranch(actor, branchId);
           const status = args.string('status');
           if (!isReservationStatus(status)) {
-            throw new Error(`Invalid status "${status}". Must be one of: ${RESERVATION_STATUS_VALUES.join(', ')}`);
+            throw new Error(
+              `Invalid status "${status}". Must be one of: ${RESERVATION_STATUS_VALUES.join(', ')}`,
+            );
           }
-          return json(await this.reservations.updateStatus(branchId, args.string('reservationId'), status));
+          return json(
+            await this.reservations.updateStatus(
+              branchId,
+              args.string('reservationId'),
+              status,
+            ),
+          );
         },
       },
       {
         name: 'create_menu_category',
         title: 'Create menu category',
-        description: 'Create a new menu category (e.g. "Chicken", "Cocktail") at one location.',
+        description:
+          'Create a new menu category (e.g. "Chicken", "Cocktail") at one location.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -394,7 +499,8 @@ export class McpToolsBuilder {
       {
         name: 'create_menu_item',
         title: 'Create menu item',
-        description: 'Create a new menu item (dish) inside an existing category, with price and optional image URL.',
+        description:
+          'Create a new menu item (dish) inside an existing category, with price and optional image URL.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -403,7 +509,10 @@ export class McpToolsBuilder {
             name: { type: 'string' },
             price: { type: 'number' },
             description: { type: 'string' },
-            imageUrl: { type: 'string', description: 'Public HTTPS URL of a photo for this dish' },
+            imageUrl: {
+              type: 'string',
+              description: 'Public HTTPS URL of a photo for this dish',
+            },
             isVeg: { type: 'boolean' },
             spiceLevel: { type: 'string', enum: SPICE_LEVEL_VALUES },
           },
@@ -416,7 +525,9 @@ export class McpToolsBuilder {
           await this.assertBranch(actor, branchId);
           const spiceLevel = args.optionalString('spiceLevel') ?? 'NONE';
           if (!(SPICE_LEVEL_VALUES as readonly string[]).includes(spiceLevel)) {
-            throw new Error(`Invalid spiceLevel "${spiceLevel}". Must be one of: ${SPICE_LEVEL_VALUES.join(', ')}`);
+            throw new Error(
+              `Invalid spiceLevel "${spiceLevel}". Must be one of: ${SPICE_LEVEL_VALUES.join(', ')}`,
+            );
           }
           return json(
             await this.menu.createItem(branchId, {
@@ -442,7 +553,8 @@ export class McpToolsBuilder {
       {
         name: 'create_floor',
         title: 'Create floor / section',
-        description: 'Create a new floor or dining section (e.g. "Main Hall", "Bar") at one location.',
+        description:
+          'Create a new floor or dining section (e.g. "Main Hall", "Bar") at one location.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -468,13 +580,17 @@ export class McpToolsBuilder {
       {
         name: 'create_tables_bulk',
         title: 'Bulk-create tables',
-        description: 'Create multiple tables at once on one floor/section, given a list of table numbers.',
+        description:
+          'Create multiple tables at once on one floor/section, given a list of table numbers.',
         inputSchema: {
           type: 'object',
           properties: {
             branchId: { type: 'string' },
             floorId: { type: 'string' },
-            numbers: { type: 'array', description: 'Table numbers/names, e.g. ["1","2","3"]' },
+            numbers: {
+              type: 'array',
+              description: 'Table numbers/names, e.g. ["1","2","3"]',
+            },
             capacity: { type: 'number' },
             shape: { type: 'string', enum: TABLE_SHAPE_VALUES },
           },
@@ -487,7 +603,9 @@ export class McpToolsBuilder {
           await this.assertBranch(actor, branchId);
           const shape = args.optionalString('shape') ?? 'square';
           if (!(TABLE_SHAPE_VALUES as readonly string[]).includes(shape)) {
-            throw new Error(`Invalid shape "${shape}". Must be one of: ${TABLE_SHAPE_VALUES.join(', ')}`);
+            throw new Error(
+              `Invalid shape "${shape}". Must be one of: ${TABLE_SHAPE_VALUES.join(', ')}`,
+            );
           }
           return json(
             await this.tables.createTables(branchId, {
@@ -502,10 +620,14 @@ export class McpToolsBuilder {
       {
         name: 'cancel_order',
         title: 'Cancel order',
-        description: 'Cancel an OPEN order the kitchen has not started yet. Fails if the kitchen already began preparing it, or if it is already paid (use refund_order instead).',
+        description:
+          'Cancel an OPEN order the kitchen has not started yet. Fails if the kitchen already began preparing it, or if it is already paid (use refund_order instead).',
         inputSchema: {
           type: 'object',
-          properties: { branchId: { type: 'string' }, orderId: { type: 'string' } },
+          properties: {
+            branchId: { type: 'string' },
+            orderId: { type: 'string' },
+          },
           required: ['branchId', 'orderId'],
         },
         readOnly: false,
@@ -513,13 +635,20 @@ export class McpToolsBuilder {
         handler: async (args) => {
           const branchId = args.string('branchId');
           await this.assertBranch(actor, branchId);
-          return json(await this.orders.cancelOrder(branchId, args.string('orderId'), actor.id));
+          return json(
+            await this.orders.cancelOrder(
+              branchId,
+              args.string('orderId'),
+              actor.id,
+            ),
+          );
         },
       },
       {
         name: 'refund_order',
         title: 'Refund order',
-        description: 'Refund some or all of a PAID order. Amount cannot exceed what remains refundable.',
+        description:
+          'Refund some or all of a PAID order. Amount cannot exceed what remains refundable.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -538,21 +667,29 @@ export class McpToolsBuilder {
           await this.assertBranch(actor, branchId);
           const method = args.string('method');
           if (!(PAYMENT_METHOD_VALUES as readonly string[]).includes(method)) {
-            throw new Error(`Invalid method "${method}". Must be one of: ${PAYMENT_METHOD_VALUES.join(', ')}`);
+            throw new Error(
+              `Invalid method "${method}". Must be one of: ${PAYMENT_METHOD_VALUES.join(', ')}`,
+            );
           }
           return json(
-            await this.orders.refund(branchId, args.string('orderId'), actor.id, {
-              amount: args.number('amount'),
-              method: method as never,
-              reason: args.optionalString('reason'),
-            }),
+            await this.orders.refund(
+              branchId,
+              args.string('orderId'),
+              actor.id,
+              {
+                amount: args.number('amount'),
+                method: method as never,
+                reason: args.optionalString('reason'),
+              },
+            ),
           );
         },
       },
       {
         name: 'update_menu_category',
         title: 'Update menu category',
-        description: 'Rename, reorder, or activate/deactivate an existing menu category.',
+        description:
+          'Rename, reorder, or activate/deactivate an existing menu category.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -576,16 +713,26 @@ export class McpToolsBuilder {
           if (name !== undefined) dto.name = name;
           if (sortOrder !== undefined) dto.sortOrder = sortOrder;
           if (isActive !== undefined) dto.isActive = isActive;
-          return json(await this.menu.updateCategory(branchId, args.string('categoryId'), dto as never));
+          return json(
+            await this.menu.updateCategory(
+              branchId,
+              args.string('categoryId'),
+              dto,
+            ),
+          );
         },
       },
       {
         name: 'delete_menu_category',
         title: 'Delete menu category',
-        description: 'Permanently delete a menu category. Fails if it still has items — delete or move those first.',
+        description:
+          'Permanently delete a menu category. Fails if it still has items — delete or move those first.',
         inputSchema: {
           type: 'object',
-          properties: { branchId: { type: 'string' }, categoryId: { type: 'string' } },
+          properties: {
+            branchId: { type: 'string' },
+            categoryId: { type: 'string' },
+          },
           required: ['branchId', 'categoryId'],
         },
         readOnly: false,
@@ -593,13 +740,16 @@ export class McpToolsBuilder {
         handler: async (args) => {
           const branchId = args.string('branchId');
           await this.assertBranch(actor, branchId);
-          return json(await this.menu.deleteCategory(branchId, args.string('categoryId')));
+          return json(
+            await this.menu.deleteCategory(branchId, args.string('categoryId')),
+          );
         },
       },
       {
         name: 'update_menu_item',
         title: 'Update menu item',
-        description: 'Change any fields (price, name, description, image, availability, veg flag, spice level) on an existing menu item.',
+        description:
+          'Change any fields (price, name, description, image, availability, veg flag, spice level) on an existing menu item.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -635,12 +785,23 @@ export class McpToolsBuilder {
           if (isVeg !== undefined) dto.isVeg = isVeg;
           if (isActive !== undefined) dto.isActive = isActive;
           if (spiceLevel !== undefined) {
-            if (!(SPICE_LEVEL_VALUES as readonly string[]).includes(spiceLevel)) {
-              throw new Error(`Invalid spiceLevel "${spiceLevel}". Must be one of: ${SPICE_LEVEL_VALUES.join(', ')}`);
+            if (
+              !(SPICE_LEVEL_VALUES as readonly string[]).includes(spiceLevel)
+            ) {
+              throw new Error(
+                `Invalid spiceLevel "${spiceLevel}". Must be one of: ${SPICE_LEVEL_VALUES.join(', ')}`,
+              );
             }
             dto.spiceLevel = spiceLevel;
           }
-          return json(await this.menu.updateItem(branchId, args.string('itemId'), actor.id, dto as never));
+          return json(
+            await this.menu.updateItem(
+              branchId,
+              args.string('itemId'),
+              actor.id,
+              dto,
+            ),
+          );
         },
       },
       {
@@ -649,7 +810,10 @@ export class McpToolsBuilder {
         description: 'Permanently delete a menu item.',
         inputSchema: {
           type: 'object',
-          properties: { branchId: { type: 'string' }, itemId: { type: 'string' } },
+          properties: {
+            branchId: { type: 'string' },
+            itemId: { type: 'string' },
+          },
           required: ['branchId', 'itemId'],
         },
         readOnly: false,
@@ -657,7 +821,9 @@ export class McpToolsBuilder {
         handler: async (args) => {
           const branchId = args.string('branchId');
           await this.assertBranch(actor, branchId);
-          return json(await this.menu.deleteItem(branchId, args.string('itemId')));
+          return json(
+            await this.menu.deleteItem(branchId, args.string('itemId')),
+          );
         },
       },
       {
@@ -684,13 +850,19 @@ export class McpToolsBuilder {
           const sortOrder = args.optionalNumber('sortOrder');
           if (name !== undefined) dto.name = name;
           if (sortOrder !== undefined) dto.sortOrder = sortOrder;
-          return json(await this.tables.updateFloor(branchId, args.string('floorId'), dto as never));
+          return json(
+            await this.tables.updateFloor(
+              branchId,
+              args.string('floorId'),
+              dto,
+            ),
+          );
         },
       },
       {
         name: 'update_table',
         title: 'Update table',
-        description: 'Change a table\'s number, name, capacity, shape or notes.',
+        description: "Change a table's number, name, capacity, shape or notes.",
         inputSchema: {
           type: 'object',
           properties: {
@@ -721,11 +893,19 @@ export class McpToolsBuilder {
           if (notes !== undefined) dto.notes = notes;
           if (shape !== undefined) {
             if (!(TABLE_SHAPE_VALUES as readonly string[]).includes(shape)) {
-              throw new Error(`Invalid shape "${shape}". Must be one of: ${TABLE_SHAPE_VALUES.join(', ')}`);
+              throw new Error(
+                `Invalid shape "${shape}". Must be one of: ${TABLE_SHAPE_VALUES.join(', ')}`,
+              );
             }
             dto.shape = shape;
           }
-          return json(await this.tables.updateTable(branchId, args.string('tableId'), dto as never));
+          return json(
+            await this.tables.updateTable(
+              branchId,
+              args.string('tableId'),
+              dto,
+            ),
+          );
         },
       },
       {
@@ -748,9 +928,17 @@ export class McpToolsBuilder {
           await this.assertBranch(actor, branchId);
           const status = args.string('status');
           if (!(TABLE_STATUS_VALUES as readonly string[]).includes(status)) {
-            throw new Error(`Invalid status "${status}". Must be one of: ${TABLE_STATUS_VALUES.join(', ')}`);
+            throw new Error(
+              `Invalid status "${status}". Must be one of: ${TABLE_STATUS_VALUES.join(', ')}`,
+            );
           }
-          return json(await this.tables.updateTableStatus(branchId, args.string('tableId'), status as never));
+          return json(
+            await this.tables.updateTableStatus(
+              branchId,
+              args.string('tableId'),
+              status as never,
+            ),
+          );
         },
       },
       {
@@ -759,7 +947,10 @@ export class McpToolsBuilder {
         description: 'Permanently delete a table.',
         inputSchema: {
           type: 'object',
-          properties: { branchId: { type: 'string' }, tableId: { type: 'string' } },
+          properties: {
+            branchId: { type: 'string' },
+            tableId: { type: 'string' },
+          },
           required: ['branchId', 'tableId'],
         },
         readOnly: false,
@@ -767,7 +958,9 @@ export class McpToolsBuilder {
         handler: async (args) => {
           const branchId = args.string('branchId');
           await this.assertBranch(actor, branchId);
-          return json(await this.tables.deleteTable(branchId, args.string('tableId')));
+          return json(
+            await this.tables.deleteTable(branchId, args.string('tableId')),
+          );
         },
       },
     ];
