@@ -126,6 +126,11 @@ export class OrdersService {
     if (modifiers.length !== modifierIds.length) {
       throw new BadRequestException('One or more modifiers are invalid');
     }
+    await this.validateModifierSelections(
+      branchId,
+      dto.items,
+      channel === 'ONLINE',
+    );
 
     // A client-supplied tableId/customerId that belongs to a different
     // branch/restaurant must never be trusted directly: without this check,
@@ -204,12 +209,14 @@ export class OrdersService {
         }
         if (totals.subtotal < Number(zone.minOrderAmount)) {
           throw new BadRequestException(
-            `Minimum order for ${zone.name} is ₹${zone.minOrderAmount}`,
+            `Minimum order for ${zone.name} is ₹${Number(zone.minOrderAmount)}`,
           );
         }
         delivery.deliveryZoneId = zone.id;
         delivery.deliveryFee = zone.fee;
-        delivery.deliveryEtaAt = new Date(Date.now() + zone.etaMinutes * 60_000);
+        delivery.deliveryEtaAt = new Date(
+          Date.now() + zone.etaMinutes * 60_000,
+        );
       }
     }
     let scheduledFor: Date | undefined;
@@ -335,12 +342,22 @@ export class OrdersService {
     return full;
   }
 
-  async addItems(branchId: string, orderId: string, items: CartItemDto[]) {
+  async addItems(
+    branchId: string,
+    orderId: string,
+    items: CartItemDto[],
+    options: { enforceModifierLimits?: boolean } = {},
+  ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
       include: { items: true },
     });
     if (!order) throw new NotFoundException('Order not found');
+    await this.validateModifierSelections(
+      branchId,
+      items,
+      options.enforceModifierLimits ?? false,
+    );
     if (order.status !== 'OPEN') {
       throw new BadRequestException('Order is not open — cannot add items');
     }
@@ -442,7 +459,10 @@ export class OrdersService {
       tab === 'pending'
         ? { status: 'OPEN', acceptance: 'PENDING' }
         : tab === 'active'
-          ? { status: { in: ['OPEN', 'BILLED'] }, acceptance: { not: 'PENDING' } }
+          ? {
+              status: { in: ['OPEN', 'BILLED'] },
+              acceptance: { not: 'PENDING' },
+            }
           : {
               OR: [
                 { status: { in: ['PAID', 'CANCELLED'] } },
@@ -1042,6 +1062,55 @@ export class OrdersService {
     return `${datePart}-${String(countToday + 1).padStart(4, '0')}`;
   }
 
+  /**
+   * Every selected modifier must belong to a group attached to that menu
+   * item in this branch — otherwise a caller could price an item with some
+   * other item's (or another tenant's) modifiers. For guest-facing orders
+   * the group's min/max/required limits are enforced too.
+   */
+  private async validateModifierSelections(
+    branchId: string,
+    items: CartItemDto[],
+    enforceLimits: boolean,
+  ) {
+    if (!enforceLimits && items.every((i) => i.modifierIds.length === 0))
+      return;
+    const links = await this.prisma.menuItemModifierGroup.findMany({
+      where: {
+        menuItemId: { in: [...new Set(items.map((i) => i.menuItemId))] },
+        modifierGroup: { branchId },
+      },
+      include: {
+        modifierGroup: { include: { modifiers: { select: { id: true } } } },
+      },
+    });
+    for (const item of items) {
+      const groups = links
+        .filter((l) => l.menuItemId === item.menuItemId)
+        .map((l) => l.modifierGroup);
+      const allowed = new Set(
+        groups.flatMap((g) => g.modifiers.map((m) => m.id)),
+      );
+      if (item.modifierIds.some((id) => !allowed.has(id))) {
+        throw new BadRequestException(
+          'A selected option is not available for this item',
+        );
+      }
+      if (!enforceLimits) continue;
+      for (const g of groups) {
+        const picked = item.modifierIds.filter((id) =>
+          g.modifiers.some((m) => m.id === id),
+        ).length;
+        const min = g.isRequired ? Math.max(1, g.minSelect) : g.minSelect;
+        if (picked < min || picked > g.maxSelect) {
+          throw new BadRequestException(
+            `Choose ${min === g.maxSelect ? min : `${min}–${g.maxSelect}`} option(s) for "${g.name}"`,
+          );
+        }
+      }
+    }
+  }
+
   /** True when a scheduled order is still too far off to cook. */
   private isDeferred(scheduledFor?: Date): boolean {
     return (
@@ -1062,7 +1131,9 @@ export class OrdersService {
       where: {
         status: 'OPEN',
         acceptance: { in: ['NOT_REQUIRED', 'ACCEPTED'] },
-        scheduledFor: { lte: new Date(Date.now() + OrdersService.SCHEDULE_LEAD_MS) },
+        scheduledFor: {
+          lte: new Date(Date.now() + OrdersService.SCHEDULE_LEAD_MS),
+        },
         kots: { none: {} },
       },
       include: { items: true },

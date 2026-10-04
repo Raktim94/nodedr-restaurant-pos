@@ -138,21 +138,28 @@ export class DeliveryService {
   async assignDriver(branchId: string, orderId: string, driverId: string) {
     const order = await this.getDelivery(branchId, orderId);
     if (!['UNASSIGNED', 'ASSIGNED'].includes(order.deliveryStatus ?? ''))
-      throw new BadRequestException('This delivery can no longer be reassigned');
+      throw new BadRequestException(
+        'This delivery can no longer be reassigned',
+      );
     const driver = await this.prisma.user.findFirst({
       where: { id: driverId, isActive: true, branches: { some: { branchId } } },
       select: { id: true },
     });
-    if (!driver) throw new BadRequestException('Driver not found for this branch');
+    if (!driver)
+      throw new BadRequestException('Driver not found for this branch');
     return this.save(branchId, orderId, {
       driverId,
       deliveryStatus: 'ASSIGNED',
     });
   }
 
-  async setStatus(branchId: string, orderId: string, status: DeliveryStatusDto) {
+  async setStatus(
+    branchId: string,
+    orderId: string,
+    status: DeliveryStatusDto,
+  ) {
     const order = await this.getDelivery(branchId, orderId);
-    const current = (order.deliveryStatus ?? 'UNASSIGNED') as DeliveryStatusDto;
+    const current: DeliveryStatusDto = order.deliveryStatus ?? 'UNASSIGNED';
     if (!NEXT[current].includes(status))
       throw new BadRequestException(`Cannot move from ${current} to ${status}`);
     if (status === 'PICKED_UP' && !order.driverId)

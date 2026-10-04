@@ -34,7 +34,10 @@ export class DeliveryController {
 
   @Auth('delivery.manage')
   @Get('zones')
-  async zones(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async zones(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
     return this.delivery.listZones(branchId);
   }
@@ -77,7 +80,10 @@ export class DeliveryController {
 
   @Auth('delivery.manage')
   @Get('drivers')
-  async drivers(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async drivers(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
     return this.delivery.listDrivers(branchId);
   }

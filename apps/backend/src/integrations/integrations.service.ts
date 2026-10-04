@@ -129,20 +129,25 @@ export class IntegrationsService {
       );
     }
 
-    return this.orders.createOrder(branchId, createdById, {
-      type: dto.type,
-      customerId: customer.id,
-      guestName: dto.customerName,
-      notes: dto.notes,
-      delivery: dto.delivery,
-      scheduledFor: dto.scheduledFor,
-      items: dto.items.map((item) => ({
-        menuItemId: item.menuItemId,
-        quantity: item.quantity,
-        modifierIds: item.modifierIds,
-        kitchenNote: item.kitchenNote,
-      })),
-    }, { channel: 'ONLINE', requireAcceptance: true });
+    return this.orders.createOrder(
+      branchId,
+      createdById,
+      {
+        type: dto.type,
+        customerId: customer.id,
+        guestName: dto.customerName,
+        notes: dto.notes,
+        delivery: dto.delivery,
+        scheduledFor: dto.scheduledFor,
+        items: dto.items.map((item) => ({
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          modifierIds: item.modifierIds,
+          kitchenNote: item.kitchenNote,
+        })),
+      },
+      { channel: 'ONLINE', requireAcceptance: true },
+    );
   }
 
   /** Fee / minimum / ETA for a pincode, so a website can quote before ordering. */

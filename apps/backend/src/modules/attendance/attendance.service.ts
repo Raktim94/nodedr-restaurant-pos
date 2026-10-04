@@ -47,7 +47,11 @@ export class AttendanceService {
       range = { gte: start, lt: new Date(start.getTime() + 86_400_000) };
     }
     return this.prisma.attendance.findMany({
-      where: { branchId, ...(userId ? { userId } : {}), ...(range ? { clockInAt: range } : {}) },
+      where: {
+        branchId,
+        ...(userId ? { userId } : {}),
+        ...(range ? { clockInAt: range } : {}),
+      },
       include: WITH_USER,
       orderBy: { clockInAt: 'desc' },
       take: 500,
