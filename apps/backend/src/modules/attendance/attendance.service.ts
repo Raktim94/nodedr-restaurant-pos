@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { zonedRange } from '../../common/time';
+import { BranchTimeService } from '../../common/services/branch-time.service';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const WITH_USER = {
@@ -7,7 +9,10 @@ const WITH_USER = {
 
 @Injectable()
 export class AttendanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly time: BranchTimeService,
+  ) {}
 
   /** The user's currently open shift, if any (any branch). */
   current(userId: string) {
@@ -37,14 +42,13 @@ export class AttendanceService {
     });
   }
 
-  /** Records for a branch, optionally one day (YYYY-MM-DD) or one user. */
-  list(branchId: string, date?: string, userId?: string) {
+  /** Records for a branch, optionally one local day (YYYY-MM-DD) or one user. */
+  async list(branchId: string, date?: string, userId?: string) {
     let range: { gte: Date; lt: Date } | undefined;
     if (date) {
-      const start = new Date(`${date}T00:00:00.000Z`);
-      if (Number.isNaN(start.getTime()))
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date)))
         throw new BadRequestException('date must be YYYY-MM-DD');
-      range = { gte: start, lt: new Date(start.getTime() + 86_400_000) };
+      range = zonedRange(date, date, await this.time.tzForBranch(branchId));
     }
     return this.prisma.attendance.findMany({
       where: {

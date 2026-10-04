@@ -4,6 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { CashClosingDto, ExpenseDto } from '@nodedr-restaurant/types';
+import { zonedRange } from '../../common/time';
+import { BranchTimeService } from '../../common/services/branch-time.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { expectedCash, gstSummary, round2 } from './accounting.calc';
 
@@ -12,7 +14,10 @@ const dayAfter = (d: string) => new Date(dayStart(d).getTime() + 86_400_000);
 
 @Injectable()
 export class AccountingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly time: BranchTimeService,
+  ) {}
 
   // --- Expenses ------------------------------------------------------------
 
@@ -60,13 +65,13 @@ export class AccountingService {
 
   /** What the till should hold for a day, before anyone counts it. */
   async closingPreview(branchId: string, date: string, openingFloat = 0) {
-    const from = dayStart(date);
-    const to = dayAfter(date);
+    const from = dayStart(date); // @db.Date column: a plain calendar date
+    const range = zonedRange(date, date, await this.time.tzForBranch(branchId));
     const [sales, refunds, expenses] = await Promise.all([
       this.prisma.payment.aggregate({
         where: {
           method: 'CASH',
-          createdAt: { gte: from, lt: to },
+          createdAt: range,
           order: { branchId },
         },
         _sum: { amount: true },
@@ -74,7 +79,7 @@ export class AccountingService {
       this.prisma.refund.aggregate({
         where: {
           method: 'CASH',
-          createdAt: { gte: from, lt: to },
+          createdAt: range,
           order: { branchId },
         },
         _sum: { amount: true },
@@ -144,16 +149,17 @@ export class AccountingService {
 
   /** Profit & loss for a period (cash-basis on bills paid in the period). */
   async profitAndLoss(branchId: string, from: string, to: string) {
-    const f = dayStart(from);
+    const f = dayStart(from); // date columns (expenses, payroll periods)
     const t = dayAfter(to);
+    const range = zonedRange(from, to, await this.time.tzForBranch(branchId));
     const [orders, refunds, expenses, runs] = await Promise.all([
       this.prisma.order.aggregate({
-        where: { branchId, status: 'PAID', billedAt: { gte: f, lt: t } },
+        where: { branchId, status: 'PAID', billedAt: range },
         _sum: { totalAmount: true, tipAmount: true, taxAmount: true },
         _count: { _all: true },
       }),
       this.prisma.refund.aggregate({
-        where: { createdAt: { gte: f, lt: t }, order: { branchId } },
+        where: { createdAt: range, order: { branchId } },
         _sum: { amount: true },
       }),
       this.prisma.expense.groupBy({
@@ -212,7 +218,7 @@ export class AccountingService {
       where: {
         branchId,
         status: 'PAID',
-        billedAt: { gte: dayStart(from), lt: dayAfter(to) },
+        billedAt: zonedRange(from, to, await this.time.tzForBranch(branchId)),
       },
       select: {
         subtotal: true,
@@ -237,8 +243,11 @@ export class AccountingService {
 
   /** Cross-branch snapshot for the whole restaurant. */
   async branchOverview(restaurantId: string, from: string, to: string) {
-    const f = dayStart(from);
-    const t = dayAfter(to);
+    const range = zonedRange(
+      from,
+      to,
+      await this.time.tzForRestaurant(restaurantId),
+    );
     const branches = await this.prisma.branch.findMany({
       where: { restaurantId, isActive: true },
       select: { id: true, name: true },
@@ -251,7 +260,7 @@ export class AccountingService {
             where: {
               branchId: b.id,
               status: 'PAID',
-              billedAt: { gte: f, lt: t },
+              billedAt: range,
             },
             _sum: { totalAmount: true },
             _count: { _all: true },
