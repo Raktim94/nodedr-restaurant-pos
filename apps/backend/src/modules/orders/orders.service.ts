@@ -157,6 +157,71 @@ export class OrdersService {
     );
     const totals = computeOrderTotals(lineInputs.map((l) => l.priced));
 
+    // Delivery: the pincode must fall in one of this branch's active zones
+    // and the item total must clear the zone's minimum. The zone's fee/ETA
+    // are snapshotted onto the order.
+    let delivery: Pick<
+      Prisma.OrderUncheckedCreateInput,
+      | 'deliveryZoneId'
+      | 'deliveryFee'
+      | 'deliveryAddress'
+      | 'deliveryPincode'
+      | 'deliveryPhone'
+      | 'deliveryStatus'
+      | 'deliveryEtaAt'
+    > | null = null;
+    if (dto.type === 'DELIVERY') {
+      // Zone rules only apply once a branch has defined zones. Until then
+      // delivery orders behave as before (no fee, address may travel in the
+      // notes), so existing website integrations keep working.
+      const hasZones =
+        (await this.prisma.deliveryZone.count({
+          where: { branchId, isActive: true },
+        })) > 0;
+      if (hasZones && !dto.delivery) {
+        throw new BadRequestException(
+          'Delivery orders need an address, pincode and phone',
+        );
+      }
+      delivery = {
+        deliveryStatus: 'UNASSIGNED',
+        deliveryAddress: dto.delivery?.address,
+        deliveryPincode: dto.delivery?.pincode,
+        deliveryPhone: dto.delivery?.phone,
+      };
+      if (hasZones && dto.delivery) {
+        const zone = await this.prisma.deliveryZone.findFirst({
+          where: {
+            branchId,
+            isActive: true,
+            pincodes: { has: dto.delivery.pincode },
+          },
+        });
+        if (!zone) {
+          throw new BadRequestException(
+            'Sorry, we do not deliver to that pincode',
+          );
+        }
+        if (totals.subtotal < Number(zone.minOrderAmount)) {
+          throw new BadRequestException(
+            `Minimum order for ${zone.name} is ₹${zone.minOrderAmount}`,
+          );
+        }
+        delivery.deliveryZoneId = zone.id;
+        delivery.deliveryFee = zone.fee;
+        delivery.deliveryEtaAt = new Date(Date.now() + zone.etaMinutes * 60_000);
+      }
+    }
+    let scheduledFor: Date | undefined;
+    if (dto.scheduledFor) {
+      scheduledFor = new Date(dto.scheduledFor);
+      if (scheduledFor.getTime() < Date.now() + 10 * 60_000) {
+        throw new BadRequestException(
+          'Scheduled time must be at least 10 minutes from now',
+        );
+      }
+    }
+
     const orderNumber = await this.nextOrderNumber(branchId);
 
     const order = await this.prisma.$transaction(async (tx) => {
@@ -177,6 +242,18 @@ export class OrdersService {
           taxAmount: totals.taxAmount,
           discountAmount: 0,
           totalAmount: totals.subtotal,
+          scheduledFor,
+          ...(delivery
+            ? {
+                deliveryZoneId: delivery.deliveryZoneId,
+                deliveryFee: delivery.deliveryFee,
+                deliveryAddress: delivery.deliveryAddress,
+                deliveryPincode: delivery.deliveryPincode,
+                deliveryPhone: delivery.deliveryPhone,
+                deliveryStatus: delivery.deliveryStatus,
+                deliveryEtaAt: delivery.deliveryEtaAt,
+              }
+            : {}),
           items: {
             create: lineInputs.map((line) => ({
               menuItem: { connect: { id: line.menuItem.id } },
@@ -208,7 +285,9 @@ export class OrdersService {
 
       // A pending online order must not reach the kitchen until accepted
       // (acceptOrder() generates the tickets then).
-      if (acceptance !== 'PENDING') {
+      // A scheduled order also waits: releaseDueScheduledOrders() sends it to
+      // the kitchen shortly before its time.
+      if (acceptance !== 'PENDING' && !this.isDeferred(scheduledFor)) {
         await this.generateKots(tx, created.id, branchId, created.items);
       }
 
@@ -398,7 +477,9 @@ export class OrdersService {
         where: { id: orderId },
         data: { acceptance: 'ACCEPTED' },
       });
-      await this.generateKots(tx, orderId, branchId, order.items);
+      if (!this.isDeferred(order.scheduledFor ?? undefined)) {
+        await this.generateKots(tx, orderId, branchId, order.items);
+      }
     });
     this.realtime.emitToBranch(branchId, 'order.updated', {
       id: orderId,
@@ -577,7 +658,10 @@ export class OrdersService {
       Math.min(pointsToRedeem * loyaltyPointValue, totals.totalAmount),
     );
     const totalDue = round2(
-      totals.totalAmount - requestedLoyaltyDiscount + (dto.tipAmount ?? 0),
+      totals.totalAmount -
+        requestedLoyaltyDiscount +
+        (dto.tipAmount ?? 0) +
+        Number(order.deliveryFee),
     );
 
     const tipAmount = round2(dto.tipAmount ?? 0);
@@ -956,6 +1040,59 @@ export class OrdersService {
 
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     return `${datePart}-${String(countToday + 1).padStart(4, '0')}`;
+  }
+
+  /** True when a scheduled order is still too far off to cook. */
+  private isDeferred(scheduledFor?: Date): boolean {
+    return (
+      !!scheduledFor &&
+      scheduledFor.getTime() > Date.now() + OrdersService.SCHEDULE_LEAD_MS
+    );
+  }
+
+  private static readonly SCHEDULE_LEAD_MS = 25 * 60_000;
+
+  /**
+   * Sends scheduled orders to the kitchen once they are within the lead
+   * window. Safe to call repeatedly: an order that already has tickets (or
+   * is still awaiting acceptance / was rejected) is skipped.
+   */
+  async releaseDueScheduledOrders(): Promise<number> {
+    const due = await this.prisma.order.findMany({
+      where: {
+        status: 'OPEN',
+        acceptance: { in: ['NOT_REQUIRED', 'ACCEPTED'] },
+        scheduledFor: { lte: new Date(Date.now() + OrdersService.SCHEDULE_LEAD_MS) },
+        kots: { none: {} },
+      },
+      include: { items: true },
+    });
+    for (const order of due) {
+      await this.prisma.$transaction((tx) =>
+        this.generateKots(tx, order.id, order.branchId, order.items),
+      );
+      this.realtime.emitToBranch(order.branchId, 'kot.updated', {
+        orderId: order.id,
+      });
+      try {
+        await this.notifications.notifyByPermission(
+          order.branchId,
+          'kds.manage',
+          {
+            type: 'order.new',
+            title: 'Scheduled order is due',
+            body: `Order ${order.orderNumber} (${order.type.replace('_', ' ')})`,
+            entity: 'Order',
+            entityId: order.id,
+          },
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Failed to notify scheduled order ${order.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    return due.length;
   }
 
   private async generateKots(

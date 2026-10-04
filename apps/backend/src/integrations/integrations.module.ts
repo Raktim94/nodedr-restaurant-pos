@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BranchAccessService } from '../common/services/branch-access.service';
 import { IntegrationApiKeyGuard } from '../common/guards/integration-api-key.guard';
+import { DeliveryModule } from '../modules/delivery/delivery.module';
 import { OrdersModule } from '../modules/orders/orders.module';
 import { ReservationsModule } from '../modules/reservations/reservations.module';
 import { IntegrationApiKeysController } from './integration-api-keys.controller';
@@ -11,7 +12,7 @@ import { StaffApiKeysController } from './staff-api-keys.controller';
 import { StaffApiKeysService } from './staff-api-keys.service';
 
 @Module({
-  imports: [OrdersModule, ReservationsModule],
+  imports: [OrdersModule, ReservationsModule, DeliveryModule],
   controllers: [
     IntegrationsController,
     IntegrationApiKeysController,

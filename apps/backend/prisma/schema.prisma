@@ -75,6 +75,7 @@ model Branch {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   attendance   Attendance[]
+  deliveryZones DeliveryZone[]
 
   name      String
   address   String?
@@ -215,6 +216,7 @@ model User {
   stockMovementsCreated StockMovement[] @relation("StockMovementCreatedBy")
   wasteLogsCreated      WasteLog[]      @relation("WasteLogCreatedBy")
   attendance            Attendance[]
+  deliveriesDriven      Order[]         @relation("OrderDriver")
 
   purchaseRequestsRequested PurchaseRequest[]   @relation("PurchaseRequestRequestedBy")
   purchaseRequestsApproved  PurchaseRequest[]   @relation("PurchaseRequestApprovedBy")
@@ -1177,6 +1179,16 @@ enum AcceptanceStatus {
   REJECTED
 }
 
+// Delivery lifecycle, separate from OrderStatus (billing) and KotStatus
+// (kitchen). Null on non-delivery orders.
+enum DeliveryStatus {
+  UNASSIGNED
+  ASSIGNED
+  PICKED_UP
+  DELIVERED
+  FAILED
+}
+
 model Order {
   id       String @id @default(cuid())
   branchId String
@@ -1211,6 +1223,23 @@ model Order {
 
   notes String?
 
+  // Delivery (Phase 5). deliveryFee is added on top of the item total at
+  // checkout; the zone's fee is snapshotted so later zone edits never
+  // rewrite history.
+  deliveryZoneId   String?
+  deliveryZone     DeliveryZone? @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
+  deliveryFee      Decimal        @default(0) @db.Decimal(12, 2)
+  deliveryAddress  String?
+  deliveryPincode  String?
+  deliveryPhone    String?
+  deliveryStatus   DeliveryStatus?
+  driverId         String?
+  driver           User?          @relation("OrderDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  deliveryEtaAt    DateTime?
+  deliveredAt      DateTime?
+  // Scheduled / pre-order: the kitchen should not start before this time.
+  scheduledFor     DateTime?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   billedAt  DateTime?
@@ -1223,6 +1252,7 @@ model Order {
 
   @@unique([branchId, orderNumber])
   @@index([branchId, status])
+  @@index([branchId, deliveryStatus])
   @@map("orders")
 }
 
@@ -1472,4 +1502,24 @@ model Attendance {
   @@index([branchId, clockInAt])
   @@index([userId, clockOutAt])
   @@map("attendance")
+}
+
+// Delivery zone (Phase 5): matched by customer pincode at order time.
+model DeliveryZone {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name           String
+  fee            Decimal  @default(0) @db.Decimal(12, 2)
+  minOrderAmount Decimal  @default(0) @db.Decimal(12, 2)
+  etaMinutes     Int      @default(45)
+  pincodes       String[]
+  isActive       Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  orders    Order[]
+
+  @@index([branchId, isActive])
+  @@map("delivery_zones")
 }
