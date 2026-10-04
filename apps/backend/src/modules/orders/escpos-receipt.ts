@@ -32,6 +32,9 @@ const CMD = {
   alignLeft: Buffer.from([ESC, 0x61, 0x00]),
   boldOn: Buffer.from([ESC, 0x45, 0x01]),
   boldOff: Buffer.from([ESC, 0x45, 0x00]),
+  // ESC p m t1 t2 — pulse pin 2 for 50 ms on / 500 ms off, the standard
+  // "open cash drawer" kick for drawers wired to the printer's RJ11 port.
+  openDrawer: Buffer.from([ESC, 0x70, 0x00, 0x19, 0xfa]),
   feedAndCut: Buffer.concat([
     Buffer.from('\n\n\n\n'),
     Buffer.from([GS, 0x56, 0x00]),
@@ -131,6 +134,7 @@ export function buildReceiptEscPos({
   currency,
   order,
   width = 42,
+  openDrawer = false,
 }: {
   restaurantName: string;
   branch: {
@@ -146,6 +150,8 @@ export function buildReceiptEscPos({
   currency: string;
   order: EscposReceiptOrder;
   width?: number;
+  /** Also kick the cash drawer (for cash payments). */
+  openDrawer?: boolean;
 }): Buffer {
   const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
   const money = (n: number) => `${sym}${Number(n).toFixed(2)}`;
@@ -258,7 +264,13 @@ export function buildReceiptEscPos({
     );
   }
   segments.push(CMD.feedAndCut);
+  if (openDrawer) segments.push(CMD.openDrawer);
   return Buffer.concat(segments);
+}
+
+/** Just the drawer pulse, for a "No sale" / test open. */
+export function buildOpenDrawer(): Buffer {
+  return Buffer.concat([CMD.init, CMD.openDrawer]);
 }
 
 export function buildTestSlip(): Buffer {

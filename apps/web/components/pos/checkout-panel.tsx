@@ -23,6 +23,7 @@ import { usePrintOrderUsb } from "@/hooks/use-print";
 import { useSettings } from "@/hooks/use-settings";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
+import { publishDisplay } from "@/lib/customer-display";
 import { openKotPrint, openReceiptPrint } from "@/lib/print";
 import { round2 } from "@/lib/pricing-preview";
 
@@ -130,6 +131,7 @@ export function CheckoutPanel({
       {
         onSuccess: (result) => {
           setCompleted(result);
+          publishDisplay({ kind: "paid", total: Number(result.totalAmount) });
           toast.success("Payment recorded");
         },
         onError: (err) =>
@@ -164,7 +166,7 @@ export function CheckoutPanel({
             variant="outline"
             disabled={printUsb.isPending}
             onClick={() =>
-              printUsb.mutate(completed.id, {
+              printUsb.mutate({ orderId: completed.id, drawer: completed.payments?.some((p) => p.method === "CASH") }, {
                 onSuccess: () => toast.success("Sent to the USB printer"),
                 onError: (err) =>
                   toast.error(err instanceof ApiError ? err.message : "Could not print to USB printer"),

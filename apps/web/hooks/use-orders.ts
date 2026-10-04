@@ -17,6 +17,7 @@ export interface CreatedOrder {
   totalAmount: string;
   deliveryFee?: string;
   status: string;
+  payments?: { method: string; amount: string }[];
 }
 
 export function useCreateOrder(branchId: string | null) {

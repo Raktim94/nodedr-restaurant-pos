@@ -24,9 +24,16 @@ export function usePrintTestSlip() {
   });
 }
 
+/** `drawer` also kicks the cash drawer — pass true when the bill was paid in cash. */
 export function usePrintOrderUsb(branchId: string | null) {
   return useMutation({
-    mutationFn: (orderId: string) =>
-      api.post<{ ok: true }>(`/orders/${orderId}/print/usb?branchId=${branchId}`),
+    mutationFn: ({ orderId, drawer }: { orderId: string; drawer?: boolean }) =>
+      api.post<{ ok: true }>(`/orders/${orderId}/print/usb?branchId=${branchId}${drawer ? "&drawer=true" : ""}`),
+  });
+}
+
+export function useOpenCashDrawer() {
+  return useMutation({
+    mutationFn: () => api.post<{ ok: true }>("/orders/print/drawer"),
   });
 }

@@ -26,6 +26,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import {
+  buildOpenDrawer,
   buildReceiptEscPos,
   buildTestSlip,
   type EscposReceiptOrder,
@@ -335,6 +336,21 @@ export class OrdersController {
     }
   }
 
+  // Opens the cash drawer wired to the thermal printer ("No sale" / test).
+  @Auth('bills.print')
+  @Post('print/drawer')
+  async openDrawer() {
+    try {
+      await sendRaw(buildOpenDrawer());
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof PrinterNotFoundError) {
+        throw new ServiceUnavailableException(err.message);
+      }
+      throw err;
+    }
+  }
+
   @Auth('bills.print')
   @Post(':id/print/usb')
   async printUsb(
@@ -342,6 +358,7 @@ export class OrdersController {
     @Query('branchId') branchId: string,
     @Param('id') id: string,
     @Query('width') width?: string,
+    @Query('drawer') drawer?: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     const order = await this.ordersService.getReceiptData(branchId, id);
@@ -360,6 +377,7 @@ export class OrdersController {
       },
       order: toEscposOrder(order),
       width: width === '58' ? 32 : 42,
+      openDrawer: drawer === 'true',
     });
     try {
       await sendRaw(buffer);
