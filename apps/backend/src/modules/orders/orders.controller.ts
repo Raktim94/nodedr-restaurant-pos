@@ -184,6 +184,23 @@ export class OrdersController {
     return this.ordersService.cancelOrder(branchId, id, user.id);
   }
 
+  // What discount checkout would apply right now (happy hour and/or a
+  // coupon), so the bill screen shows the real amount due before paying.
+  @Auth('bills.print')
+  @Post(':id/discount-preview')
+  async discountPreview(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: { couponCode?: string },
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    if (body?.couponCode && !user.permissions.includes('discounts.apply')) {
+      throw new ForbiddenException('Missing permission to apply a coupon');
+    }
+    return this.ordersService.previewDiscount(branchId, id, body?.couponCode);
+  }
+
   @Auth('bills.print')
   @Post(':id/checkout')
   @UsePipes(new ZodValidationPipe(checkoutSchema))
@@ -201,8 +218,12 @@ export class OrdersController {
     // WAITER holds bills.print but not discounts.apply by default). Without
     // this check, any role that can checkout could zero out a bill via
     // discountPercent=100, bypassing the manager/cashier-only control.
+    // A coupon code is a discount too, so it needs the same permission
+    // (the automatic happy-hour discount does not — no one chooses it).
     if (
-      ((dto.discountPercent ?? 0) > 0 || (dto.discountFlat ?? 0) > 0) &&
+      ((dto.discountPercent ?? 0) > 0 ||
+        (dto.discountFlat ?? 0) > 0 ||
+        !!dto.couponCode) &&
       !user.permissions.includes('discounts.apply')
     ) {
       throw new ForbiddenException(

@@ -617,6 +617,31 @@ export class OrdersService {
     return this.getOrder(branchId, orderId);
   }
 
+  async previewDiscount(
+    branchId: string,
+    orderId: string,
+    couponCode?: string,
+  ) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, branchId, status: 'OPEN' },
+      include: { items: true },
+    });
+    if (!order) throw new NotFoundException('Open order not found');
+    const subtotal = round2(
+      order.items.reduce((sum, i) => sum + Number(i.lineTotal), 0),
+    );
+    const d = await this.marketing.resolveCheckoutDiscount(
+      branchId,
+      subtotal,
+      couponCode,
+    );
+    return {
+      amount: d.amount,
+      couponCode: d.couponCode ?? null,
+      promotionName: d.promotionName ?? null,
+    };
+  }
+
   async checkout(
     branchId: string,
     orderId: string,
