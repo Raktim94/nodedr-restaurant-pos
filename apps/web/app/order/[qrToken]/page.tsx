@@ -1,9 +1,10 @@
 "use client";
 
-import { CheckCircle2, Leaf, Minus, Plus, UtensilsCrossed } from "lucide-react";
+import { BellRing, CheckCircle2, Leaf, Minus, Plus, Receipt, UtensilsCrossed } from "lucide-react";
 import { use, useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
+import { ModifierPickerDialog } from "@/components/pos/modifier-picker-dialog";
 import { PopBurst } from "@/components/order/pop-burst";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +21,47 @@ interface PublicMenuItem {
   description: string | null;
   price: string;
   isVeg: boolean;
+  modifierGroups: {
+    modifierGroup: {
+      id: string;
+      name: string;
+      minSelect: number;
+      maxSelect: number;
+      isRequired: boolean;
+      modifiers: { id: string; name: string; priceAdjustment: string; isDefault: boolean }[];
+    };
+  }[];
 }
+
+// One cart line = an item plus its chosen options; the same item with
+// different options is a separate line.
+interface CartLine {
+  key: string;
+  menuItemId: string;
+  modifierIds: string[];
+  label: string;
+  unitPrice: number;
+  quantity: number;
+}
+
+interface PublicStatus {
+  order: {
+    orderNumber: string;
+    status: string;
+    acceptance: string;
+    items: { id: string; nameSnapshot: string; quantity: number; status: string }[];
+  } | null;
+  openRequests: ("WAITER" | "BILL")[];
+}
+
+const ITEM_STATUS_LABEL: Record<string, string> = {
+  NEW: "Received",
+  ACCEPTED: "Received",
+  PREPARING: "Being prepared",
+  READY: "Ready",
+  SERVED: "Served",
+  CANCELLED: "Cancelled",
+};
 
 interface PublicMenuCategory {
   id: string;
@@ -42,7 +83,9 @@ export default function PublicMenuPage({
   const { qrToken } = use(params);
   const { t } = useI18n();
   const nameStorageKey = `qr-guest-name:${qrToken}`;
-  const [cart, setCart] = useState<Record<string, number>>({});
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [pickerItem, setPickerItem] = useState<PublicMenuItem | null>(null);
+  const queryClient = useQueryClient();
   const [placed, setPlaced] = useState<{ orderNumber: string } | null>(null);
   const [guestName, setGuestName] = useState("");
   const [nameDraft, setNameDraft] = useState("");
@@ -75,19 +118,33 @@ export default function PublicMenuPage({
     retry: false,
   });
 
+  // Live status of the table's tab and any pending waiter/bill request.
+  const { data: status } = useQuery({
+    queryKey: ["public-status", qrToken],
+    queryFn: () => api.get<PublicStatus>(`/public/menu/${qrToken}/status`),
+    refetchInterval: 8000,
+    enabled: !!data,
+  });
+
+  const requestService = useMutation({
+    mutationFn: (type: "WAITER" | "BILL") => api.post(`/public/menu/${qrToken}/request`, { type }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] }),
+  });
+
   const placeOrder = useMutation({
     mutationFn: () =>
       api.post<{ orderNumber: string }>(`/public/menu/${qrToken}/order`, {
         guestName,
-        items: Object.entries(cart).map(([menuItemId, quantity]) => ({
-          menuItemId,
-          quantity,
-          modifierIds: [],
+        items: cart.map((l) => ({
+          menuItemId: l.menuItemId,
+          quantity: l.quantity,
+          modifierIds: l.modifierIds,
         })),
       }),
     onSuccess: (order) => {
       setPlaced(order);
-      setCart({});
+      setCart([]);
+      queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] });
     },
   });
 
@@ -98,20 +155,34 @@ export default function PublicMenuPage({
     setGuestName(trimmed);
   };
 
-  const allItems = data?.categories.flatMap((c) => c.items) ?? [];
-  const cartCount = Object.values(cart).reduce((sum, q) => sum + q, 0);
-  const cartTotal = Object.entries(cart).reduce((sum, [itemId, qty]) => {
-    const item = allItems.find((i) => i.id === itemId);
-    return sum + (item ? Number(item.price) * qty : 0);
-  }, 0);
+  const cartCount = cart.reduce((sum, l) => sum + l.quantity, 0);
+  const cartTotal = cart.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0);
+  const quantityOfItem = (itemId: string) =>
+    cart.filter((l) => l.menuItemId === itemId).reduce((sum, l) => sum + l.quantity, 0);
 
-  const addToCart = (itemId: string) =>
-    setCart((prev) => ({ ...prev, [itemId]: (prev[itemId] ?? 0) + 1 }));
-  const removeFromCart = (itemId: string) =>
+  const addLine = (item: PublicMenuItem, modifierIds: string[], label: string, extra: number) => {
+    const key = `${item.id}:${[...modifierIds].sort().join(",")}`;
     setCart((prev) => {
-      const next = { ...prev, [itemId]: (prev[itemId] ?? 0) - 1 };
-      if (next[itemId] <= 0) delete next[itemId];
-      return next;
+      const existing = prev.find((l) => l.key === key);
+      if (existing) return prev.map((l) => (l.key === key ? { ...l, quantity: l.quantity + 1 } : l));
+      return [
+        ...prev,
+        { key, menuItemId: item.id, modifierIds, label, unitPrice: Number(item.price) + extra, quantity: 1 },
+      ];
+    });
+  };
+  const handleAdd = (item: PublicMenuItem) => {
+    if (item.modifierGroups.length > 0) setPickerItem(item);
+    else addLine(item, [], "", 0);
+  };
+  const removeOne = (itemId: string) =>
+    setCart((prev) => {
+      const idx = [...prev].reverse().findIndex((l) => l.menuItemId === itemId);
+      if (idx < 0) return prev;
+      const at = prev.length - 1 - idx;
+      return prev
+        .map((l, i) => (i === at ? { ...l, quantity: l.quantity - 1 } : l))
+        .filter((l) => l.quantity > 0);
     });
 
   if (error) {
@@ -226,7 +297,7 @@ export default function PublicMenuPage({
                 </h2>
                 <div className="flex flex-col divide-y divide-border">
                   {category.items.map((item) => {
-                    const quantity = cart[item.id] ?? 0;
+                    const quantity = quantityOfItem(item.id);
                     return (
                       <div key={item.id} className="flex items-start justify-between gap-4 py-3">
                         <div className="flex items-start gap-2">
@@ -251,7 +322,7 @@ export default function PublicMenuPage({
                               variant="outline"
                               size="icon"
                               className="h-7 w-7"
-                              onClick={() => removeFromCart(item.id)}
+                              onClick={() => removeOne(item.id)}
                             >
                               <Minus className="h-3 w-3" />
                             </Button>
@@ -260,7 +331,7 @@ export default function PublicMenuPage({
                               variant="outline"
                               size="icon"
                               className="h-7 w-7"
-                              onClick={() => addToCart(item.id)}
+                              onClick={() => handleAdd(item)}
                             >
                               <Plus className="h-3 w-3" />
                             </Button>
@@ -270,7 +341,7 @@ export default function PublicMenuPage({
                             variant="outline"
                             size="sm"
                             className="shrink-0"
-                            onClick={() => addToCart(item.id)}
+                            onClick={() => handleAdd(item)}
                           >
                             {t("order.add")}
                           </Button>
@@ -284,6 +355,65 @@ export default function PublicMenuPage({
           </div>
         )}
       </main>
+
+      {status && (status.order || status.openRequests.length > 0 || data) && (
+        <section className="mx-auto max-w-lg px-5 pb-6">
+          {status.order && (
+            <div className="mb-4 rounded-2xl border border-border p-4">
+              <p className="text-sm font-medium text-foreground">
+                Your order #{status.order.orderNumber}
+                {status.order.acceptance === "PENDING" && " — waiting for the restaurant to confirm"}
+              </p>
+              <ul className="mt-2 flex flex-col gap-1 text-sm text-muted-foreground">
+                {status.order.items.map((i) => (
+                  <li key={i.id} className="flex justify-between gap-3">
+                    <span>
+                      {i.quantity} × {i.nameSnapshot}
+                    </span>
+                    <span>{ITEM_STATUS_LABEL[i.status] ?? i.status}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="h-11 flex-1"
+              disabled={requestService.isPending || status.openRequests.includes("WAITER")}
+              onClick={() => requestService.mutate("WAITER")}
+            >
+              <BellRing className="mr-2 h-4 w-4" />
+              {status.openRequests.includes("WAITER") ? "Waiter is coming" : "Call waiter"}
+            </Button>
+            {status.order && (
+              <Button
+                variant="outline"
+                className="h-11 flex-1"
+                disabled={requestService.isPending || status.openRequests.includes("BILL")}
+                onClick={() => requestService.mutate("BILL")}
+              >
+                <Receipt className="mr-2 h-4 w-4" />
+                {status.openRequests.includes("BILL") ? "Bill requested" : "Request bill"}
+              </Button>
+            )}
+          </div>
+        </section>
+      )}
+
+      <ModifierPickerDialog
+        item={pickerItem}
+        open={!!pickerItem}
+        onOpenChange={(open) => !open && setPickerItem(null)}
+        onConfirm={(ids, label) => {
+          if (!pickerItem) return;
+          const extra = ids.reduce((sum, id) => {
+            const m = pickerItem.modifierGroups.flatMap((g) => g.modifierGroup.modifiers).find((x) => x.id === id);
+            return sum + (m ? Number(m.priceAdjustment) : 0);
+          }, 0);
+          addLine(pickerItem, ids, label, extra);
+        }}
+      />
 
       <footer className="border-t border-border px-5 py-6 text-center text-xs text-muted-foreground">
         {t("order.pricesIncludeTax")}

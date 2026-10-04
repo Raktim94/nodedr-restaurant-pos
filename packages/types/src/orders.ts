@@ -143,3 +143,6 @@ export const kotItemStatusUpdateSchema = z.object({
 });
 export type KotItemStatusUpdateDto = z.infer<typeof kotItemStatusUpdateSchema>;
 
+
+export const publicRequestSchema = z.object({ type: z.enum(["WAITER", "BILL"]) });
+export type PublicRequestDto = z.infer<typeof publicRequestSchema>;

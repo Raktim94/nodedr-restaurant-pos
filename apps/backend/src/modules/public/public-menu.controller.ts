@@ -1,7 +1,10 @@
 import { Body, Controller, Get, Param, Post, UsePipes } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { publicOrderSchema } from '@nodedr-restaurant/types';
+import {
+  publicOrderSchema,
+  publicRequestSchema,
+} from '@nodedr-restaurant/types';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PublicMenuService } from './public-menu.service';
 
@@ -28,5 +31,20 @@ export class PublicMenuController {
   createOrder(@Param('qrToken') qrToken: string, @Body() body: unknown) {
     const { items, guestName } = body as { items: never; guestName: string };
     return this.publicMenuService.createOrder(qrToken, items, guestName);
+  }
+
+  @Get('menu/:qrToken/status')
+  getStatus(@Param('qrToken') qrToken: string) {
+    return this.publicMenuService.getStatus(qrToken);
+  }
+
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @Post('menu/:qrToken/request')
+  @UsePipes(new ZodValidationPipe(publicRequestSchema))
+  createRequest(@Param('qrToken') qrToken: string, @Body() body: unknown) {
+    return this.publicMenuService.createRequest(
+      qrToken,
+      (body as { type: 'WAITER' | 'BILL' }).type,
+    );
   }
 }

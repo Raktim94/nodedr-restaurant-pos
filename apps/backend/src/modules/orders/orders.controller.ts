@@ -107,7 +107,11 @@ export class OrdersController {
     @Query('type') type?: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.ordersService.listForManagement(branchId, { tab, channel, type });
+    return this.ordersService.listForManagement(branchId, {
+      tab,
+      channel,
+      type,
+    });
   }
 
   @Auth('orders.create')

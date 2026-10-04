@@ -14,7 +14,9 @@ export class ScheduledOrdersService {
     try {
       const released = await this.orders.releaseDueScheduledOrders();
       if (released > 0)
-        this.logger.log(`Released ${released} scheduled order(s) to the kitchen`);
+        this.logger.log(
+          `Released ${released} scheduled order(s) to the kitchen`,
+        );
     } catch (err) {
       this.logger.error(
         `Scheduled-order release failed: ${err instanceof Error ? err.message : String(err)}`,

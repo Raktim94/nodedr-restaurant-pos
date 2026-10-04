@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TableRequestsBar } from "@/components/tables/table-requests-bar";
 import { useBranch } from "@/hooks/use-branch";
 import { useFloors, type RestaurantTable } from "@/hooks/use-tables";
 
@@ -51,6 +52,7 @@ export default function TablesPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <TableRequestsBar branchId={branchId} />
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Tables</h1>

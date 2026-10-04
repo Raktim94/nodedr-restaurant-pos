@@ -10,11 +10,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { MenuItem } from "@/hooks/use-menu";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-function defaultSelection(item: MenuItem): Record<string, Set<string>> {
+// Structural subset of an item, so both the staff POS menu and the public
+// QR menu can use this picker.
+export interface PickerItem {
+  id: string;
+  name: string;
+  modifierGroups: {
+    modifierGroup: {
+      id: string;
+      name: string;
+      minSelect: number;
+      maxSelect: number;
+      isRequired?: boolean;
+      modifiers: { id: string; name: string; priceAdjustment: string; isDefault: boolean }[];
+    };
+  }[];
+}
+
+function defaultSelection(item: PickerItem): Record<string, Set<string>> {
   const defaults: Record<string, Set<string>> = {};
   for (const { modifierGroup } of item.modifierGroups) {
     const defaultIds = modifierGroup.modifiers.filter((m) => m.isDefault).map((m) => m.id);
@@ -32,7 +48,7 @@ function ModifierPickerBody({
   item,
   onConfirm,
 }: {
-  item: MenuItem;
+  item: PickerItem;
   onConfirm: (modifierIds: string[], modifierLabel: string) => void;
 }) {
   const [selected, setSelected] = useState<Record<string, Set<string>>>(() => defaultSelection(item));
@@ -56,8 +72,9 @@ function ModifierPickerBody({
   const handleConfirm = () => {
     for (const group of groups) {
       const count = selected[group.id]?.size ?? 0;
-      if (count < group.minSelect) {
-        toast.error(`Choose at least ${group.minSelect} option(s) for ${group.name}`);
+      const min = Math.max(group.minSelect, group.isRequired ? 1 : 0);
+      if (count < min) {
+        toast.error(`Choose at least ${min} option(s) for ${group.name}`);
         return;
       }
     }
@@ -126,7 +143,7 @@ export function ModifierPickerDialog({
   onOpenChange,
   onConfirm,
 }: {
-  item: MenuItem | null;
+  item: PickerItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (modifierIds: string[], modifierLabel: string) => void;

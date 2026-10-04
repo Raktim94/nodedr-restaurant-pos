@@ -35,6 +35,27 @@ export class TablesController {
     private readonly branchAccess: BranchAccessService,
   ) {}
 
+  @Auth('tables.manage')
+  @Get('requests')
+  async listRequests(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.listOpenRequests(branchId);
+  }
+
+  @Auth('tables.manage')
+  @Patch('requests/:id/resolve')
+  async resolveRequest(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.resolveRequest(branchId, id);
+  }
+
   @Auth()
   @Get('floors')
   async listFloors(

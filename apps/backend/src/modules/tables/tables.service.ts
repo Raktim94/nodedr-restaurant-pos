@@ -174,4 +174,26 @@ export class TablesService {
     });
     if (!table) throw new NotFoundException('Table not found');
   }
+
+  /** Open guest requests (call waiter / bring bill) for a branch. */
+  listOpenRequests(branchId: string) {
+    return this.prisma.tableRequest.findMany({
+      where: { branchId, resolvedAt: null },
+      include: { table: { select: { id: true, number: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async resolveRequest(branchId: string, id: string) {
+    const request = await this.prisma.tableRequest.findFirst({
+      where: { id, branchId },
+    });
+    if (!request) throw new NotFoundException('Request not found');
+    const updated = await this.prisma.tableRequest.update({
+      where: { id },
+      data: { resolvedAt: new Date() },
+    });
+    this.realtime.emitToBranch(branchId, 'table.request', { id });
+    return updated;
+  }
 }

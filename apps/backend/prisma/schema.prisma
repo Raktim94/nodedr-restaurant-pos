@@ -472,6 +472,8 @@ model Table {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  requests TableRequest[]
+
   @@unique([floorId, number])
   @@index([floorId])
   @@map("tables")
@@ -1522,4 +1524,25 @@ model DeliveryZone {
 
   @@index([branchId, isActive])
   @@map("delivery_zones")
+}
+
+// Guest "call waiter" / "ask for bill" from the table QR page (Phase 5).
+enum TableRequestType {
+  WAITER
+  BILL
+}
+
+model TableRequest {
+  id       String @id @default(cuid())
+  branchId String
+  tableId  String
+  table    Table  @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  type       TableRequestType
+  createdAt  DateTime         @default(now())
+  resolvedAt DateTime?
+
+  @@index([branchId, resolvedAt])
+  @@index([tableId, type, resolvedAt])
+  @@map("table_requests")
 }

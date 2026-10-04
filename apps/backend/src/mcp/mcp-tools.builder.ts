@@ -406,7 +406,8 @@ export class McpToolsBuilder {
       {
         name: 'assign_driver',
         title: 'Assign delivery driver',
-        description: 'Assign a staff member as the driver for a delivery order.',
+        description:
+          'Assign a staff member as the driver for a delivery order.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -442,7 +443,13 @@ export class McpToolsBuilder {
             orderId: { type: 'string' },
             status: {
               type: 'string',
-              enum: ['UNASSIGNED', 'ASSIGNED', 'PICKED_UP', 'DELIVERED', 'FAILED'],
+              enum: [
+                'UNASSIGNED',
+                'ASSIGNED',
+                'PICKED_UP',
+                'DELIVERED',
+                'FAILED',
+              ],
             },
           },
           required: ['branchId', 'orderId', 'status'],
@@ -464,7 +471,8 @@ export class McpToolsBuilder {
       {
         name: 'list_delivery_zones',
         title: 'List delivery zones',
-        description: "List a location's delivery zones (fee, minimum order, ETA, pincodes).",
+        description:
+          "List a location's delivery zones (fee, minimum order, ETA, pincodes).",
         inputSchema: {
           type: 'object',
           properties: { branchId: { type: 'string' } },
@@ -512,7 +520,10 @@ export class McpToolsBuilder {
         description: 'Clock the calling staff member in at a location.',
         inputSchema: {
           type: 'object',
-          properties: { branchId: { type: 'string' }, note: { type: 'string' } },
+          properties: {
+            branchId: { type: 'string' },
+            note: { type: 'string' },
+          },
           required: ['branchId'],
         },
         readOnly: false,
@@ -520,7 +531,11 @@ export class McpToolsBuilder {
           const branchId = args.string('branchId');
           await this.assertBranch(actor, branchId);
           return json(
-            await this.attendance.clockIn(actor.id, branchId, args.optionalString('note')),
+            await this.attendance.clockIn(
+              actor.id,
+              branchId,
+              args.optionalString('note'),
+            ),
           );
         },
       },
@@ -528,10 +543,18 @@ export class McpToolsBuilder {
         name: 'clock_out',
         title: 'Clock out',
         description: 'Clock the calling staff member out of their open shift.',
-        inputSchema: { type: 'object', properties: { note: { type: 'string' } } },
+        inputSchema: {
+          type: 'object',
+          properties: { note: { type: 'string' } },
+        },
         readOnly: false,
         handler: async (args) =>
-          json(await this.attendance.clockOut(actor.id, args.optionalString('note'))),
+          json(
+            await this.attendance.clockOut(
+              actor.id,
+              args.optionalString('note'),
+            ),
+          ),
       },
       {
         name: 'list_reservations',
