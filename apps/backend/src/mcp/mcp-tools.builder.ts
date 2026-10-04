@@ -16,6 +16,8 @@ import { ReservationsService } from '../modules/reservations/reservations.servic
 import { DashboardService } from '../modules/dashboard/dashboard.service';
 import { MenuService } from '../modules/menu/menu.service';
 import { DeliveryService } from '../modules/delivery/delivery.service';
+import { AccountingService } from '../modules/accounting/accounting.service';
+import { HrService } from '../modules/hr/hr.service';
 import { AttendanceService } from '../modules/attendance/attendance.service';
 import { TablesService } from '../modules/tables/tables.service';
 
@@ -213,6 +215,8 @@ export class McpToolsBuilder {
     private readonly tables: TablesService,
     private readonly attendance: AttendanceService,
     private readonly delivery: DeliveryService,
+    private readonly hr: HrService,
+    private readonly accounting: AccountingService,
   ) {}
 
   build(actor: SessionUser): McpServer {
@@ -484,6 +488,200 @@ export class McpToolsBuilder {
           const branchId = args.string('branchId');
           await this.assertBranch(actor, branchId);
           return json(await this.delivery.listZones(branchId));
+        },
+      },
+      {
+        name: 'list_shifts',
+        title: 'List staff shifts',
+        description:
+          'List scheduled staff shifts for one location, optionally between two dates (YYYY-MM-DD).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+          },
+          required: ['branchId'],
+        },
+        readOnly: true,
+        requiredPermission: 'staff.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.hr.listShifts(
+              branchId,
+              args.optionalString('from'),
+              args.optionalString('to'),
+            ),
+          );
+        },
+      },
+      {
+        name: 'list_leave_requests',
+        title: 'List leave requests',
+        description:
+          'List staff leave requests for one location, optionally only PENDING, APPROVED or REJECTED.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            status: { type: 'string' },
+          },
+          required: ['branchId'],
+        },
+        readOnly: true,
+        requiredPermission: 'staff.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.hr.listLeave(branchId, args.optionalString('status')),
+          );
+        },
+      },
+      {
+        name: 'decide_leave_request',
+        title: 'Approve or reject leave',
+        description: 'Approve or reject a pending leave request.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            leaveId: { type: 'string' },
+            status: { type: 'string', enum: ['APPROVED', 'REJECTED'] },
+          },
+          required: ['branchId', 'leaveId', 'status'],
+        },
+        readOnly: false,
+        requiredPermission: 'staff.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const status = args.string('status');
+          if (status !== 'APPROVED' && status !== 'REJECTED')
+            throw new Error('"status" must be APPROVED or REJECTED');
+          return json(
+            await this.hr.decideLeave(
+              branchId,
+              args.string('leaveId'),
+              actor.id,
+              status,
+            ),
+          );
+        },
+      },
+      {
+        name: 'staff_performance',
+        title: 'Staff performance',
+        description:
+          'Per-staff orders, sales, tips, hours worked and sales per hour between two dates (YYYY-MM-DD).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+          },
+          required: ['branchId', 'from', 'to'],
+        },
+        readOnly: true,
+        requiredPermission: 'staff.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.hr.performance(
+              branchId,
+              args.string('from'),
+              args.string('to'),
+            ),
+          );
+        },
+      },
+      {
+        name: 'profit_and_loss',
+        title: 'Profit and loss',
+        description:
+          'Net sales, expenses by category, payroll cost and net profit for a location between two dates (YYYY-MM-DD).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+          },
+          required: ['branchId', 'from', 'to'],
+        },
+        readOnly: true,
+        requiredPermission: 'accounting.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.accounting.profitAndLoss(
+              branchId,
+              args.string('from'),
+              args.string('to'),
+            ),
+          );
+        },
+      },
+      {
+        name: 'gst_report',
+        title: 'GST / tax report',
+        description:
+          'Taxable value and tax collected, grouped by tax rate, between two dates (YYYY-MM-DD).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+          },
+          required: ['branchId', 'from', 'to'],
+        },
+        readOnly: true,
+        requiredPermission: 'accounting.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.accounting.gstReport(
+              branchId,
+              args.string('from'),
+              args.string('to'),
+            ),
+          );
+        },
+      },
+      {
+        name: 'list_expenses',
+        title: 'List expenses',
+        description:
+          'List recorded expenses for a location between two dates (YYYY-MM-DD).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+          },
+          required: ['branchId', 'from', 'to'],
+        },
+        readOnly: true,
+        requiredPermission: 'accounting.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.accounting.listExpenses(
+              branchId,
+              args.string('from'),
+              args.string('to'),
+            ),
+          );
         },
       },
       {

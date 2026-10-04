@@ -71,11 +71,16 @@ model Restaurant {
 }
 
 model Branch {
-  id           String     @id @default(cuid())
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  attendance   Attendance[]
+  id            String         @id @default(cuid())
+  restaurantId  String
+  restaurant    Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  attendance    Attendance[]
   deliveryZones DeliveryZone[]
+  shifts        Shift[]
+  leaveRequests LeaveRequest[]
+  payrollRuns   PayrollRun[]
+  expenses      Expense[]
+  cashClosings  CashClosing[]
 
   name      String
   address   String?
@@ -217,6 +222,12 @@ model User {
   wasteLogsCreated      WasteLog[]      @relation("WasteLogCreatedBy")
   attendance            Attendance[]
   deliveriesDriven      Order[]         @relation("OrderDriver")
+  shifts                Shift[]
+  leaveRequests         LeaveRequest[]  @relation("LeaveRequester")
+  leaveDecided          LeaveRequest[]  @relation("LeaveDecider")
+  payProfile            StaffPay?
+  payrollLines          PayrollLine[]
+  expensesCreated       Expense[]
 
   purchaseRequestsRequested PurchaseRequest[]   @relation("PurchaseRequestRequestedBy")
   purchaseRequestsApproved  PurchaseRequest[]   @relation("PurchaseRequestApprovedBy")
@@ -1197,8 +1208,8 @@ model Order {
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   orderNumber String // human-readable, sequential per branch per day
-  type        OrderType   @default(DINE_IN)
-  status      OrderStatus @default(OPEN)
+  type        OrderType        @default(DINE_IN)
+  status      OrderStatus      @default(OPEN)
   channel     OrderChannel     @default(STAFF)
   acceptance  AcceptanceStatus @default(NOT_REQUIRED)
 
@@ -1228,19 +1239,19 @@ model Order {
   // Delivery (Phase 5). deliveryFee is added on top of the item total at
   // checkout; the zone's fee is snapshotted so later zone edits never
   // rewrite history.
-  deliveryZoneId   String?
-  deliveryZone     DeliveryZone? @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
-  deliveryFee      Decimal        @default(0) @db.Decimal(12, 2)
-  deliveryAddress  String?
-  deliveryPincode  String?
-  deliveryPhone    String?
-  deliveryStatus   DeliveryStatus?
-  driverId         String?
-  driver           User?          @relation("OrderDriver", fields: [driverId], references: [id], onDelete: SetNull)
-  deliveryEtaAt    DateTime?
-  deliveredAt      DateTime?
+  deliveryZoneId  String?
+  deliveryZone    DeliveryZone?   @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
+  deliveryFee     Decimal         @default(0) @db.Decimal(12, 2)
+  deliveryAddress String?
+  deliveryPincode String?
+  deliveryPhone   String?
+  deliveryStatus  DeliveryStatus?
+  driverId        String?
+  driver          User?           @relation("OrderDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  deliveryEtaAt   DateTime?
+  deliveredAt     DateTime?
   // Scheduled / pre-order: the kitchen should not start before this time.
-  scheduledFor     DateTime?
+  scheduledFor    DateTime?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1545,4 +1556,164 @@ model TableRequest {
   @@index([branchId, resolvedAt])
   @@index([tableId, type, resolvedAt])
   @@map("table_requests")
+}
+
+// ---------------------------------------------------------------------------
+// Staff scheduling, leave, payroll (Phase 6)
+// ---------------------------------------------------------------------------
+
+model Shift {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  startsAt DateTime
+  endsAt   DateTime
+  note     String?
+
+  @@index([branchId, startsAt])
+  @@index([userId, startsAt])
+  @@map("shifts")
+}
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  UNPAID
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model LeaveRequest {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User   @relation("LeaveRequester", fields: [userId], references: [id], onDelete: Cascade)
+
+  type      LeaveType   @default(ANNUAL)
+  startDate DateTime    @db.Date
+  endDate   DateTime    @db.Date
+  reason    String?
+  status    LeaveStatus @default(PENDING)
+
+  decidedById String?
+  decidedBy   User?     @relation("LeaveDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([branchId, status])
+  @@index([userId, startDate])
+  @@map("leave_requests")
+}
+
+enum PayType {
+  MONTHLY
+  HOURLY
+}
+
+// One pay profile per staff member. MONTHLY rate is the full-month salary
+// (pro-rated by the days in the payroll period); HOURLY is per clocked hour.
+model StaffPay {
+  userId  String  @id
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payType PayType @default(MONTHLY)
+  rate    Decimal @default(0) @db.Decimal(12, 2)
+
+  @@map("staff_pay")
+}
+
+enum PayrollStatus {
+  DRAFT
+  FINALIZED
+}
+
+model PayrollRun {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  periodStart DateTime      @db.Date
+  periodEnd   DateTime      @db.Date
+  status      PayrollStatus @default(DRAFT)
+  tipPool     Decimal       @default(0) @db.Decimal(12, 2)
+  totalNet    Decimal       @default(0) @db.Decimal(12, 2)
+  createdAt   DateTime      @default(now())
+  finalizedAt DateTime?
+
+  lines PayrollLine[]
+
+  @@index([branchId, periodStart])
+  @@map("payroll_runs")
+}
+
+model PayrollLine {
+  id     String     @id @default(cuid())
+  runId  String
+  run    PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  userId String
+  user   User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  hoursWorked          Decimal @db.Decimal(8, 2)
+  basePay              Decimal @db.Decimal(12, 2)
+  tipShare             Decimal @default(0) @db.Decimal(12, 2)
+  unpaidLeaveDeduction Decimal @default(0) @db.Decimal(12, 2)
+  netPay               Decimal @db.Decimal(12, 2)
+
+  @@unique([runId, userId])
+  @@map("payroll_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Accounting (Phase 6)
+// ---------------------------------------------------------------------------
+
+model Expense {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  spentOn  DateTime @db.Date
+  category String
+  amount   Decimal  @db.Decimal(12, 2)
+  note     String?
+  // Paid out of the till: counted against expected cash at day close.
+  paidFromCash Boolean @default(false)
+
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([branchId, spentOn])
+  @@map("expenses")
+}
+
+// End-of-day cash count. expectedCash = opening float + cash payments taken
+// that day - cash expenses recorded that day; variance = counted - expected.
+model CashClosing {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  businessDate DateTime @db.Date
+  openingFloat Decimal  @default(0) @db.Decimal(12, 2)
+  cashSales    Decimal  @db.Decimal(12, 2)
+  cashExpenses Decimal  @default(0) @db.Decimal(12, 2)
+  expectedCash Decimal  @db.Decimal(12, 2)
+  countedCash  Decimal  @db.Decimal(12, 2)
+  variance     Decimal  @db.Decimal(12, 2)
+  note         String?
+
+  closedById String
+  createdAt  DateTime @default(now())
+
+  @@unique([branchId, businessDate])
+  @@map("cash_closings")
 }
