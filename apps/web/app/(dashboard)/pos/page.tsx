@@ -1,8 +1,9 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { publishDisplay } from "@/lib/customer-display";
 import { CartPanel, type DeliveryDetails, type PosOrderType } from "@/components/pos/cart-panel";
 import { cartLineKey, type CartLine } from "@/components/pos/cart-line";
 import { CheckoutPanel } from "@/components/pos/checkout-panel";
@@ -43,6 +44,24 @@ function PosPageInner() {
   const [tableId, setTableId] = useState(preselectedTableId);
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [activeOrder, setActiveOrder] = useState<CreatedOrder | null>(null);
+
+  // Mirror the cart to the customer-facing display (/customer-display).
+  useEffect(() => {
+    if (activeOrder) return;
+    publishDisplay(
+      lines.length === 0
+        ? { kind: "idle" }
+        : {
+            kind: "cart",
+            lines: lines.map((l) => ({
+              name: l.modifierLabel ? `${l.name} (${l.modifierLabel})` : l.name,
+              quantity: l.quantity,
+              total: l.unitPrice * l.quantity,
+            })),
+            subtotal: lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0),
+          },
+    );
+  }, [lines, activeOrder]);
 
   const createOrder = useCreateOrder(branchId);
   const addOrderItems = useAddOrderItems(branchId);

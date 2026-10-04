@@ -5,12 +5,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { usePrintTestSlip, usePrinterDiagnostics } from "@/hooks/use-print";
+import { useOpenCashDrawer, usePrintTestSlip, usePrinterDiagnostics } from "@/hooks/use-print";
 import { ApiError } from "@/lib/api";
 
 export function PrinterDiagnosticsCard() {
   const { data, isLoading, isFetching, refetch } = usePrinterDiagnostics();
   const testPrint = usePrintTestSlip();
+  const openDrawer = useOpenCashDrawer();
 
   return (
     <Card className="flex flex-col gap-4 p-6">
@@ -72,6 +73,25 @@ export function PrinterDiagnosticsCard() {
         >
           {testPrint.isPending ? "Printing…" : "Send test print"}
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-2"
+          disabled={openDrawer.isPending}
+          onClick={() =>
+            openDrawer.mutate(undefined, {
+              onSuccess: () => toast.success("Cash drawer pulse sent"),
+              onError: (err) =>
+                toast.error(err instanceof ApiError ? err.message : "Could not open the cash drawer"),
+            })
+          }
+        >
+          Open cash drawer
+        </Button>
+        <p className="mt-2 text-xs text-muted-foreground">
+          The drawer must be plugged into the printer&rsquo;s drawer (RJ11) port. Receipts printed via USB for cash
+          payments open it automatically.
+        </p>
       </div>
     </Card>
   );
