@@ -16,6 +16,7 @@ import { AuditService } from '../../audit/audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { InventoryService } from '../inventory/inventory.service';
+import { MarketingService } from '../marketing/marketing.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import {
@@ -37,6 +38,7 @@ export class OrdersService {
     private readonly inventory: InventoryService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly marketing: MarketingService,
   ) {}
 
   async listOpen(branchId: string, tableId?: string) {
@@ -657,10 +659,18 @@ export class OrdersService {
         taxRatePercent: Number(item.taxRateSnapshot),
       }),
     );
+    // Coupon / happy-hour discount, worked out on the bill's own subtotal
+    // and added to any manual discount the cashier entered. A bad coupon
+    // code throws here, before anything is charged.
+    const autoDiscount = await this.marketing.resolveCheckoutDiscount(
+      branchId,
+      round2(lines.reduce((sum, l) => sum + l.lineTotal, 0)),
+      dto.couponCode,
+    );
     const totals = computeOrderTotals(
       lines,
       dto.discountPercent ?? 0,
-      dto.discountFlat ?? 0,
+      (dto.discountFlat ?? 0) + autoDiscount.amount,
     );
 
     // Loyalty redemption is a further flat discount on top of
@@ -692,6 +702,10 @@ export class OrdersService {
     const updated = await this.prisma.$transaction(async (tx) => {
       let loyaltyDiscountAmount = 0;
       let actualPointsRedeemed = 0;
+
+      if (autoDiscount.couponId) {
+        await this.marketing.redeemCoupon(tx, autoDiscount.couponId);
+      }
 
       if (pointsToRedeem > 0 && effectiveCustomerId) {
         const customer = await tx.customer.findUniqueOrThrow({
@@ -810,6 +824,8 @@ export class OrdersService {
               ? { customerId: effectiveCustomerId }
               : {}),
             discountAmount: totals.discountAmount,
+            couponCode: autoDiscount.couponCode,
+            promotionName: autoDiscount.promotionName,
             loyaltyPointsRedeemed: actualPointsRedeemed,
             loyaltyDiscountAmount,
             tipAmount,

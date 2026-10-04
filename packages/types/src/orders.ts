@@ -114,6 +114,7 @@ export const checkoutSchema = z.object({
   tipAmount: z.coerce.number().min(0).optional(),
   loyaltyPointsToRedeem: z.number().int().min(0).optional(),
   giftCardCode: z.string().optional(),
+  couponCode: z.string().trim().min(3).max(24).optional(),
   payments: z
     .array(
       z.object({
