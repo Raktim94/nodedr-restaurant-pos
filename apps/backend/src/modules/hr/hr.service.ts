@@ -8,16 +8,20 @@ import type {
   ShiftDto,
   StaffPayDto,
 } from '@nodedr-restaurant/types';
+import { localDate, zonedRange } from '../../common/time';
+import { BranchTimeService } from '../../common/services/branch-time.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { computePayroll, round2 } from './payroll.calc';
 
 const dayStart = (d: string) => new Date(`${d}T00:00:00.000Z`);
-const dayAfter = (d: string) => new Date(dayStart(d).getTime() + 86_400_000);
 const USER = { select: { id: true, name: true } } as const;
 
 @Injectable()
 export class HrService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly time: BranchTimeService,
+  ) {}
 
   private async assertStaffInBranch(branchId: string, userId: string) {
     const link = await this.prisma.userBranch.findFirst({
@@ -29,7 +33,14 @@ export class HrService {
 
   // --- Shifts --------------------------------------------------------------
 
-  listShifts(branchId: string, from?: string, to?: string, userId?: string) {
+  async listShifts(
+    branchId: string,
+    from?: string,
+    to?: string,
+    userId?: string,
+  ) {
+    const tz = await this.time.tzForBranch(branchId);
+    const r = zonedRange(from ?? to ?? '1970-01-01', to ?? '9999-12-30', tz);
     return this.prisma.shift.findMany({
       where: {
         branchId,
@@ -37,8 +48,8 @@ export class HrService {
         ...(from || to
           ? {
               startsAt: {
-                ...(from ? { gte: dayStart(from) } : {}),
-                ...(to ? { lt: dayAfter(to) } : {}),
+                ...(from ? { gte: r.gte } : {}),
+                ...(to ? { lt: r.lt } : {}),
               },
             }
           : {}),
@@ -64,12 +75,13 @@ export class HrService {
       throw new BadRequestException(
         'That person already has a shift at this time',
       );
+    const tz = await this.time.tzForBranch(branchId);
     const onLeave = await this.prisma.leaveRequest.findFirst({
       where: {
         userId: dto.userId,
         status: 'APPROVED',
-        startDate: { lte: endsAt },
-        endDate: { gte: dayStart(dto.startsAt.slice(0, 10)) },
+        startDate: { lte: dayStart(localDate(endsAt, tz)) },
+        endDate: { gte: dayStart(localDate(startsAt, tz)) },
       },
     });
     if (onLeave)
@@ -208,8 +220,9 @@ export class HrService {
         'A payroll run already covers part of this period',
       );
 
-    const from = dayStart(periodStart);
-    const to = dayAfter(periodEnd);
+    const from = dayStart(periodStart); // date columns (leave, payroll period)
+    const tz = await this.time.tzForBranch(branchId);
+    const zoned = zonedRange(periodStart, periodEnd, tz);
 
     const links = await this.prisma.userBranch.findMany({
       where: {
@@ -226,14 +239,14 @@ export class HrService {
     const records = await this.prisma.attendance.findMany({
       where: {
         branchId,
-        clockOutAt: { not: null, gt: from },
-        clockInAt: { lt: to },
+        clockOutAt: { not: null, gt: zoned.gte },
+        clockInAt: { lt: zoned.lt },
       },
     });
     const hours = new Map<string, number>();
     for (const r of records) {
-      const start = Math.max(r.clockInAt.getTime(), from.getTime());
-      const end = Math.min(r.clockOutAt!.getTime(), to.getTime());
+      const start = Math.max(r.clockInAt.getTime(), zoned.gte.getTime());
+      const end = Math.min(r.clockOutAt!.getTime(), zoned.lt.getTime());
       if (end > start)
         hours.set(
           r.userId,
@@ -264,7 +277,7 @@ export class HrService {
     }
 
     const tips = await this.prisma.order.aggregate({
-      where: { branchId, status: 'PAID', billedAt: { gte: from, lt: to } },
+      where: { branchId, status: 'PAID', billedAt: zoned },
       _sum: { tipAmount: true },
     });
     const tipPool = round2(Number(tips._sum.tipAmount ?? 0));
@@ -318,12 +331,13 @@ export class HrService {
   // --- Performance ---------------------------------------------------------
 
   async performance(branchId: string, from: string, to: string) {
-    const f = dayStart(from);
-    const t = dayAfter(to);
+    const range = zonedRange(from, to, await this.time.tzForBranch(branchId));
+    const f = range.gte;
+    const t = range.lt;
     const [orders, attendance, links] = await Promise.all([
       this.prisma.order.groupBy({
         by: ['createdById'],
-        where: { branchId, status: 'PAID', billedAt: { gte: f, lt: t } },
+        where: { branchId, status: 'PAID', billedAt: range },
         _count: { _all: true },
         _sum: { totalAmount: true, tipAmount: true },
       }),

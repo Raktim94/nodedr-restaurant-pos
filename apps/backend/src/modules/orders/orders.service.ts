@@ -318,7 +318,7 @@ export class OrdersService {
         await this.notifications.notifyByPermission(branchId, 'orders.cancel', {
           type: 'order.pending',
           title: 'New online order — accept?',
-          body: `Order ${full.orderNumber} (${full.type.replace('_', ' ')})${who ? ` — ${who}` : ''} · ₹${full.totalAmount}`,
+          body: `Order ${full.orderNumber} (${full.type.replace('_', ' ')})${who ? ` — ${who}` : ''} · ₹${Number(full.totalAmount)}`,
           entity: 'Order',
           entityId: full.id,
         });
