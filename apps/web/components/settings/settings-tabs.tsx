@@ -21,6 +21,7 @@ const TABS: SettingsTab[] = [
   { label: "Updates", href: "/settings/updates", permission: "system.update" },
   { label: "API Keys", href: "/settings/api-keys" },
   { label: "Security", href: "/settings/security" },
+  { label: "Webhooks", href: "/settings/webhooks", permission: "settings.manage" },
 ];
 
 export function SettingsTabs() {

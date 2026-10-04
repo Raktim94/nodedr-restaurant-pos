@@ -14,6 +14,7 @@ export interface Customer {
   anniversary: string | null;
   allergies: string | null;
   notes: string | null;
+  marketingOptOut?: boolean;
   loyaltyPoints: number;
   walletBalance: string;
   createdAt: string;

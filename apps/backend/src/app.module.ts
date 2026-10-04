@@ -18,6 +18,7 @@ import { MarketingModule } from './modules/marketing/marketing.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { EmailModule } from './modules/email/email.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { KdsModule } from './modules/kds/kds.module';
@@ -59,6 +60,7 @@ import { SystemModule } from './system/system.module';
     ReportsModule,
     OperationsModule,
     WebhooksModule,
+    EmailModule,
     OrdersModule,
     KdsModule,
     DashboardModule,

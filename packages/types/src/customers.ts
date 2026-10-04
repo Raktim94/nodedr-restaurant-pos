@@ -9,5 +9,6 @@ export const customerSchema = z.object({
   anniversary: z.coerce.date().optional(),
   allergies: z.string().optional(),
   notes: z.string().optional(),
+  marketingOptOut: z.boolean().optional(),
 });
 export type CustomerDto = z.infer<typeof customerSchema>;

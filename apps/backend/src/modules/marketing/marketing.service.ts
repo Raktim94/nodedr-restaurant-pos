@@ -13,6 +13,8 @@ import type {
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { localMinuteAndDay } from '../../common/time';
 import { PrismaService } from '../../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import {
   discountAmount,
   evaluateCoupon,
@@ -36,6 +38,8 @@ export class MarketingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly time: BranchTimeService,
+    private readonly email: EmailService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   // --- Coupons -------------------------------------------------------------
@@ -236,6 +240,7 @@ export class MarketingService {
     const customers = await this.prisma.customer.findMany({
       where: {
         branchId,
+        marketingOptOut: false,
         ...(c.channel === 'EMAIL'
           ? { email: { not: null } }
           : { phone: { not: null } }),
@@ -277,5 +282,98 @@ export class MarketingService {
         contact: (c.channel === 'EMAIL' ? cu.email : cu.phone) ?? '',
       })),
     };
+  }
+
+  /**
+   * Sends a campaign. Email goes out through the operator's SMTP server. SMS
+   * and WhatsApp need a provider, so each message is handed to the
+   * restaurant's webhook (`campaign.message`) for an automation service to
+   * deliver. A campaign can be sent once an hour, so a double-click or a
+   * retry loop cannot spam customers.
+   */
+  async send(branchId: string, campaignId: string) {
+    const { campaign, recipients } = await this.audience(branchId, campaignId);
+    if (
+      campaign.lastSentAt &&
+      Date.now() - campaign.lastSentAt.getTime() < 3600_000
+    )
+      throw new BadRequestException(
+        'This campaign was sent less than an hour ago',
+      );
+    if (recipients.length === 0)
+      throw new BadRequestException('No customers match this campaign yet');
+    if (recipients.length > 500)
+      throw new BadRequestException(
+        'A campaign can reach at most 500 customers at once — narrow the audience',
+      );
+
+    // Reserve the send slot first (atomic), so two simultaneous clicks
+    // cannot both pass the check above and send twice.
+    const reserved = await this.prisma.campaign.updateMany({
+      where: {
+        id: campaign.id,
+        OR: [
+          { lastSentAt: null },
+          { lastSentAt: { lt: new Date(Date.now() - 3600_000) } },
+        ],
+      },
+      data: { lastSentAt: new Date(), lastSentCount: 0 },
+    });
+    if (reserved.count === 0)
+      throw new BadRequestException('This campaign is already being sent');
+
+    let result: { sent: number; failed: number };
+    if (campaign.channel === 'EMAIL') {
+      if (!this.email.isConfigured())
+        throw await this.releaseAndFail(
+          campaign.id,
+          'Email is not set up on this server (SMTP_URL / SMTP_FROM)',
+        );
+      const restaurant = await this.prisma.branch.findUnique({
+        where: { id: branchId },
+        select: { restaurant: { select: { name: true } } },
+      });
+      const footer = `\n\n—\nYou are receiving this because you are a customer of ${restaurant?.restaurant.name ?? 'our restaurant'}. Reply to this email to stop receiving offers.`;
+      result = await this.email.sendEach(
+        recipients.map((r) => ({
+          to: r.contact,
+          subject: campaign.name,
+          text: campaign.message + footer,
+        })),
+      );
+    } else {
+      const hasHook = await this.webhooks.hasSubscriber(
+        branchId,
+        'campaign.message',
+      );
+      if (!hasHook)
+        throw await this.releaseAndFail(
+          campaign.id,
+          `Sending ${campaign.channel === 'SMS' ? 'SMS' : 'WhatsApp'} needs a webhook subscribed to "campaign.message" (Settings > Webhooks) connected to your messaging service`,
+        );
+      for (const r of recipients) {
+        await this.webhooks.emitForBranch(branchId, 'campaign.message', {
+          campaignId: campaign.id,
+          channel: campaign.channel,
+          to: r.contact,
+          name: r.name,
+          message: campaign.message,
+        });
+      }
+      result = { sent: recipients.length, failed: 0 };
+    }
+    await this.prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { lastSentCount: result.sent },
+    });
+    return result;
+  }
+
+  private async releaseAndFail(campaignId: string, message: string) {
+    await this.prisma.campaign.update({
+      where: { id: campaignId },
+      data: { lastSentAt: null, lastSentCount: null },
+    });
+    return new BadRequestException(message);
   }
 }

@@ -1105,6 +1105,8 @@ model Customer {
   notes       String?
 
   loyaltyPoints Int     @default(0)
+  // Opted out of marketing messages; excluded from every campaign audience.
+  marketingOptOut Boolean @default(false)
   walletBalance Decimal @default(0) @db.Decimal(12, 2) // store credit
 
   createdAt DateTime   @default(now())
@@ -1806,6 +1808,8 @@ model Campaign {
   segment   CampaignSegment @default(ALL)
   message   String
   createdAt DateTime        @default(now())
+  lastSentAt    DateTime?
+  lastSentCount Int?
 
   @@index([branchId])
   @@map("campaigns")
