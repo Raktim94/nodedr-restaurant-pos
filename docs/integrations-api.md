@@ -35,7 +35,7 @@ session) — every request is authenticated independently by the key.
 ### Available tools
 
 MCP has full CRUD parity with what your account can do via the UI for
-orders, reservations, menu, and tables/floors — every tool re-checks the
+orders, reservations, menu, tables/floors, and staff attendance — every tool re-checks the
 exact permission the equivalent page in the app would require, so an MCP
 client can never do more than you personally could through the UI. Still
 deliberately excluded, regardless of role: checkout/payment processing
@@ -55,6 +55,8 @@ this list.
 | `list_reservations` | `reservations.manage` | List reservations, optionally on one date |
 | `create_reservation` | `reservations.manage` | Book a table |
 | `update_reservation_status` | `reservations.manage` | Transition a reservation's status |
+| `list_attendance` | `attendance.manage` | List staff clock-in/out records for a location, optionally one date or one staff member |
+| `clock_in` / `clock_out` | — (any staff) | Clock the calling staff member in at a location / out of their open shift |
 | `create_menu_category` / `update_menu_category` / `delete_menu_category` | `menu.manage` | Manage menu categories |
 | `create_menu_item` / `update_menu_item` / `delete_menu_item` | `menu.manage` | Manage menu items (price, image, availability, etc.) |
 | `create_floor` / `update_floor` | `tables.manage` | Manage floors/sections |

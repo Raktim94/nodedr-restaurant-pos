@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { MenuModule } from './modules/menu/menu.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { KdsModule } from './modules/kds/kds.module';
@@ -43,6 +44,7 @@ import { SystemModule } from './system/system.module';
     AuthModule,
     MenuModule,
     TablesModule,
+    AttendanceModule,
     OrdersModule,
     KdsModule,
     DashboardModule,
