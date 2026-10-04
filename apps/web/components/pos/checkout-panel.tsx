@@ -2,6 +2,7 @@
 
 import type { PaymentMethodDto } from "@nodedr-restaurant/types";
 import { ArrowLeft, CheckCircle2, Printer } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import { lookupGiftCard } from "@/hooks/use-gift-cards";
 import { useCancelOrder, useCheckoutOrder, type CreatedOrder } from "@/hooks/use-orders";
 import { usePrintOrderUsb } from "@/hooks/use-print";
 import { useSettings } from "@/hooks/use-settings";
-import { ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { openKotPrint, openReceiptPrint } from "@/lib/print";
 import { round2 } from "@/lib/pricing-preview";
@@ -47,6 +48,8 @@ export function CheckoutPanel({
   const [checkingGiftCard, setCheckingGiftCard] = useState(false);
   const [splitCount, setSplitCount] = useState("1");
   const [customer, setCustomer] = useState<Customer | null>(initialCustomer);
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState("");
   const checkout = useCheckoutOrder(branchId);
   const cancelOrder = useCancelOrder(branchId);
   const printUsb = usePrintOrderUsb(branchId);
@@ -58,7 +61,35 @@ export function CheckoutPanel({
   const tip = Number(tipAmount) || 0;
   const points = Math.max(0, Math.floor(Number(pointsToRedeem) || 0));
 
-  const afterDiscount = round2(Number(order.subtotal) * (1 - discount / 100));
+  // The server decides coupon / happy-hour discounts; ask it what would apply
+  // so the amount due shown here matches what checkout will charge.
+  const fetchPreview = (couponCode?: string) =>
+    api.post<{ amount: number; couponCode: string | null; promotionName: string | null }>(
+      `/orders/${order.id}/discount-preview?branchId=${branchId}`,
+      { couponCode },
+    );
+  const preview = useQuery({
+    queryKey: ["discount-preview", order.id, appliedCoupon],
+    queryFn: () => fetchPreview(appliedCoupon || undefined),
+    enabled: !!branchId,
+    retry: false,
+  });
+  // A coupon is checked when applied, so the preview above only ever sees a
+  // valid code (or none) and never drops the happy-hour discount on an error.
+  const applyCoupon = async () => {
+    const code = couponInput.trim();
+    if (!code) return setAppliedCoupon("");
+    try {
+      await fetchPreview(code);
+      setAppliedCoupon(code);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not apply coupon");
+    }
+  };
+  const autoDiscount = preview.data?.amount ?? 0;
+  const subtotalNum = Number(order.subtotal);
+  const manualDiscount = (subtotalNum * discount) / 100;
+  const afterDiscount = round2(Math.max(0, subtotalNum - Math.min(manualDiscount + autoDiscount, subtotalNum)));
   const loyaltyDiscount = round2(Math.min(points * loyaltyPointValue, afterDiscount));
   const deliveryFee = Number(order.deliveryFee ?? 0);
   const totalDue = round2(afterDiscount - loyaltyDiscount + tip + deliveryFee);
@@ -89,6 +120,7 @@ export function CheckoutPanel({
         dto: {
           customerId: customer?.id,
           discountPercent: discount,
+          couponCode: preview.data?.couponCode ?? undefined,
           tipAmount: tip,
           loyaltyPointsToRedeem: points > 0 ? points : undefined,
           giftCardCode: giftCardBalance !== null ? giftCardCode : undefined,
@@ -263,6 +295,34 @@ export function CheckoutPanel({
           />
         </div>
       )}
+
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="coupon">Coupon code (optional)</Label>
+        <div className="flex gap-2">
+          <Input
+            id="coupon"
+            value={couponInput}
+            onChange={(e) => setCouponInput(e.target.value)}
+            placeholder="e.g. SAVE10"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!couponInput.trim() && !appliedCoupon}
+            onClick={applyCoupon}
+          >
+            Apply
+          </Button>
+        </div>
+        {preview.data && preview.data.amount > 0 && (
+          <p className="text-xs text-success">
+            {preview.data.couponCode
+              ? `Coupon ${preview.data.couponCode}`
+              : `${preview.data.promotionName}`}{" "}
+            — {formatCurrency(preview.data.amount)} off
+          </p>
+        )}
+      </div>
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="gift-card">Gift card code (optional)</Label>
