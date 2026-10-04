@@ -7,6 +7,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useAttendance, useClock, useMyShift } from "@/hooks/use-attendance";
 import { useBranch } from "@/hooks/use-branch";
+import { useHrActions, useMyLeave } from "@/hooks/use-hr";
+import { toast } from "sonner";
+import { ApiError } from "@/lib/api";
 
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -14,6 +17,58 @@ const time = (iso: string) =>
 function duration(from: string, to: string | null) {
   const mins = Math.max(0, Math.round(((to ? new Date(to) : new Date()).getTime() - new Date(from).getTime()) / 60000));
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+function LeaveRequestCard({ branchId }: { branchId: string | null }) {
+  const { data: mine } = useMyLeave();
+  const { requestLeave } = useHrActions(branchId);
+  const today = new Date().toISOString().slice(0, 10);
+  const [f, setF] = useState({ type: "ANNUAL", startDate: today, endDate: today, reason: "" });
+  return (
+    <Card className="flex flex-col gap-3 p-5">
+      <p className="text-sm font-medium text-foreground">Request leave</p>
+      <div className="flex flex-wrap gap-2">
+        <select
+          aria-label="Leave type"
+          value={f.type}
+          onChange={(e) => setF({ ...f, type: e.target.value })}
+          className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
+        >
+          <option value="ANNUAL">Annual</option>
+          <option value="SICK">Sick</option>
+          <option value="UNPAID">Unpaid</option>
+          <option value="OTHER">Other</option>
+        </select>
+        <input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
+        <input type="date" value={f.endDate} onChange={(e) => setF({ ...f, endDate: e.target.value })} className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
+        <input placeholder="Reason (optional)" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} className="min-w-40 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
+        <Button
+          size="sm"
+          disabled={!branchId || requestLeave.isPending}
+          onClick={() =>
+            requestLeave.mutate(
+              { ...f, reason: f.reason || undefined },
+              {
+                onSuccess: () => toast.success("Leave requested"),
+                onError: (e) => toast.error(e instanceof ApiError ? e.message : "Could not request leave"),
+              },
+            )
+          }
+        >
+          Request
+        </Button>
+      </div>
+      {mine && mine.length > 0 && (
+        <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+          {mine.slice(0, 5).map((l) => (
+            <li key={l.id}>
+              {l.startDate.slice(0, 10)} → {l.endDate.slice(0, 10)} · {l.type.toLowerCase()} · {l.status.toLowerCase()}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
 }
 
 export default function AttendancePage() {
@@ -54,6 +109,8 @@ export default function AttendancePage() {
           </>
         )}
       </Card>
+
+      <LeaveRequestCard branchId={branchId} />
 
       {canManage && (
         <>
