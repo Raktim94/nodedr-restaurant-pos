@@ -15,6 +15,7 @@ export interface CreatedOrder {
   loyaltyPointsRedeemed: number;
   loyaltyDiscountAmount: string;
   totalAmount: string;
+  deliveryFee?: string;
   status: string;
 }
 

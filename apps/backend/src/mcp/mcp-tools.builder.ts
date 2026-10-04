@@ -15,6 +15,7 @@ import { OrdersService } from '../modules/orders/orders.service';
 import { ReservationsService } from '../modules/reservations/reservations.service';
 import { DashboardService } from '../modules/dashboard/dashboard.service';
 import { MenuService } from '../modules/menu/menu.service';
+import { DeliveryService } from '../modules/delivery/delivery.service';
 import { AttendanceService } from '../modules/attendance/attendance.service';
 import { TablesService } from '../modules/tables/tables.service';
 
@@ -211,6 +212,7 @@ export class McpToolsBuilder {
     private readonly menu: MenuService,
     private readonly tables: TablesService,
     private readonly attendance: AttendanceService,
+    private readonly delivery: DeliveryService,
   ) {}
 
   build(actor: SessionUser): McpServer {
@@ -376,6 +378,104 @@ export class McpToolsBuilder {
               items: args.items('items'),
             }),
           );
+        },
+      },
+      {
+        name: 'list_deliveries',
+        title: 'List deliveries',
+        description:
+          'List delivery orders for one location — active ones by default, or finished/failed ones with history=true. Each shows address, zone, fee, driver and delivery status.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            history: { type: 'boolean' },
+          },
+          required: ['branchId'],
+        },
+        readOnly: true,
+        requiredPermission: 'delivery.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.delivery.list(branchId, args.optionalBoolean('history')),
+          );
+        },
+      },
+      {
+        name: 'assign_driver',
+        title: 'Assign delivery driver',
+        description: 'Assign a staff member as the driver for a delivery order.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            orderId: { type: 'string' },
+            driverId: { type: 'string' },
+          },
+          required: ['branchId', 'orderId', 'driverId'],
+        },
+        readOnly: false,
+        requiredPermission: 'delivery.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.delivery.assignDriver(
+              branchId,
+              args.string('orderId'),
+              args.string('driverId'),
+            ),
+          );
+        },
+      },
+      {
+        name: 'update_delivery_status',
+        title: 'Update delivery status',
+        description:
+          'Move a delivery along: ASSIGNED -> PICKED_UP -> DELIVERED (or FAILED).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            orderId: { type: 'string' },
+            status: {
+              type: 'string',
+              enum: ['UNASSIGNED', 'ASSIGNED', 'PICKED_UP', 'DELIVERED', 'FAILED'],
+            },
+          },
+          required: ['branchId', 'orderId', 'status'],
+        },
+        readOnly: false,
+        requiredPermission: 'delivery.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.delivery.setStatus(
+              branchId,
+              args.string('orderId'),
+              args.string('status') as never,
+            ),
+          );
+        },
+      },
+      {
+        name: 'list_delivery_zones',
+        title: 'List delivery zones',
+        description: "List a location's delivery zones (fee, minimum order, ETA, pincodes).",
+        inputSchema: {
+          type: 'object',
+          properties: { branchId: { type: 'string' } },
+          required: ['branchId'],
+        },
+        readOnly: true,
+        requiredPermission: 'delivery.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(await this.delivery.listZones(branchId));
         },
       },
       {

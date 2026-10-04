@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
-import { CartPanel } from "@/components/pos/cart-panel";
+import { CartPanel, type DeliveryDetails, type PosOrderType } from "@/components/pos/cart-panel";
 import { cartLineKey, type CartLine } from "@/components/pos/cart-line";
 import { CheckoutPanel } from "@/components/pos/checkout-panel";
 import { KitchenProgressWidget } from "@/components/pos/kitchen-progress-widget";
@@ -37,7 +37,9 @@ function PosPageInner() {
   const preselectedTableId = useSearchParams().get("tableId") ?? "";
 
   const [lines, setLines] = useState<CartLine[]>([]);
-  const [orderType, setOrderType] = useState<"DINE_IN" | "TAKEAWAY">("DINE_IN");
+  const [orderType, setOrderType] = useState<PosOrderType>("DINE_IN");
+  const [delivery, setDelivery] = useState<DeliveryDetails>({ address: "", pincode: "", phone: "" });
+  const [scheduledFor, setScheduledFor] = useState("");
   const [tableId, setTableId] = useState(preselectedTableId);
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [activeOrder, setActiveOrder] = useState<CreatedOrder | null>(null);
@@ -121,6 +123,10 @@ function PosPageInner() {
       {
         type: orderType,
         tableId: orderType === "DINE_IN" ? tableId : undefined,
+        ...(orderType === "DELIVERY" ? { delivery } : {}),
+        ...(orderType !== "DINE_IN" && scheduledFor
+          ? { scheduledFor: new Date(scheduledFor).toISOString() }
+          : {}),
         items,
       },
       {
@@ -141,6 +147,8 @@ function PosPageInner() {
     setActiveOrder(null);
     setLines([]);
     setTableId("");
+    setDelivery({ address: "", pincode: "", phone: "" });
+    setScheduledFor("");
   };
 
   const handleTablePick = (table: RestaurantTable) => setTableId(table.id);
@@ -190,6 +198,10 @@ function PosPageInner() {
                 isSubmitting={createOrder.isPending || addOrderItems.isPending}
                 existingOrderNumber={existingOrder?.orderNumber}
                 onViewExistingOrder={existingOrder ? viewExistingOrder : undefined}
+                delivery={delivery}
+                onDeliveryChange={setDelivery}
+                scheduledFor={scheduledFor}
+                onScheduledForChange={setScheduledFor}
               />
             )}
           </Card>

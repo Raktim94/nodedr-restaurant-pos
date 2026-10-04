@@ -6,6 +6,7 @@ import { ReservationsModule } from '../modules/reservations/reservations.module'
 import { DashboardModule } from '../modules/dashboard/dashboard.module';
 import { MenuModule } from '../modules/menu/menu.module';
 import { TablesModule } from '../modules/tables/tables.module';
+import { DeliveryModule } from '../modules/delivery/delivery.module';
 import { AttendanceModule } from '../modules/attendance/attendance.module';
 import { McpController } from './mcp.controller';
 import { McpToolsBuilder } from './mcp-tools.builder';
@@ -18,6 +19,7 @@ import { McpToolsBuilder } from './mcp-tools.builder';
     MenuModule,
     TablesModule,
     AttendanceModule,
+    DeliveryModule,
   ],
   controllers: [McpController],
   providers: [McpToolsBuilder, StaffApiKeyGuard, BranchAccessService],

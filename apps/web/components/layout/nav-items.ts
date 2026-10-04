@@ -1,6 +1,7 @@
 import {
   CalendarClock,
   Clock,
+  Truck,
   ChefHat,
   LayoutDashboard,
   ClipboardList,
@@ -35,6 +36,7 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.kds", href: "/kds", icon: ChefHat, permission: "kds.manage" },
   { labelKey: "nav.customers", href: "/customers", icon: UsersRound, permission: "customers.manage" },
   { labelKey: "nav.inventory", href: "/inventory", icon: Package, permission: "inventory.manage" },
+  { labelKey: "nav.delivery", href: "/delivery", icon: Truck, permission: "delivery.manage" },
   { labelKey: "nav.attendance", href: "/attendance", icon: Clock },
   { labelKey: "nav.settings", href: "/settings", icon: Settings, permission: "settings.manage" },
 ];

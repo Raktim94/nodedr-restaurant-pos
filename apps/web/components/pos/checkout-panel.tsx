@@ -60,7 +60,8 @@ export function CheckoutPanel({
 
   const afterDiscount = round2(Number(order.subtotal) * (1 - discount / 100));
   const loyaltyDiscount = round2(Math.min(points * loyaltyPointValue, afterDiscount));
-  const totalDue = round2(afterDiscount - loyaltyDiscount + tip);
+  const deliveryFee = Number(order.deliveryFee ?? 0);
+  const totalDue = round2(afterDiscount - loyaltyDiscount + tip + deliveryFee);
 
   const giftCardApplied = giftCardBalance !== null ? round2(Math.min(giftCardBalance, totalDue)) : 0;
   const remainingDue = round2(totalDue - giftCardApplied);
@@ -201,6 +202,11 @@ export function CheckoutPanel({
           {formatCurrency(order.subtotal)}
         </p>
         <p className="text-xs text-muted-foreground">incl. {formatCurrency(order.taxAmount)} tax</p>
+        {Number(order.deliveryFee ?? 0) > 0 && (
+          <p className="text-xs text-muted-foreground">
+            + {formatCurrency(order.deliveryFee ?? 0)} delivery fee (added at payment)
+          </p>
+        )}
         <p className="mt-2 rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
           No need to pay right now — tap <span className="font-medium text-foreground">Back</span> to
           help another table and come bill this one later from here or the Tables page.
