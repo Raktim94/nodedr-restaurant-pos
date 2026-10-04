@@ -68,6 +68,7 @@ model Restaurant {
   integrationApiKeys IntegrationApiKey[]
 
   @@map("restaurants")
+  webhookEndpoints WebhookEndpoint[]
 }
 
 model Branch {
@@ -1869,4 +1870,54 @@ model Document {
 
   @@index([branchId, category])
   @@map("documents")
+}
+
+// ---------------------------------------------------------------------------
+// Outbound webhooks (Phase 8): signed events to the restaurant's own URLs, so
+// payment, accounting, SMS/WhatsApp and delivery-platform tools can be wired
+// up through any automation service.
+// ---------------------------------------------------------------------------
+
+enum WebhookStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model WebhookEndpoint {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  url         String
+  secret      String // sealed (auth/totp.ts sealSecret); shown in full once
+  events      String[] @default([])
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  deliveries WebhookDelivery[]
+
+  @@index([restaurantId, isActive])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id         String          @id @default(cuid())
+  endpointId String
+  endpoint   WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  event          String
+  payload        Json
+  status         WebhookStatus @default(PENDING)
+  attempts       Int           @default(0)
+  lastStatusCode Int?
+  lastError      String?
+  nextAttemptAt  DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  deliveredAt    DateTime?
+
+  @@index([status, nextAttemptAt])
+  @@index([endpointId, createdAt])
+  @@map("webhook_deliveries")
 }

@@ -10,6 +10,7 @@ import type {
 } from '@nodedr-restaurant/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { WebhooksService } from '../webhooks/webhooks.service';
 
 // Forward-only lifecycle; FAILED is reachable from any open state.
 const NEXT: Record<DeliveryStatusDto, DeliveryStatusDto[]> = {
@@ -30,6 +31,7 @@ export class DeliveryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   // --- Zones ---------------------------------------------------------------
@@ -190,6 +192,13 @@ export class DeliveryService {
       include: ORDER_INCLUDE,
     });
     this.realtime.emitToBranch(branchId, 'order.updated', { id: orderId });
+    void this.webhooks.emitForBranch(branchId, 'delivery.updated', {
+      orderId,
+      orderNumber: updated.orderNumber,
+      status: updated.deliveryStatus,
+      driver: updated.driver?.name ?? null,
+      address: updated.deliveryAddress,
+    });
     return updated;
   }
 }
