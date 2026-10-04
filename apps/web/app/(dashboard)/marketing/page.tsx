@@ -172,7 +172,7 @@ function AudienceCount({ branchId, id }: { branchId: string | null; id: string }
 
 function Campaigns({ branchId }: { branchId: string | null }) {
   const { data, isLoading } = useCampaigns(branchId);
-  const { createCampaign, deleteCampaign } = useMarketingActions(branchId);
+  const { createCampaign, deleteCampaign, sendCampaign } = useMarketingActions(branchId);
   const [f, setF] = useState({ name: "", channel: "SMS", segment: "ALL", message: "" });
 
   return (
@@ -223,12 +223,28 @@ function Campaigns({ branchId }: { branchId: string | null }) {
               <div>
                 <p className="font-medium text-foreground">{c.name} <span className="text-xs text-muted-foreground">· {c.channel.toLowerCase()} · {c.segment.toLowerCase().replace("_", " ")}</span></p>
                 <p className="text-xs text-muted-foreground">{c.message}</p>
-                <p className="text-xs text-muted-foreground"><AudienceCount branchId={branchId} id={c.id} /></p>
+                <p className="text-xs text-muted-foreground">
+                  <AudienceCount branchId={branchId} id={c.id} />
+                  {c.lastSentAt && ` · last sent ${new Date(c.lastSentAt).toLocaleString()} to ${c.lastSentCount ?? 0}`}
+                </p>
               </div>
               <div className="flex gap-2">
                 <a href={`/api/v1/marketing/campaigns/${c.id}/audience.csv?branchId=${branchId}`} className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-sm hover:bg-secondary">
                   <Download className="mr-2 h-4 w-4" /> Audience CSV
                 </a>
+                <Button
+                  size="sm"
+                  disabled={sendCampaign.isPending}
+                  onClick={() =>
+                    confirm(`Send "${c.name}" now to everyone in this audience?`) &&
+                    sendCampaign.mutate(c.id, {
+                      onSuccess: (r) => toast.success(`Sent to ${r.sent}${r.failed ? `, ${r.failed} failed` : ""}`),
+                      onError: (e) => toast.error(errMsg(e)),
+                    })
+                  }
+                >
+                  Send now
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => confirm(`Delete ${c.name}?`) && deleteCampaign.mutate(c.id)}>Delete</Button>
               </div>
             </div>
@@ -238,8 +254,9 @@ function Campaigns({ branchId }: { branchId: string | null }) {
         )}
       </Card>
       <p className="text-xs text-muted-foreground">
-        Sending needs an SMS / WhatsApp / email provider, which isn&rsquo;t connected yet. For now, export the audience
-        and send through your provider of choice.
+        Email is sent through your SMTP server (set <code>SMTP_URL</code> and <code>SMTP_FROM</code> on the server).
+        SMS and WhatsApp are handed to a webhook subscribed to <code>campaign.message</code> (Settings &gt; Webhooks) for
+        your messaging service to deliver. Customers marked &ldquo;do not send marketing&rdquo; are always excluded.
       </p>
     </div>
   );

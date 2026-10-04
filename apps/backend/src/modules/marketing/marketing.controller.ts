@@ -11,6 +11,7 @@ import {
   UsePipes,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import {
   campaignSchema,
   couponSchema,
@@ -23,6 +24,7 @@ import {
 import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { AuditService } from '../../audit/audit.service';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import { toCsv } from '../reports/csv';
 import { MarketingService } from './marketing.service';
@@ -33,6 +35,7 @@ export class MarketingController {
   constructor(
     private readonly marketing: MarketingService,
     private readonly branchAccess: BranchAccessService,
+    private readonly audit: AuditService,
   ) {}
 
   private access(u: SessionUser, branchId: string) {
@@ -172,6 +175,26 @@ export class MarketingController {
     await this.access(u, branchId);
     const { recipients } = await this.marketing.audience(branchId, id);
     return { count: recipients.length, recipients: recipients.slice(0, 50) };
+  }
+
+  @Auth('marketing.manage')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('campaigns/:id/send')
+  async sendCampaign(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.access(u, branchId);
+    const result = await this.marketing.send(branchId, id);
+    await this.audit.record({
+      userId: u.id,
+      action: 'campaign.sent',
+      entity: 'Campaign',
+      entityId: id,
+      metadata: result,
+    });
+    return result;
   }
 
   @Auth('marketing.manage', 'data.export')

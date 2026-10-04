@@ -34,6 +34,7 @@ export function EditCustomerDialog({
   const [address, setAddress] = useState(customer.address ?? "");
   const [allergies, setAllergies] = useState(customer.allergies ?? "");
   const [notes, setNotes] = useState(customer.notes ?? "");
+  const [optOut, setOptOut] = useState(customer.marketingOptOut ?? false);
   const updateCustomer = useUpdateCustomer(branchId);
 
   const onSubmit = (e: React.FormEvent) => {
@@ -48,6 +49,7 @@ export function EditCustomerDialog({
           address: address || undefined,
           allergies: allergies || undefined,
           notes: notes || undefined,
+          marketingOptOut: optOut,
         },
       },
       {
@@ -101,6 +103,10 @@ export function EditCustomerDialog({
             <Label htmlFor="c-edit-notes">Notes</Label>
             <Textarea id="c-edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
+          <label className="flex items-center gap-2 text-sm text-foreground">
+            <input type="checkbox" checked={optOut} onChange={(e) => setOptOut(e.target.checked)} />
+            Do not send marketing messages to this customer
+          </label>
           <DialogFooter>
             <Button type="submit" disabled={updateCustomer.isPending}>
               {updateCustomer.isPending ? "Saving…" : "Save changes"}

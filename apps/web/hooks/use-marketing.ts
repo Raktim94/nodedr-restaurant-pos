@@ -31,6 +31,8 @@ export interface CampaignRow {
   channel: "SMS" | "EMAIL" | "WHATSAPP";
   segment: "ALL" | "LOYAL" | "LAPSED" | "BIRTHDAY_MONTH";
   message: string;
+  lastSentAt: string | null;
+  lastSentCount: number | null;
 }
 
 const q = (b: string | null) => `branchId=${b}`;
@@ -63,6 +65,7 @@ export function useMarketingActions(branchId: string | null) {
     promotionActive: useMutation({ mutationFn: (v: { id: string; isActive: boolean }) => api.patch(`/marketing/promotions/${v.id}/active?${q(branchId)}`, { isActive: v.isActive }), onSuccess: done }),
     deletePromotion: useMutation({ mutationFn: (id: string) => api.delete(`/marketing/promotions/${id}?${q(branchId)}`), onSuccess: done }),
     createCampaign: useMutation({ mutationFn: (dto: Record<string, unknown>) => api.post(`/marketing/campaigns?${q(branchId)}`, dto), onSuccess: done }),
+    sendCampaign: useMutation({ mutationFn: (id: string) => api.post<{ sent: number; failed: number }>(`/marketing/campaigns/${id}/send?${q(branchId)}`), onSuccess: done }),
     deleteCampaign: useMutation({ mutationFn: (id: string) => api.delete(`/marketing/campaigns/${id}?${q(branchId)}`), onSuccess: done }),
   };
 }

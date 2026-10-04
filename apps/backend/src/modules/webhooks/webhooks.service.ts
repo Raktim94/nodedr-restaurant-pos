@@ -72,6 +72,23 @@ export class WebhooksService {
     }
   }
 
+  /** Is anything listening for this event? Lets callers fail early and clearly. */
+  async hasSubscriber(branchId: string, event: WebhookEvent) {
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: { restaurantId: true },
+    });
+    if (!branch) return false;
+    const n = await this.prisma.webhookEndpoint.count({
+      where: {
+        restaurantId: branch.restaurantId,
+        isActive: true,
+        events: { has: event },
+      },
+    });
+    return n > 0;
+  }
+
   async emit(restaurantId: string, event: WebhookEvent, data: object) {
     const endpoints = await this.prisma.webhookEndpoint.findMany({
       where: { restaurantId, isActive: true, events: { has: event } },
