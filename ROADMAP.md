@@ -11,7 +11,7 @@ ground phase-by-phase for engineering; that one is organized by product
 category for anyone (including the website) that wants "what does OrderRestro
 actually do today."
 
-## Current phase: 4 fully complete (incl. procurement depth) → Phase 5 next
+## Current phase: 5–8 core features shipped (see each phase for what is and is not built)
 
 Started 2026-08-03. Phases 0-3 finished and verified the same day. Phase 4's
 core (ingredients, recipe costing, suppliers, purchase orders, GRN,
@@ -246,65 +246,77 @@ containers, not just "it compiles."
 
 ### Phase 5 — Delivery + Online/QR ordering
 
-- [x] Basic QR ordering: place order from the table — live (see
-      `apps/web/app/order/[qrToken]` + `POST /public/menu/:qrToken/order`).
-      Still open within this line item: modifier/customization selection
-      (the cart always sends `modifierIds: []`), request waiter, request
-      bill, live order-status tracking on the QR page itself.
-- [ ] Delivery zones/charges, delivery staff, order assignment, live
-      status, ETA, delivery history
-- [ ] Online ordering surfaces: website, click & collect, scheduled orders
+- [x] Basic QR ordering: place order from the table (`apps/web/app/order/[qrToken]`).
+- [x] QR depth (2026-10-04): per-item modifier selection (validated server-side:
+      options must belong to the item, group min/max enforced for guest orders),
+      call waiter, request bill (staff see them on the Tables page + as
+      notifications), live order-status on the QR page.
+- [x] Delivery (2026-10-04): delivery zones by pincode (fee, minimum order,
+      ETA), driver assignment, status flow (assigned → picked up → delivered /
+      failed), delivery history, delivery fee added at checkout, POS Delivery
+      order type, `delivery-quote` endpoint in the integration API, MCP tools.
+      Branches with no zones keep the old behaviour (no fee, no address check)
+      so existing website integrations keep working.
+- [x] Scheduled orders (2026-10-04): pick-up/delivery time at least 10 min ahead;
+      the kitchen ticket is released ~25 min before the time (per-minute worker).
+- [x] Click & collect: online takeaway orders (integration API / POS) with a
+      scheduled time.
+- [ ] Live GPS tracking of drivers — not built (status tracking only).
 
 ### Phase 6 — Staff, Payroll, Accounting, Multi-branch
 
-- [x] Staff attendance: clock in/out, manager day view, MCP tools
-      (`list_attendance`, `clock_in`, `clock_out`) — landed 2026-10-04.
-      Shift scheduling, leave, tips and performance reports remain open.
-- [ ] Employee records, shift scheduling, leave, tip
-      distribution, performance reports
-- [ ] Payroll
-- [ ] Accounting: sales ledger, expenses/income, cash flow, P&L, balance
-      sheet, GST reports, bank reconciliation, daily cash closing, petty
-      cash, expense approvals, budgets
-- [ ] Branch management: multi-outlet, centralized reporting, central
-      inventory, branch stock transfer, unified customer DB, branch-level
-      sync agent (see `ARCHITECTURE.md` offline/sync model)
+- [x] Attendance — clock in/out, manager day view (2026-10-04).
+- [x] Shift scheduling (overlap + approved-leave checks), leave requests and
+      approval, tip distribution (pool split by hours worked), per-staff
+      performance report (2026-10-04).
+- [x] Payroll: pay profiles (monthly/hourly), draft → finalize runs from clocked
+      hours, unpaid-leave deduction, tip share (2026-10-04). No statutory
+      deductions (PF/ESI/TDS) — out of scope.
+- [x] Accounting: expenses, daily cash closing with variance, profit & loss,
+      GST/tax summary by rate (2026-10-04). All report days are cut at the
+      restaurant's local midnight.
+- [x] Multi-branch: cross-branch overview (sales, open orders, low stock,
+      inventory value).
+- [ ] Not built: bank reconciliation, balance sheet, budgets, petty-cash,
+      expense approvals, branch-to-branch stock transfer, sync agent.
 
 ### Phase 7 — Reporting engine, Marketing, Maintenance, Documents
 
-- [ ] Full reports catalog (sales/daily/monthly/annual/tax/inventory/
-      profit/food-cost/waste/kitchen-perf/waiter-perf/table-turnover/
-      popular-items/slow-movers/customer/loyalty/reservation/delivery/
-      payment) — filterable, CSV/PDF/Excel export, print, scheduled email
-- [ ] Analytics dashboards: food cost analysis, inventory valuation, peak
-      hours, retention, margins, heat maps
-- [ ] Marketing: coupons, promotions, happy hours, SMS/email/WhatsApp
-      campaigns
-- [ ] Maintenance: equipment tracking, service schedules, requests, AMC
-- [ ] Documents: digital invoices, purchase docs, contracts, recipes, SOPs
+- [x] Reports catalog (18 reports) with date filter, print and CSV export
+      (spreadsheet-formula-safe), MCP `run_report` (2026-10-04).
+- [x] Analytics: peak hours, food cost & margins, retention (new vs returning),
+      slow movers, discounts.
+- [x] Marketing: coupons (usage limits, caps, windows), happy-hour promotions,
+      campaigns with audience segments, email sending via your SMTP server,
+      SMS/WhatsApp via a `campaign.message` webhook, per-customer opt-out.
+- [x] Maintenance: equipment + service schedules with overdue/due-soon flags.
+- [x] Documents: SOPs, contracts, recipes, purchase paperwork (text).
+- [ ] Not built: scheduled report emails, PDF/XLSX export (print + CSV only),
+      heat-map visualisations, file attachments on documents.
 
 ### Phase 8 — Hardening, integrations, packaging
 
-- [x] Direct-USB ESC/POS thermal receipt printing — ported from
-      `nodedr-pos`'s hardware-verified transport 2026-08-14, see Session
-      log. Kitchen/label printers, cash drawer, barcode/QR scanner,
-      customer display, weighing scale, and KDS screens remain planned.
-- [ ] Payment gateway, SMS, email, WhatsApp, accounting-software,
-      food-delivery-platform integrations
-- [ ] 2FA, full audit log, backup/restore utilities
-- [ ] SQLite deployment variant (driver-adapter build) for micro single-till
-      operators who don't want Postgres — see `ARCHITECTURE.md`
-- [ ] GraphQL API (additive, alongside REST)
-- [ ] Docker/Windows/Linux installer packaging (mirror `nodedr-pos`'s
-      `packaging/` approach), CI/CD release pipeline
-- [ ] Automated test suite depth pass (unit + integration + e2e), OpenAPI
-      docs finalized, user/installation documentation
-- [ ] Full accessibility (`accesslint` audit) + performance pass against
-      stated targets (startup <5s, order create <100ms, search <200ms,
-      10k+ menu items, 500+ tables, 100+ concurrent staff, millions of
-      historical orders)
-
----
+- [x] Direct-USB ESC/POS thermal receipt printing (2026-08-14).
+- [x] Cash drawer pulse with USB receipts for cash payments + test button
+      (2026-10-04, unit-tested bytes; not verified on physical hardware).
+- [x] Customer-facing display (`/customer-display`, mirrors the POS cart).
+- [x] Two-factor authentication (TOTP + recovery codes; replay and lockout
+      protection; PIN login disabled for 2FA accounts; admin reset).
+- [x] Audit log coverage extended to payroll, pay rates, leave, expenses, cash
+      close, coupons, promotions, zones, webhooks and API keys.
+- [x] Backup / restore (already shipped earlier).
+- [x] Outbound webhooks: HMAC-signed `order.created|paid|cancelled`,
+      `reservation.created`, `delivery.updated`, `campaign.message`, with
+      retries and an SSRF guard. This is the integration point for payment,
+      accounting, SMS/WhatsApp and delivery-platform tools via any automation
+      service.
+- [x] SMTP email (campaigns).
+- [ ] Not built: native payment-gateway checkout, direct accounting-software and
+      delivery-platform connectors, weighing scale, label printers, barcode
+      scanner, GraphQL API.
+- [ ] Not built: SQLite deployment variant (the schema relies on Postgres
+      arrays/enums/decimals), Windows/Linux native installers beyond the
+      existing MSIX workflow.
 
 ## Explicitly deferred / not guessed
 
