@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { deliveryInfoSchema } from "./orders";
 
 // Scopes an IntegrationApiKey (see schema.prisma) can hold — what an
 // external website's own backend is allowed to do once authenticated with
@@ -56,6 +57,10 @@ export const createIntegrationOrderSchema = z.object({
   customerName: z.string().trim().min(1).max(80),
   customerPhone: z.string().trim().min(1).max(30),
   notes: z.string().optional(),
+  // Needed for DELIVERY once the location has delivery zones configured.
+  delivery: deliveryInfoSchema.optional(),
+  // Pre-order: ISO time at least 10 minutes ahead.
+  scheduledFor: z.string().datetime().optional(),
   items: z.array(integrationOrderItemSchema).min(1),
 });
 export type CreateIntegrationOrderDto = z.infer<typeof createIntegrationOrderSchema>;

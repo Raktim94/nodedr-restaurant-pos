@@ -44,6 +44,41 @@ export const cartItemSchema = z.object({
 });
 export type CartItemDto = z.infer<typeof cartItemSchema>;
 
+// --- Delivery (Phase 5) ---------------------------------------------------
+
+export const deliveryStatusSchema = z.enum([
+  "UNASSIGNED",
+  "ASSIGNED",
+  "PICKED_UP",
+  "DELIVERED",
+  "FAILED",
+]);
+export type DeliveryStatusDto = z.infer<typeof deliveryStatusSchema>;
+
+export const deliveryInfoSchema = z.object({
+  address: z.string().trim().min(5).max(300),
+  pincode: z.string().trim().min(3).max(12),
+  phone: z.string().trim().min(6).max(20),
+});
+export type DeliveryInfoDto = z.infer<typeof deliveryInfoSchema>;
+
+export const deliveryZoneSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  fee: z.coerce.number().min(0).default(0),
+  minOrderAmount: z.coerce.number().min(0).default(0),
+  etaMinutes: z.coerce.number().int().min(5).max(240).default(45),
+  pincodes: z.array(z.string().trim().min(3).max(12)).min(1),
+  isActive: z.boolean().default(true),
+});
+export type DeliveryZoneDto = z.infer<typeof deliveryZoneSchema>;
+export const deliveryZoneUpdateSchema = deliveryZoneSchema.partial();
+export type DeliveryZoneUpdateDto = z.infer<typeof deliveryZoneUpdateSchema>;
+
+export const assignDriverSchema = z.object({ driverId: z.string().min(1) });
+export const deliveryStatusUpdateSchema = z.object({
+  status: deliveryStatusSchema,
+});
+
 export const createOrderSchema = z.object({
   type: orderTypeSchema.default("DINE_IN"),
   tableId: z.string().optional(),
@@ -51,6 +86,10 @@ export const createOrderSchema = z.object({
   customerId: z.string().optional(),
   guestName: z.string().trim().min(1).max(60).optional(),
   notes: z.string().optional(),
+  // Required when type is DELIVERY (validated against the branch's zones).
+  delivery: deliveryInfoSchema.optional(),
+  // Scheduled order: ISO time in the future; the kitchen starts then.
+  scheduledFor: z.string().datetime().optional(),
   items: z.array(cartItemSchema).min(1),
 });
 export type CreateOrderDto = z.infer<typeof createOrderSchema>;
@@ -103,3 +142,4 @@ export const kotItemStatusUpdateSchema = z.object({
   status: kotStatusSchema,
 });
 export type KotItemStatusUpdateDto = z.infer<typeof kotItemStatusUpdateSchema>;
+

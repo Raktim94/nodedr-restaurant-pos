@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
   UsePipes,
 } from '@nestjs/common';
@@ -47,6 +48,16 @@ export class IntegrationsController {
     @Param('branchId') branchId: string,
   ) {
     return this.integrations.getMenu(key, branchId);
+  }
+
+  @RequireScope('menu:read')
+  @Get('locations/:branchId/delivery-quote')
+  deliveryQuote(
+    @CurrentIntegrationKey() key: IntegrationKeyContext,
+    @Param('branchId') branchId: string,
+    @Query('pincode') pincode: string,
+  ) {
+    return this.integrations.deliveryQuote(key, branchId, pincode ?? '');
   }
 
   @RequireScope('orders:write')

@@ -6,11 +6,12 @@ import { GiftCardsModule } from '../gift-cards/gift-cards.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
+import { ScheduledOrdersService } from './scheduled-orders.service';
 
 @Module({
   imports: [GiftCardsModule, InventoryModule, AuditModule, NotificationsModule],
   controllers: [OrdersController],
-  providers: [OrdersService, BranchAccessService],
+  providers: [OrdersService, ScheduledOrdersService, BranchAccessService],
   exports: [OrdersService],
 })
 export class OrdersModule {}

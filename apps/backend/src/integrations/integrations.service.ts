@@ -8,6 +8,7 @@ import type {
   CreateIntegrationReservationDto,
 } from '@nodedr-restaurant/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { DeliveryService } from '../modules/delivery/delivery.service';
 import { OrdersService } from '../modules/orders/orders.service';
 import { ReservationsService } from '../modules/reservations/reservations.service';
 
@@ -32,6 +33,7 @@ export class IntegrationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly orders: OrdersService,
+    private readonly delivery: DeliveryService,
     private readonly reservations: ReservationsService,
   ) {}
 
@@ -132,6 +134,8 @@ export class IntegrationsService {
       customerId: customer.id,
       guestName: dto.customerName,
       notes: dto.notes,
+      delivery: dto.delivery,
+      scheduledFor: dto.scheduledFor,
       items: dto.items.map((item) => ({
         menuItemId: item.menuItemId,
         quantity: item.quantity,
@@ -139,6 +143,16 @@ export class IntegrationsService {
         kitchenNote: item.kitchenNote,
       })),
     }, { channel: 'ONLINE', requireAcceptance: true });
+  }
+
+  /** Fee / minimum / ETA for a pincode, so a website can quote before ordering. */
+  async deliveryQuote(
+    ctx: IntegrationKeyContext,
+    branchId: string,
+    pincode: string,
+  ) {
+    await this.assertBranch(ctx, branchId);
+    return this.delivery.quote(branchId, pincode);
   }
 
   async getOrder(
