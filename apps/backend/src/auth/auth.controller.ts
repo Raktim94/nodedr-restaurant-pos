@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Res,
   UseGuards,
@@ -12,13 +13,18 @@ import {
   loginSchema,
   pinLoginSchema,
   registerSchema,
+  twoFactorCodeSchema,
+  twoFactorDisableSchema,
+  type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
+import { Auth } from '../common/decorators/auth.decorator';
 import { AuthService } from './auth.service';
+import { TwoFactorService } from './two-factor.service';
 
 const SESSION_COOKIE = 'nodedr_session';
 const COOKIE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -38,7 +44,10 @@ function isCookieSecure(): boolean {
 @ApiTags('auth')
 @Controller('v1/auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly twoFactor: TwoFactorService,
+  ) {}
 
   // Tighter than the app-wide default — unauthenticated and creates a full
   // restaurant + owner account, a more attractive abuse target than login.
@@ -94,6 +103,50 @@ export class AuthController {
       secure: isCookieSecure(),
     });
     return { ok: true };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('2fa/status')
+  twoFactorStatus(@CurrentUser() user: SessionUser) {
+    return this.twoFactor.status(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/setup')
+  twoFactorSetup(@CurrentUser() user: SessionUser) {
+    return this.twoFactor.setup(user.id);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/enable')
+  @UsePipes(new ZodValidationPipe(twoFactorCodeSchema))
+  twoFactorEnable(
+    @CurrentUser() user: SessionUser,
+    @Body() body: { code: string },
+  ) {
+    return this.twoFactor.enable(user.id, body.code);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(JwtAuthGuard)
+  @Post('2fa/disable')
+  @UsePipes(new ZodValidationPipe(twoFactorDisableSchema))
+  twoFactorDisable(
+    @CurrentUser() user: SessionUser,
+    @Body() body: { password: string; code: string },
+  ) {
+    return this.twoFactor.disable(user.id, body.password, body.code);
+  }
+
+  // An owner/admin unlocks a staff member who lost their authenticator.
+  @Auth('users.manage')
+  @Post('2fa/reset/:userId')
+  twoFactorReset(
+    @CurrentUser() user: SessionUser,
+    @Param('userId') userId: string,
+  ) {
+    return this.twoFactor.adminReset(user.id, user.restaurantId, userId);
   }
 
   @UseGuards(JwtAuthGuard)

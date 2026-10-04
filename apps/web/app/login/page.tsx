@@ -5,6 +5,7 @@ import { loginSchema, type LoginDto } from "@nodedr-restaurant/types";
 import { motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Logo } from "@/components/layout/logo";
@@ -17,6 +18,8 @@ import { ApiError } from "@/lib/api";
 export default function LoginPage() {
   const router = useRouter();
   const login = useLogin();
+  // Set once the server says this account uses two-factor authentication.
+  const [needsCode, setNeedsCode] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const {
     register,
@@ -28,6 +31,10 @@ export default function LoginPage() {
     login.mutate(dto, {
       onSuccess: () => router.push("/dashboard"),
       onError: (err) => {
+        if (err instanceof ApiError && err.message === "TWO_FACTOR_REQUIRED") {
+          setNeedsCode(true);
+          return;
+        }
         toast.error(err instanceof ApiError ? err.message : "Something went wrong");
       },
     });
@@ -83,6 +90,24 @@ export default function LoginPage() {
               <p className="text-xs text-destructive">{errors.password.message}</p>
             )}
           </div>
+
+          {needsCode && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="totp">Verification code</Label>
+              <Input
+                id="totp"
+                inputMode="text"
+                autoComplete="one-time-code"
+                autoFocus
+                placeholder="6-digit code or recovery code"
+                {...register("totp")}
+              />
+              <p className="text-xs text-muted-foreground">
+                Open your authenticator app, or use one of your recovery codes.
+              </p>
+              {errors.totp && <p className="text-xs text-destructive">{errors.totp.message}</p>}
+            </div>
+          )}
 
           <Button type="submit" className="mt-2 h-11" disabled={login.isPending}>
             {login.isPending ? "Signing in…" : "Sign in"}

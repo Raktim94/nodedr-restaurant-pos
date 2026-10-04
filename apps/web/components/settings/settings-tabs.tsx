@@ -20,6 +20,7 @@ const TABS: SettingsTab[] = [
   { label: "Backup", href: "/settings/backup", permission: "backup.manage" },
   { label: "Updates", href: "/settings/updates", permission: "system.update" },
   { label: "API Keys", href: "/settings/api-keys" },
+  { label: "Security", href: "/settings/security" },
 ];
 
 export function SettingsTabs() {
