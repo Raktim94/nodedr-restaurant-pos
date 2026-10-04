@@ -21,7 +21,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <I18nProvider>
         <QueryClientProvider client={queryClient}>
           {children}
-          <Toaster position="bottom-right" richColors />
+          <Toaster position="bottom-right" richColors closeButton visibleToasts={3} />
         </QueryClientProvider>
       </I18nProvider>
     </ThemeProvider>
