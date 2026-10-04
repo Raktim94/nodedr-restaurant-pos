@@ -99,10 +99,12 @@ export function NotificationBell() {
           ? payload.entity
           : null;
       const entityId = payload.entityId;
-      // Actionable alerts (pending orders) stay up until handled.
+      // Short-lived: the bell keeps the full list, so toasts only need to catch
+      // the eye. A stable id stops duplicates from stacking up.
       toast(payload.title, {
+        id: `${payload.type}:${entityId ?? payload.title}`,
         description: payload.body,
-        duration: payload.type === "order.pending" ? 30_000 : 8000,
+        duration: payload.type === "order.pending" ? 12_000 : 5000,
         ...(kind && entityId
           ? { action: { label: "View", onClick: () => openEntity(kind, entityId) } }
           : {}),
@@ -136,8 +138,9 @@ export function NotificationBell() {
       const kind = n.entity === "Order" || n.entity === "Reservation" ? n.entity : null;
       const entityId = n.entityId;
       toast(n.title, {
+        id: n.id,
         description: n.body,
-        duration: n.type === "order.pending" ? 30_000 : 8000,
+        duration: n.type === "order.pending" ? 12_000 : 5000,
         ...(kind && entityId
           ? { action: { label: "View", onClick: () => openEntity(kind, entityId) } }
           : {}),
