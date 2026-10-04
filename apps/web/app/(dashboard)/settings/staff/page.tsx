@@ -19,13 +19,21 @@ import {
 } from "@/components/ui/table";
 import { useCurrentUser } from "@/hooks/use-auth";
 import { useDeleteStaff, useStaff, useUpdateStaff, type StaffMember } from "@/hooks/use-staff";
-import { ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 export default function StaffPage() {
   const { data: staff, isLoading } = useStaff();
   const { data: currentUser } = useCurrentUser();
   const updateStaff = useUpdateStaff();
   const deleteStaff = useDeleteStaff();
+
+  const onResetTwoFactor = (member: StaffMember) => {
+    if (!confirm(`Turn off two-factor authentication for ${member.name}? They will sign in with just their password until they set it up again.`)) return;
+    api.post(`/auth/2fa/reset/${member.id}`).then(
+      () => toast.success(`Two-factor authentication reset for ${member.name}`),
+      (err) => toast.error(err instanceof ApiError ? err.message : "Could not reset"),
+    );
+  };
 
   const onDelete = (member: StaffMember) => {
     if (!confirm(`Delete ${member.name}? This cannot be undone.`)) return;
@@ -66,7 +74,7 @@ export default function StaffPage() {
                 <TableHead>Role</TableHead>
                 <TableHead>Branches</TableHead>
                 <TableHead className="text-right">Active</TableHead>
-                <TableHead className="w-10" />
+                <TableHead className="w-40" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -102,15 +110,26 @@ export default function StaffPage() {
                   </TableCell>
                   <TableCell>
                     {member.id !== currentUser?.user.id && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        title="Delete staff account"
-                        onClick={() => onDelete(member)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs text-muted-foreground"
+                          title="Reset two-factor authentication (lost device)"
+                          onClick={() => onResetTwoFactor(member)}
+                        >
+                          Reset 2FA
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          title="Delete staff account"
+                          onClick={() => onDelete(member)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>

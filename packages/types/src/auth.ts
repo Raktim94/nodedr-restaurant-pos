@@ -3,6 +3,8 @@ import { z } from "zod";
 export const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
+  // Authenticator code or recovery code, once two-factor auth is on.
+  totp: z.string().trim().min(6).max(20).optional(),
 });
 export type LoginDto = z.infer<typeof loginSchema>;
 
@@ -30,3 +32,9 @@ export const sessionUserSchema = z.object({
   permissions: z.array(z.string()),
 });
 export type SessionUser = z.infer<typeof sessionUserSchema>;
+
+export const twoFactorCodeSchema = z.object({ code: z.string().trim().min(6).max(20) });
+export const twoFactorDisableSchema = z.object({
+  password: z.string().min(1),
+  code: z.string().trim().min(6).max(20),
+});

@@ -15,12 +15,14 @@ import {
 } from '@nodedr-restaurant/types';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { TwoFactorService } from './two-factor.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly twoFactor: TwoFactorService,
   ) {}
 
   private toSessionUser(user: {
@@ -55,6 +57,12 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // Only asked for after the password is right, so the response never
+    // reveals which emails exist or which accounts use two-factor.
+    if (user.twoFactorEnabled) {
+      await this.twoFactor.verifyLogin(user, dto.totp);
     }
 
     return this.issueSession(user);
@@ -155,6 +163,12 @@ export class AuthService {
 
     if (!user || !user.isActive || !user.pinHash) {
       throw new UnauthorizedException('PIN login not available for this user');
+    }
+    // A 4-8 digit PIN must not be a way around the second factor.
+    if (user.twoFactorEnabled) {
+      throw new UnauthorizedException(
+        'PIN login is off for accounts with two-factor authentication — sign in with your password',
+      );
     }
 
     const valid = await bcrypt.compare(dto.pin, user.pinHash);

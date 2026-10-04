@@ -209,7 +209,10 @@ model User {
   passwordHash    String
   pinHash         String? // quick-switch PIN login on a shared terminal
   isActive        Boolean @default(true)
-  twoFactorSecret String? // set once 2FA is enabled (Phase 8)
+  twoFactorSecret String? // AES-GCM sealed TOTP secret (see auth/totp.ts)
+  twoFactorEnabled        Boolean  @default(false)
+  twoFactorRecoveryHashes String[] @default([]) // bcrypt hashes of unused one-time recovery codes
+  twoFactorLastStep       Int? // last accepted TOTP step: a code works once
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
