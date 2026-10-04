@@ -55,6 +55,13 @@ this list.
 | `list_reservations` | `reservations.manage` | List reservations, optionally on one date |
 | `create_reservation` | `reservations.manage` | Book a table |
 | `update_reservation_status` | `reservations.manage` | Transition a reservation's status |
+| `list_deliveries` / `list_delivery_zones` | `delivery.manage` | Active or finished deliveries; the location's delivery zones |
+| `assign_driver` / `update_delivery_status` | `delivery.manage` | Assign a driver; move a delivery along (picked up, delivered, failed) |
+| `list_shifts` / `list_leave_requests` / `decide_leave_request` / `staff_performance` | `staff.manage` | Schedules, leave (approve/reject), per-staff sales and hours |
+| `profit_and_loss` / `gst_report` / `list_expenses` | `accounting.manage` | Net sales, expenses and payroll cost; tax by rate; recorded expenses |
+| `run_report` | `reports.access` | Any catalog report (sales-daily, popular-items, food-cost, peak-hours, retention, …) as columns + rows |
+| `list_coupons` / `list_promotions` | `marketing.manage` | Coupon codes with usage; happy-hour discounts |
+| `list_equipment` | `operations.manage` | Equipment with next service date and overdue flags |
 | `list_attendance` | `attendance.manage` | List staff clock-in/out records for a location, optionally one date or one staff member |
 | `clock_in` / `clock_out` | — (any staff) | Clock the calling staff member in at a location / out of their open shift |
 | `create_menu_category` / `update_menu_category` / `delete_menu_category` | `menu.manage` | Manage menu categories |
@@ -218,6 +225,80 @@ Order and reservation creation are throttled to 60 requests/minute per
 caller, on top of the app-wide 300 requests/minute default.
 
 ---
+
+### `GET /locations/:branchId/delivery-quote?pincode=700001`
+
+Scope: `menu:read`. Fee, minimum order and ETA for a delivery pincode, so a
+website can show the price before the guest orders:
+
+```json
+{ "deliverable": true, "zoneName": "Central", "fee": 40, "minOrderAmount": 150, "etaMinutes": 30 }
+```
+
+`{ "deliverable": false }` when the pincode is outside every zone.
+
+### Delivery and scheduled orders
+
+`POST /locations/:branchId/orders` also accepts:
+
+- `delivery` — `{ "address": "...", "pincode": "...", "phone": "..." }`.
+  Required for `type: "DELIVERY"` once the location has delivery zones. The
+  pincode must be inside a zone and the order must reach its minimum; the
+  zone's fee is added at payment. A location with no zones configured keeps
+  the older behaviour (no fee, no zone check).
+- `scheduledFor` — ISO time at least 10 minutes ahead. The kitchen ticket is
+  released about 25 minutes before it (click & collect / pre-orders).
+
+## 3. Webhooks (events pushed to your system)
+
+Add one under **Settings > Webhooks**. Each request is a `POST` with a JSON
+body `{ "event", "createdAt", "data" }` and these headers:
+
+- `X-OrderRestro-Event` — the event name
+- `X-OrderRestro-Delivery` — unique delivery id (use it to de-duplicate)
+- `X-OrderRestro-Signature` — `t=<unix seconds>,v1=<hex>` where `v1` is the
+  HMAC-SHA256 of `"<t>.<raw body>"` using the endpoint's signing secret
+  (shown once when you create it). Reject requests older than 5 minutes.
+
+Events: `order.created`, `order.paid`, `order.cancelled`,
+`reservation.created`, `delivery.updated`, `campaign.message`.
+
+Any 2xx response accepts a delivery. Anything else is retried after 1 min,
+5 min, 30 min, 2 h and 12 h, then marked failed (visible in the log).
+
+Webhook URLs must be `https`, and must not point at a private/internal
+address. On a self-hosted LAN where the receiver is on the local network,
+set `WEBHOOKS_ALLOW_PRIVATE=true` (and `WEBHOOKS_ALLOW_INSECURE=true` for
+plain `http`) on the backend.
+
+Verifying in Node:
+
+```js
+const crypto = require('crypto');
+function verify(secret, rawBody, header) {
+  const p = Object.fromEntries(header.split(',').map((x) => x.split('=')));
+  if (Math.abs(Date.now() / 1000 - Number(p.t)) > 300) return false;
+  const mac = crypto.createHmac('sha256', secret).update(`${p.t}.${rawBody}`).digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(p.v1));
+}
+```
+
+## Email
+
+Campaign email is sent through your own SMTP server. Set on the backend:
+`SMTP_URL=smtp://user:pass@host:587` and `SMTP_FROM="My Cafe <hello@mycafe.com>"`.
+Without them, email campaigns refuse to send (nothing is queued silently).
+
+## Two-factor authentication
+
+Each user can turn on authenticator-app 2FA under **Settings > Security**.
+`POST /api/v1/auth/login` then also needs `totp` (a 6-digit code or one
+recovery code); without it the server answers `401 TWO_FACTOR_REQUIRED`.
+PIN quick-login is refused for accounts that use it. An owner can reset a
+staff member's 2FA from **Settings > Staff**. Secrets are stored encrypted
+with a key derived from `JWT_SECRET` (or `TWO_FACTOR_KEY` if set) — keep that
+value stable, or authenticator codes stop working until recovery codes are
+used.
 
 ## Security model
 
