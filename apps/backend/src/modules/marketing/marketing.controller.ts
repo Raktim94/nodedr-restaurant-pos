@@ -22,6 +22,7 @@ import {
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
+import { AuditAction } from '../../audit/audit-action';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuditService } from '../../audit/audit.service';
@@ -53,6 +54,7 @@ export class MarketingController {
   }
 
   @Auth('marketing.manage')
+  @AuditAction('coupon.created', 'Coupon')
   @Post('coupons')
   @UsePipes(new ZodValidationPipe(couponSchema))
   async createCoupon(
@@ -65,6 +67,7 @@ export class MarketingController {
   }
 
   @Auth('marketing.manage')
+  @AuditAction('coupon.toggled', 'Coupon')
   @Patch('coupons/:id/active')
   async couponActive(
     @CurrentUser() u: SessionUser,
@@ -77,6 +80,7 @@ export class MarketingController {
   }
 
   @Auth('marketing.manage')
+  @AuditAction('coupon.deleted', 'Coupon')
   @Delete('coupons/:id')
   async deleteCoupon(
     @CurrentUser() u: SessionUser,
@@ -98,6 +102,7 @@ export class MarketingController {
   }
 
   @Auth('marketing.manage')
+  @AuditAction('promotion.created', 'Promotion')
   @Post('promotions')
   @UsePipes(new ZodValidationPipe(promotionSchema))
   async createPromotion(
@@ -110,6 +115,7 @@ export class MarketingController {
   }
 
   @Auth('marketing.manage')
+  @AuditAction('promotion.toggled', 'Promotion')
   @Patch('promotions/:id/active')
   async promotionActive(
     @CurrentUser() u: SessionUser,
@@ -122,6 +128,7 @@ export class MarketingController {
   }
 
   @Auth('marketing.manage')
+  @AuditAction('promotion.deleted', 'Promotion')
   @Delete('promotions/:id')
   async deletePromotion(
     @CurrentUser() u: SessionUser,
@@ -143,6 +150,7 @@ export class MarketingController {
   }
 
   @Auth('marketing.manage')
+  @AuditAction('campaign.created', 'Campaign')
   @Post('campaigns')
   @UsePipes(new ZodValidationPipe(campaignSchema))
   async createCampaign(
@@ -155,6 +163,7 @@ export class MarketingController {
   }
 
   @Auth('marketing.manage')
+  @AuditAction('campaign.deleted', 'Campaign')
   @Delete('campaigns/:id')
   async deleteCampaign(
     @CurrentUser() u: SessionUser,

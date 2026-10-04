@@ -12,6 +12,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { SessionUser } from '@nodedr-restaurant/types';
 import { z } from 'zod';
 import { Auth } from '../../common/decorators/auth.decorator';
+import { AuditAction } from '../../audit/audit-action';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { WEBHOOK_EVENTS, WebhooksService } from './webhooks.service';
@@ -40,6 +41,7 @@ export class WebhooksController {
   }
 
   @Auth('settings.manage')
+  @AuditAction('webhook.created', 'WebhookEndpoint')
   @Post()
   @UsePipes(new ZodValidationPipe(createSchema))
   create(
@@ -50,6 +52,7 @@ export class WebhooksController {
   }
 
   @Auth('settings.manage')
+  @AuditAction('webhook.toggled', 'WebhookEndpoint')
   @Patch(':id/active')
   setActive(
     @CurrentUser() u: SessionUser,
@@ -60,6 +63,7 @@ export class WebhooksController {
   }
 
   @Auth('settings.manage')
+  @AuditAction('webhook.deleted', 'WebhookEndpoint')
   @Delete(':id')
   remove(@CurrentUser() u: SessionUser, @Param('id') id: string) {
     return this.webhooks.remove(u.restaurantId, id);
