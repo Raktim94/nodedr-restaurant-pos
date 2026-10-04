@@ -17,6 +17,9 @@ import { DashboardService } from '../modules/dashboard/dashboard.service';
 import { MenuService } from '../modules/menu/menu.service';
 import { DeliveryService } from '../modules/delivery/delivery.service';
 import { AccountingService } from '../modules/accounting/accounting.service';
+import { MarketingService } from '../modules/marketing/marketing.service';
+import { OperationsService } from '../modules/operations/operations.service';
+import { ReportsService } from '../modules/reports/reports.service';
 import { HrService } from '../modules/hr/hr.service';
 import { AttendanceService } from '../modules/attendance/attendance.service';
 import { TablesService } from '../modules/tables/tables.service';
@@ -217,6 +220,9 @@ export class McpToolsBuilder {
     private readonly delivery: DeliveryService,
     private readonly hr: HrService,
     private readonly accounting: AccountingService,
+    private readonly reports: ReportsService,
+    private readonly marketing: MarketingService,
+    private readonly operations: OperationsService,
   ) {}
 
   build(actor: SessionUser): McpServer {
@@ -682,6 +688,88 @@ export class McpToolsBuilder {
               args.string('to'),
             ),
           );
+        },
+      },
+      {
+        name: 'run_report',
+        title: 'Run a report',
+        description:
+          'Run a catalog report (sales-daily, sales-by-item, popular-items, slow-movers, payment-methods, discounts, tax, peak-hours, food-cost, customers, retention, staff-sales, table-turnover, reservations, delivery, waste, inventory-valuation) for a location between two dates (YYYY-MM-DD). Returns columns and rows.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            report: { type: 'string' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+          },
+          required: ['branchId', 'report', 'from', 'to'],
+        },
+        readOnly: true,
+        requiredPermission: 'reports.access',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.reports.run(
+              args.string('report'),
+              branchId,
+              args.string('from'),
+              args.string('to'),
+            ),
+          );
+        },
+      },
+      {
+        name: 'list_coupons',
+        title: 'List coupons',
+        description: 'List coupon codes for a location with usage counts.',
+        inputSchema: {
+          type: 'object',
+          properties: { branchId: { type: 'string' } },
+          required: ['branchId'],
+        },
+        readOnly: true,
+        requiredPermission: 'marketing.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(await this.marketing.listCoupons(branchId));
+        },
+      },
+      {
+        name: 'list_promotions',
+        title: 'List happy-hour promotions',
+        description: 'List automatic time-window discounts for a location.',
+        inputSchema: {
+          type: 'object',
+          properties: { branchId: { type: 'string' } },
+          required: ['branchId'],
+        },
+        readOnly: true,
+        requiredPermission: 'marketing.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(await this.marketing.listPromotions(branchId));
+        },
+      },
+      {
+        name: 'list_equipment',
+        title: 'List equipment',
+        description:
+          'List kitchen/restaurant equipment with next service due dates and overdue flags.',
+        inputSchema: {
+          type: 'object',
+          properties: { branchId: { type: 'string' } },
+          required: ['branchId'],
+        },
+        readOnly: true,
+        requiredPermission: 'operations.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(await this.operations.listEquipment(branchId));
         },
       },
       {

@@ -81,6 +81,11 @@ model Branch {
   payrollRuns   PayrollRun[]
   expenses      Expense[]
   cashClosings  CashClosing[]
+  coupons       Coupon[]
+  promotions    Promotion[]
+  campaigns     Campaign[]
+  equipment     Equipment[]
+  documents     Document[]
 
   name      String
   address   String?
@@ -1253,6 +1258,10 @@ model Order {
   // Scheduled / pre-order: the kitchen should not start before this time.
   scheduledFor    DateTime?
 
+  // Marketing (Phase 7): what discount source was applied at checkout.
+  couponCode      String?
+  promotionName   String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   billedAt  DateTime?
@@ -1716,4 +1725,145 @@ model CashClosing {
 
   @@unique([branchId, businessDate])
   @@map("cash_closings")
+}
+
+// ---------------------------------------------------------------------------
+// Marketing (Phase 7)
+// ---------------------------------------------------------------------------
+
+enum DiscountKind {
+  PERCENT
+  FLAT
+}
+
+model Coupon {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  code           String // stored upper-case; unique per branch
+  kind           DiscountKind
+  value          Decimal      @db.Decimal(12, 2)
+  minOrderAmount Decimal      @default(0) @db.Decimal(12, 2)
+  maxDiscount    Decimal?     @db.Decimal(12, 2) // cap for PERCENT coupons
+  validFrom      DateTime?
+  validUntil     DateTime?
+  usageLimit     Int?
+  usedCount      Int          @default(0)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+
+  @@unique([branchId, code])
+  @@map("coupons")
+}
+
+// Automatic time-window discount (happy hour). Applied at checkout with no
+// code; times are minutes since local midnight in the restaurant timezone.
+model Promotion {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name        String
+  kind        DiscountKind
+  value       Decimal      @db.Decimal(12, 2)
+  daysOfWeek  Int[] // 0 = Sunday
+  startMinute Int
+  endMinute   Int
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+
+  @@index([branchId, isActive])
+  @@map("promotions")
+}
+
+enum CampaignChannel {
+  SMS
+  EMAIL
+  WHATSAPP
+}
+
+enum CampaignSegment {
+  ALL
+  LOYAL
+  LAPSED
+  BIRTHDAY_MONTH
+}
+
+// A saved message + audience. Delivery needs a messaging provider
+// (Phase 8 integrations), so for now the audience is exported as a CSV.
+model Campaign {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name      String
+  channel   CampaignChannel
+  segment   CampaignSegment @default(ALL)
+  message   String
+  createdAt DateTime        @default(now())
+
+  @@index([branchId])
+  @@map("campaigns")
+}
+
+// ---------------------------------------------------------------------------
+// Maintenance & documents (Phase 7)
+// ---------------------------------------------------------------------------
+
+model Equipment {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name                String
+  location            String?
+  serviceIntervalDays Int?
+  lastServicedAt      DateTime? @db.Date
+  nextDueAt           DateTime? @db.Date
+  notes               String?
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+
+  logs ServiceLog[]
+
+  @@index([branchId, nextDueAt])
+  @@map("equipment")
+}
+
+model ServiceLog {
+  id          String    @id @default(cuid())
+  equipmentId String
+  equipment   Equipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  servicedAt DateTime @db.Date
+  cost       Decimal? @db.Decimal(12, 2)
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@index([equipmentId, servicedAt])
+  @@map("service_logs")
+}
+
+enum DocumentCategory {
+  SOP
+  CONTRACT
+  RECIPE
+  PURCHASE
+  OTHER
+}
+
+model Document {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  title     String
+  category  DocumentCategory @default(SOP)
+  body      String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([branchId, category])
+  @@map("documents")
 }

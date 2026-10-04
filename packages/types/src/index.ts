@@ -19,3 +19,4 @@ export * from "./integrations";
 export * from "./tax";
 export * from "./hr";
 export * from "./accounting";
+export * from "./marketing";

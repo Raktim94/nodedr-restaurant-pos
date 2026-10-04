@@ -30,6 +30,8 @@ export const PERMISSIONS = [
   { key: "delivery.manage", label: "Manage Deliveries", category: "Delivery" },
   { key: "staff.manage", label: "Manage Staff Schedules, Leave & Payroll", category: "Staff" },
   { key: "accounting.manage", label: "Manage Accounting", category: "Accounting" },
+  { key: "marketing.manage", label: "Manage Coupons, Promotions & Campaigns", category: "Marketing" },
+  { key: "operations.manage", label: "Manage Equipment & Documents", category: "Operations" },
   { key: "system.update", label: "Manage App Updates", category: "Admin" },
 ] as const;
 
@@ -62,7 +64,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
     "discounts.apply", "bills.print", "tables.manage", "menu.manage",
     "inventory.manage", "reports.access", "kds.manage",
     "reservations.manage", "customers.manage", "refunds.process",
-    "attendance.manage", "delivery.manage", "staff.manage", "accounting.manage",
+    "attendance.manage", "delivery.manage", "staff.manage", "accounting.manage", "marketing.manage", "operations.manage",
   ],
   CASHIER: [
     "orders.create", "orders.edit", "bills.print", "discounts.apply",

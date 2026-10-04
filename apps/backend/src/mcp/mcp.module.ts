@@ -9,6 +9,9 @@ import { TablesModule } from '../modules/tables/tables.module';
 import { DeliveryModule } from '../modules/delivery/delivery.module';
 import { AccountingModule } from '../modules/accounting/accounting.module';
 import { HrModule } from '../modules/hr/hr.module';
+import { MarketingModule } from '../modules/marketing/marketing.module';
+import { OperationsModule } from '../modules/operations/operations.module';
+import { ReportsModule } from '../modules/reports/reports.module';
 import { AttendanceModule } from '../modules/attendance/attendance.module';
 import { McpController } from './mcp.controller';
 import { McpToolsBuilder } from './mcp-tools.builder';
@@ -24,6 +27,9 @@ import { McpToolsBuilder } from './mcp-tools.builder';
     DeliveryModule,
     HrModule,
     AccountingModule,
+    ReportsModule,
+    MarketingModule,
+    OperationsModule,
   ],
   controllers: [McpController],
   providers: [McpToolsBuilder, StaffApiKeyGuard, BranchAccessService],
