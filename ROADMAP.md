@@ -257,7 +257,10 @@ containers, not just "it compiles."
 
 ### Phase 6 — Staff, Payroll, Accounting, Multi-branch
 
-- [ ] Employee records, attendance, shift scheduling, leave, tip
+- [x] Staff attendance: clock in/out, manager day view, MCP tools
+      (`list_attendance`, `clock_in`, `clock_out`) — landed 2026-10-04.
+      Shift scheduling, leave, tips and performance reports remain open.
+- [ ] Employee records, shift scheduling, leave, tip
       distribution, performance reports
 - [ ] Payroll
 - [ ] Accounting: sales ledger, expenses/income, cash flow, P&L, balance
