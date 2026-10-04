@@ -12,6 +12,8 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { MenuModule } from './modules/menu/menu.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { DeliveryModule } from './modules/delivery/delivery.module';
+import { HrModule } from './modules/hr/hr.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { KdsModule } from './modules/kds/kds.module';
@@ -47,6 +49,8 @@ import { SystemModule } from './system/system.module';
     TablesModule,
     AttendanceModule,
     DeliveryModule,
+    HrModule,
+    AccountingModule,
     OrdersModule,
     KdsModule,
     DashboardModule,

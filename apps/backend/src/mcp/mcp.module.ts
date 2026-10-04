@@ -7,6 +7,8 @@ import { DashboardModule } from '../modules/dashboard/dashboard.module';
 import { MenuModule } from '../modules/menu/menu.module';
 import { TablesModule } from '../modules/tables/tables.module';
 import { DeliveryModule } from '../modules/delivery/delivery.module';
+import { AccountingModule } from '../modules/accounting/accounting.module';
+import { HrModule } from '../modules/hr/hr.module';
 import { AttendanceModule } from '../modules/attendance/attendance.module';
 import { McpController } from './mcp.controller';
 import { McpToolsBuilder } from './mcp-tools.builder';
@@ -20,6 +22,8 @@ import { McpToolsBuilder } from './mcp-tools.builder';
     TablesModule,
     AttendanceModule,
     DeliveryModule,
+    HrModule,
+    AccountingModule,
   ],
   controllers: [McpController],
   providers: [McpToolsBuilder, StaffApiKeyGuard, BranchAccessService],
