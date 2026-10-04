@@ -13,6 +13,7 @@ import {
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../common/decorators/auth.decorator';
+import { AuditAction } from '../audit/audit-action';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { IntegrationApiKeysService } from './integration-api-keys.service';
@@ -29,6 +30,7 @@ export class IntegrationApiKeysController {
   }
 
   @Auth('settings.manage')
+  @AuditAction('api_key.integration_created', 'IntegrationApiKey')
   @Post()
   @UsePipes(new ZodValidationPipe(createIntegrationApiKeySchema))
   create(@CurrentUser() user: SessionUser, @Body() body: unknown) {
@@ -36,6 +38,7 @@ export class IntegrationApiKeysController {
   }
 
   @Auth('settings.manage')
+  @AuditAction('api_key.integration_revoked', 'IntegrationApiKey')
   @Delete(':id')
   revoke(@CurrentUser() user: SessionUser, @Param('id') id: string) {
     return this.integrationApiKeys.revoke(user, id);

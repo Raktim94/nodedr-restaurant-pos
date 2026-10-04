@@ -19,6 +19,7 @@ import {
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
+import { AuditAction } from '../../audit/audit-action';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
@@ -43,6 +44,7 @@ export class DeliveryController {
   }
 
   @Auth('delivery.manage')
+  @AuditAction('delivery_zone.created', 'DeliveryZone')
   @Post('zones')
   @UsePipes(new ZodValidationPipe(deliveryZoneSchema))
   async createZone(
@@ -55,6 +57,7 @@ export class DeliveryController {
   }
 
   @Auth('delivery.manage')
+  @AuditAction('delivery_zone.updated', 'DeliveryZone')
   @Patch('zones/:id')
   @UsePipes(new ZodValidationPipe(deliveryZoneUpdateSchema))
   async updateZone(
@@ -68,6 +71,7 @@ export class DeliveryController {
   }
 
   @Auth('delivery.manage')
+  @AuditAction('delivery_zone.deleted', 'DeliveryZone')
   @Delete('zones/:id')
   async deleteZone(
     @CurrentUser() u: SessionUser,
@@ -100,6 +104,7 @@ export class DeliveryController {
   }
 
   @Auth('delivery.manage')
+  @AuditAction('delivery.driver_assigned', 'Order')
   @Patch(':orderId/assign')
   @UsePipes(new ZodValidationPipe(assignDriverSchema))
   async assign(

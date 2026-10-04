@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuditModule } from '../audit/audit.module';
 import { BranchAccessService } from '../common/services/branch-access.service';
 import { IntegrationApiKeyGuard } from '../common/guards/integration-api-key.guard';
 import { DeliveryModule } from '../modules/delivery/delivery.module';
@@ -12,7 +13,7 @@ import { StaffApiKeysController } from './staff-api-keys.controller';
 import { StaffApiKeysService } from './staff-api-keys.service';
 
 @Module({
-  imports: [OrdersModule, ReservationsModule, DeliveryModule],
+  imports: [OrdersModule, ReservationsModule, DeliveryModule, AuditModule],
   controllers: [
     IntegrationsController,
     IntegrationApiKeysController,

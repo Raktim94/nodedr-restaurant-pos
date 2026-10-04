@@ -17,6 +17,7 @@ import {
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
+import { AuditAction } from '../../audit/audit-action';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
@@ -47,6 +48,7 @@ export class AccountingController {
   }
 
   @Auth('accounting.manage')
+  @AuditAction('expense.created', 'Expense')
   @Post('expenses')
   @UsePipes(new ZodValidationPipe(expenseSchema))
   async createExpense(
@@ -59,6 +61,7 @@ export class AccountingController {
   }
 
   @Auth('accounting.manage')
+  @AuditAction('expense.deleted', 'Expense')
   @Delete('expenses/:id')
   async deleteExpense(
     @CurrentUser() u: SessionUser,
@@ -96,6 +99,7 @@ export class AccountingController {
   }
 
   @Auth('accounting.manage')
+  @AuditAction('cash.closed', 'CashClosing')
   @Post('closing')
   @UsePipes(new ZodValidationPipe(cashClosingSchema))
   async close(

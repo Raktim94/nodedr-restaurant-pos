@@ -13,6 +13,7 @@ import {
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../common/decorators/auth.decorator';
+import { AuditAction } from '../audit/audit-action';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { StaffApiKeysService } from './staff-api-keys.service';
@@ -32,6 +33,7 @@ export class StaffApiKeysController {
   }
 
   @Auth()
+  @AuditAction('api_key.personal_created', 'StaffApiKey')
   @Post()
   @UsePipes(new ZodValidationPipe(createStaffApiKeySchema))
   create(@CurrentUser() user: SessionUser, @Body() body: unknown) {
@@ -39,6 +41,7 @@ export class StaffApiKeysController {
   }
 
   @Auth()
+  @AuditAction('api_key.personal_revoked', 'StaffApiKey')
   @Delete(':id')
   revoke(@CurrentUser() user: SessionUser, @Param('id') id: string) {
     return this.staffApiKeys.revoke(user, id);

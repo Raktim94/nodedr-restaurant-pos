@@ -24,6 +24,7 @@ import {
   type StaffPayDto,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
+import { AuditAction } from '../../audit/audit-action';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
@@ -123,6 +124,7 @@ export class HrController {
   }
 
   @Auth('staff.manage')
+  @AuditAction('leave.decided', 'LeaveRequest')
   @Patch('leave/:id')
   @UsePipes(new ZodValidationPipe(leaveDecisionSchema))
   async decide(
@@ -147,6 +149,7 @@ export class HrController {
   }
 
   @Auth('staff.manage')
+  @AuditAction('hr.pay_set', 'User')
   @Put('pay/:userId')
   @UsePipes(new ZodValidationPipe(staffPaySchema))
   async setPay(
@@ -182,6 +185,7 @@ export class HrController {
   }
 
   @Auth('staff.manage')
+  @AuditAction('payroll.created', 'PayrollRun')
   @Post('payroll')
   @UsePipes(new ZodValidationPipe(payrollRunSchema))
   async createRun(
@@ -194,6 +198,7 @@ export class HrController {
   }
 
   @Auth('staff.manage')
+  @AuditAction('payroll.finalized', 'PayrollRun')
   @Post('payroll/:id/finalize')
   async finalize(
     @CurrentUser() u: SessionUser,
@@ -205,6 +210,7 @@ export class HrController {
   }
 
   @Auth('staff.manage')
+  @AuditAction('payroll.deleted', 'PayrollRun')
   @Delete('payroll/:id')
   async deleteRun(
     @CurrentUser() u: SessionUser,
