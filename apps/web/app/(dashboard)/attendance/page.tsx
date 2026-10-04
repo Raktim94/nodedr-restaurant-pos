@@ -1,0 +1,90 @@
+"use client";
+
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
+import { useAttendance, useClock, useMyShift } from "@/hooks/use-attendance";
+import { useBranch } from "@/hooks/use-branch";
+
+const time = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+function duration(from: string, to: string | null) {
+  const mins = Math.max(0, Math.round(((to ? new Date(to) : new Date()).getTime() - new Date(from).getTime()) / 60000));
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+export default function AttendancePage() {
+  const { branchId } = useBranch();
+  const { data: me } = useCurrentUser();
+  const canManage = hasPermission(me?.user, "attendance.manage");
+  const { data: shift, isLoading: shiftLoading } = useMyShift();
+  const { clockIn, clockOut } = useClock(branchId);
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const { data: records, isLoading } = useAttendance(branchId, date, canManage);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Attendance</h1>
+        <p className="text-sm text-muted-foreground">Clock in and out of your shift</p>
+      </div>
+
+      <Card className="flex items-center justify-between gap-4 p-5">
+        {shiftLoading ? (
+          <Skeleton className="h-10 w-48" />
+        ) : shift ? (
+          <>
+            <div>
+              <p className="text-sm font-medium text-foreground">On shift since {time(shift.clockInAt)}</p>
+              <p className="text-xs text-muted-foreground">{duration(shift.clockInAt, null)} so far</p>
+            </div>
+            <Button variant="outline" disabled={clockOut.isPending} onClick={() => clockOut.mutate()}>
+              Clock out
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">You are not clocked in.</p>
+            <Button disabled={!branchId || clockIn.isPending} onClick={() => clockIn.mutate()}>
+              Clock in
+            </Button>
+          </>
+        )}
+      </Card>
+
+      {canManage && (
+        <>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            aria-label="Date"
+            className="w-fit rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
+          />
+          <Card className="flex flex-col divide-y divide-border p-2">
+            {isLoading ? (
+              <div className="p-4">
+                <Skeleton className="h-14 rounded-lg" />
+              </div>
+            ) : records && records.length > 0 ? (
+              records.map((r) => (
+                <div key={r.id} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
+                  <span className="font-medium text-foreground">{r.user.name}</span>
+                  <span className="text-muted-foreground">
+                    {time(r.clockInAt)} – {r.clockOutAt ? time(r.clockOutAt) : "on shift"} ·{" "}
+                    {duration(r.clockInAt, r.clockOutAt)}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="p-6 text-center text-sm text-muted-foreground">No attendance records for this day.</p>
+            )}
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}

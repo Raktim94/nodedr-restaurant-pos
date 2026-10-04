@@ -74,6 +74,7 @@ model Branch {
   id           String     @id @default(cuid())
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  attendance   Attendance[]
 
   name      String
   address   String?
@@ -213,6 +214,7 @@ model User {
   goodsReceiptsReceived GoodsReceipt[]  @relation("GoodsReceiptReceivedBy")
   stockMovementsCreated StockMovement[] @relation("StockMovementCreatedBy")
   wasteLogsCreated      WasteLog[]      @relation("WasteLogCreatedBy")
+  attendance            Attendance[]
 
   purchaseRequestsRequested PurchaseRequest[]   @relation("PurchaseRequestRequestedBy")
   purchaseRequestsApproved  PurchaseRequest[]   @relation("PurchaseRequestApprovedBy")
@@ -1451,4 +1453,23 @@ model DownloadStat {
   count   Int    @default(0)
 
   @@map("download_stats")
+}
+
+// Staff clock-in/out (Phase 6). One open row (clockOutAt null) per user at a
+// time — enforced in AttendanceService, not the DB, so a forgotten clock-out
+// can be closed by a manager rather than blocking the next shift.
+model Attendance {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  clockInAt  DateTime  @default(now())
+  clockOutAt DateTime?
+  note       String?
+
+  @@index([branchId, clockInAt])
+  @@index([userId, clockOutAt])
+  @@map("attendance")
 }

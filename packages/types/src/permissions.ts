@@ -26,6 +26,7 @@ export const PERMISSIONS = [
   { key: "audit_log.view", label: "View Audit Log", category: "Admin" },
   { key: "roles.manage", label: "Manage Roles", category: "Admin" },
   { key: "backup.manage", label: "Manage Backups", category: "Admin" },
+  { key: "attendance.manage", label: "Manage Staff Attendance", category: "Staff" },
   { key: "system.update", label: "Manage App Updates", category: "Admin" },
 ] as const;
 
@@ -58,6 +59,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
     "discounts.apply", "bills.print", "tables.manage", "menu.manage",
     "inventory.manage", "reports.access", "kds.manage",
     "reservations.manage", "customers.manage", "refunds.process",
+    "attendance.manage",
   ],
   CASHIER: [
     "orders.create", "orders.edit", "bills.print", "discounts.apply",

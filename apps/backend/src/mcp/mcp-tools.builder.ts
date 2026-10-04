@@ -15,6 +15,7 @@ import { OrdersService } from '../modules/orders/orders.service';
 import { ReservationsService } from '../modules/reservations/reservations.service';
 import { DashboardService } from '../modules/dashboard/dashboard.service';
 import { MenuService } from '../modules/menu/menu.service';
+import { AttendanceService } from '../modules/attendance/attendance.service';
 import { TablesService } from '../modules/tables/tables.service';
 
 const SPICE_LEVEL_VALUES = [
@@ -209,6 +210,7 @@ export class McpToolsBuilder {
     private readonly dashboard: DashboardService,
     private readonly menu: MenuService,
     private readonly tables: TablesService,
+    private readonly attendance: AttendanceService,
   ) {}
 
   build(actor: SessionUser): McpServer {
@@ -375,6 +377,61 @@ export class McpToolsBuilder {
             }),
           );
         },
+      },
+      {
+        name: 'list_attendance',
+        title: 'List staff attendance',
+        description:
+          'List staff clock-in/clock-out records for one location, optionally on one date (YYYY-MM-DD) or for one staff member. A null clockOutAt means the person is still on shift.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            date: { type: 'string' },
+            userId: { type: 'string' },
+          },
+          required: ['branchId'],
+        },
+        readOnly: true,
+        requiredPermission: 'attendance.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.attendance.list(
+              branchId,
+              args.optionalString('date'),
+              args.optionalString('userId'),
+            ),
+          );
+        },
+      },
+      {
+        name: 'clock_in',
+        title: 'Clock in',
+        description: 'Clock the calling staff member in at a location.',
+        inputSchema: {
+          type: 'object',
+          properties: { branchId: { type: 'string' }, note: { type: 'string' } },
+          required: ['branchId'],
+        },
+        readOnly: false,
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          return json(
+            await this.attendance.clockIn(actor.id, branchId, args.optionalString('note')),
+          );
+        },
+      },
+      {
+        name: 'clock_out',
+        title: 'Clock out',
+        description: 'Clock the calling staff member out of their open shift.',
+        inputSchema: { type: 'object', properties: { note: { type: 'string' } } },
+        readOnly: false,
+        handler: async (args) =>
+          json(await this.attendance.clockOut(actor.id, args.optionalString('note'))),
       },
       {
         name: 'list_reservations',

@@ -54,6 +54,10 @@ export default function ApiDocsPage() {
             "list_locations, dashboard_summary — read-only, any staff member",
             "list_open_orders, get_order, create_order — requires the Create Orders permission",
             "list_reservations, create_reservation, update_reservation_status — requires the Manage Reservations permission",
+            "create_/update_/delete_ menu categories and items — requires the Manage Menu permission",
+            "create_floor, update_floor, create_tables_bulk, update_table, update_table_status, delete_table — requires the Manage Tables permission",
+            "cancel_order (Cancel Orders) and refund_order (Process Refunds) — each requires its own permission",
+            "clock_in, clock_out — any staff member, for themselves; list_attendance — requires the Manage Staff Attendance permission",
           ]}
         />
       </DocSection>
