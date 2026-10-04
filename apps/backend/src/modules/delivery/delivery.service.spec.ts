@@ -19,7 +19,12 @@ function setup(order: Record<string, unknown> | null, zoneClash = false) {
     },
   };
   const realtime = { emitToBranch: jest.fn() };
-  const svc = new DeliveryService(prisma as never, realtime as never);
+  const webhooks = { emitForBranch: jest.fn() };
+  const svc = new DeliveryService(
+    prisma as never,
+    realtime as never,
+    webhooks as never,
+  );
   return { svc, prisma, realtime };
 }
 

@@ -17,6 +17,7 @@ import { AccountingModule } from './modules/accounting/accounting.module';
 import { MarketingModule } from './modules/marketing/marketing.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { OperationsModule } from './modules/operations/operations.module';
+import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { KdsModule } from './modules/kds/kds.module';
@@ -57,6 +58,7 @@ import { SystemModule } from './system/system.module';
     MarketingModule,
     ReportsModule,
     OperationsModule,
+    WebhooksModule,
     OrdersModule,
     KdsModule,
     DashboardModule,

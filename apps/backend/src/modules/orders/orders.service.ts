@@ -17,6 +17,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { MarketingService } from '../marketing/marketing.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import {
@@ -39,6 +40,7 @@ export class OrdersService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly marketing: MarketingService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   async listOpen(branchId: string, tableId?: string) {
@@ -341,6 +343,17 @@ export class OrdersService {
       );
     }
 
+    void this.webhooks.emitForBranch(branchId, 'order.created', {
+      orderId: full.id,
+      orderNumber: full.orderNumber,
+      type: full.type,
+      channel: full.channel,
+      total: Number(full.totalAmount),
+      deliveryAddress: full.deliveryAddress,
+      deliveryPhone: full.deliveryPhone,
+      scheduledFor: full.scheduledFor,
+    });
+
     return full;
   }
 
@@ -613,6 +626,11 @@ export class OrdersService {
         type: order.type,
       },
     });
+    void this.webhooks.emitForBranch(branchId, 'order.cancelled', {
+      orderId,
+      orderNumber: order.orderNumber,
+      type: order.type,
+    });
 
     return this.getOrder(branchId, orderId);
   }
@@ -877,6 +895,19 @@ export class OrdersService {
     this.realtime.emitToBranch(branchId, 'order.updated', {
       id: updated.id,
       status: 'PAID',
+    });
+    void this.webhooks.emitForBranch(branchId, 'order.paid', {
+      orderId: updated.id,
+      orderNumber: updated.orderNumber,
+      type: updated.type,
+      total: Number(updated.totalAmount),
+      tip: Number(updated.tipAmount),
+      discount: Number(updated.discountAmount),
+      couponCode: updated.couponCode,
+      payments: updated.payments.map((p) => ({
+        method: p.method,
+        amount: Number(p.amount),
+      })),
     });
     return updated;
   }

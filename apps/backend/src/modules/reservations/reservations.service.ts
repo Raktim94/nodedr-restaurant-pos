@@ -11,6 +11,7 @@ import type {
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { WebhooksService } from '../webhooks/webhooks.service';
 
 export interface CreateReservationOptions {
   // True only for the public "website" booking path (integrations.service's
@@ -28,6 +29,7 @@ export class ReservationsService {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     private readonly notifications: NotificationsService,
+    private readonly webhooks: WebhooksService,
   ) {}
 
   list(branchId: string, date?: string) {
@@ -134,6 +136,15 @@ export class ReservationsService {
         `Failed to send reservation.new notification for reservation ${created.id}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+
+    void this.webhooks.emitForBranch(branchId, 'reservation.created', {
+      reservationId: created.id,
+      customerName: created.customerName,
+      phone: created.phone,
+      guestCount: created.guestCount,
+      reservedAt: created.reservedAt,
+      channel: created.channel,
+    });
 
     return created;
   }
