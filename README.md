@@ -426,3 +426,5 @@ See [`MAINTAINERS.md`](./MAINTAINERS.md) for project maintainers.
 ## Case study
 
 Read the [OrderRestro case study](https://www.raktimranjit.com/projects/orderrestro) for the product background and design decisions.
+
+Maintainer: [Raktim Ranjit](https://www.raktimranjit.com/)
