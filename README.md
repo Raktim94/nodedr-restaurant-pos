@@ -419,3 +419,8 @@ See [`MAINTAINERS.md`](./MAINTAINERS.md) for project maintainers.
 <div align="center">
 <img src="apps/web/public/logo.png" alt="Nodedr OrderRestro" width="72">
 </div>
+
+
+## Case study
+
+Read the [OrderRestro case study](https://www.raktimranjit.com/projects/orderrestro) for the product background and design decisions.
