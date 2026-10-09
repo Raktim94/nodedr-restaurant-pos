@@ -12,7 +12,16 @@
   "bugs": {
     "url": "https://github.com/Raktim94/nodedr-restaurant-pos/issues"
   },
-  "homepage": "https://github.com/Raktim94/nodedr-restaurant-pos#readme",
+  "homepage": "https://orderrestro.nodedr.com/",
+  "keywords": [
+    "restaurant-management",
+    "restaurant-pos",
+    "point-of-sale",
+    "kitchen-display-system",
+    "inventory-management",
+    "self-hosted",
+    "offline-first"
+  ],
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
