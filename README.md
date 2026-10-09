@@ -127,26 +127,26 @@ by phase.
 
 | | Module | Status |
 |---|---|---|
-| 1 | POS & Billing — dine-in/takeaway, split/merge bills, multi-region tax (India GST, US Sales Tax, EU VAT, Spain IVA), discounts, gift cards, tips, multi-payment, refunds | ✅ |
+| 1 | POS & Billing — dine-in/takeaway, bill merge, multi-region tax (India GST, US Sales Tax, EU VAT, Spain IVA), discounts, gift cards, tips, payments, refunds; equal split is display-only and split tender is pending | ✅ core · 🚧 split billing/payment |
 | 2 | Table & Reservation Management — visual floor plan, booking, waitlist, QR table ordering, table transfer | ✅ |
 | 3 | Kitchen Management (KDS) — display, KOTs, multi-station routing, prep tracking, performance reporting | ✅ |
 | 4 | Menu Management — categories, modifier groups, combos, seasonal menus, availability scheduling | ✅ |
 | 5 | Inventory & Store Management — ingredients, recipe costing, POs, suppliers, GRN, waste, batch/lot | ✅ |
-| 6 | Procurement — vendor quotations, purchase requests/orders, invoices, supplier performance | 🚧 Phase 4 |
+| 6 | Procurement — vendor quotations, purchase requests/orders, invoices, supplier payments, and supplier performance | ✅ core · 🚧 returns, price variance, reorder suggestions |
 | 7 | CRM — profiles, loyalty points, memberships, gift vouchers, feedback, visit history | ✅ |
 | 8 | Staff Management — records, attendance, shift scheduling, payroll, leave, tip distribution | ✅ staff accounts & roles · 🚧 rest, Phase 6 |
 | 9 | Accounting — sales ledger, expenses, cash flow, P&L, GST reports, bank reconciliation | 🚧 Phase 6 |
 | 10 | Delivery Management — executives, routing, tracking, 3rd-party integration | 🚧 Phase 5 |
-| 11 | Online Ordering — website, mobile, QR, click & collect, scheduled orders | 🚧 Phase 5 |
-| 12 | Branch Management — multi-outlet, centralized reporting/inventory, branch transfer | 🚧 Phase 6 |
-| 13 | Analytics — sales dashboard, food cost, inventory valuation, peak hours, retention, margins | 🚧 Phase 7 |
+| 11 | Online Ordering — public QR menu is live; customer ordering, payment, click & collect, and scheduled orders remain | ✅ QR menu · 🚧 ordering, Phase 5 |
+| 12 | Branch Management — restaurant/branch schema and branch switcher are live; centralized reporting, inventory, and transfers remain | ✅ foundation · 🚧 central operations, Phase 6 |
+| 13 | Analytics — revenue, orders, table status, kitchen queue, trends, and recent transactions dashboard | ✅ dashboard · 🚧 deeper reports, Phase 7 |
 | 14 | Marketing — coupons, promotions, happy hours, SMS/email/WhatsApp campaigns | 🚧 Phase 7 |
 | 15 | Finance — daily cash closing, petty cash, expense approvals, budgets | 🚧 Phase 6 |
 | 16 | Maintenance — equipment tracking, service schedules, requests, AMC | 🚧 Phase 7 |
 | 17 | Documents — digital invoices, purchase docs, contracts, recipes, SOPs | 🚧 Phase 7 |
-| 18 | Security — RBAC, audit logs, backup/restore, activity history, 2FA | ✅ RBAC · 🚧 rest, Phase 8 |
-| 19 | Integrations — payment gateways, SMS, email, WhatsApp, accounting software, thermal printers | ✅ browser/USB-driver receipt printing, [API & MCP server](./docs/integrations-api.md) · 🚧 rest, Phase 8 |
-| 20 | Admin Panel — global settings, taxes, currencies, business hours, feature flags | ✅ restaurant & branch settings, per-branch tax regime · 🚧 rest, Phase 8 |
+| 18 | Security — RBAC, audit logs, session expiry, PIN/password login, and direct printer diagnostics | ✅ core · 🚧 2FA, backup/restore, advanced history, Phase 8 |
+| 19 | Integrations — browser and direct USB/ESC-POS receipt printing, REST/Swagger, and [API & MCP server](./docs/integrations-api.md) | ✅ current integrations · 🚧 gateways, messaging, accounting connectors, Phase 8 |
+| 20 | Admin Panel — restaurant/branch settings, per-branch tax regime, roles, permissions, and operational settings | ✅ current settings · 🚧 broader feature flags and global administration, Phase 8 |
 
 Already shipped and running against real Docker/Postgres today: auth +
 RBAC, full menu management (incl. combo meals), floor/table view with
