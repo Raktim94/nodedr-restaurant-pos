@@ -19,6 +19,8 @@ takeaway, and kitchen operations.
 
 Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 
+**[Project website](https://orderrestro.nodedr.com/)** · **[Case study](https://www.raktimranjit.com/projects/orderrestro)** · **[Maintainer: Raktim Ranjit](https://www.raktimranjit.com/)**
+
 [Quick Start](#quick-start) ·
 [Features](#features) ·
 [Screenshots](#screenshots) ·
