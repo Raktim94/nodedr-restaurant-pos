@@ -31,7 +31,7 @@ anything here is out of date, trust [`PROJECT.md`](./PROJECT.md) and
 
 This project follows the [Contributor Covenant](./CODE_OF_CONDUCT.md). By
 participating, you agree to uphold it. Report unacceptable behavior to
-**ranjitraktim5@gmail.com**.
+**mail@raktimranjit.com**.
 
 ## Maintainers & copyright
 
