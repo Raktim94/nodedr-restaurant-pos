@@ -1403,6 +1403,7 @@ enum PaymentMethod {
   BANK_TRANSFER
   GIFT_CARD
   STORE_CREDIT
+  OTHER
 }
 
 // ---------------------------------------------------------------------------

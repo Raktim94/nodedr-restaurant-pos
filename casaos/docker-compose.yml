@@ -42,6 +42,9 @@ services:
       CORS_ORIGIN: "http://localhost:1995"
       COOKIE_SECURE: "false"
       UPLOADS_DIR: "/data/uploads"
+      # In-app "Update now" button (Settings > Updates) -> the updater below.
+      UPDATER_URL: "http://nodedr-restaurant-pos-updater:8080"
+      UPDATER_TOKEN: "nodedr-restaurant-updater"
     volumes:
       - type: bind
         source: /DATA/AppData/$AppID/uploads
@@ -92,6 +95,29 @@ services:
           description:
             en_US: Nodedr OrderRestro web interface
           protocol: tcp
+
+  # In-app "Update now" (Settings > Updates): pulls the newer OrderRestro
+  # images above and recreates those two containers (nothing else). Needs the
+  # Docker socket to do that; data in /DATA/AppData is untouched. The updater
+  # image is generic (it only manages the containers named below), so the
+  # one published for NodeDR POS is reused.
+  updater:
+    image: ghcr.io/raktim94/nodedr-pos-updater:1.5.1
+    container_name: nodedr-restaurant-pos-updater
+    hostname: nodedr-restaurant-pos-updater
+    restart: unless-stopped
+    environment:
+      UPDATER_TOKEN: "nodedr-restaurant-updater"
+      TARGET_CONTAINERS: "nodedr-restaurant-pos-backend,nodedr-restaurant-pos-web"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - nodedr-restaurant-pos
+    x-casaos:
+      volumes:
+        - container: /var/run/docker.sock
+          description:
+            en_US: Docker socket, used only by the in-app "Update now" button to move the two OrderRestro containers to a newer version.
 
 networks:
   nodedr-restaurant-pos:

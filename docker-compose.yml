@@ -27,6 +27,10 @@ services:
       dockerfile: apps/backend/Dockerfile
       args:
         APP_VERSION: "${APP_VERSION:-dev}"
+    # Same name CI publishes. `up --build` tags the local build with it, and
+    # the in-app "Update now" button (see the `updater` service below) pulls
+    # the published image of a newer version under it.
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:${APP_VERSION:-dev}
     container_name: nodedr-restaurant-backend
     restart: unless-stopped
     environment:
@@ -37,14 +41,11 @@ services:
       CORS_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:1995}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       UPLOADS_DIR: "/data/uploads"
-      # Self-update (Settings > Updates > "Update now", see
-      # src/system/update.service.ts) needs to know where its mounted repo
-      # checkout lives so it can `git pull && docker compose up --build -d`
-      # from a one-shot helper container it spawns via docker.sock — same
-      # design as Submify/Zulivio's own self-update. Deliberately NOT /repo
-      # — see the volumes comment below on why that path is reserved for
-      # the running app itself.
-      REPO_DIR: "/host-repo"
+      # In-app updates (Settings > Updates): the backend asks the `updater`
+      # container below to pull the latest published images. Unset these two
+      # and the Update button simply says this install can't update itself.
+      UPDATER_URL: "http://updater:8080"
+      UPDATER_TOKEN: "${UPDATER_TOKEN:-nodedr-restaurant-updater}"
       # Optional: S3 backup config can also be set from Settings > Backup
       # (persisted to the `backup_config` DB row, which takes priority over
       # these). Uncomment for a headless/CasaOS-style deployment that
@@ -66,18 +67,6 @@ services:
       - "4000"
     volumes:
       - uploads_data:/data/uploads
-      # Self-update support: docker.sock lets the backend spawn a one-shot
-      # helper container to run `git pull && docker compose up --build -d`
-      # on the host (the backend container can't safely recreate itself —
-      # see src/system/update.service.ts). The repo bind mount is deliberately
-      # NOT at /repo — this image's own WORKDIR *is* /repo (node_modules,
-      # dist, the Alpine/musl-built Prisma engine all live there), so
-      # mounting the host repo there would shadow the running app with the
-      # host's own build artifacts (wrong OS/libc — breaks Prisma's native
-      # engine). /host-repo is a separate path used only as the update
-      # helper container's working directory, matching REPO_DIR above.
-      - /var/run/docker.sock:/var/run/docker.sock
-      - .:/host-repo
       # Direct-USB thermal printing (see apps/backend/src/modules/orders/
       # escpos-usb.ts, ported from nodedr-pos's real hardware-verified
       # transport) needs the backend to see the host's USB device nodes.
@@ -111,12 +100,33 @@ services:
         # Next bakes rewrite destinations at BUILD time — this must be a
         # build ARG, not a runtime env (see apps/web/Dockerfile comment).
         BACKEND_URL: "http://backend:4000"
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:${APP_VERSION:-dev}
     container_name: nodedr-restaurant-web
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-1995}:3000"
     depends_on:
       - backend
+
+  # One-click updates. A tiny sidecar (see updater/server.js) that does
+  # NOTHING on its own — no polling, no auto-update. When an admin presses
+  # Settings > Updates > "Update now", the backend tells it which published
+  # version to move to; it pulls that exact version of the backend and web
+  # images and recreates those two containers with the same settings (data
+  # volumes untouched, rolled back if it fails). It needs the Docker socket,
+  # which is why it is its own container on the internal network (no
+  # published port) instead of privilege handed to the app backend.
+  updater:
+    build:
+      context: ./updater
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-updater:latest
+    container_name: nodedr-restaurant-updater
+    restart: unless-stopped
+    environment:
+      UPDATER_TOKEN: "${UPDATER_TOKEN:-nodedr-restaurant-updater}"
+      TARGET_CONTAINERS: "nodedr-restaurant-backend,nodedr-restaurant-web"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   pg_data:

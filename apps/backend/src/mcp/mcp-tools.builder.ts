@@ -47,6 +47,7 @@ const PAYMENT_METHOD_VALUES = [
   'BANK_TRANSFER',
   'GIFT_CARD',
   'STORE_CREDIT',
+  'OTHER',
 ] as const;
 
 const RESERVATION_STATUS_VALUES = [

@@ -544,6 +544,50 @@ export class BackupService {
     return { record, config, s3 };
   }
 
+  /**
+   * Builds a fresh backup (`db.dump` + `uploads.tar.gz`) on local disk for
+   * the caller to download straight to their own computer — no S3 bucket
+   * needed. Unlike `prepareDownload` nothing is stored on the server or
+   * recorded as a Backup row; the caller must `fs.rm(workDir)` when done.
+   * Audited as `backup.exported`, same sensitivity as a bucket download.
+   */
+  async prepareLocalExport(user: SessionUser) {
+    await this.audit.record({
+      userId: user.id,
+      action: 'backup.exported',
+      entity: 'Backup',
+      entityId: 'local',
+    });
+    const workDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'orderrestro-export-'),
+    );
+    try {
+      const dbDumpPath = path.join(workDir, 'db.dump');
+      await execFileAsync('pg_dump', [
+        '--format=custom',
+        '--file',
+        dbDumpPath,
+        process.env.DATABASE_URL!,
+      ]);
+      const uploadRoot = uploadsDir();
+      let uploadsArchivePath: string | null = null;
+      if (fsSync.existsSync(uploadRoot)) {
+        uploadsArchivePath = path.join(workDir, 'uploads.tar.gz');
+        await execFileAsync('tar', [
+          '-czf',
+          uploadsArchivePath,
+          '-C',
+          path.dirname(uploadRoot),
+          path.basename(uploadRoot),
+        ]);
+      }
+      return { workDir, dbDumpPath, uploadsArchivePath };
+    } catch (err) {
+      await fs.rm(workDir, { recursive: true, force: true });
+      throw err;
+    }
+  }
+
   async fetchObjectStream(
     s3: S3Client,
     bucket: string,

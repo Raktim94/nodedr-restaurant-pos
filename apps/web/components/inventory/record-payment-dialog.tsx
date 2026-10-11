@@ -18,7 +18,7 @@ import { useRecordSupplierPayment, type SupplierInvoice } from "@/hooks/use-inve
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 
-const METHODS = ["CASH", "CARD", "UPI", "BANK_TRANSFER", "WALLET"] as const;
+const METHODS = ["CASH", "CARD", "UPI", "BANK_TRANSFER", "WALLET", "OTHER"] as const;
 
 export function RecordPaymentDialog({
   branchId,

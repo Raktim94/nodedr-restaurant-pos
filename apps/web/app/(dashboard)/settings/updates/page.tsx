@@ -19,29 +19,56 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useApplyUpdate, useUpdateCheck } from "@/hooks/use-updates";
 import { ApiError } from "@/lib/api";
 
-// After "Update now" restarts the backend container, this page polls the
-// unauthenticated health route directly (bypassing the versioned /api/v1
-// client — the app may be mid-restart with a stale session) until it
-// answers again, then reloads so the user lands back on a fresh session
-// instead of staring at a dead page.
-function pollUntilBackUp() {
+// After "Update now" the updater sidecar pulls the new images (the app keeps
+// running meanwhile) and then restarts the backend. Each tick asks the
+// backend what the updater is doing: a reported error stops the wait with a
+// real message, "done" reloads, and if the backend has gone away (restart in
+// progress) the unauthenticated health route decides when it is back.
+function pollUntilBackUp(onFailed: () => void) {
   const start = Date.now();
-  const timeoutMs = 3 * 60 * 1000;
+  const timeoutMs = 10 * 60 * 1000;
+  let wentDown = false;
   const interval = setInterval(async () => {
     if (Date.now() - start > timeoutMs) {
       clearInterval(interval);
-      toast.error("Still not back after 3 minutes — check the server directly.");
+      onFailed();
+      toast.error("Still not back after 10 minutes — check the server directly.");
       return;
     }
     try {
-      const res = await fetch("/api/health", { cache: "no-store" });
+      const res = await fetch("/api/v1/system/update/progress", {
+        cache: "no-store",
+        credentials: "include",
+      });
       if (res.ok) {
+        const p = (await res.json()) as { state: string; error?: string | null };
+        if (p.state === "error") {
+          clearInterval(interval);
+          onFailed();
+          toast.error(`Update failed: ${p.error ?? "unknown error"}. The old version is still running.`);
+          return;
+        }
+        if (p.state === "done") {
+          clearInterval(interval);
+          toast.success("Update finished — reloading.");
+          window.location.reload();
+          return;
+        }
+        return; // pulling / restarting: keep waiting
+      }
+    } catch {
+      // backend is restarting
+    }
+    wentDown = true;
+    try {
+      const res = await fetch("/api/health", { cache: "no-store" });
+      if (res.ok && wentDown) {
         clearInterval(interval);
         toast.success("Update finished — reloading.");
         window.location.reload();
       }
     } catch {
-      // expected while the container is restarting
+      // still down
     }
   }, 3000);
 }
@@ -58,7 +85,7 @@ export default function UpdatesPage() {
     applyUpdate.mutate(undefined, {
       onSuccess: (result) => {
         toast.info(result.message);
-        pollUntilBackUp();
+        pollUntilBackUp(() => setApplying(false));
       },
       onError: (err) => {
         setApplying(false);

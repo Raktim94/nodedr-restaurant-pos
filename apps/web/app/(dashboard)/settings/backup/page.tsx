@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import {
   backupDownloadUrl,
+  LOCAL_BACKUP_URL,
   useBackups,
   useBackupStatus,
   useClearBackupConfig,
@@ -142,6 +143,20 @@ export default function BackupPage() {
       </div>
 
       <SettingsTabs />
+
+      <Card className="flex flex-col gap-3 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-[18px] font-medium text-foreground">Download a backup</h2>
+            <p className="text-sm text-muted-foreground">
+              Save a complete copy of the database and uploaded files (menu photos, logos) to
+              this computer as a .zip. No cloud bucket needed — keep it on a USB drive or
+              private cloud folder. Contains customer and sales data, so store it safely.
+            </p>
+          </div>
+          <Button render={<a href={LOCAL_BACKUP_URL} download />}>Download backup now</Button>
+        </div>
+      </Card>
 
       <Card className="flex flex-col gap-4 p-6">
         <div className="flex items-start justify-between gap-4">

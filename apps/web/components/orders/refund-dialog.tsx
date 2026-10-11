@@ -25,7 +25,7 @@ import {
 import { useRefundOrder } from "@/hooks/use-orders";
 import { ApiError } from "@/lib/api";
 
-const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "STORE_CREDIT"];
+const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "OTHER", "STORE_CREDIT"];
 
 export function RefundDialog({
   branchId,

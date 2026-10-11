@@ -15,6 +15,12 @@ export class UpdateController {
   }
 
   @Auth('system.update')
+  @Get('update/progress')
+  progress() {
+    return this.updateService.getProgress();
+  }
+
+  @Auth('system.update')
   @Post('update/apply')
   apply() {
     return this.updateService.applyUpdate();

@@ -29,6 +29,7 @@ export const paymentMethodSchema = z.enum([
   "BANK_TRANSFER",
   "GIFT_CARD",
   "STORE_CREDIT",
+  "OTHER",
 ]);
 export type PaymentMethodDto = z.infer<typeof paymentMethodSchema>;
 

@@ -101,3 +101,6 @@ export function useRestoreBackup() {
 export function backupDownloadUrl(id: string): string {
   return `/api/v1/backups/${id}/download`;
 }
+
+// Fresh on-demand backup streamed to the browser (no S3 needed).
+export const LOCAL_BACKUP_URL = "/api/v1/backups/export";

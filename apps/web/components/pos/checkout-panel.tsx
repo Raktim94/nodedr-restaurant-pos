@@ -4,6 +4,7 @@ import type { PaymentMethodDto } from "@nodedr-restaurant/types";
 import { ArrowLeft, CheckCircle2, Printer } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +31,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { openKotPrint, openReceiptPrint } from "@/lib/print";
 import { round2 } from "@/lib/pricing-preview";
 
-const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "WALLET"];
+const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "OTHER"];
 
 export function CheckoutPanel({
   order,
@@ -414,7 +415,7 @@ export function CheckoutPanel({
             </>
           ) : (
             <p className="text-center text-xs text-neutral-600">
-              Add your UPI id in Settings → Restaurant to show a payment QR here.
+              No UPI id set yet. <Link href="/settings" className="font-medium underline">Add your UPI id in Settings → Restaurant</Link> to show a payment QR here.
             </p>
           )}
         </div>

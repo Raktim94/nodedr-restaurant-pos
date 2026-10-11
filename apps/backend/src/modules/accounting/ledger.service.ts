@@ -385,7 +385,7 @@ export class LedgerService {
           where: {
             order: { branchId },
             createdAt: { lte: end },
-            method: { in: ['CASH', 'CARD', 'UPI', 'WALLET', 'BANK_TRANSFER'] },
+            method: { in: ['CASH', 'CARD', 'UPI', 'WALLET', 'BANK_TRANSFER', 'OTHER'] },
           },
           _sum: { amount: true },
         }),

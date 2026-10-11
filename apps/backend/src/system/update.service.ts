@@ -1,13 +1,10 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
-const execFileAsync = promisify(execFile);
 
 export interface VersionInfo {
   currentVersion: string;
@@ -46,13 +43,20 @@ export class UpdateService {
       );
     }
 
+    let imagePublished = true;
+    if (latestVersion && process.env.UPDATER_URL) {
+      imagePublished = (await this.imageTagExists(latestVersion)) !== false;
+    }
+
     const info: VersionInfo = {
       currentVersion,
       latestVersion,
       updateAvailable:
-        currentVersion !== 'dev' &&
         latestVersion !== null &&
-        isNewer(latestVersion, currentVersion),
+        imagePublished &&
+        (currentVersion === 'dev'
+          ? !!process.env.UPDATER_URL
+          : isNewer(latestVersion, currentVersion)),
       releaseUrl: latestVersion
         ? `https://github.com/${GITHUB_REPO}/releases/tag/${latestVersion}`
         : null,
@@ -63,55 +67,100 @@ export class UpdateService {
     return info;
   }
 
-  // Triggers a real self-update-and-restart. Deliberately does NOT run
-  // `git pull && docker compose up` itself: this container is one of the
-  // services `docker compose up` would recreate, so the process issuing
-  // that command would be killed mid-sequence by its own command, leaving
-  // the stack half-updated. Instead it uses its own mounted docker.sock to
-  // launch a separate, ephemeral one-shot helper container that isn't
-  // itself being recreated, so it survives this container's teardown and
-  // finishes the update — same design as Submify's ApplyUpdate (see
-  // apps/api/internal/httpapi/update.go there), ported to Node's
-  // child_process instead of Go's os/exec.
+  // Hands the update to the `updater` sidecar container (updater/server.js),
+  // same design as nodedr-pos. A container can't safely replace itself, and
+  // giving this API the Docker socket would be far more privilege than a POS
+  // backend should hold — the sidecar is reachable only on the internal
+  // Docker network, only with UPDATER_TOKEN, and only ever swaps the image
+  // tag of the two app containers it is told to manage. It answers 202 right
+  // away and carries on in the background (restarting this very container).
   async applyUpdate(): Promise<{ status: string; message: string }> {
-    const repoDir = (process.env.REPO_DIR ?? '').trim();
-    if (!repoDir) {
+    const base = (process.env.UPDATER_URL ?? '').trim().replace(/\/$/, '');
+    if (!base) {
       throw new BadRequestException(
-        'REPO_DIR is not configured — self-update is unavailable',
+        'This install has no updater. Update the app the way you installed it.',
       );
     }
+    this.cache = null; // force a fresh look at the latest version
+    const info = await this.checkForUpdate();
+    if (!info.updateAvailable || !info.latestVersion) {
+      throw new ConflictException('You are already on the latest version');
+    }
 
-    const updateScript = `set -e; cd ${shellQuote(repoDir)}; git pull --ff-only; docker compose up --build -d`;
-    const args = [
-      'run',
-      '--rm',
-      '-d',
-      '-v',
-      '/var/run/docker.sock:/var/run/docker.sock',
-      '-v',
-      `${repoDir}:${repoDir}`,
-      '-w',
-      repoDir,
-      'docker:cli',
-      'sh',
-      '-c',
-      updateScript,
-    ];
-
+    let res: Response;
     try {
-      await execFileAsync('docker', args);
+      res = await fetch(`${base}/v1/update`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.UPDATER_TOKEN ?? ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ version: info.latestVersion.replace(/^v/i, '') }),
+        signal: AbortSignal.timeout(10000),
+      });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
       throw new InternalServerErrorException(
-        `could not start the update helper container: ${message}`,
+        `could not reach the updater: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new InternalServerErrorException(
+        `updater refused: ${body.error ?? res.status}`,
       );
     }
 
     return {
       status: 'update started',
       message:
-        'The application is updating and will restart shortly. This page will stop responding until it comes back up.',
+        'The application is updating and will restart shortly. This page will reload when it is back.',
     };
+  }
+
+  // What the updater is doing right now, so the UI can surface a failure
+  // (e.g. no internet to pull images) instead of waiting forever.
+  async getProgress(): Promise<{ state: string; step?: string | null; error?: string | null }> {
+    const base = (process.env.UPDATER_URL ?? '').trim().replace(/\/$/, '');
+    if (!base) return { state: 'unavailable' };
+    try {
+      const res = await fetch(`${base}/v1/status`, {
+        headers: { Authorization: `Bearer ${process.env.UPDATER_TOKEN ?? ''}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return { state: 'unknown' };
+      return (await res.json()) as { state: string; step?: string | null; error?: string | null };
+    } catch {
+      return { state: 'unknown' };
+    }
+  }
+
+  // CI publishes the image shortly after a tag appears; updating inside that
+  // window would pull nothing. Anonymous GHCR manifest check — anything other
+  // than a clear 404 means "can't tell", and the tag is trusted.
+  private async imageTagExists(tag: string): Promise<boolean | null> {
+    try {
+      const repo = 'raktim94/nodedr-restaurant-pos-backend';
+      const version = tag.replace(/^v/i, '');
+      const tokRes = await fetch(
+        `https://ghcr.io/token?scope=repository:${repo}:pull`,
+        { signal: AbortSignal.timeout(6000) },
+      );
+      if (!tokRes.ok) return null;
+      const { token } = (await tokRes.json()) as { token: string };
+      const res = await fetch(`https://ghcr.io/v2/${repo}/manifests/${version}`, {
+        method: 'HEAD',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept:
+            'application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json',
+        },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.status === 404) return false;
+      return res.ok ? true : null;
+    } catch {
+      return null;
+    }
   }
 
   private async fetchLatestTag(): Promise<string | null> {
@@ -129,10 +178,6 @@ export class UpdateService {
     const tags = (await res.json()) as Array<{ name: string }>;
     return tags[0]?.name ?? null;
   }
-}
-
-function shellQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 function parseSemver(v: string): [number, number, number] {
