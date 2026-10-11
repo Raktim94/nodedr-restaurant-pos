@@ -1,5 +1,5 @@
 # No dependencies: talks to the Docker Engine API over the mounted socket.
-FROM node:24-alpine
+FROM node:22-alpine
 WORKDIR /app
 COPY server.js ./
 USER root

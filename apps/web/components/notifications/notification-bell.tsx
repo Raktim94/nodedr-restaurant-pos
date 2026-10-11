@@ -3,7 +3,6 @@
 import { Bell, CheckCheck, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
-import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,17 +23,6 @@ import {
 import { openEntity } from "@/lib/entity-events";
 import { playNotificationFeedback } from "@/lib/notification-feedback";
 import { resolveWsUrl } from "@/lib/ws-url";
-
-// Mirrors the backend's NotifyPayload (notifications.service.ts) — the
-// lightweight "something changed" shape pushed over the socket, not a full
-// Notification row (see that file for why).
-interface NotifyPayload {
-  type: string;
-  title: string;
-  body: string;
-  entity?: string;
-  entityId?: string;
-}
 
 // How many alerts the live socket already rang for but the refresh has not
 // listed yet (module-level: only one bell is ever mounted).
@@ -84,31 +72,12 @@ export function NotificationBell() {
 
     const socket = io(resolveWsUrl(), { query: { branchId }, withCredentials: true });
 
-    socket.on("notification.created", (payload: NotifyPayload) => {
+    socket.on("notification.created", () => {
       // The refresh below will list this one; remember its id (via the poll
       // effect) as already announced by skipping it there.
       socketAnnounce.pending += 1;
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       if (!mutedRef.current) playNotificationFeedback();
-      // The bell badge/dropdown is easy to miss while heads-down on another
-      // page — a toast surfaces new orders/reservations immediately
-      // wherever staff happen to be in the dashboard. Long-ish duration
-      // (order/reservation names are worth reading, not a flash).
-      const kind =
-        payload.entity === "Order" || payload.entity === "Reservation"
-          ? payload.entity
-          : null;
-      const entityId = payload.entityId;
-      // Short-lived: the bell keeps the full list, so toasts only need to catch
-      // the eye. A stable id stops duplicates from stacking up.
-      toast(payload.title, {
-        id: `${payload.type}:${entityId ?? payload.title}`,
-        description: payload.body,
-        duration: payload.type === "order.pending" ? 12_000 : 5000,
-        ...(kind && entityId
-          ? { action: { label: "View", onClick: () => openEntity(kind, entityId) } }
-          : {}),
-      });
     });
 
     return () => {
@@ -118,7 +87,7 @@ export function NotificationBell() {
 
   // Fallback for when the live socket is down or was asleep: if the periodic
   // refresh turns up an unread notification we haven't announced yet, ring
-  // and toast for it so a new order is never silent.
+  // for it so a new order is never silent.
   const announced = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (!data) return;
@@ -134,18 +103,6 @@ export function NotificationBell() {
     const toAnnounce = fresh.slice(skip);
     if (toAnnounce.length === 0) return;
     if (!mutedRef.current) playNotificationFeedback();
-    for (const n of toAnnounce.slice(0, 3)) {
-      const kind = n.entity === "Order" || n.entity === "Reservation" ? n.entity : null;
-      const entityId = n.entityId;
-      toast(n.title, {
-        id: n.id,
-        description: n.body,
-        duration: n.type === "order.pending" ? 12_000 : 5000,
-        ...(kind && entityId
-          ? { action: { label: "View", onClick: () => openEntity(kind, entityId) } }
-          : {}),
-      });
-    }
   }, [data]);
 
   const unreadCount = data?.unreadCount ?? 0;
