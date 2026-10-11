@@ -1,5 +1,6 @@
 "use client";
 
+import { PaymentMethodButtons } from "@/components/pos/payment-method-buttons";
 import type { PaymentMethodDto } from "@nodedr-restaurant/types";
 import { RotateCcw } from "lucide-react";
 import { useState } from "react";
@@ -15,13 +16,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useRefundOrder } from "@/hooks/use-orders";
 import { ApiError } from "@/lib/api";
 
@@ -88,18 +82,7 @@ export function RefundDialog({
           </div>
           <div className="flex flex-col gap-2">
             <Label>Refund method</Label>
-            <Select value={method} onValueChange={(v) => setMethod(v as PaymentMethodDto)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {METHODS.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m === "STORE_CREDIT" ? "Store credit" : m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <PaymentMethodButtons methods={METHODS} value={method} onChange={setMethod} label="Refund method" />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="refund-reason">Reason (optional)</Label>

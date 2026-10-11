@@ -12,8 +12,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PaymentMethodButtons } from "@/components/pos/payment-method-buttons";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRecordSupplierPayment, type SupplierInvoice } from "@/hooks/use-inventory";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
@@ -84,18 +84,7 @@ export function RecordPaymentDialog({
 
           <div className="flex flex-col gap-2">
             <Label>Method</Label>
-            <Select value={method} onValueChange={(v) => setMethod((v as typeof method) ?? "CASH")}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {METHODS.map((m) => (
-                  <SelectItem key={m} value={m}>
-                    {m.replace("_", " ")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <PaymentMethodButtons methods={METHODS} value={method} onChange={setMethod} label="Payment method" />
           </div>
 
           <div className="flex flex-col gap-2">
