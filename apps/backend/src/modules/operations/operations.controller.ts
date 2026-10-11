@@ -7,8 +7,15 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
   UsePipes,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { memoryStorage } from 'multer';
 import { ApiTags } from '@nestjs/swagger';
 import {
   documentSchema,
@@ -24,7 +31,7 @@ import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
-import { OperationsService } from './operations.service';
+import { ATTACHMENT_MAX_BYTES, OperationsService } from './operations.service';
 
 @ApiTags('operations')
 @Controller('v1/operations')
@@ -151,5 +158,58 @@ export class OperationsController {
   ) {
     await this.access(u, branchId);
     return this.ops.deleteDocument(branchId, id);
+  }
+
+  @Auth('operations.manage')
+  @Post('documents/:id/files')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: ATTACHMENT_MAX_BYTES, files: 1 },
+    }),
+  )
+  async attach(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    await this.access(u, branchId);
+    if (!file) throw new BadRequestException('Choose a file (max 5 MB)');
+    return this.ops.addDocumentFile(branchId, id, file);
+  }
+
+  @Auth('operations.manage')
+  @Get('documents/:id/files/:fileId')
+  async download(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+    @Res() res: Response,
+  ) {
+    await this.access(u, branchId);
+    const f = await this.ops.getDocumentFile(branchId, id, fileId);
+    res.setHeader('Content-Type', f.mimeType);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Always a download, never rendered inline: an uploaded file must not run
+    // as a page on the app's origin.
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(f.fileName)}"`,
+    );
+    res.send(Buffer.from(f.data));
+  }
+
+  @Auth('operations.manage')
+  @Delete('documents/:id/files/:fileId')
+  async removeFile(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+  ) {
+    await this.access(u, branchId);
+    return this.ops.deleteDocumentFile(branchId, id, fileId);
   }
 }

@@ -11,6 +11,7 @@ import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useBranch } from "@/hooks/use-branch";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { SchedulesPanel } from "@/components/reports/schedules-panel";
 
 interface CatalogEntry {
   key: string;
@@ -54,7 +55,7 @@ export default function ReportsPage() {
     <div className="flex flex-col gap-6">
       <div className="print:hidden">
         <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Reports</h1>
-        <p className="text-sm text-muted-foreground">Filter by date, print, or export to a spreadsheet</p>
+        <p className="text-sm text-muted-foreground">Filter by date, print, export to Excel, PDF or CSV, or email on a schedule</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
@@ -88,14 +89,16 @@ export default function ReportsPage() {
             <Button variant="outline" size="sm" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" /> Print
             </Button>
-            {canExport && (
-              <a
-                href={`/api/v1/reports/${key}/csv?${qs}`}
-                className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-sm hover:bg-secondary"
-              >
-                <Download className="mr-2 h-4 w-4" /> Export CSV
-              </a>
-            )}
+            {canExport &&
+              (["xlsx", "pdf", "csv"] as const).map((f) => (
+                <a
+                  key={f}
+                  href={`/api/v1/reports/${key}/export?${qs}&format=${f}`}
+                  className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-sm hover:bg-secondary"
+                >
+                  <Download className="mr-2 h-4 w-4" /> {f === "xlsx" ? "Excel" : f.toUpperCase()}
+                </a>
+              ))}
           </div>
 
           <Card className="overflow-x-auto p-4">
@@ -130,6 +133,14 @@ export default function ReportsPage() {
               <p className="py-8 text-center text-sm text-muted-foreground">No data for this period.</p>
             )}
           </Card>
+
+          {canExport && (
+            <SchedulesPanel
+              branchId={branchId}
+              reportKey={key}
+              titles={Object.fromEntries((catalog ?? []).map((c) => [c.key, c.title]))}
+            />
+          )}
         </div>
       </div>
     </div>

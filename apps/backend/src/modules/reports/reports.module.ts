@@ -2,13 +2,15 @@ import { Module } from '@nestjs/common';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { AccountingModule } from '../accounting/accounting.module';
+import { ReportSchedulesController } from './report-schedules.controller';
+import { ReportSchedulesService } from './report-schedules.service';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
 
 @Module({
   imports: [AccountingModule],
-  controllers: [ReportsController],
-  providers: [ReportsService, BranchAccessService, BranchTimeService],
+  controllers: [ReportsController, ReportSchedulesController],
+  providers: [ReportsService, ReportSchedulesService, BranchAccessService, BranchTimeService],
   exports: [ReportsService],
 })
 export class ReportsModule {}

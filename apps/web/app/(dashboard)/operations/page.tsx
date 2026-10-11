@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
+import { DocumentFiles } from "@/components/operations/document-files";
 import { useDocument, useDocuments, useEquipment, useOpsActions } from "@/hooks/use-marketing";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -133,6 +134,7 @@ function DocumentsTab({ branchId }: { branchId: string | null }) {
               </div>
             </div>
             <pre className="whitespace-pre-wrap font-sans text-sm text-foreground">{doc.body}</pre>
+            <DocumentFiles branchId={branchId} docId={doc.id} files={doc.files ?? []} />
           </div>
         ) : (
           <p className="py-16 text-center text-sm text-muted-foreground">Select a document, or create one — SOPs, contracts, recipes, purchase paperwork.</p>

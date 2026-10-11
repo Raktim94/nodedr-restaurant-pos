@@ -88,6 +88,7 @@ export interface DocumentRow {
 }
 export interface DocumentFull extends DocumentRow {
   body: string;
+  files?: { id: string; fileName: string; mimeType: string; size: number }[];
 }
 
 export function useEquipment(branchId: string | null) {

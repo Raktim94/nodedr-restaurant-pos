@@ -72,27 +72,30 @@ model Restaurant {
   roles              Role[]
   users              User[]
   integrationApiKeys IntegrationApiKey[]
+  webhookEndpoints   WebhookEndpoint[]
 
   @@map("restaurants")
-  webhookEndpoints WebhookEndpoint[]
 }
 
 model Branch {
-  id            String         @id @default(cuid())
-  restaurantId  String
-  restaurant    Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  attendance    Attendance[]
-  deliveryZones DeliveryZone[]
-  shifts        Shift[]
-  leaveRequests LeaveRequest[]
-  payrollRuns   PayrollRun[]
-  expenses      Expense[]
-  cashClosings  CashClosing[]
-  coupons       Coupon[]
-  promotions    Promotion[]
-  campaigns     Campaign[]
-  equipment     Equipment[]
-  documents     Document[]
+  id               String            @id @default(cuid())
+  restaurantId     String
+  restaurant       Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  attendance       Attendance[]
+  deliveryZones    DeliveryZone[]
+  shifts           Shift[]
+  leaveRequests    LeaveRequest[]
+  payrollRuns      PayrollRun[]
+  expenses         Expense[]
+  budgets          Budget[]
+  bankTransactions BankTransaction[]
+  reportSchedules  ReportSchedule[]
+  cashClosings     CashClosing[]
+  coupons          Coupon[]
+  promotions       Promotion[]
+  campaigns        Campaign[]
+  equipment        Equipment[]
+  documents        Document[]
 
   name      String
   address   String?
@@ -210,13 +213,13 @@ model User {
   roleId String
   role   Role   @relation(fields: [roleId], references: [id])
 
-  name            String
-  email           String?
-  phone           String?
-  passwordHash    String
-  pinHash         String? // quick-switch PIN login on a shared terminal
-  isActive        Boolean @default(true)
-  twoFactorSecret String? // AES-GCM sealed TOTP secret (see auth/totp.ts)
+  name                    String
+  email                   String?
+  phone                   String?
+  passwordHash            String
+  pinHash                 String? // quick-switch PIN login on a shared terminal
+  isActive                Boolean  @default(true)
+  twoFactorSecret         String? // AES-GCM sealed TOTP secret (see auth/totp.ts)
   twoFactorEnabled        Boolean  @default(false)
   twoFactorRecoveryHashes String[] @default([]) // bcrypt hashes of unused one-time recovery codes
   twoFactorLastStep       Int? // last accepted TOTP step: a code works once
@@ -1110,10 +1113,10 @@ model Customer {
   allergies   String?
   notes       String?
 
-  loyaltyPoints Int     @default(0)
+  loyaltyPoints   Int     @default(0)
   // Opted out of marketing messages; excluded from every campaign audience.
   marketingOptOut Boolean @default(false)
-  walletBalance Decimal @default(0) @db.Decimal(12, 2) // store credit
+  walletBalance   Decimal @default(0) @db.Decimal(12, 2) // store credit
 
   createdAt DateTime   @default(now())
   orders    Order[]
@@ -1271,8 +1274,8 @@ model Order {
   scheduledFor    DateTime?
 
   // Marketing (Phase 7): what discount source was applied at checkout.
-  couponCode      String?
-  promotionName   String?
+  couponCode    String?
+  promotionName String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1701,12 +1704,12 @@ model Expense {
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
-  spentOn  DateTime @db.Date
-  category String
-  amount   Decimal  @db.Decimal(12, 2)
-  note     String?
+  spentOn      DateTime @db.Date
+  category     String
+  amount       Decimal  @db.Decimal(12, 2)
+  note         String?
   // Paid out of the till: counted against expected cash at day close.
-  paidFromCash Boolean @default(false)
+  paidFromCash Boolean  @default(false)
 
   createdById String
   createdBy   User     @relation(fields: [createdById], references: [id])
@@ -1809,11 +1812,11 @@ model Campaign {
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
-  name      String
-  channel   CampaignChannel
-  segment   CampaignSegment @default(ALL)
-  message   String
-  createdAt DateTime        @default(now())
+  name          String
+  channel       CampaignChannel
+  segment       CampaignSegment @default(ALL)
+  message       String
+  createdAt     DateTime        @default(now())
   lastSentAt    DateTime?
   lastSentCount Int?
 
@@ -1878,6 +1881,8 @@ model Document {
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
+  files DocumentFile[]
+
   @@index([branchId, category])
   @@map("documents")
 }
@@ -1930,4 +1935,119 @@ model WebhookDelivery {
   @@index([status, nextAttemptAt])
   @@index([endpointId, createdAt])
   @@map("webhook_deliveries")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6/7 completions: budgets, bank reconciliation, branch stock
+// transfers, document attachments and scheduled report emails.
+// ---------------------------------------------------------------------------
+
+// Monthly spending budget for one expense category (category matches
+// Expense.category, case-insensitively, when budget-vs-actual is computed).
+model Budget {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  month    String // "YYYY-MM"
+  category String
+  amount   Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([branchId, month, category])
+  @@map("budgets")
+}
+
+enum BankTxStatus {
+  UNMATCHED
+  MATCHED
+  IGNORED
+}
+
+// One line of an imported bank statement. amount is signed: + money in,
+// - money out. Outgoing lines are matched against recorded Expenses.
+model BankTransaction {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  postedOn    DateTime     @db.Date
+  description String
+  reference   String       @default("") // "" not null, so the unique key dedupes re-imports
+  amount      Decimal      @db.Decimal(12, 2)
+  status      BankTxStatus @default(UNMATCHED)
+  expenseId   String?
+  createdAt   DateTime     @default(now())
+
+  @@unique([branchId, postedOn, description, amount, reference])
+  @@index([branchId, postedOn])
+  @@map("bank_transactions")
+}
+
+// Stock moved between two branches of the same restaurant. Source stock is
+// consumed FIFO (type ADJUSTMENT, noted "Transfer out"); the destination gets
+// a new batch at the weighted cost of what left the source.
+model StockTransfer {
+  id             String   @id @default(cuid())
+  restaurantId   String
+  fromBranchId   String
+  toBranchId     String
+  fromBranchName String
+  toBranchName   String
+  ingredientName String
+  unit           String
+  quantity       Decimal  @db.Decimal(12, 3)
+  unitCost       Decimal  @db.Decimal(12, 4)
+  note           String?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  @@index([restaurantId, createdAt])
+  @@map("stock_transfers")
+}
+
+// An uploaded file (PDF, image, doc) attached to a Document. Stored in the
+// database so backups and restores carry attachments with everything else.
+model DocumentFile {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  fileName  String
+  mimeType  String
+  size      Int
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  @@index([documentId])
+  @@map("document_files")
+}
+
+enum ReportFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+// Emails a report (CSV, XLSX or PDF attached) on a schedule through the
+// operator's own SMTP server. Daily = yesterday, weekly = previous 7 days,
+// monthly = previous calendar month.
+model ReportSchedule {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  reportKey  String
+  frequency  ReportFrequency
+  format     String          @default("xlsx") // csv | xlsx | pdf
+  recipients String[]
+  isActive   Boolean         @default(true)
+  lastSentAt DateTime?
+  lastError  String?
+  createdAt  DateTime        @default(now())
+
+  @@index([branchId])
+  @@map("report_schedules")
 }

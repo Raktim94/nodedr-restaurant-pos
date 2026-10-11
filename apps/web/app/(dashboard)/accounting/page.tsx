@@ -19,10 +19,11 @@ import { useBranch } from "@/hooks/use-branch";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { BalanceSheetTab, BankTab, BudgetsTab } from "@/components/accounting/finance-tabs";
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const errMsg = (e: unknown) => (e instanceof ApiError ? e.message : "Something went wrong");
-const TABS = ["expenses", "cash close", "profit & loss", "gst", "branches"] as const;
+const TABS = ["expenses", "cash close", "profit & loss", "balance sheet", "budgets", "bank", "gst", "branches"] as const;
 type Tab = (typeof TABS)[number];
 
 function monthRange() {
@@ -297,7 +298,7 @@ export default function AccountingPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Accounting</h1>
-        <p className="text-sm text-muted-foreground">Expenses, daily cash close, profit &amp; loss, tax and branches</p>
+        <p className="text-sm text-muted-foreground">Expenses, cash close, profit &amp; loss, balance sheet, budgets, bank reconciliation, tax and branches</p>
       </div>
       <div className="flex flex-wrap gap-2">
         {TABS.map((t) => (
@@ -317,6 +318,9 @@ export default function AccountingPage() {
       {tab === "expenses" && <Expenses branchId={branchId} />}
       {tab === "cash close" && <CashClose branchId={branchId} />}
       {tab === "profit & loss" && <ProfitLossTab branchId={branchId} />}
+      {tab === "balance sheet" && <BalanceSheetTab branchId={branchId} />}
+      {tab === "budgets" && <BudgetsTab branchId={branchId} />}
+      {tab === "bank" && <BankTab branchId={branchId} />}
       {tab === "gst" && <GstTab branchId={branchId} />}
       {tab === "branches" && <BranchesTab />}
     </div>

@@ -8,16 +8,19 @@ import { PurchaseRequestsService } from './purchase-requests.service';
 import { StockService } from './stock.service';
 import { SupplierInvoicesService } from './supplier-invoices.service';
 import { SupplierQuotationsService } from './supplier-quotations.service';
+import { TransfersController } from './transfers.controller';
+import { TransfersService } from './transfers.service';
 import { WasteService } from './waste.service';
 
 @Module({
-  controllers: [InventoryController],
+  controllers: [InventoryController, TransfersController],
   providers: [
     InventoryService,
     PurchaseOrdersService,
     GoodsReceiptsService,
     WasteService,
     StockService,
+    TransfersService,
     PurchaseRequestsService,
     SupplierQuotationsService,
     SupplierInvoicesService,
