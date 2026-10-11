@@ -53,7 +53,7 @@
 :root {
   /* Nodedr OrderRestro — light palette. See DESIGN_SYSTEM.md for rationale
      (wine/burgundy primary is the one deliberate accent choice). */
-  --background: #FAFAFA;
+  --background: #FBF9F8;
   --foreground: #111827;
   --card: #FFFFFF;
   --card-foreground: #111827;
@@ -61,17 +61,17 @@
   --popover-foreground: #111827;
   --primary: #9F1239;
   --primary-foreground: #FFFFFF;
-  --secondary: #F4F4F5;
+  --secondary: #F5F1F0;
   --secondary-foreground: #111827;
-  --muted: #F4F4F5;
+  --muted: #F5F1F0;
   --muted-foreground: #6B7280;
   --accent: #FDF2F4;
   --accent-foreground: #9F1239;
   --destructive: #EF4444;
   --success: #22C55E;
   --warning: #F59E0B;
-  --border: #E5E7EB;
-  --input: #E5E7EB;
+  --border: #ECE6E4;
+  --input: #E4DCDA;
   --ring: #9F1239;
   --chart-1: #9F1239;
   --chart-2: #22C55E;
@@ -79,13 +79,13 @@
   --chart-4: #6366F1;
   --chart-5: #6B7280;
   --radius: 1rem;
-  --sidebar: #FCFCFC;
+  --sidebar: #FFFDFC;
   --sidebar-foreground: #111827;
   --sidebar-primary: #9F1239;
   --sidebar-primary-foreground: #FFFFFF;
   --sidebar-accent: #FDF2F4;
   --sidebar-accent-foreground: #9F1239;
-  --sidebar-border: #E5E7EB;
+  --sidebar-border: #ECE6E4;
   --sidebar-ring: #9F1239;
 }
 
@@ -183,4 +183,78 @@
 
 .animate-pop-burst {
   animation: pop-burst 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ---------------------------------------------------------------------------
+   Premium finish. Everything below sits in @layer so Tailwind utilities
+   (rounded-*, bg-*, shadow-*) on a component still win over it — unlayered
+   rules would silently beat every utility class.
+   --------------------------------------------------------------------------- */
+:root {
+  --shadow-card: 0 1px 2px rgb(17 24 39 / 0.04), 0 8px 24px -12px rgb(76 14 34 / 0.10);
+  --shadow-card-hover: 0 2px 4px rgb(17 24 39 / 0.05), 0 16px 32px -14px rgb(76 14 34 / 0.18);
+  --gradient-primary: linear-gradient(135deg, #B3163F 0%, #9F1239 45%, #7A0E2C 100%);
+}
+.dark {
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 10px 28px -14px rgb(0 0 0 / 0.6);
+  --shadow-card-hover: 0 2px 4px rgb(0 0 0 / 0.45), 0 18px 36px -14px rgb(251 113 133 / 0.18);
+  --gradient-primary: linear-gradient(135deg, #FB7185 0%, #F43F5E 55%, #E11D48 100%);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11", "ss01";
+  }
+  body {
+    background-image:
+      radial-gradient(60rem 28rem at 100% -10%, rgb(159 18 57 / 0.045), transparent 60%),
+      radial-gradient(48rem 24rem at -10% 110%, rgb(245 158 11 / 0.035), transparent 60%);
+    background-attachment: fixed;
+  }
+  h1, h2, h3 {
+    letter-spacing: -0.015em;
+  }
+  ::selection {
+    background: rgb(159 18 57 / 0.18);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  [data-slot="card"] {
+    box-shadow: var(--shadow-card);
+    transition: box-shadow 180ms ease, transform 180ms ease;
+  }
+  a[data-slot="card"]:hover,
+  button[data-slot="card"]:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-1px);
+  }
+  [data-slot="button"][data-variant="default"],
+  button[data-slot="button"].bg-primary {
+    background-image: var(--gradient-primary);
+    box-shadow: 0 1px 0 rgb(255 255 255 / 0.18) inset, 0 6px 14px -6px rgb(159 18 57 / 0.55);
+    transition: filter 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+  }
+  [data-slot="button"][data-variant="default"]:hover:not(:disabled) {
+    filter: brightness(1.06);
+  }
+  [data-slot="button"][data-variant="default"]:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="card"],
+  [data-slot="button"] {
+    transition: none !important;
+  }
 }

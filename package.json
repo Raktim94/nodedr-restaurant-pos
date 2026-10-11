@@ -20,7 +20,14 @@
     "kitchen-display-system",
     "inventory-management",
     "self-hosted",
-    "offline-first"
+    "offline-first",
+    "upi-payments",
+    "gst-billing",
+    "restaurant-payroll",
+    "qr-ordering",
+    "casaos",
+    "nestjs",
+    "nextjs"
   ],
   "scripts": {
     "dev": "turbo run dev",

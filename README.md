@@ -2,10 +2,12 @@
 
 <img src="apps/web/public/brand-lockup.png" alt="Nodedr OrderRestro" width="520">
 
-**Offline-first Restaurant Management System** — POS, tables, kitchen
-display, reservations, CRM/loyalty, and more.
-Not a retail POS bolted onto a restaurant; purpose-built for dine-in,
-takeaway, and kitchen operations.
+**Open-source, self-hosted restaurant POS & management system** — billing
+with **UPI QR payments**, tables, kitchen display (KDS), reservations,
+inventory, **staff attendance & payroll**, accounting, reports, CRM/loyalty
+and multi-branch control. Offline-first, runs on your own server, no
+subscription. Not a retail POS bolted onto a restaurant; purpose-built for
+dine-in, takeaway, delivery and kitchen operations.
 
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](package.json)
@@ -22,6 +24,7 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 **[Try OrderRestro](https://orderrestro.nodedr.com/)** · **[Case study](https://www.raktimranjit.com/projects/orderrestro)** · **[Maintainer: Raktim Ranjit](https://www.raktimranjit.com/)**
 
 [Quick Start](#quick-start) ·
+[Tutorial](./TUTORIAL.md) ·
 [Features](#features) ·
 [Screenshots](#screenshots) ·
 [Docs](#documentation) ·
@@ -134,19 +137,19 @@ by phase.
 | 5 | Inventory & Store Management — ingredients, recipe costing, POs, suppliers, GRN, waste, batch/lot | ✅ |
 | 6 | Procurement — vendor quotations, purchase requests/orders, invoices, supplier payments, and supplier performance | ✅ core · 🚧 returns, price variance, reorder suggestions |
 | 7 | CRM — profiles, loyalty points, memberships, gift vouchers, feedback, visit history | ✅ |
-| 8 | Staff Management — records, attendance, shift scheduling, payroll, leave, tip distribution | ✅ staff accounts & roles · 🚧 rest, Phase 6 |
-| 9 | Accounting — sales ledger, expenses, cash flow, P&L, GST reports, bank reconciliation | 🚧 Phase 6 |
-| 10 | Delivery Management — executives, routing, tracking, 3rd-party integration | 🚧 Phase 5 |
-| 11 | Online Ordering — public QR menu is live; customer ordering, payment, click & collect, and scheduled orders remain | ✅ QR menu · 🚧 ordering, Phase 5 |
-| 12 | Branch Management — restaurant/branch schema and branch switcher are live; centralized reporting, inventory, and transfers remain | ✅ foundation · 🚧 central operations, Phase 6 |
-| 13 | Analytics — revenue, orders, table status, kitchen queue, trends, and recent transactions dashboard | ✅ dashboard · 🚧 deeper reports, Phase 7 |
-| 14 | Marketing — coupons, promotions, happy hours, SMS/email/WhatsApp campaigns | 🚧 Phase 7 |
-| 15 | Finance — daily cash closing, petty cash, expense approvals, budgets | 🚧 Phase 6 |
-| 16 | Maintenance — equipment tracking, service schedules, requests, AMC | 🚧 Phase 7 |
-| 17 | Documents — digital invoices, purchase docs, contracts, recipes, SOPs | 🚧 Phase 7 |
-| 18 | Security — RBAC, audit logs, session expiry, PIN/password login, and direct printer diagnostics | ✅ core · 🚧 2FA, backup/restore, advanced history, Phase 8 |
-| 19 | Integrations — browser and direct USB/ESC-POS receipt printing, REST/Swagger, and [API & MCP server](./docs/integrations-api.md) | ✅ current integrations · 🚧 gateways, messaging, accounting connectors, Phase 8 |
-| 20 | Admin Panel — restaurant/branch settings, per-branch tax regime, roles, permissions, and operational settings | ✅ current settings · 🚧 broader feature flags and global administration, Phase 8 |
+| 8 | Staff Management — accounts & roles, attendance (clock in/out), shift scheduling with clash checks, leave, payroll from clocked hours, tip pool split by hours | ✅ |
+| 9 | Accounting — expenses, nightly cash close with variance, profit & loss, balance sheet, budgets vs actual, bank-statement reconciliation, tax summary by rate | ✅ |
+| 10 | Delivery Management — zones by pincode, fee/minimum/ETA, driver assignment, status flow | ✅ · 🚧 live GPS, 3rd-party platforms |
+| 11 | Online Ordering — QR table ordering with modifiers, call waiter, request bill, click & collect, scheduled orders | ✅ |
+| 12 | Branch Management — branch switcher, cross-branch overview, branch-to-branch stock transfers | ✅ |
+| 13 | Analytics — live dashboard plus 18 reports (peak hours, food cost & margins, retention…) with print, CSV, Excel and PDF export, and scheduled report emails | ✅ |
+| 14 | Marketing — coupons, happy-hour discounts, email (your SMTP) / SMS / WhatsApp campaigns with opt-out | ✅ |
+| 15 | Finance — daily cash closing, expenses, monthly budgets | ✅ · 🚧 petty cash, expense approvals |
+| 16 | Maintenance — equipment register, service schedules with overdue flags | ✅ |
+| 17 | Documents — SOPs, contracts, recipes, purchase paperwork, with file attachments (PDF, images, Office) | ✅ |
+| 18 | Security — RBAC, audit log, two-factor sign-in with recovery codes, backup/restore, session expiry, PIN login | ✅ |
+| 19 | Integrations — **UPI QR payments with payment-received sound**, customer-facing second screen, direct-USB ESC/POS printing + cash drawer, signed webhooks, SMTP email, REST/Swagger and [API & MCP server](./docs/integrations-api.md) | ✅ · 🚧 payment-gateway checkout, accounting & delivery-platform connectors |
+| 20 | Admin Panel — restaurant/branch settings, per-branch tax regime, UPI payee, roles, permissions | ✅ |
 
 Already shipped and running against real Docker/Postgres today: auth +
 RBAC, full menu management (incl. combo meals), floor/table view with
@@ -167,6 +170,21 @@ pricing) and staff account management (create/deactivate staff, assign
 roles) under **Settings** in the sidebar, photo upload on menu items, and
 an English/Spanish/French language switcher on the guest-facing QR
 ordering page and staff sidebar.
+
+## Why OrderRestro
+
+- **UPI-first checkout (India)** — pick UPI and a QR for the exact bill
+  amount appears at the till *and* on the customer-facing screen; a
+  "payment received" chime plays when the sale is closed. No gateway fees,
+  money goes straight to your UPI id. See the [tutorial](./TUTORIAL.md#upi-qr-payments-and-the-customer-display).
+- **Runs without the internet** — one Docker Compose stack on a local
+  server; billing, KDS and printing survive a dead WAN link.
+- **Your data, your server** — AGPL-3.0, no per-terminal licence, no
+  vendor lock-in. Backup and restore from the app.
+- **Whole-restaurant scope** — POS, kitchen, inventory, payroll, accounting
+  and reporting in one app instead of five subscriptions.
+- **India-ready** — GST (inclusive or exclusive), UPI, ₹ formatting, plus
+  US sales tax, EU VAT and Spanish IVA for other markets.
 
 ## Screenshots
 
@@ -189,6 +207,34 @@ ordering page and staff sidebar.
 ![Dashboard on mobile](docs/screenshots/dashboard-mobile.png)
 
 </details>
+
+## FAQ
+
+**Is there a free, open-source restaurant POS I can self-host?**
+Yes — OrderRestro is AGPL-3.0 and installs with `docker compose up`, or as
+a one-click app on CasaOS / ZimaOS.
+
+**Does it support UPI payments and GST billing?**
+Yes. Add your UPI id under *Settings → Restaurant*; checkout then shows a
+scannable QR for the exact amount. GST is configured per branch, inclusive
+or exclusive.
+
+**Does it work offline?**
+Order-taking, billing, the kitchen display and printing run entirely on
+your local server. Only optional features (email, webhooks) need internet.
+
+**Can it manage staff attendance and payroll?**
+Yes: clock in/out, shifts, leave, payroll from clocked hours with unpaid-leave
+deductions, and a tip pool split by hours worked.
+
+**Can I export reports to Excel or PDF?**
+Yes — every report exports to Excel, PDF or CSV, and can be emailed on a
+daily, weekly or monthly schedule through your own SMTP server.
+
+**What is not built yet?** Native payment-gateway checkout, direct
+accounting-software and delivery-platform connectors, weighing-scale and
+label printers, a SQLite edition and native installers. The
+[roadmap](./ROADMAP.md) is explicit about what is done and what is not.
 
 ## Tech stack
 
@@ -428,3 +474,11 @@ See [`MAINTAINERS.md`](./MAINTAINERS.md) for project maintainers.
 Read the [OrderRestro case study](https://www.raktimranjit.com/projects/orderrestro) for the product background and design decisions.
 
 Maintainer: [Raktim Ranjit](https://www.raktimranjit.com/)
+
+---
+
+<sub>Keywords: restaurant POS, open source restaurant management software,
+self-hosted POS, UPI QR payment POS, GST billing software for restaurants,
+kitchen display system, KDS, restaurant inventory management, restaurant
+payroll and attendance, café POS, cloud kitchen software, QR table ordering,
+offline-first POS, NestJS, Next.js, PostgreSQL, Prisma, CasaOS, ZimaOS.</sub>

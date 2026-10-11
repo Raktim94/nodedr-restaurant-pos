@@ -277,8 +277,18 @@ containers, not just "it compiles."
       restaurant's local midnight.
 - [x] Multi-branch: cross-branch overview (sales, open orders, low stock,
       inventory value).
-- [ ] Not built: bank reconciliation, balance sheet, budgets, petty-cash,
-      expense approvals, branch-to-branch stock transfer, sync agent.
+- [x] Bank reconciliation: import a statement CSV (amount or debit/credit
+      columns), idempotent re-import, auto-match to expenses by amount +
+      5-day window, manual match/ignore (2026-10-11).
+- [x] Balance sheet: management snapshot (cash, inventory at cost vs unpaid
+      supplier invoices and gift-card balances) — derived from POS records,
+      not a statutory double-entry ledger (2026-10-11).
+- [x] Budgets: monthly budget per expense category, budget vs actual with
+      overspend flags (2026-10-11).
+- [x] Branch-to-branch stock transfers: FIFO out of the source, new batch at
+      the destination at the cost that left, weighted-average cost updated
+      (2026-10-11).
+- [ ] Not built: petty-cash, expense approvals, sync agent.
 
 ### Phase 7 — Reporting engine, Marketing, Maintenance, Documents
 
@@ -291,8 +301,14 @@ containers, not just "it compiles."
       SMS/WhatsApp via a `campaign.message` webhook, per-customer opt-out.
 - [x] Maintenance: equipment + service schedules with overdue/due-soon flags.
 - [x] Documents: SOPs, contracts, recipes, purchase paperwork (text).
-- [ ] Not built: scheduled report emails, PDF/XLSX export (print + CSV only),
-      heat-map visualisations, file attachments on documents.
+- [x] Excel (.xlsx), PDF and CSV export for every report (2026-10-11).
+- [x] Scheduled report emails: daily / weekly / monthly, xlsx / pdf / csv
+      attached, through your SMTP server, 06:00 branch time (2026-10-11).
+      Needs `SMTP_URL` + `SMTP_FROM`; delivery to a real mailbox is not
+      covered by automated tests.
+- [x] File attachments on documents (PDF, image, text, Word, Excel; 5 MB,
+      10 per document; stored in the database; always served as a download).
+- [ ] Not built: heat-map visualisations.
 
 ### Phase 8 — Hardening, integrations, packaging
 
@@ -300,6 +316,11 @@ containers, not just "it compiles."
 - [x] Cash drawer pulse with USB receipts for cash payments + test button
       (2026-10-04, unit-tested bytes; not verified on physical hardware).
 - [x] Customer-facing display (`/customer-display`, mirrors the POS cart).
+- [x] UPI QR payments: restaurant UPI id/payee in settings; checkout shows a
+      NPCI deep-link QR for the exact amount due, mirrored full-screen on the
+      customer display; payment-received chime (plus spoken confirmation where
+      the browser supports it) on the till and the display (2026-10-11). The
+      cashier still confirms receipt — there is no bank/gateway callback.
 - [x] Two-factor authentication (TOTP + recovery codes; replay and lockout
       protection; PIN login disabled for 2FA accounts; admin reset).
 - [x] Audit log coverage extended to payroll, pay rates, leave, expenses, cash
@@ -311,9 +332,9 @@ containers, not just "it compiles."
       accounting, SMS/WhatsApp and delivery-platform tools via any automation
       service.
 - [x] SMTP email (campaigns).
-- [ ] Not built: native payment-gateway checkout, direct accounting-software and
-      delivery-platform connectors, weighing scale, label printers, barcode
-      scanner, GraphQL API.
+- [ ] Not built: native payment-gateway checkout (automatic UPI confirmation
+      needs one), direct accounting-software and delivery-platform connectors,
+      weighing scale, label printers, barcode scanner, GraphQL API.
 - [ ] Not built: SQLite deployment variant (the schema relies on Postgres
       arrays/enums/decimals), Windows/Linux native installers beyond the
       existing MSIX workflow.
