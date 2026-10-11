@@ -52,6 +52,12 @@ model Restaurant {
   currency  String  @default("INR")
   timezone  String  @default("Asia/Kolkata")
 
+  // UPI payee for the dynamic QR shown at checkout and on the customer
+  // display (NPCI deep link, see apps/web/lib/upi.ts). Optional: when unset
+  // the UPI method still works, it just shows no QR.
+  upiVpa       String?
+  upiPayeeName String?
+
   // Loyalty program config — previously hardcoded constants in
   // OrdersService, now per-restaurant and settings-editable. Point value
   // is the currency amount 1 redeemed point is worth; earn rate is how

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { subscribeDisplay, type DisplayState } from "@/lib/customer-display";
 import { formatCurrency } from "@/lib/format";
+import { playPaymentReceived } from "@/lib/celebrate";
+import { QRCodeSVG } from "qrcode.react";
 
 /**
  * Open this on the customer-facing screen (or second monitor):
@@ -13,6 +15,13 @@ export default function CustomerDisplayPage() {
   const [state, setState] = useState<DisplayState>({ kind: "idle" });
   useEffect(() => subscribeDisplay(setState), []);
 
+  // Chime when the payment lands. Browsers only allow audio after a click on
+  // the page, so the first tap on the display arms sound for the session.
+  const [soundOn, setSoundOn] = useState(false);
+  useEffect(() => {
+    if (state.kind === "paid" && soundOn) playPaymentReceived(formatCurrency(state.total));
+  }, [state, soundOn]);
+
   // After "paid", fall back to the welcome screen for the next guest.
   useEffect(() => {
     if (state.kind !== "paid") return;
@@ -21,7 +30,15 @@ export default function CustomerDisplayPage() {
   }, [state]);
 
   return (
-    <main className="flex min-h-screen flex-col bg-background p-10 text-foreground">
+    <main
+      className="relative flex min-h-screen flex-col bg-background p-10 text-foreground"
+      onClick={() => setSoundOn(true)}
+    >
+      {!soundOn && (
+        <p className="absolute right-4 top-4 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
+          Tap anywhere to enable payment sound
+        </p>
+      )}
       {state.kind === "idle" && (
         <div className="m-auto text-center">
           <p className="text-5xl font-semibold tracking-tight">Welcome</p>
@@ -47,6 +64,19 @@ export default function CustomerDisplayPage() {
             <span>Total</span>
             <span className="tabular-nums">{formatCurrency(state.subtotal)}</span>
           </div>
+        </div>
+      )}
+
+      {state.kind === "upi" && (
+        <div className="m-auto flex flex-col items-center text-center">
+          <p className="text-3xl text-muted-foreground">Scan to pay</p>
+          <p className="mt-2 text-7xl font-semibold tabular-nums tracking-tight">{formatCurrency(state.total)}</p>
+          <div className="mt-8 rounded-3xl bg-white p-6 shadow-xl">
+            <QRCodeSVG value={state.uri} size={320} level="M" marginSize={1} />
+          </div>
+          <p className="mt-6 text-xl text-muted-foreground">
+            Pay {state.payee ? `to ${state.payee} ` : ""}with GPay, PhonePe, Paytm or any UPI app
+          </p>
         </div>
       )}
 

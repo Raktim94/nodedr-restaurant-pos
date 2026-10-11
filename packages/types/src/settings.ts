@@ -15,6 +15,14 @@ export const restaurantSettingsSchema = z.object({
   logoUrl: z.string().max(2048).optional().nullable(),
   currency: z.string().optional(),
   timezone: z.string().optional(),
+  // UPI id such as "name@okbank" (VPA format per NPCI: handle@psp).
+  upiVpa: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,64}$/, "Enter a valid UPI id like name@bank")
+    .optional()
+    .nullable(),
+  upiPayeeName: z.string().trim().max(60).optional().nullable(),
   loyaltyPointValue: z.coerce.number().min(0).optional(),
   loyaltyEarnPerCurrency: z.coerce.number().int().positive().optional(),
 });

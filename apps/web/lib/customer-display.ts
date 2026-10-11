@@ -11,7 +11,8 @@ export interface DisplayLine {
 export type DisplayState =
   | { kind: "idle" }
   | { kind: "cart"; lines: DisplayLine[]; subtotal: number }
-  | { kind: "paid"; total: number };
+  | { kind: "upi"; total: number; uri: string; payee: string }
+  | { kind: "paid"; total: number; method?: string };
 
 const CHANNEL = "orderrestro-customer-display";
 

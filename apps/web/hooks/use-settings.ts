@@ -16,6 +16,8 @@ export interface RestaurantSettings {
   logoUrl: string | null;
   currency: string;
   timezone: string;
+  upiVpa: string | null;
+  upiPayeeName: string | null;
   loyaltyPointValue: string;
   loyaltyEarnPerCurrency: number;
 }

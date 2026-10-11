@@ -3,7 +3,7 @@
 import type { PaymentMethodDto } from "@nodedr-restaurant/types";
 import { ArrowLeft, CheckCircle2, Printer } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,9 @@ import { useSettings } from "@/hooks/use-settings";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { publishDisplay } from "@/lib/customer-display";
+import { playPaymentReceived } from "@/lib/celebrate";
+import { buildUpiUri } from "@/lib/upi";
+import { QRCodeSVG } from "qrcode.react";
 import { openKotPrint, openReceiptPrint } from "@/lib/print";
 import { round2 } from "@/lib/pricing-preview";
 
@@ -114,6 +117,32 @@ export function CheckoutPanel({
     }
   };
 
+  const upiUri = useMemo(() => {
+    const vpa = settings?.restaurant.upiVpa;
+    if (method !== "UPI" || !vpa || !(remainingDue > 0)) return null;
+    return buildUpiUri({
+      vpa,
+      name: settings?.restaurant.upiPayeeName || settings?.restaurant.name,
+      amount: remainingDue,
+      note: `Order ${order.id.slice(-6).toUpperCase()}`,
+      ref: order.id,
+    });
+  }, [method, settings, remainingDue, order.id]);
+
+  // Mirror the QR to the customer-facing screen while UPI is selected, and
+  // clear it again if the cashier switches method.
+  useEffect(() => {
+    if (completed) return;
+    if (upiUri) {
+      publishDisplay({
+        kind: "upi",
+        total: remainingDue,
+        uri: upiUri,
+        payee: settings?.restaurant.upiPayeeName || settings?.restaurant.name || "",
+      });
+    }
+  }, [upiUri, remainingDue, completed, settings]);
+
   const handleCheckout = () => {
     checkout.mutate(
       {
@@ -131,7 +160,8 @@ export function CheckoutPanel({
       {
         onSuccess: (result) => {
           setCompleted(result);
-          publishDisplay({ kind: "paid", total: Number(result.totalAmount) });
+          publishDisplay({ kind: "paid", total: Number(result.totalAmount), method });
+          playPaymentReceived(formatCurrency(result.totalAmount));
           toast.success("Payment recorded");
         },
         onError: (err) =>
@@ -369,6 +399,24 @@ export function CheckoutPanel({
               ))}
             </SelectContent>
           </Select>
+        </div>
+      )}
+
+      {method === "UPI" && remainingDue > 0 && (
+        <div className="flex flex-col items-center gap-2 rounded-xl border border-border bg-white p-4">
+          {upiUri ? (
+            <>
+              <QRCodeSVG value={upiUri} size={176} level="M" marginSize={1} />
+              <p className="text-xs font-medium text-[#17251d]">
+                Scan with any UPI app · {formatCurrency(remainingDue)} pre-filled
+              </p>
+              <p className="text-[11px] text-neutral-500">Also shown on the customer display</p>
+            </>
+          ) : (
+            <p className="text-center text-xs text-neutral-600">
+              Add your UPI id in Settings → Restaurant to show a payment QR here.
+            </p>
+          )}
         </div>
       )}
 

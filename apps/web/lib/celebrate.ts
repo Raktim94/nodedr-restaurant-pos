@@ -45,3 +45,47 @@ export function playSuccessChime() {
     // Autoplay/permissions edge cases — the visual confirmation still stands.
   }
 }
+
+// Payment-received sound for the till and the customer display: a brighter
+// three-note rising chime (like the "payment received" tone UPI soundboxes
+// play), plus a spoken confirmation where the browser supports it.
+export function playPaymentReceived(amountText?: string) {
+  if (typeof window === "undefined") return;
+  const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (Ctx) {
+    try {
+      const ctx = new Ctx();
+      const notes: [number, number, number][] = [
+        [784, 0, 0.16],
+        [1046.5, 0.14, 0.16],
+        [1568, 0.28, 0.4],
+      ];
+      notes.forEach(([frequency, start, duration]) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.value = frequency;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const t0 = ctx.currentTime + start;
+        gain.gain.setValueAtTime(0, t0);
+        gain.gain.linearRampToValueAtTime(0.28, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+        osc.start(t0);
+        osc.stop(t0 + duration + 0.02);
+      });
+      setTimeout(() => ctx.close(), 1200);
+    } catch {
+      // Autoplay blocked: the on-screen confirmation still stands.
+    }
+  }
+  try {
+    if (amountText && "speechSynthesis" in window) {
+      const u = new SpeechSynthesisUtterance(`Payment received. ${amountText}`);
+      u.rate = 0.95;
+      setTimeout(() => window.speechSynthesis.speak(u), 700);
+    }
+  } catch {
+    // Speech is a nicety only.
+  }
+}

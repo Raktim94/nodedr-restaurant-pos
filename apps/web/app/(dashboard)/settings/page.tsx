@@ -173,6 +173,8 @@ function GeneralSettingsForm({
   const [logoUrl, setLogoUrl] = useState<string | null>(restaurant.logoUrl);
   const [currency, setCurrency] = useState(restaurant.currency);
   const [timezone, setTimezone] = useState(restaurant.timezone);
+  const [upiVpa, setUpiVpa] = useState(restaurant.upiVpa ?? "");
+  const [upiPayeeName, setUpiPayeeName] = useState(restaurant.upiPayeeName ?? "");
   const [loyaltyPointValue, setLoyaltyPointValue] = useState(restaurant.loyaltyPointValue);
   const [loyaltyEarnPerCurrency, setLoyaltyEarnPerCurrency] = useState(
     String(restaurant.loyaltyEarnPerCurrency),
@@ -204,6 +206,8 @@ function GeneralSettingsForm({
         logoUrl,
         currency,
         timezone,
+        upiVpa: upiVpa.trim() || null,
+        upiPayeeName: upiPayeeName.trim() || null,
         loyaltyPointValue: Number(loyaltyPointValue) || 0,
         loyaltyEarnPerCurrency: Number(loyaltyEarnPerCurrency) || 1,
       },
@@ -373,6 +377,32 @@ function GeneralSettingsForm({
                   required
                 />
               </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="r-upi">UPI id (for QR payments)</Label>
+              <Input
+                id="r-upi"
+                value={upiVpa}
+                onChange={(e) => setUpiVpa(e.target.value)}
+                placeholder="yourshop@okbank"
+                autoComplete="off"
+              />
+              <p className="text-xs text-muted-foreground">
+                Shown as a scannable QR at checkout and on the customer display, with the exact bill amount filled in.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="r-upi-name">UPI payee name</Label>
+              <Input
+                id="r-upi-name"
+                value={upiPayeeName}
+                onChange={(e) => setUpiPayeeName(e.target.value)}
+                placeholder={name}
+                maxLength={60}
+              />
             </div>
           </div>
 
