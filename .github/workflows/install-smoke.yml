@@ -1,0 +1,53 @@
+name: Install smoke test
+
+# Runs the exact one-line command shown on the website, on a clean runner, and
+# checks the app actually comes up. Catches a broken quickstart script, a
+# broken Dockerfile or a failing migration before a user hits it.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+  push:
+    branches: [master]
+    paths:
+      - "scripts/quickstart.*"
+      - "install.sh"
+      - "docker-compose.yml"
+      - ".github/workflows/install-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: One-line install (as published)
+        working-directory: ${{ runner.temp }}
+        run: curl -fsSL https://raw.githubusercontent.com/Raktim94/nodedr-restaurant-pos/master/scripts/quickstart.sh | bash
+
+      - name: App answers on port 1995
+        run: |
+          curl -sf http://localhost:1995/api/health
+          curl -sf -o /dev/null http://localhost:1995/signup
+          echo "Install OK"
+
+      - name: Logs on failure
+        if: failure()
+        working-directory: ${{ runner.temp }}/nodedr-restaurant-pos
+        run: docker compose logs --tail=80
+
+  windows-script-syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: PowerShell quickstart parses
+        shell: pwsh
+        run: |
+          $errs = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/scripts/quickstart.ps1", [ref]$null, [ref]$errs) | Out-Null
+          if ($errs.Count) { $errs | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          Write-Host "quickstart.ps1 parses cleanly"
