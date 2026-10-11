@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
+import { useNavBadges } from "@/hooks/use-nav-badges";
 import { cn } from "@/lib/utils";
+import { NavDot } from "@/components/layout/nav-dot";
 
 interface SettingsTab {
   label: string;
@@ -28,6 +30,7 @@ export function SettingsTabs() {
   const pathname = usePathname();
   const { data } = useCurrentUser();
   const user = data?.user;
+  const badges = useNavBadges();
 
   const visibleTabs = TABS.filter(
     (tab) => !tab.permission || hasPermission(user, tab.permission),
@@ -43,13 +46,14 @@ export function SettingsTabs() {
             key={tab.href}
             href={tab.href}
             className={cn(
-              "border-b-2 px-3 pb-3 text-sm font-medium transition-colors",
+              "flex items-center gap-2 border-b-2 px-3 pb-3 text-sm font-medium transition-colors",
               isActive
                 ? "border-primary text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {tab.label}
+            {badges.settingsTabs[tab.href] ? <NavDot className="ml-0" /> : null}
           </Link>
         );
       })}

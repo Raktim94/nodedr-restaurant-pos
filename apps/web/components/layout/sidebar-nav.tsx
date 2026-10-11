@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import type { SessionUser } from "@nodedr-restaurant/types";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/context";
+import { useNavBadges } from "@/hooks/use-nav-badges";
+import { NavDot } from "./nav-dot";
 import { NAV_ITEMS } from "./nav-items";
 
 export function SidebarNav({
@@ -16,6 +18,7 @@ export function SidebarNav({
 }) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const badges = useNavBadges();
 
   return (
     <nav className="flex flex-col gap-1 px-3">
@@ -37,6 +40,7 @@ export function SidebarNav({
             >
               <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={2} />
               {t(item.labelKey)}
+              {badges.nav[item.href] && !isActive ? <NavDot /> : null}
             </Link>
           );
         },

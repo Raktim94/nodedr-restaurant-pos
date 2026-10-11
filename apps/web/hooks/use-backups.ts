@@ -39,8 +39,9 @@ export function useBackupStatus() {
   });
 }
 
-export function useBackups() {
+export function useBackups(enabled = true) {
   return useQuery({
+    enabled,
     queryKey: ["backups", "list"],
     queryFn: () => api.get<BackupEntry[]>("/backups"),
     // Backups can take a while to move from PENDING to VERIFIED/FAILED —

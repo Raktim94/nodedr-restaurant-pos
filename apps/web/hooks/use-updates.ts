@@ -11,8 +11,9 @@ export interface VersionInfo {
   checkedAt: string;
 }
 
-export function useUpdateCheck() {
+export function useUpdateCheck(enabled = true) {
   return useQuery({
+    enabled,
     queryKey: ["system", "update-check"],
     queryFn: () => api.get<VersionInfo>("/system/update/check"),
     // The backend caches this for an hour too — refetching more often than
