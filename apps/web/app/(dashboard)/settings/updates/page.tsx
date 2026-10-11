@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { NavDot } from "@/components/layout/nav-dot";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -132,7 +133,10 @@ export default function UpdatesPage() {
                 </>
               )}
               {data.updateAvailable ? (
-                <Badge>Update available</Badge>
+                <Badge className="gap-2">
+                  <NavDot className="ml-0 h-2 w-2" label="Update available" />
+                  Update available
+                </Badge>
               ) : (
                 <Badge variant="outline">Up to date</Badge>
               )}

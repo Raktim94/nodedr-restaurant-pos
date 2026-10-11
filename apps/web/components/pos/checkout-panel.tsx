@@ -1,7 +1,7 @@
 "use client";
 
 import type { PaymentMethodDto } from "@nodedr-restaurant/types";
-import { ArrowLeft, CheckCircle2, Printer } from "lucide-react";
+import { ArrowLeft, Banknote, CheckCircle2, CreditCard, Printer, QrCode, Wallet } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -9,13 +9,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { CustomerPicker } from "@/components/pos/customer-picker";
 import type { Customer } from "@/hooks/use-customers";
 import { lookupGiftCard } from "@/hooks/use-gift-cards";
@@ -23,6 +16,7 @@ import { useCancelOrder, useCheckoutOrder, type CreatedOrder } from "@/hooks/use
 import { usePrintOrderUsb } from "@/hooks/use-print";
 import { useSettings } from "@/hooks/use-settings";
 import { api, ApiError } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import { publishDisplay } from "@/lib/customer-display";
 import { playPaymentReceived } from "@/lib/celebrate";
@@ -32,6 +26,12 @@ import { openKotPrint, openReceiptPrint } from "@/lib/print";
 import { round2 } from "@/lib/pricing-preview";
 
 const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "OTHER"];
+const METHOD_META: Partial<Record<PaymentMethodDto, { label: string; Icon: typeof Wallet }>> = {
+  CASH: { label: "Cash", Icon: Banknote },
+  CARD: { label: "Card", Icon: CreditCard },
+  UPI: { label: "UPI", Icon: QrCode },
+  OTHER: { label: "Other", Icon: Wallet },
+};
 
 export function CheckoutPanel({
   order,
@@ -388,18 +388,30 @@ export function CheckoutPanel({
       {remainingDue > 0 && (
         <div className="flex flex-col gap-2">
           <Label>Payment method</Label>
-          <Select value={method} onValueChange={(v) => setMethod(v as PaymentMethodDto)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {METHODS.map((m) => (
-                <SelectItem key={m} value={m}>
-                  {m}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Payment method">
+            {METHODS.map((m) => {
+              const { label, Icon } = METHOD_META[m] ?? { label: m, Icon: Wallet };
+              const active = method === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setMethod(m)}
+                  className={cn(
+                    "flex flex-col items-center gap-1 rounded-xl border px-2 py-2.5 text-xs font-medium transition-colors",
+                    active
+                      ? "border-primary bg-primary/10 text-foreground shadow-sm"
+                      : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  )}
+                >
+                  <Icon className="h-[18px] w-[18px]" />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
