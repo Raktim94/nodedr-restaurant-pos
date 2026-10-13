@@ -25,6 +25,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#9f1239",
+  // Lets the bottom nav / sheets sit inside the notch + home-indicator safe areas.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

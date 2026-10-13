@@ -12,6 +12,7 @@ import { BrandFooter } from "./brand-footer";
 import { BranchSwitcher } from "./branch-switcher";
 import { LanguageSwitcher } from "./language-switcher";
 import { Logo } from "./logo";
+import { MobileBottomNav } from "./mobile-bottom-nav";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
 
@@ -111,9 +112,10 @@ export function AppShell({
             <UserMenu user={user} />
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">{children}</main>
         <EntityDialogHost />
       </div>
+      <MobileBottomNav user={user} onMore={() => setMobileOpen(true)} />
     </div>
   );
 }

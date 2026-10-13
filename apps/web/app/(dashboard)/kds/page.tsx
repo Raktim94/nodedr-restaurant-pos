@@ -24,9 +24,9 @@ export default function KdsPage() {
     tickets?.filter((t) => t.status === status) ?? [];
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-6">
+    <div className="flex h-[calc(100dvh-10rem)] flex-col gap-6 lg:h-[calc(100dvh-8rem)]">
       <div>
-        <h1 className="text-[32px] font-semibold tracking-tight text-foreground">
+        <h1 className="text-2xl font-semibold sm:text-[32px] tracking-tight text-foreground">
           Kitchen Display
         </h1>
         <p className="text-sm text-muted-foreground">Live order tickets by station</p>
@@ -34,9 +34,9 @@ export default function KdsPage() {
 
       <PerformanceWidget branchId={branchId} />
 
-      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden sm:grid-cols-2 xl:grid-cols-4">
+      <div className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto sm:grid sm:snap-none sm:grid-cols-2 sm:gap-4 sm:overflow-hidden xl:grid-cols-4">
         {COLUMNS.map((col) => (
-          <div key={col.status} className="flex flex-col gap-3 overflow-hidden rounded-2xl bg-secondary/40 p-3">
+          <div key={col.status} className="flex w-[85%] shrink-0 snap-center flex-col gap-3 overflow-hidden rounded-2xl bg-secondary/40 p-3 sm:w-auto sm:shrink">
             <div className="flex items-center justify-between px-1">
               <h2 className="text-sm font-semibold text-foreground">{col.label}</h2>
               <span className="text-xs font-medium text-muted-foreground">

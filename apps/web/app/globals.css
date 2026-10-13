@@ -226,6 +226,33 @@
 }
 
 @layer components {
+  /* The tabs bar is a fixed h-8, but touch targets inside it are forced to
+     44px above — let the bar grow with them, and scroll sideways instead of
+     overflowing when there are more tabs than the screen is wide. */
+  @media (pointer: coarse) {
+    [data-slot="tabs-list"] {
+      height: auto;
+      min-height: 44px;
+    }
+  }
+  @media (max-width: 1023px) {
+    [data-slot="tabs-list"] {
+      max-width: 100%;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    [data-slot="tabs-list"]::-webkit-scrollbar {
+      display: none;
+    }
+    [data-slot="tabs-trigger"] {
+      flex: 0 0 auto;
+      padding-inline: 0.875rem;
+    }
+  }
+  html {
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
   [data-slot="card"] {
     box-shadow: var(--shadow-card);
     transition: box-shadow 180ms ease, transform 180ms ease;

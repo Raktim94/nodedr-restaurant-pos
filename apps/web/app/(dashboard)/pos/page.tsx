@@ -1,6 +1,6 @@
 "use client";
 
-import { MonitorSmartphone } from "lucide-react";
+import { ChevronLeft, MonitorSmartphone, ShoppingCart } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -23,6 +23,8 @@ import {
 } from "@/hooks/use-orders";
 import { useFloors, type RestaurantTable } from "@/hooks/use-tables";
 import { ApiError } from "@/lib/api";
+import { formatCurrency } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export default function PosPage() {
   return (
@@ -45,6 +47,9 @@ function PosPageInner() {
   const [tableId, setTableId] = useState(preselectedTableId);
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [activeOrder, setActiveOrder] = useState<CreatedOrder | null>(null);
+  // Phones show the menu full-screen and the cart/checkout as an overlay; from
+  // lg up both sit side by side and this flag is ignored.
+  const [cartOpen, setCartOpen] = useState(false);
 
   // Mirror the cart to the customer-facing display (/customer-display).
   useEffect(() => {
@@ -152,6 +157,7 @@ function PosPageInner() {
       {
         onSuccess: (order) => {
           setActiveOrder(order);
+          setCartOpen(true);
           toast.success(`Order #${order.orderNumber} sent to kitchen`);
         },
         onError: (err) => toast.error(err instanceof ApiError ? err.message : "Could not create order"),
@@ -160,11 +166,15 @@ function PosPageInner() {
   };
 
   const viewExistingOrder = () => {
-    if (existingOrder) setActiveOrder(existingOrder);
+    if (existingOrder) {
+      setActiveOrder(existingOrder);
+      setCartOpen(true);
+    }
   };
 
   const resetForNewOrder = () => {
     setActiveOrder(null);
+    setCartOpen(false);
     setLines([]);
     setTableId("");
     setDelivery({ address: "", pincode: "", phone: "" });
@@ -182,7 +192,7 @@ function PosPageInner() {
   const showTablePicker = orderType === "DINE_IN" && !tableId && !activeOrder;
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
+    <div className="flex h-[calc(100dvh-10rem)] flex-col gap-4 lg:h-[calc(100dvh-8rem)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <KitchenProgressWidget branchId={branchId} />
@@ -204,12 +214,27 @@ function PosPageInner() {
           <PosTablePicker floors={floors ?? []} onSelect={handleTablePick} />
         </Card>
       ) : (
-        <div className="grid flex-1 grid-cols-1 gap-6 overflow-hidden lg:grid-cols-[1fr_360px]">
-          <Card className="overflow-hidden p-5">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden lg:grid-cols-[1fr_360px]">
+          <Card className="min-h-0 overflow-hidden p-3 sm:p-5">
             <ProductGrid branchId={branchId} onSelect={handleSelect} />
           </Card>
 
-          <Card className="overflow-hidden p-5">
+          <Card
+            className={cn(
+              "min-h-0 overflow-hidden p-5",
+              cartOpen
+                ? "max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:rounded-none max-lg:p-4 max-lg:pt-[max(1rem,env(safe-area-inset-top))] max-lg:pb-[max(1rem,env(safe-area-inset-bottom))]"
+                : "max-lg:hidden",
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => setCartOpen(false)}
+              className="mb-3 -ml-1 flex items-center gap-1 text-sm font-medium text-muted-foreground lg:hidden"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back to menu
+            </button>
             {activeOrder ? (
               <CheckoutPanel
                 order={activeOrder}
@@ -240,6 +265,27 @@ function PosPageInner() {
             )}
           </Card>
         </div>
+      )}
+
+      {!showTablePicker && !cartOpen && (lines.length > 0 || activeOrder) && (
+        <button
+          type="button"
+          onClick={() => setCartOpen(true)}
+          className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 flex h-14 items-center justify-between rounded-2xl bg-primary px-4 text-primary-foreground shadow-lg active:scale-[0.98] lg:hidden"
+          style={{ backgroundImage: "var(--gradient-primary)" }}
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <ShoppingCart className="h-5 w-5" />
+            {activeOrder
+              ? `Order #${activeOrder.orderNumber} — pay`
+              : `View cart · ${lines.reduce((n, l) => n + l.quantity, 0)} items`}
+          </span>
+          {!activeOrder && (
+            <span className="text-sm font-semibold tabular-nums">
+              {formatCurrency(lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0))}
+            </span>
+          )}
+        </button>
       )}
 
       <ModifierPickerDialog

@@ -32,7 +32,7 @@ export function ProductGrid({
 
       {categories && categories.length > 0 && (
         <Tabs value={activeCategoryId ?? "all"} onValueChange={(v) => setActiveCategoryId(v === "all" ? undefined : v)}>
-          <TabsList className="flex-wrap">
+          <TabsList className="justify-start lg:h-auto lg:flex-wrap">
             <TabsTrigger value="all">All</TabsTrigger>
             {categories.map((cat) => (
               <TabsTrigger key={cat.id} value={cat.id}>
@@ -50,7 +50,7 @@ export function ProductGrid({
           <button
             key={item.id}
             onClick={() => onSelect(item)}
-            className="flex flex-col items-start gap-2 rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:translate-y-0"
+            className="flex min-h-24 flex-col items-start gap-2 rounded-2xl border border-border bg-card p-3 text-left sm:p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.97] active:translate-y-0"
           >
             <span
               className={`h-2.5 w-2.5 rounded-full ${item.isVeg ? "bg-success" : "bg-destructive"}`}
