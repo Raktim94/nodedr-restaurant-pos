@@ -11,6 +11,7 @@ export const PERMISSIONS = [
   { key: "orders.cancel", label: "Cancel Orders", category: "Orders" },
   { key: "discounts.apply", label: "Apply Discounts", category: "Orders" },
   { key: "refunds.process", label: "Process Refunds", category: "Orders" },
+  { key: "orders.delete", label: "Delete Past Transactions (admin password)", category: "Orders" },
   { key: "bills.print", label: "Print Bills", category: "Orders" },
   { key: "tables.manage", label: "Manage Tables", category: "Tables" },
   { key: "menu.manage", label: "Manage Menu", category: "Menu" },

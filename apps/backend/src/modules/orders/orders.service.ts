@@ -1,16 +1,19 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import type {
   CartItemDto,
   CheckoutDto,
   CreateOrderDto,
   RefundDto,
+  SessionUser,
 } from '@nodedr-restaurant/types';
 import { AuditService } from '../../audit/audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
@@ -558,6 +561,73 @@ export class OrdersService {
       data: { acceptance: 'REJECTED' },
     });
     return this.cancelOrder(branchId, orderId, userId);
+  }
+
+  // Permanently removes finished (PAID / CANCELLED) orders. Admin-only twice
+  // over — the orders.delete permission AND an OWNER/ADMINISTRATOR role — and
+  // the caller must re-enter their own password. Each removed order leaves an
+  // audit row carrying a snapshot so the sale can still be reconstructed.
+  async deleteFinishedOrders(
+    branchId: string,
+    actor: SessionUser,
+    orderIds: string[],
+    password: string,
+  ) {
+    if (!['OWNER', 'ADMINISTRATOR'].includes(actor.roleName)) {
+      throw new ForbiddenException('Only an admin can delete transactions');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.id },
+      select: { passwordHash: true },
+    });
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      throw new ForbiddenException('Incorrect admin password');
+    }
+
+    const ids = [...new Set(orderIds)];
+    const orders = await this.prisma.order.findMany({
+      where: { id: { in: ids }, branchId },
+      include: { items: true, payments: true },
+    });
+    if (orders.length !== ids.length) {
+      throw new NotFoundException('Some selected transactions no longer exist');
+    }
+    const live = orders.filter(
+      (o) => !['PAID', 'CANCELLED'].includes(o.status),
+    );
+    if (live.length > 0) {
+      throw new BadRequestException(
+        `Only finished transactions can be deleted — ${live
+          .map((o) => `#${o.orderNumber}`)
+          .join(', ')} still in progress`,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.auditLog.createMany({
+        data: orders.map((o) => ({
+          userId: actor.id,
+          action: 'order.deleted',
+          entity: 'Order',
+          entityId: o.id,
+          metadata: {
+            orderNumber: o.orderNumber,
+            status: o.status,
+            type: o.type,
+            totalAmount: o.totalAmount.toString(),
+            createdAt: o.createdAt.toISOString(),
+            items: o.items.map((i) => `${i.quantity}x ${i.nameSnapshot}`),
+            payments: o.payments.map((p) => ({
+              method: p.method,
+              amount: p.amount.toString(),
+            })),
+          },
+        })),
+      });
+      await tx.order.deleteMany({ where: { id: { in: ids }, branchId } });
+    });
+    this.realtime.emitToBranch(branchId, 'order.deleted', { orderIds: ids });
+    return { deleted: ids.length };
   }
 
   async cancelOrder(branchId: string, orderId: string, userId: string) {

@@ -135,6 +135,14 @@ export const refundSchema = z.object({
 });
 export type RefundDto = z.infer<typeof refundSchema>;
 
+// Admin-only permanent delete of finished orders; the caller re-enters their
+// own password so a left-open session cannot wipe sales history.
+export const deleteOrdersSchema = z.object({
+  orderIds: z.array(z.string().min(1)).min(1).max(200),
+  password: z.string().min(1),
+});
+export type DeleteOrdersDto = z.infer<typeof deleteOrdersSchema>;
+
 export const mergeOrdersSchema = z.object({
   sourceOrderId: z.string(),
 });

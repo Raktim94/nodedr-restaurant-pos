@@ -16,6 +16,7 @@ import {
   addOrderItemsSchema,
   checkoutSchema,
   createOrderSchema,
+  deleteOrdersSchema,
   mergeOrdersSchema,
   refundSchema,
   type CheckoutDto,
@@ -401,6 +402,27 @@ export class OrdersController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.ordersService.refund(branchId, id, user.id, body as never);
+  }
+
+  @Auth('orders.delete')
+  @Post('delete-bulk')
+  @UsePipes(new ZodValidationPipe(deleteOrdersSchema))
+  async deleteBulk(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const { orderIds, password } = body as {
+      orderIds: string[];
+      password: string;
+    };
+    return this.ordersService.deleteFinishedOrders(
+      branchId,
+      user,
+      orderIds,
+      password,
+    );
   }
 
   @Auth('orders.edit')

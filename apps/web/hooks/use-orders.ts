@@ -220,3 +220,16 @@ export function useRefundOrder(branchId: string | null) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dashboard", "summary", branchId] }),
   });
 }
+
+export function useDeleteOrders(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: { orderIds: string[]; password: string }) =>
+      api.post<{ deleted: number }>(`/orders/delete-bulk?branchId=${branchId}`, dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["reports"] });
+    },
+  });
+}
