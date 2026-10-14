@@ -103,7 +103,7 @@ export default function TablesPage() {
               )}
             </div>
 
-            <Card className="overflow-auto p-6">
+            <Card className="overflow-auto p-3 sm:p-6">
               <div
                 className="relative"
                 style={{ width: canvasWidth, height: canvasHeight, minWidth: "100%" }}
