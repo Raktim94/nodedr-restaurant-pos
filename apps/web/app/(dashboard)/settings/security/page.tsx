@@ -7,6 +7,7 @@ import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTwoFactorActions, useTwoFactorStatus } from "@/hooks/use-two-factor";
@@ -75,7 +76,7 @@ export default function SecurityPage() {
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="pw">Your password</Label>
-                  <Input id="pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                  <PasswordInput id="pw"  autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="dc">Current code or a recovery code</Label>

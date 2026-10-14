@@ -13,6 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -109,9 +110,9 @@ export function AddStaffDialog() {
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="s-password">Password</Label>
-            <Input
+            <PasswordInput
               id="s-password"
-              type="password"
+              
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               minLength={8}

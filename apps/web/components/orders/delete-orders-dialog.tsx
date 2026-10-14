@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useDeleteOrders } from "@/hooks/use-orders";
 import { ApiError } from "@/lib/api";
@@ -79,9 +80,9 @@ export function DeleteOrdersDialog({
           </DialogHeader>
           <div className="flex flex-col gap-2">
             <Label htmlFor="delete-orders-password">Admin password</Label>
-            <Input
+            <PasswordInput
               id="delete-orders-password"
-              type="password"
+              
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

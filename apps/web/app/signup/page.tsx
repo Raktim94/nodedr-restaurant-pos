@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Logo } from "@/components/layout/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useRegister } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api";
@@ -109,9 +110,9 @@ export default function SignupPage() {
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="password">Password</Label>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
+              
               autoComplete="new-password"
               placeholder="At least 8 characters"
               {...field("password")}
