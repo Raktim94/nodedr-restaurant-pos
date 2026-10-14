@@ -93,6 +93,7 @@ export class PublicMenuService {
     if (openOrder) {
       return this.ordersService.addItems(branchId, openOrder.id, items, {
         enforceModifierLimits: true,
+        websiteOnly: true,
       });
     }
 

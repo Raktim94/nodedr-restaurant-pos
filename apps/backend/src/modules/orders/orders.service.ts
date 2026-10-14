@@ -84,6 +84,22 @@ export class OrdersService {
     return order;
   }
 
+  // Customer-facing channels (website / QR / integration) must never accept
+  // an item from a category the owner switched off under "Show on website" —
+  // hiding it from the menu listing alone would still let someone order it
+  // with a known item id.
+  private async assertOrderableOnWebsite(branchId: string, menuItemIds: string[]) {
+    const hidden = await this.prisma.menuItem.findMany({
+      where: { id: { in: menuItemIds }, branchId, category: { showOnWebsite: false } },
+      select: { name: true },
+    });
+    if (hidden.length > 0) {
+      throw new BadRequestException(
+        `${hidden.map((h) => `"${h.name}"`).join(', ')} is not available for online ordering`,
+      );
+    }
+  }
+
   private async getBranchTaxMode(branchId: string): Promise<TaxMode> {
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
@@ -114,6 +130,7 @@ export class OrdersService {
       acceptance = branch?.autoConfirmOrders ? 'ACCEPTED' : 'PENDING';
     }
     const menuItemIds = [...new Set(dto.items.map((i) => i.menuItemId))];
+    if (channel === 'ONLINE') await this.assertOrderableOnWebsite(branchId, menuItemIds);
     const menuItems = await this.prisma.menuItem.findMany({
       where: { id: { in: menuItemIds }, branchId },
     });
@@ -364,7 +381,7 @@ export class OrdersService {
     branchId: string,
     orderId: string,
     items: CartItemDto[],
-    options: { enforceModifierLimits?: boolean } = {},
+    options: { enforceModifierLimits?: boolean; websiteOnly?: boolean } = {},
   ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
@@ -381,6 +398,7 @@ export class OrdersService {
     }
 
     const menuItemIds = [...new Set(items.map((i) => i.menuItemId))];
+    if (options.websiteOnly) await this.assertOrderableOnWebsite(branchId, menuItemIds);
     const menuItems = await this.prisma.menuItem.findMany({
       where: { id: { in: menuItemIds }, branchId },
     });
