@@ -127,7 +127,7 @@ export default function UpdatesPage() {
               {data.latestVersion && (
                 <>
                   <span className="text-muted-foreground">Latest:</span>
-                  <Badge variant={data.updateAvailable ? "secondary" : "outline"}>
+                  <Badge variant={data.updateAvailable || data.building ? "secondary" : "outline"}>
                     {data.latestVersion}
                   </Badge>
                 </>
@@ -137,6 +137,8 @@ export default function UpdatesPage() {
                   <NavDot className="ml-0 h-2 w-2" label="Update available" />
                   Update available
                 </Badge>
+              ) : data.building ? (
+                <Badge variant="outline">New release building</Badge>
               ) : (
                 <Badge variant="outline">Up to date</Badge>
               )}
@@ -145,6 +147,12 @@ export default function UpdatesPage() {
             {data.currentVersion === "dev" && (
               <p className="text-sm text-muted-foreground">
                 Running a dev build — version comparison isn&apos;t meaningful here.
+              </p>
+            )}
+
+            {data.building && (
+              <p className="text-sm text-muted-foreground">
+                {data.latestVersion} is published but its images are still being built. Check again in a few minutes.
               </p>
             )}
 

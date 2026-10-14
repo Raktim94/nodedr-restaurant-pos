@@ -10,6 +10,8 @@ export interface VersionInfo {
   currentVersion: string;
   latestVersion: string | null;
   updateAvailable: boolean;
+  // A newer release exists on GitHub but CI hasn't published its image yet.
+  building: boolean;
   releaseUrl: string | null;
   checkedAt: string;
 }
@@ -21,6 +23,9 @@ const GITHUB_REPO = 'Raktim94/nodedr-restaurant-pos';
 // new release the same day it ships. Same TTL as Submify/Zulivio's own
 // update checkers, for consistency across the three products.
 const CACHE_TTL_MS = 60 * 60 * 1000;
+// A release whose image is still being built flips to "available" within
+// minutes — don't let that state sit in the cache for the full hour.
+const BUILDING_CACHE_TTL_MS = 60 * 1000;
 
 @Injectable()
 export class UpdateService {
@@ -48,22 +53,24 @@ export class UpdateService {
       imagePublished = (await this.imageTagExists(latestVersion)) !== false;
     }
 
+    const newer =
+      latestVersion !== null &&
+      (currentVersion === 'dev'
+        ? !!process.env.UPDATER_URL
+        : isNewer(latestVersion, currentVersion));
     const info: VersionInfo = {
       currentVersion,
       latestVersion,
-      updateAvailable:
-        latestVersion !== null &&
-        imagePublished &&
-        (currentVersion === 'dev'
-          ? !!process.env.UPDATER_URL
-          : isNewer(latestVersion, currentVersion)),
+      updateAvailable: newer && imagePublished,
+      building: newer && !imagePublished,
       releaseUrl: latestVersion
         ? `https://github.com/${GITHUB_REPO}/releases/tag/${latestVersion}`
         : null,
       checkedAt: new Date().toISOString(),
     };
     this.cache = info;
-    this.cacheExpiresAt = Date.now() + CACHE_TTL_MS;
+    this.cacheExpiresAt =
+      Date.now() + (info.building || latestVersion === null ? BUILDING_CACHE_TTL_MS : CACHE_TTL_MS);
     return info;
   }
 

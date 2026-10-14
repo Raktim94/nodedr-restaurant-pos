@@ -7,6 +7,7 @@ export interface VersionInfo {
   currentVersion: string;
   latestVersion: string | null;
   updateAvailable: boolean;
+  building?: boolean;
   releaseUrl: string | null;
   checkedAt: string;
 }
