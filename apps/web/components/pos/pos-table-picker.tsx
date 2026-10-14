@@ -5,7 +5,7 @@ import { Users } from "lucide-react";
 import { useState } from "react";
 import { ElapsedTimer } from "@/components/tables/elapsed-timer";
 import { TableShapeIcon } from "@/components/tables/table-shape-icon";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChipBar } from "@/components/ui/chip-bar";
 import type { Floor, RestaurantTable } from "@/hooks/use-tables";
 import { cn } from "@/lib/utils";
 
@@ -47,15 +47,17 @@ export function PosTablePicker({
   return (
     <div className="flex h-full flex-col gap-4">
       {floors.length > 1 && (
-        <Tabs value={activeFloorId ?? floors[0].id} onValueChange={setActiveFloorId}>
-          <TabsList>
-            {floors.map((floor) => (
-              <TabsTrigger key={floor.id} value={floor.id}>
-                {floor.name}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <ChipBar
+          ariaLabel="Floor"
+          fill={floors.length <= 3}
+          value={activeFloor?.id ?? floors[0].id}
+          onChange={setActiveFloorId}
+          items={floors.map((f) => ({
+            id: f.id,
+            label: f.name,
+            hint: `${f.tables.filter((t) => t.status === "AVAILABLE").length} free`,
+          }))}
+        />
       )}
 
       <div className="grid flex-1 auto-rows-min grid-cols-3 items-start gap-3 overflow-y-auto pb-2 sm:grid-cols-4 lg:grid-cols-5">
