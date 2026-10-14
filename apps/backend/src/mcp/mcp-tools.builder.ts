@@ -959,6 +959,7 @@ export class McpToolsBuilder {
               name: args.string('name'),
               sortOrder: args.optionalNumber('sortOrder') ?? 0,
               isActive: true,
+              showOnWebsite: true,
             }),
           );
         },

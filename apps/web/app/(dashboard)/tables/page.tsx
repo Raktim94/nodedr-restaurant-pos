@@ -11,7 +11,7 @@ import { WaitlistPanel } from "@/components/tables/waitlist-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ResponsiveTabs } from "@/components/ui/nav-picker";
 import { TableRequestsBar } from "@/components/tables/table-requests-bar";
 import { useBranch } from "@/hooks/use-branch";
 import { useFloors, type RestaurantTable } from "@/hooks/use-tables";
@@ -100,15 +100,13 @@ export default function TablesPage() {
           <div className="flex flex-col gap-4">
             <div className="flex min-w-0 flex-wrap items-center gap-2 [&_button]:max-sm:min-h-10">
               {(floors.length > 1 || editMode) && (
-                <Tabs className="max-w-full min-w-0" value={activeFloorId ?? floors[0].id} onValueChange={setActiveFloorId}>
-                  <TabsList className="h-11 sm:h-8">
-                    {floors.map((floor) => (
-                      <TabsTrigger key={floor.id} value={floor.id}>
-                        {floor.name}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
+                <ResponsiveTabs
+                  className="max-lg:w-full"
+                  label="Floor"
+                  value={activeFloorId ?? floors[0].id}
+                  onChange={setActiveFloorId}
+                  items={floors.map((f) => ({ id: f.id, label: f.name }))}
+                />
               )}
               {editMode && (
                 <>

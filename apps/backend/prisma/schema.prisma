@@ -520,6 +520,9 @@ model MenuCategory {
   name      String
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
+  // false = still on the POS, but hidden from the QR/online ordering page and
+  // from the Integration API that feeds the restaurant's own website.
+  showOnWebsite Boolean @default(true)
 
   items MenuItem[]
 

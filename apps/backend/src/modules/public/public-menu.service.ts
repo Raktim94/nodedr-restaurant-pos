@@ -28,7 +28,7 @@ export class PublicMenuService {
     const branch = table.floor.branch;
 
     const categories = await this.prisma.menuCategory.findMany({
-      where: { branchId: branch.id, isActive: true },
+      where: { branchId: branch.id, isActive: true, showOnWebsite: true },
       orderBy: { sortOrder: 'asc' },
       include: {
         items: {

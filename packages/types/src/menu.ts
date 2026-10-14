@@ -6,6 +6,7 @@ export const menuCategorySchema = z.object({
   name: z.string().min(1),
   sortOrder: z.number().int().default(0),
   isActive: z.boolean().default(true),
+  showOnWebsite: z.boolean().default(true),
 });
 export type MenuCategoryDto = z.infer<typeof menuCategorySchema>;
 

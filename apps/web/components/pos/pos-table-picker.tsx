@@ -5,7 +5,7 @@ import { Users } from "lucide-react";
 import { useState } from "react";
 import { ElapsedTimer } from "@/components/tables/elapsed-timer";
 import { TableShapeIcon } from "@/components/tables/table-shape-icon";
-import { ChipBar } from "@/components/ui/chip-bar";
+import { ResponsiveTabs } from "@/components/ui/nav-picker";
 import type { Floor, RestaurantTable } from "@/hooks/use-tables";
 import { cn } from "@/lib/utils";
 
@@ -47,9 +47,8 @@ export function PosTablePicker({
   return (
     <div className="flex h-full flex-col gap-4">
       {floors.length > 1 && (
-        <ChipBar
-          ariaLabel="Floor"
-          fill={floors.length <= 3}
+        <ResponsiveTabs
+          label="Floor"
           value={activeFloor?.id ?? floors[0].id}
           onChange={setActiveFloorId}
           items={floors.map((f) => ({

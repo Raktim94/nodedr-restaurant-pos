@@ -9,6 +9,7 @@ export interface MenuCategory {
   name: string;
   sortOrder: number;
   isActive: boolean;
+  showOnWebsite: boolean;
   _count: { items: number };
 }
 

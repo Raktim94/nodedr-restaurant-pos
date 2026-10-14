@@ -67,7 +67,7 @@ export class IntegrationsService {
   async getMenu(ctx: IntegrationKeyContext, branchId: string) {
     const branch = await this.assertBranch(ctx, branchId);
     const categories = await this.prisma.menuCategory.findMany({
-      where: { branchId: branch.id, isActive: true },
+      where: { branchId: branch.id, isActive: true, showOnWebsite: true },
       orderBy: { sortOrder: 'asc' },
       include: {
         items: {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Layers, Leaf, Pencil, Trash2 } from "lucide-react";
+import { EyeOff, Layers, Leaf, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AddCategoryDialog } from "@/components/menu/add-category-dialog";
@@ -10,6 +10,7 @@ import { EditCategoryDialog } from "@/components/menu/edit-category-dialog";
 import { EditItemDialog } from "@/components/menu/edit-item-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ResponsiveTabs } from "@/components/ui/nav-picker";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -88,34 +89,23 @@ export default function MenuPage() {
             <>
             {/* Phones: one swipeable row of big tap-friendly chips. */}
             <div className="flex flex-col gap-3 lg:hidden">
-              <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-                {[{ id: undefined as string | undefined, name: "All items", count: undefined as number | undefined }, ...(categories ?? []).map((c) => ({ id: c.id as string | undefined, name: c.name, count: c._count.items }))].map((c) => {
-                  const active = (selectedCategoryId ?? undefined) === c.id;
-                  return (
-                    <button
-                      key={c.id ?? "all"}
-                      onClick={() => setSelectedCategoryId(c.id)}
-                      aria-pressed={active}
-                      className={cn(
-                        "flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-4 text-sm font-medium transition-colors",
-                        active
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-card text-foreground active:bg-secondary",
-                      )}
-                    >
-                      {c.name}
-                      {c.count !== undefined && (
-                        <span className={cn("text-xs", active ? "text-primary-foreground/80" : "text-muted-foreground")}>
-                          {c.count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+              <ResponsiveTabs
+                mobileOnly
+                label="Category"
+                value={selectedCategoryId ?? "all"}
+                onChange={(id) => setSelectedCategoryId(id === "all" ? undefined : id)}
+                items={[{ id: "all", label: "All items" }, ...(categories ?? []).map((c) => ({ id: c.id, label: c.name, hint: `${c._count.items} items${c.showOnWebsite ? "" : " · hidden"}` }))]}
+              />
               {selectedCategory && (
                 <div className="flex items-center justify-between gap-2 rounded-lg bg-secondary/60 px-3 py-2">
-                  <span className="min-w-0 truncate text-sm font-medium text-foreground">{selectedCategory.name}</span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm font-medium text-foreground">{selectedCategory.name}</span>
+                    {!selectedCategory.showOnWebsite && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <EyeOff className="h-3 w-3" /> Hidden from website
+                      </span>
+                    )}
+                  </span>
                   <div className="flex shrink-0 gap-1">
                     <Button variant="ghost" size="sm" className="h-10 gap-1.5 px-3" onClick={() => setEditingCategory(selectedCategory)}>
                       <Pencil className="h-4 w-4" /> Edit
@@ -155,6 +145,12 @@ export default function MenuPage() {
                   >
                     {cat.name}
                   </button>
+                  {!cat.showOnWebsite && (
+                    <span title="Hidden from website" className="mr-1 shrink-0 text-muted-foreground">
+                      <EyeOff className="h-3.5 w-3.5" />
+                      <span className="sr-only">Hidden from website</span>
+                    </span>
+                  )}
                   <span className="shrink-0 text-xs text-muted-foreground group-hover:hidden">
                     {cat._count.items}
                   </span>
