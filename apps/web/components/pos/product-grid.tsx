@@ -32,7 +32,7 @@ export function ProductGrid({
 
       {categories && categories.length > 0 && (
         <Tabs value={activeCategoryId ?? "all"} onValueChange={(v) => setActiveCategoryId(v === "all" ? undefined : v)}>
-          <TabsList className="justify-start lg:h-auto lg:flex-wrap lg:overflow-visible">
+          <TabsList className="h-11 justify-start lg:h-auto lg:flex-wrap lg:overflow-visible">
             <TabsTrigger value="all">All</TabsTrigger>
             {categories.map((cat) => (
               <TabsTrigger key={cat.id} value={cat.id}>

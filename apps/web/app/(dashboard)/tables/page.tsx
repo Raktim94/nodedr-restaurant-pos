@@ -1,7 +1,7 @@
 "use client";
 
 import { LayoutGrid, Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AddFloorDialog } from "@/components/tables/add-floor-dialog";
 import { EditableTableTile } from "@/components/tables/editable-table-tile";
 import { RenameFloorDialog } from "@/components/tables/rename-floor-dialog";
@@ -28,6 +28,23 @@ export default function TablesPage() {
   // stale values from a previous open.
   const [editorKey, setEditorKey] = useState(0);
 
+  // On phones the floor plan is shrunk to fit the screen instead of scrolling
+  // sideways (view mode only — dragging needs real pixel coordinates).
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const measure = () => {
+      const cs = getComputedStyle(el);
+      setAvailableWidth(el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isLoading, floors?.length]);
+
   const activeFloor = floors?.find((f) => f.id === (activeFloorId ?? floors[0]?.id));
   const allTables = floors?.flatMap((f) => f.tables) ?? [];
   const availableTables = allTables.filter((t) => t.status === "AVAILABLE");
@@ -38,6 +55,12 @@ export default function TablesPage() {
   const canvasHeight = activeFloor
     ? Math.max(320, ...activeFloor.tables.map((t) => t.posY + t.height + 40))
     : 320;
+
+  const contentWidth = activeFloor
+    ? Math.max(1, ...activeFloor.tables.map((t) => t.posX + t.width + 16))
+    : canvasWidth;
+  const fitScale =
+    !editMode && availableWidth > 0 && availableWidth < contentWidth ? availableWidth / contentWidth : 1;
 
   const openAddTable = () => {
     setEditorTable(null);
@@ -53,7 +76,7 @@ export default function TablesPage() {
   return (
     <div className="flex flex-col gap-6">
       <TableRequestsBar branchId={branchId} />
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
           <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Tables</h1>
           <p className="text-sm text-muted-foreground">
@@ -63,7 +86,7 @@ export default function TablesPage() {
           </p>
         </div>
         {floors && floors.length > 0 && (
-          <Button variant={editMode ? "default" : "outline"} size="sm" onClick={() => setEditMode((v) => !v)}>
+          <Button variant={editMode ? "default" : "outline"} size="sm" className="h-11 w-full sm:h-8 sm:w-auto" onClick={() => setEditMode((v) => !v)}>
             <LayoutGrid className="h-4 w-4" />
             {editMode ? "Done editing" : "Edit floor plan"}
           </Button>
@@ -75,10 +98,10 @@ export default function TablesPage() {
       ) : floors && floors.length > 0 ? (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_320px]">
           <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2 [&_button]:max-sm:min-h-10">
               {(floors.length > 1 || editMode) && (
-                <Tabs value={activeFloorId ?? floors[0].id} onValueChange={setActiveFloorId}>
-                  <TabsList>
+                <Tabs className="max-w-full min-w-0" value={activeFloorId ?? floors[0].id} onValueChange={setActiveFloorId}>
+                  <TabsList className="h-11 sm:h-8">
                     {floors.map((floor) => (
                       <TabsTrigger key={floor.id} value={floor.id}>
                         {floor.name}
@@ -103,11 +126,19 @@ export default function TablesPage() {
               )}
             </div>
 
-            <Card className="overflow-auto p-3 sm:p-6">
+            <Card ref={cardRef} className="overflow-auto p-3 sm:p-6">
               <div
                 className="relative"
-                style={{ width: canvasWidth, height: canvasHeight, minWidth: "100%" }}
+                style={
+                  fitScale < 1
+                    ? { width: availableWidth, height: (canvasHeight - 40) * fitScale + 24 }
+                    : { width: canvasWidth, height: canvasHeight, minWidth: "100%" }
+                }
               >
+                <div
+                  className="absolute left-0 top-0 origin-top-left"
+                  style={{ width: canvasWidth, height: canvasHeight, transform: fitScale < 1 ? `scale(${fitScale})` : undefined }}
+                >
                 {activeFloor?.tables.map((table) =>
                   editMode ? (
                     <EditableTableTile
@@ -136,6 +167,7 @@ export default function TablesPage() {
                     No tables on this floor yet.
                   </p>
                 )}
+                </div>
               </div>
             </Card>
 
