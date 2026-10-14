@@ -2,6 +2,8 @@
 
 <img src="apps/web/public/brand-lockup.png" alt="Nodedr OrderRestro" width="520">
 
+<img src="docs/orderrestro-cover.jpg" alt="Illustrative evening scene in an independent restaurant" width="100%">
+
 **Open-source, self-hosted restaurant POS & management system** — billing
 with **UPI QR payments**, tables, kitchen display (KDS), reservations,
 inventory, **staff attendance & payroll**, accounting, reports, CRM/loyalty
@@ -24,7 +26,8 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 **[Try OrderRestro](https://orderrestro.nodedr.com/)** · **[Case study](https://www.raktimranjit.com/projects/orderrestro)** · **[Maintainer: Raktim Ranjit](https://www.raktimranjit.com/)**
 
 [Quick Start](#quick-start) ·
-[Tutorial](./TUTORIAL.md) ·
+[How to use](#how-to-use-orderrestro) ·
+[Full tutorial](./TUTORIAL.md) ·
 [Features](#features) ·
 [Screenshots](#screenshots) ·
 [Docs](#documentation) ·
@@ -185,6 +188,34 @@ ordering page and staff sidebar.
   and reporting in one app instead of five subscriptions.
 - **India-ready** — GST (inclusive or exclusive), UPI, ₹ formatting, plus
   US sales tax, EU VAT and Spanish IVA for other markets.
+
+## How to use OrderRestro
+
+Start with the [screenshot-guided tutorial](./TUTORIAL.md) for the full
+first-run walkthrough. It covers sign-up, setup, daily service, and the
+management tools with **56 screenshots of the app**.
+
+1. **Set up your restaurant.** Create the owner account, then enter your
+   restaurant details, branch address, currency, timezone, tax settings, and
+   UPI payee in **Settings**.
+2. **Add the menu and floor.** Create categories, dishes, options and combos;
+   add floors and tables. Add ingredients and recipes if you want stock usage
+   and food cost tracked automatically.
+3. **Take an order.** In **Point of Sale**, choose dine-in, takeaway, or
+   delivery, add dishes and modifiers, then send the order to the kitchen.
+4. **Prepare and collect payment.** The **Kitchen Display** updates live.
+   At checkout, take cash, card, or UPI; for UPI, the app shows a QR code for
+   the exact amount. Confirm the payment in your UPI app before completing the
+   sale.
+5. **Run the shift.** Use **Tables**, **Reservations**, **Customers**,
+   **Inventory**, **Team**, and **Reports** to manage the floor, regulars,
+   stock, staff, and daily close.
+
+<p align="center">
+  <a href="./TUTORIAL.md"><strong>Open the complete tutorial →</strong></a>
+  &nbsp; · &nbsp;
+  <a href="./docs/orderrestro-user-manual.pdf">Download the user manual</a>
+</p>
 
 ## Screenshots
 
