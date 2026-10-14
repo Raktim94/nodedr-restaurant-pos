@@ -64,8 +64,16 @@ async function pull(repo, tag) {
   }
 }
 
-function createBody(info, image) {
+function createBody(info, image, imageEnv = []) {
   const cfg = { ...info.Config, Image: image };
+  // The old container's Env also holds everything its *image* baked in (e.g.
+  // APP_VERSION). Carrying those over would pin the new container to the old
+  // image's values, so keep only what was set on the container itself
+  // (compose / CasaOS environment).
+  if (Array.isArray(cfg.Env) && imageEnv.length > 0) {
+    const baked = new Set(imageEnv);
+    cfg.Env = cfg.Env.filter((e) => !baked.has(e));
+  }
   // An unset hostname defaults to the old container's id — don't carry that over.
   if (cfg.Hostname && info.Id.startsWith(cfg.Hostname)) delete cfg.Hostname;
   const endpoints = {};
@@ -82,7 +90,12 @@ async function replace(name, newImage) {
   await docker('POST', `/containers/${enc(name)}/stop?t=20`);
   await docker('POST', `/containers/${enc(name)}/rename?name=${enc(oldName)}`);
   try {
-    const created = await json('POST', `/containers/create?name=${enc(name)}`, createBody(info, newImage));
+    const oldImage = await json('GET', `/images/${enc(info.Image)}/json`).catch(() => null);
+    const created = await json(
+      'POST',
+      `/containers/create?name=${enc(name)}`,
+      createBody(info, newImage, oldImage?.Config?.Env ?? []),
+    );
     await docker('POST', `/containers/${enc(created.Id)}/start`);
   } catch (err) {
     // Roll back: drop whatever was created, restore and restart the old one.
