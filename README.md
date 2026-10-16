@@ -25,6 +25,11 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 
 **[Try OrderRestro](https://orderrestro.nodedr.com/)** · **[Case study](https://www.raktimranjit.com/projects/orderrestro)** · **[Maintainer: Raktim Ranjit](https://www.raktimranjit.com/)**
 
+<p align="center">
+  <img src="docs/assets/hero-animated.svg" alt="Nodedr OrderRestro: animated overview with an illustrative sample screen" width="100%">
+</p>
+
+
 [Quick Start](#quick-start) ·
 [How to use](#how-to-use-orderrestro) ·
 [Full tutorial](./TUTORIAL.md) ·
@@ -293,6 +298,11 @@ Postgres over the originally-specced SQLite — is in
 | Containers | Docker + Docker Compose |
 
 ## Quick start
+
+<p align="center">
+  <img src="docs/assets/install-animated.svg" alt="Animated terminal: clone the repo and run install.sh" width="100%">
+</p>
+
 
 ### Installing Docker
 
