@@ -40,6 +40,18 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! docker info >/dev/null 2>&1; then
+  echo "Error: Docker is installed but not running, or your user can't talk to it." >&2
+  echo "Start Docker, and on Linux add your user to the 'docker' group (or re-run with sudo)." >&2
+  exit 1
+fi
+
+# The readiness check below uses curl.
+if ! command -v curl >/dev/null 2>&1; then
+  echo "Error: curl is required (used to wait for the app to come online). Install it and re-run." >&2
+  exit 1
+fi
+
 # --- 2. Generate .env if one doesn't exist already --------------------------
 # A one-click install can't ask you to hand-edit JWT_SECRET/POSTGRES_PASSWORD
 # first (docker-compose.yml has no insecure default for either — it fails
