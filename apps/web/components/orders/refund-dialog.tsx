@@ -3,6 +3,7 @@
 import { PaymentMethodButtons } from "@/components/pos/payment-method-buttons";
 import type { PaymentMethodDto } from "@nodedr-restaurant/types";
 import { RotateCcw } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRefundOrder } from "@/hooks/use-orders";
-import { ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "OTHER", "STORE_CREDIT"];
 
@@ -37,11 +38,28 @@ export function RefundDialog({
   const [method, setMethod] = useState<PaymentMethodDto>("CASH");
   const [reason, setReason] = useState("");
   const refund = useRefundOrder(branchId);
+  // Units physically handed back; only these go back into stock.
+  const [returned, setReturned] = useState<Record<string, number>>({});
+  const { data: order } = useQuery({
+    queryKey: ["orders", "refund-items", branchId, orderId],
+    queryFn: () => api.get<{ items: { id: string; nameSnapshot: string; quantity: number }[] }>(`/orders/${orderId}?branchId=${branchId}`),
+    enabled: open && !!branchId,
+  });
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     refund.mutate(
-      { orderId, dto: { amount: Number(amount), method, reason: reason || undefined } },
+      {
+        orderId,
+        dto: {
+          amount: Number(amount),
+          method,
+          reason: reason || undefined,
+          returnedItems: Object.entries(returned)
+            .filter(([, quantity]) => quantity > 0)
+            .map(([orderItemId, quantity]) => ({ orderItemId, quantity })),
+        },
+      },
       {
         onSuccess: () => {
           toast.success(`Refunded ${amount} on order #${orderNumber}`);
@@ -88,6 +106,33 @@ export function RefundDialog({
             <Label htmlFor="refund-reason">Reason (optional)</Label>
             <Input id="refund-reason" value={reason} onChange={(e) => setReason(e.target.value)} />
           </div>
+          {order && order.items.length > 0 && (
+            <fieldset className="flex flex-col gap-2 rounded-lg border border-border p-3">
+              <legend className="px-1 text-sm font-medium">Returned to stock</legend>
+              <p className="text-xs text-muted-foreground">
+                A refund alone does not change stock. Enter only the units that physically came back and can be reused.
+              </p>
+              {order.items.map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-3 text-sm">
+                  <Label htmlFor={`ret-${item.id}`} className="min-w-0 flex-1 truncate">
+                    {item.nameSnapshot} <span className="text-muted-foreground">(sold {item.quantity})</span>
+                  </Label>
+                  <Input
+                    id={`ret-${item.id}`}
+                    type="number"
+                    min="0"
+                    max={item.quantity}
+                    step="1"
+                    className="h-9 w-20"
+                    value={returned[item.id] ?? 0}
+                    onChange={(e) =>
+                      setReturned({ ...returned, [item.id]: Math.max(0, Math.min(item.quantity, Math.floor(Number(e.target.value) || 0))) })
+                    }
+                  />
+                </div>
+              ))}
+            </fieldset>
+          )}
           <DialogFooter>
             <Button type="submit" variant="destructive" disabled={refund.isPending}>
               {refund.isPending ? "Refunding…" : "Issue refund"}

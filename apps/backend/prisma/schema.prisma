@@ -526,9 +526,9 @@ model MenuCategory {
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
-  name      String
-  sortOrder Int     @default(0)
-  isActive  Boolean @default(true)
+  name          String
+  sortOrder     Int     @default(0)
+  isActive      Boolean @default(true)
   // false = still on the POS, but hidden from the QR/online ordering page and
   // from the Integration API that feeds the restaurant's own website.
   showOnWebsite Boolean @default(true)
@@ -612,6 +612,7 @@ model Ingredient {
   updatedAt DateTime @updatedAt
 
   recipeLines        RecipeIngredient[]
+  directMenuItems    MenuItem[]          @relation("DirectStockItem")
   purchaseOrderItems PurchaseOrderItem[]
   goodsReceiptItems  GoodsReceiptItem[]
   stockBatches       StockBatch[]
@@ -955,6 +956,18 @@ enum StockMovementType {
   WASTE
   ADJUSTMENT
   CONSUMPTION
+  REVERSAL // compensating +qty when sold items are physically returned
+}
+
+// How selling a menu item moves inventory.
+//   NONE   - not stock-tracked; selling it never touches inventory.
+//   RECIPE - deducts its RecipeIngredient lines per unit sold.
+//   DIRECT - deducts stockQuantityPerSale of one stock item (stockIngredientId)
+//            per unit sold, e.g. bottled drinks sold as-is; no fake recipe.
+enum InventoryTracking {
+  NONE
+  RECIPE
+  DIRECT
 }
 
 model StockMovement {
@@ -969,12 +982,16 @@ model StockMovement {
   type     StockMovementType
   quantity Decimal           @db.Decimal(12, 3) // signed: +in, -out
   note     String?
+  // Set for order-driven movements (checkout consumption / return reversal).
+  // Plain column, no FK: the ledger must outlive a deleted order.
+  orderId  String?
 
   createdById String
   createdBy   User     @relation("StockMovementCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
 
   @@index([branchId, ingredientId, createdAt])
+  @@index([orderId])
   @@map("stock_movements")
 }
 
@@ -1046,6 +1063,11 @@ model MenuItem {
   barcode  String?
   isActive Boolean @default(true)
   isCombo  Boolean @default(false)
+
+  inventoryTracking    InventoryTracking @default(NONE)
+  stockIngredientId    String?
+  stockIngredient      Ingredient?       @relation("DirectStockItem", fields: [stockIngredientId], references: [id], onDelete: SetNull)
+  stockQuantityPerSale Decimal           @default(1) @db.Decimal(12, 3)
 
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
@@ -1329,8 +1351,9 @@ model OrderItem {
   kitchenNote String?
   status      KotItemStatus @default(NEW)
 
-  modifiers OrderItemModifier[]
-  kotItems  KotItem[]
+  modifiers    OrderItemModifier[]
+  kotItems     KotItem[]
+  stockReturns OrderItemStockReturn[]
 
   @@index([orderId])
   @@map("order_items")
@@ -1519,8 +1542,27 @@ model Refund {
   createdBy   User          @relation(fields: [createdById], references: [id])
   createdAt   DateTime      @default(now())
 
+  stockReturns OrderItemStockReturn[]
+
   @@index([orderId])
   @@map("refunds")
+}
+
+// Which sold units were physically returned (and so put back in stock) with a
+// refund. A monetary refund alone never restores stock; rows here are the only
+// thing that does, and they cap further returns at the quantity sold.
+model OrderItemStockReturn {
+  id          String    @id @default(cuid())
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  refundId    String
+  refund      Refund    @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  quantity    Int
+  createdAt   DateTime  @default(now())
+
+  @@index([orderItemId])
+  @@index([refundId])
+  @@map("order_item_stock_returns")
 }
 
 // ---------------------------------------------------------------------------

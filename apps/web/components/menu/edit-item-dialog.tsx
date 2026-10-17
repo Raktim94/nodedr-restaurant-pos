@@ -28,6 +28,8 @@ import {
   type MenuCategory,
   type MenuItem,
 } from "@/hooks/use-menu";
+import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
+import { StockTrackingSection } from "@/components/menu/stock-tracking-section";
 import { useSettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
 
@@ -56,6 +58,7 @@ export function EditItemDialog({
 
   const { data: stations } = useStations(branchId);
   const { data: settings } = useSettings(branchId);
+  const { data: me } = useCurrentUser();
   const updateItem = useUpdateMenuItem(branchId);
   const uploadImage = useUploadItemImage();
   const priceLabel =
@@ -239,6 +242,9 @@ export function EditItemDialog({
             </Button>
           </DialogFooter>
         </form>
+        {hasPermission(me?.user, "inventory.manage") && (
+          <StockTrackingSection branchId={branchId} itemId={item.id} isCombo={item.isCombo} />
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -18,13 +18,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useBranch } from "@/hooks/use-branch";
-import { useIngredients } from "@/hooks/use-inventory";
+import { useIngredients, useTrackingStatus } from "@/hooks/use-inventory";
 import { formatCurrency } from "@/lib/format";
 
 export default function InventoryPage() {
   const { branchId } = useBranch();
   const [search, setSearch] = useState("");
   const { data: ingredients, isLoading } = useIngredients(branchId);
+  const { data: trackingStatus } = useTrackingStatus(branchId);
 
   const filtered = ingredients?.filter((i) =>
     i.name.toLowerCase().includes(search.toLowerCase()),
@@ -43,6 +44,21 @@ export default function InventoryPage() {
       </div>
 
       <InventoryTabs />
+
+      {trackingStatus && trackingStatus.problems.length > 0 && (
+        <div role="alert" className="flex gap-3 rounded-xl border border-warning/40 bg-warning/10 p-4 text-sm">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+          <div className="flex flex-col gap-1">
+            <p className="font-medium text-foreground">
+              {trackingStatus.problems.length} stock-tracked menu item{trackingStatus.problems.length === 1 ? "" : "s"} will deduct nothing when sold
+            </p>
+            <p className="text-muted-foreground">
+              Add a recipe or pick the stock item (Menu → Edit item → Stock when sold):{" "}
+              {trackingStatus.problems.map((p) => p.name).join(", ")}
+            </p>
+          </div>
+        </div>
+      )}
 
       <Input
         placeholder="Search ingredients…"

@@ -8,10 +8,12 @@ import type {
   IngredientDto,
   SupplierDto,
   RecipeLineDto,
+  MenuItemTrackingDto,
 } from '@nodedr-restaurant/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { round2 } from '../../common/money';
 import { StockService } from './stock.service';
+import { planStockUsage, type PlanItem, type StockPlan } from './stock-plan';
 
 type Tx = Prisma.TransactionClient;
 
@@ -185,7 +187,62 @@ export class InventoryService {
       where: { id: menuItemId },
       data: { costPrice: recipe.totalCost },
     });
+    // Saving recipe lines on an untracked item means "deduct these when sold".
+    if (lines.length > 0) {
+      await this.prisma.menuItem.updateMany({
+        where: { id: menuItemId, inventoryTracking: 'NONE' },
+        data: { inventoryTracking: 'RECIPE' },
+      });
+    }
     return recipe;
+  }
+
+  async getTracking(branchId: string, menuItemId: string) {
+    const item = await this.prisma.menuItem.findFirst({
+      where: { id: menuItemId, branchId },
+      select: {
+        id: true,
+        inventoryTracking: true,
+        stockIngredientId: true,
+        stockQuantityPerSale: true,
+        isCombo: true,
+      },
+    });
+    if (!item) throw new NotFoundException('Menu item not found');
+    return {
+      ...item,
+      stockQuantityPerSale: Number(item.stockQuantityPerSale),
+    };
+  }
+
+  async setTracking(
+    branchId: string,
+    menuItemId: string,
+    dto: MenuItemTrackingDto,
+  ) {
+    await this.assertMenuItemInBranch(branchId, menuItemId);
+    if (dto.inventoryTracking === 'DIRECT') {
+      const ingredient = await this.prisma.ingredient.findFirst({
+        where: { id: dto.stockIngredientId ?? '', branchId },
+        select: { id: true },
+      });
+      if (!ingredient) {
+        throw new BadRequestException('Stock item not found in this branch');
+      }
+    }
+    await this.prisma.menuItem.update({
+      where: { id: menuItemId },
+      data: {
+        inventoryTracking: dto.inventoryTracking,
+        stockIngredientId:
+          dto.inventoryTracking === 'DIRECT' ? dto.stockIngredientId : null,
+        stockQuantityPerSale:
+          dto.inventoryTracking === 'DIRECT'
+            ? (dto.stockQuantityPerSale ?? 1)
+            : 1,
+      },
+    });
+    return this.getTracking(branchId, menuItemId);
   }
 
   private async assertMenuItemInBranch(branchId: string, menuItemId: string) {
@@ -199,93 +256,34 @@ export class InventoryService {
   // --- Automatic deduction on order checkout ------------------------------
   //
   // Called from OrdersService.checkout() inside its own transaction (`tx`
-  // passed through, not opened here — see StockService.consumeStock).
-  // Deliberately best-effort and non-blocking: most menu items won't have a
-  // recipe modeled yet, and a modeling gap or a mid-service substitution
-  // should never be the reason a paid food order fails to save — that's a
-  // strictly worse outcome than stock drifting negative and needing a
-  // stocktake correction later. `allowNegative: true` on every consumeStock
-  // call reflects that choice explicitly; waste logging (the other
-  // consumeStock caller) makes the opposite choice on purpose, since a
-  // waste entry has no such urgency.
+  // passed through, not opened here), so the movements, the ingredient
+  // balances and the OPEN->PAID order update commit or roll back together.
+  // What moves is decided by planStockUsage(): RECIPE items deduct their
+  // recipe lines, DIRECT items deduct one stock item, NONE items nothing,
+  // combos expand into their components. Stock may go negative on purpose
+  // (allowNegative): a shortage must never block a paid sale, it shows up as
+  // a negative balance for the next stocktake. Tracked items that cannot be
+  // mapped to stock are returned in `skipped` and reported by the caller -
+  // never silently ignored.
   //
-  // Combo items are expanded one level via ComboComponent — a combo's own
-  // MenuItem row essentially never carries a direct recipe (its "recipe" is
-  // its component items' recipes), so deducting only by comboItemId would
-  // silently skip inventory for every combo sale. Combos-of-combos aren't a
-  // real case in this schema (ComboComponent has no self-relation), so one
-  // level of expansion is complete, not a partial implementation.
-  async deductForOrderItems(
+  // Idempotent per order: checkout's guarded status update already makes
+  // double-payment impossible; the CONSUMPTION lookup is a second line of
+  // defence against any retry path re-running this for the same order.
+  async deductForOrder(
     tx: Tx,
     branchId: string,
     userId: string,
-    items: { menuItemId: string; quantity: number }[],
-  ): Promise<void> {
-    if (items.length === 0) return;
-
-    const menuItemIds = [...new Set(items.map((i) => i.menuItemId))];
-    const menuItems = await tx.menuItem.findMany({
-      where: { id: { in: menuItemIds } },
-      select: { id: true, isCombo: true },
+    orderId: string,
+    lines: { menuItemId: string; quantity: number }[],
+  ): Promise<{ skipped: StockPlan['skipped'] }> {
+    if (lines.length === 0) return { skipped: [] };
+    const already = await tx.stockMovement.count({
+      where: { orderId, type: 'CONSUMPTION' },
     });
-    const isComboById = new Map(menuItems.map((m) => [m.id, m.isCombo]));
+    if (already > 0) return { skipped: [] };
 
-    const comboIds = menuItems.filter((m) => m.isCombo).map((m) => m.id);
-    const comboComponents = comboIds.length
-      ? await tx.comboComponent.findMany({
-          where: { comboItemId: { in: comboIds } },
-        })
-      : [];
-    const componentsByCombo = new Map<
-      string,
-      { componentItemId: string; quantity: number }[]
-    >();
-    for (const c of comboComponents) {
-      const list = componentsByCombo.get(c.comboItemId) ?? [];
-      list.push({ componentItemId: c.componentItemId, quantity: c.quantity });
-      componentsByCombo.set(c.comboItemId, list);
-    }
-
-    // Flatten to (recipe-bearing menuItemId -> effective quantity sold),
-    // expanding combos into their components.
-    const effectiveQuantityByItem = new Map<string, number>();
-    const addEffective = (menuItemId: string, quantity: number) => {
-      effectiveQuantityByItem.set(
-        menuItemId,
-        (effectiveQuantityByItem.get(menuItemId) ?? 0) + quantity,
-      );
-    };
-    for (const item of items) {
-      if (isComboById.get(item.menuItemId)) {
-        for (const component of componentsByCombo.get(item.menuItemId) ?? []) {
-          addEffective(
-            component.componentItemId,
-            component.quantity * item.quantity,
-          );
-        }
-      } else {
-        addEffective(item.menuItemId, item.quantity);
-      }
-    }
-    if (effectiveQuantityByItem.size === 0) return;
-
-    const recipeLines = await tx.recipeIngredient.findMany({
-      where: { menuItemId: { in: [...effectiveQuantityByItem.keys()] } },
-    });
-    if (recipeLines.length === 0) return;
-
-    const ingredientQtyNeeded = new Map<string, number>();
-    for (const line of recipeLines) {
-      const soldQty = effectiveQuantityByItem.get(line.menuItemId) ?? 0;
-      if (soldQty <= 0) continue;
-      const needed = Number(line.quantity) * soldQty;
-      ingredientQtyNeeded.set(
-        line.ingredientId,
-        (ingredientQtyNeeded.get(line.ingredientId) ?? 0) + needed,
-      );
-    }
-
-    for (const [ingredientId, quantity] of ingredientQtyNeeded) {
+    const plan = await this.planFor(tx, lines);
+    for (const [ingredientId, quantity] of plan.needs) {
       if (quantity <= 0) continue;
       await this.stockService.consumeStock(
         tx,
@@ -297,8 +295,126 @@ export class InventoryService {
           note: 'Order checkout',
           userId,
           allowNegative: true,
+          orderId,
         },
       );
     }
+    return { skipped: plan.skipped };
+  }
+
+  // Puts physically returned units back in stock (compensating REVERSAL
+  // movements). Only called when a refund explicitly names the returned
+  // items; a money-only refund never reaches here.
+  async restoreForReturn(
+    tx: Tx,
+    branchId: string,
+    userId: string,
+    orderId: string,
+    lines: { menuItemId: string; quantity: number }[],
+  ): Promise<{ restored: number }> {
+    const plan = await this.planFor(tx, lines);
+    let restored = 0;
+    for (const [ingredientId, quantity] of plan.needs) {
+      restored += await this.stockService.restoreStock(
+        tx,
+        branchId,
+        ingredientId,
+        quantity,
+        { userId, orderId, note: 'Returned with refund' },
+      );
+    }
+    return { restored };
+  }
+
+  private async planFor(
+    tx: Tx,
+    lines: { menuItemId: string; quantity: number }[],
+  ): Promise<StockPlan> {
+    const ids = [...new Set(lines.map((l) => l.menuItemId))];
+    const combos = await tx.comboComponent.findMany({
+      where: { comboItemId: { in: ids } },
+    });
+    const allIds = [
+      ...new Set([...ids, ...combos.map((c) => c.componentItemId)]),
+    ];
+    const rows = await tx.menuItem.findMany({
+      where: { id: { in: allIds } },
+      include: { recipeLines: true },
+    });
+    const items = new Map<string, PlanItem>(
+      rows.map((m) => [
+        m.id,
+        {
+          id: m.id,
+          name: m.name,
+          isCombo: m.isCombo,
+          tracking: m.inventoryTracking,
+          stockIngredientId: m.stockIngredientId,
+          stockQuantityPerSale: Number(m.stockQuantityPerSale),
+          recipe: m.recipeLines.map((l) => ({
+            ingredientId: l.ingredientId,
+            quantity: Number(l.quantity),
+          })),
+        },
+      ]),
+    );
+    return planStockUsage(lines, items, combos);
+  }
+
+  // Setup status: sellable items whose inventory tracking is switched on but
+  // not mapped to any stock, so selling them would deduct nothing.
+  async trackingSetupStatus(branchId: string) {
+    const items = await this.prisma.menuItem.findMany({
+      where: {
+        branchId,
+        isActive: true,
+        isCombo: false,
+        inventoryTracking: { not: 'NONE' },
+      },
+      select: {
+        id: true,
+        name: true,
+        inventoryTracking: true,
+        stockIngredientId: true,
+        stockQuantityPerSale: true,
+        _count: { select: { recipeLines: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+    const problems = items.flatMap<StockPlan['skipped'][number]>((i) => {
+      if (i.inventoryTracking === 'RECIPE' && i._count.recipeLines === 0) {
+        return [
+          { menuItemId: i.id, name: i.name, reason: 'NO_RECIPE' as const },
+        ];
+      }
+      if (
+        i.inventoryTracking === 'DIRECT' &&
+        (!i.stockIngredientId || Number(i.stockQuantityPerSale) <= 0)
+      ) {
+        return [
+          { menuItemId: i.id, name: i.name, reason: 'NO_STOCK_ITEM' as const },
+        ];
+      }
+      return [];
+    });
+    const [untracked, tracked] = await Promise.all([
+      this.prisma.menuItem.count({
+        where: {
+          branchId,
+          isActive: true,
+          isCombo: false,
+          inventoryTracking: 'NONE',
+        },
+      }),
+      this.prisma.menuItem.count({
+        where: {
+          branchId,
+          isActive: true,
+          isCombo: false,
+          inventoryTracking: { not: 'NONE' },
+        },
+      }),
+    ]);
+    return { tracked, untracked, problems };
   }
 }

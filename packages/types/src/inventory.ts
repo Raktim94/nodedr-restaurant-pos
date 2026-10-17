@@ -39,6 +39,22 @@ export const setRecipeSchema = z.object({
 });
 export type SetRecipeDto = z.infer<typeof setRecipeSchema>;
 
+export const inventoryTrackingSchema = z.enum(["NONE", "RECIPE", "DIRECT"]);
+export type InventoryTrackingDto = z.infer<typeof inventoryTrackingSchema>;
+
+// How selling a menu item moves stock (see InventoryTracking in schema.prisma).
+export const menuItemTrackingSchema = z
+  .object({
+    inventoryTracking: inventoryTrackingSchema,
+    stockIngredientId: z.string().min(1).nullable().optional(),
+    stockQuantityPerSale: z.coerce.number().positive().max(100000).optional(),
+  })
+  .refine((v) => v.inventoryTracking !== "DIRECT" || !!v.stockIngredientId, {
+    message: "Pick the stock item this product deducts from",
+    path: ["stockIngredientId"],
+  });
+export type MenuItemTrackingDto = z.infer<typeof menuItemTrackingSchema>;
+
 export const supplierSchema = z.object({
   name: z.string().min(1),
   contactName: z.string().optional(),

@@ -16,6 +16,8 @@ import {
   purchaseOrderSchema,
   purchaseRequestSchema,
   setRecipeSchema,
+  menuItemTrackingSchema,
+  type MenuItemTrackingDto,
   stockAdjustmentSchema,
   supplierInvoiceSchema,
   supplierPaymentSchema,
@@ -185,6 +187,46 @@ export class InventoryController {
       lines: { ingredientId: string; quantity: number }[];
     };
     return this.inventoryService.setRecipe(branchId, id, lines);
+  }
+
+  // --- Sales-driven stock tracking --------------------------------------------
+
+  @Auth('inventory.manage')
+  @Get('tracking-status')
+  async trackingStatus(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.inventoryService.trackingSetupStatus(branchId);
+  }
+
+  @Auth('inventory.manage')
+  @Get('menu-items/:id/tracking')
+  async getTracking(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.inventoryService.getTracking(branchId, id);
+  }
+
+  @Auth('inventory.manage')
+  @Patch('menu-items/:id/tracking')
+  @UsePipes(new ZodValidationPipe(menuItemTrackingSchema))
+  async setTracking(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.inventoryService.setTracking(
+      branchId,
+      id,
+      body as MenuItemTrackingDto,
+    );
   }
 
   // --- Suppliers ----------------------------------------------------------------

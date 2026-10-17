@@ -155,6 +155,17 @@ export const refundSchema = z.object({
   amount: z.coerce.number().positive(),
   reason: z.string().optional(),
   method: paymentMethodSchema,
+  // Units physically handed back with this refund. Only these are returned to
+  // stock; omit for a money-only refund (stock is left as consumed).
+  returnedItems: z
+    .array(
+      z.object({
+        orderItemId: z.string().min(1),
+        quantity: z.coerce.number().int().positive(),
+      }),
+    )
+    .max(100)
+    .optional(),
 });
 export type RefundDto = z.infer<typeof refundSchema>;
 

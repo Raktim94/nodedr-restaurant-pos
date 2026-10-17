@@ -62,6 +62,7 @@ export class StockService {
       note?: string;
       userId: string;
       allowNegative?: boolean;
+      orderId?: string;
     },
   ): Promise<StockConsumptionPortion[]> {
     const ingredient = await tx.ingredient.findFirst({
@@ -126,6 +127,7 @@ export class StockService {
           quantity: -consumeQty,
           note: opts.note,
           createdById: opts.userId,
+          orderId: opts.orderId,
         },
       });
       portions.push({
@@ -148,6 +150,7 @@ export class StockService {
           quantity: -remaining,
           note: opts.note,
           createdById: opts.userId,
+          orderId: opts.orderId,
         },
       });
       portions.push({
@@ -165,6 +168,89 @@ export class StockService {
     });
 
     return portions;
+  }
+
+  // Compensating entry for sold units that physically came back. Never edits
+  // or deletes the original CONSUMPTION rows: it appends REVERSAL movements,
+  // returns quantity to the batches the sale drew from, and is capped at what
+  // the order consumed minus what earlier reversals already restored.
+  async restoreStock(
+    tx: Tx,
+    branchId: string,
+    ingredientId: string,
+    quantity: number,
+    opts: { userId: string; orderId: string; note?: string },
+  ): Promise<number> {
+    await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${ingredientId} FOR UPDATE`;
+    const ingredient = await tx.ingredient.findFirst({
+      where: { id: ingredientId, branchId },
+    });
+    if (!ingredient) throw new NotFoundException('Ingredient not found');
+
+    const moves = await tx.stockMovement.findMany({
+      where: { orderId: opts.orderId, ingredientId },
+      orderBy: { createdAt: 'asc' },
+    });
+    const consumed = moves
+      .filter((m) => m.type === 'CONSUMPTION')
+      .reduce((sum, m) => sum + -Number(m.quantity), 0);
+    const reversed = moves
+      .filter((m) => m.type === 'REVERSAL')
+      .reduce((sum, m) => sum + Number(m.quantity), 0);
+    let remaining = round3(Math.min(quantity, consumed - reversed));
+    if (remaining <= 0) return 0;
+    const restored = remaining;
+
+    // Put units back onto the batch each came from (newest batch first), never
+    // exceeding what that batch gave up minus what earlier reversals returned.
+    const room = new Map<string | null, number>();
+    for (const m of moves) {
+      const key = m.batchId;
+      if (m.type === 'CONSUMPTION') {
+        room.set(key, round3((room.get(key) ?? 0) + -Number(m.quantity)));
+      } else if (m.type === 'REVERSAL') {
+        room.set(key, round3((room.get(key) ?? 0) - Number(m.quantity)));
+      }
+    }
+    for (const [batchId, available] of [...room.entries()].reverse()) {
+      if (remaining <= 0) break;
+      const back = Math.min(remaining, available);
+      if (back <= 0) continue;
+      if (batchId) {
+        const batch = await tx.stockBatch.findUnique({
+          where: { id: batchId },
+        });
+        if (batch) {
+          await tx.stockBatch.update({
+            where: { id: batch.id },
+            data: {
+              quantityRemaining: round3(Number(batch.quantityRemaining) + back),
+            },
+          });
+        }
+      }
+      await tx.stockMovement.create({
+        data: {
+          branchId,
+          ingredientId,
+          batchId,
+          type: 'REVERSAL',
+          quantity: back,
+          note: opts.note,
+          createdById: opts.userId,
+          orderId: opts.orderId,
+        },
+      });
+      remaining = round3(remaining - back);
+    }
+
+    await tx.ingredient.update({
+      where: { id: ingredientId },
+      data: {
+        currentStock: round3(Number(ingredient.currentStock) + restored),
+      },
+    });
+    return restored;
   }
 
   // Manual correction (stocktake variance, data-entry fix) — NOT for

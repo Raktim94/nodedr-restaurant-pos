@@ -835,6 +835,8 @@ export class OrdersService {
       dto.payments.reduce((sum, p) => sum + p.amount, 0),
     );
 
+    let stockSkipped: { menuItemId: string; name: string; reason: string }[] =
+      [];
     const updated = await this.prisma.$transaction(async (tx) => {
       let loyaltyDiscountAmount = 0;
       let actualPointsRedeemed = 0;
@@ -902,20 +904,21 @@ export class OrdersService {
         );
       }
 
-      // Best-effort, non-blocking: deducts ingredient stock for whichever
-      // items have a recipe modeled (most won't yet). See
-      // InventoryService.deductForOrderItems for why this never throws on
-      // insufficient stock — a recipe-modeling gap must never be the reason
-      // a paid order fails to save.
-      await this.inventory.deductForOrderItems(
+      // Stock moves exactly once, in this same transaction as the OPEN->PAID
+      // update below (a losing concurrent checkout rolls its deduction back).
+      // Shortages never block the sale; unmapped tracked items are reported
+      // after commit instead of being skipped silently.
+      const deduction = await this.inventory.deductForOrder(
         tx,
         branchId,
         userId,
+        orderId,
         order.items.map((item) => ({
           menuItemId: item.menuItemId,
           quantity: item.quantity,
         })),
       );
+      stockSkipped = deduction.skipped;
 
       if (order.tableId) {
         await tx.table.update({
@@ -985,6 +988,21 @@ export class OrdersService {
       }
     });
 
+    if (stockSkipped.length > 0) {
+      this.logger.warn(
+        `Order ${updated.orderNumber}: no stock deducted for ${stockSkipped
+          .map((s) => `${s.name} (${s.reason})`)
+          .join(', ')}`,
+      );
+      await this.audit.record({
+        userId,
+        action: 'inventory.deduction_skipped',
+        entity: 'Order',
+        entityId: orderId,
+        metadata: { orderNumber: updated.orderNumber, items: stockSkipped },
+      });
+    }
+
     this.realtime.emitToBranch(branchId, 'order.updated', {
       id: updated.id,
       status: 'PAID',
@@ -1052,6 +1070,52 @@ export class OrdersService {
           createdById: userId,
         },
       });
+
+      // Money-only refunds never touch stock. Stock comes back only for the
+      // units the staff member says were physically returned, capped at what
+      // was sold minus what earlier refunds already returned, as compensating
+      // REVERSAL movements (the original consumption rows stay untouched).
+      if (dto.returnedItems?.length) {
+        const items = await tx.orderItem.findMany({
+          where: { orderId },
+          include: { stockReturns: true },
+        });
+        const byId = new Map(items.map((i) => [i.id, i]));
+        const lines: { menuItemId: string; quantity: number }[] = [];
+        for (const ret of dto.returnedItems) {
+          const item = byId.get(ret.orderItemId);
+          if (!item) {
+            throw new BadRequestException(
+              'Returned item does not belong to this order',
+            );
+          }
+          const alreadyReturned = item.stockReturns.reduce(
+            (sum, r) => sum + r.quantity,
+            0,
+          );
+          if (ret.quantity > item.quantity - alreadyReturned) {
+            throw new BadRequestException(
+              `Cannot return ${ret.quantity} x ${item.nameSnapshot} — only ${item.quantity - alreadyReturned} left to return`,
+            );
+          }
+          await tx.orderItemStockReturn.create({
+            data: {
+              orderItemId: item.id,
+              refundId: created.id,
+              quantity: ret.quantity,
+            },
+          });
+          item.stockReturns.push({ quantity: ret.quantity } as never);
+          lines.push({ menuItemId: item.menuItemId, quantity: ret.quantity });
+        }
+        await this.inventory.restoreForReturn(
+          tx,
+          branchId,
+          userId,
+          orderId,
+          lines,
+        );
+      }
 
       if (dto.method === 'STORE_CREDIT' && order.customerId) {
         // Atomic increment, not read-then-write: two concurrent
@@ -1215,16 +1279,20 @@ export class OrdersService {
     };
   }
 
+  // Next number for today: highest existing sequence + 1, not a row count. A
+  // count collides with an existing number as soon as any earlier order of the
+  // day has been deleted (orders.delete), and that surfaced as a 409 on the
+  // unique (branchId, orderNumber) index.
   private async nextOrderNumber(branchId: string): Promise<string> {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const countToday = await this.prisma.order.count({
-      where: { branchId, createdAt: { gte: startOfDay } },
-    });
-
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    return `${datePart}-${String(countToday + 1).padStart(4, '0')}`;
+    const latest = await this.prisma.order.findFirst({
+      where: { branchId, orderNumber: { startsWith: `${datePart}-` } },
+      orderBy: { orderNumber: 'desc' },
+      select: { orderNumber: true },
+    });
+    const last = latest ? Number(latest.orderNumber.split('-')[1]) : 0;
+    const next = (Number.isFinite(last) ? last : 0) + 1;
+    return `${datePart}-${String(next).padStart(4, '0')}`;
   }
 
   /**

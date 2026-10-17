@@ -273,8 +273,56 @@ export function useSetRecipe(branchId: string | null, menuItemId: string | null)
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["inventory", "recipe", branchId, menuItemId] });
+      qc.invalidateQueries({ queryKey: ["inventory", "tracking"] });
+      qc.invalidateQueries({ queryKey: ["inventory", "tracking-status"] });
       qc.invalidateQueries({ queryKey: ["menu"] });
     },
+  });
+}
+
+// --- Sales-driven stock tracking --------------------------------------------
+
+export type InventoryTracking = "NONE" | "RECIPE" | "DIRECT";
+
+export interface MenuItemTracking {
+  id: string;
+  inventoryTracking: InventoryTracking;
+  stockIngredientId: string | null;
+  stockQuantityPerSale: number;
+  isCombo: boolean;
+}
+
+export interface TrackingStatus {
+  tracked: number;
+  untracked: number;
+  problems: { menuItemId: string; name: string; reason: "NO_RECIPE" | "NO_STOCK_ITEM" | "UNKNOWN_ITEM" }[];
+}
+
+export function useTracking(branchId: string | null, menuItemId: string | null) {
+  return useQuery({
+    queryKey: ["inventory", "tracking", branchId, menuItemId],
+    queryFn: () => api.get<MenuItemTracking>(`/inventory/menu-items/${menuItemId}/tracking?branchId=${branchId}`),
+    enabled: !!branchId && !!menuItemId,
+  });
+}
+
+export function useSetTracking(branchId: string | null, menuItemId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: { inventoryTracking: InventoryTracking; stockIngredientId?: string | null; stockQuantityPerSale?: number }) =>
+      api.patch<MenuItemTracking>(`/inventory/menu-items/${menuItemId}/tracking?branchId=${branchId}`, dto),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["inventory", "tracking"] });
+      qc.invalidateQueries({ queryKey: ["inventory", "tracking-status"] });
+    },
+  });
+}
+
+export function useTrackingStatus(branchId: string | null) {
+  return useQuery({
+    queryKey: ["inventory", "tracking-status", branchId],
+    queryFn: () => api.get<TrackingStatus>(`/inventory/tracking-status?branchId=${branchId}`),
+    enabled: !!branchId,
   });
 }
 
