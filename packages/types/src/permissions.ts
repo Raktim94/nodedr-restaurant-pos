@@ -6,6 +6,7 @@
 
 export const PERMISSIONS = [
   { key: "sales.view", label: "View Sales", category: "Sales" },
+  { key: "dashboard.sales.view", label: "View Dashboard Revenue & Sales Reports", category: "Sales" },
   { key: "orders.create", label: "Create Orders", category: "Orders" },
   { key: "orders.edit", label: "Edit Orders", category: "Orders" },
   { key: "orders.cancel", label: "Cancel Orders", category: "Orders" },
@@ -13,7 +14,9 @@ export const PERMISSIONS = [
   { key: "refunds.process", label: "Process Refunds", category: "Orders" },
   { key: "orders.delete", label: "Delete Past Transactions (admin password)", category: "Orders" },
   { key: "bills.print", label: "Print Bills", category: "Orders" },
+  { key: "tables.view", label: "View Floors & Tables (read-only)", category: "Tables" },
   { key: "tables.manage", label: "Manage Tables", category: "Tables" },
+  { key: "menu.view", label: "View Menu (read-only)", category: "Menu" },
   { key: "menu.manage", label: "Manage Menu", category: "Menu" },
   { key: "inventory.manage", label: "Manage Inventory", category: "Inventory" },
   { key: "reports.access", label: "Access Reports", category: "Reports" },
@@ -37,6 +40,27 @@ export const PERMISSIONS = [
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]["key"];
+
+// A "manage" permission always includes its read-only counterpart, so roles
+// that predate the *.view keys (and custom roles) keep working unchanged.
+export const PERMISSION_IMPLIES: Partial<Record<PermissionKey, PermissionKey[]>> = {
+  "menu.manage": ["menu.view"],
+  "tables.manage": ["tables.view"],
+};
+
+/** True when `held` satisfies `required`, directly or through PERMISSION_IMPLIES. */
+export function permissionSatisfied(held: readonly string[], required: string): boolean {
+  if (held.includes(required)) return true;
+  return Object.entries(PERMISSION_IMPLIES).some(
+    ([owner, implied]) => held.includes(owner) && (implied as string[]).includes(required),
+  );
+}
+
+// Dashboard revenue/trends and the sales-total reports. Deliberately NOT
+// implied by sales.view (RESTAURANT_MANAGER holds that one).
+export const SALES_DASHBOARD_DEFAULT_ROLES = [
+  "OWNER", "ADMINISTRATOR", "ACCOUNTANT", "CASHIER",
+] as const;
 
 export const STAFF_ROLES = [
   "OWNER",
@@ -62,20 +86,23 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
   ADMINISTRATOR: PERMISSIONS.map((p) => p.key),
   RESTAURANT_MANAGER: [
     "sales.view", "orders.create", "orders.edit", "orders.cancel",
-    "discounts.apply", "bills.print", "tables.manage", "menu.manage",
+    "discounts.apply", "bills.print", "tables.manage", "tables.view", "menu.manage", "menu.view",
     "inventory.manage", "reports.access", "kds.manage",
     "reservations.manage", "customers.manage", "refunds.process",
     "attendance.manage", "delivery.manage", "staff.manage", "accounting.manage", "marketing.manage", "operations.manage",
   ],
   CASHIER: [
     "orders.create", "orders.edit", "bills.print", "discounts.apply",
-    "sales.view", "customers.manage",
+    "sales.view", "customers.manage", "dashboard.sales.view",
+    "menu.view", "tables.view",
   ],
-  WAITER: ["orders.create", "orders.edit", "tables.manage", "bills.print"],
+  // Waiters read the menu and floor plan and run orders; they cannot edit
+  // either, and have no revenue access.
+  WAITER: ["orders.create", "orders.edit", "tables.view", "menu.view", "bills.print"],
   KITCHEN_STAFF: ["kds.manage"],
-  CHEF: ["kds.manage", "menu.manage"],
-  BARTENDER: ["orders.create", "kds.manage"],
+  CHEF: ["kds.manage", "menu.manage", "menu.view"],
+  BARTENDER: ["orders.create", "kds.manage", "menu.view", "tables.view"],
   DELIVERY_STAFF: ["orders.edit", "delivery.manage"],
-  ACCOUNTANT: ["sales.view", "reports.access", "reports.financial.view", "data.export", "accounting.manage"],
+  ACCOUNTANT: ["sales.view", "dashboard.sales.view", "reports.access", "reports.financial.view", "data.export", "accounting.manage"],
   INVENTORY_MANAGER: ["inventory.manage", "reports.access"],
 };

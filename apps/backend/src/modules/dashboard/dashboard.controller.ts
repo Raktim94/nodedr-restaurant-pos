@@ -14,7 +14,7 @@ export class DashboardController {
     private readonly branchAccess: BranchAccessService,
   ) {}
 
-  @Auth()
+  @Auth('dashboard.sales.view')
   @Get('summary')
   async getSummary(
     @CurrentUser() user: SessionUser,
@@ -24,7 +24,7 @@ export class DashboardController {
     return this.dashboardService.getSummary(branchId);
   }
 
-  @Auth()
+  @Auth('dashboard.sales.view')
   @Get('trends')
   async getTrends(
     @CurrentUser() user: SessionUser,

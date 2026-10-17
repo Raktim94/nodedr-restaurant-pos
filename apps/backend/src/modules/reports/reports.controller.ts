@@ -15,7 +15,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import { toCsv } from './csv';
 import { EXPORT_TYPES, isExportFormat, renderReport } from './export';
-import { ReportsService } from './reports.service';
+import { assertCanViewReport, ReportsService } from './reports.service';
 
 @ApiTags('reports')
 @Controller('v1/reports')
@@ -27,8 +27,8 @@ export class ReportsController {
 
   @Auth('reports.access')
   @Get()
-  catalog() {
-    return this.reports.catalog();
+  catalog(@CurrentUser() u: SessionUser) {
+    return this.reports.catalog(u.permissions);
   }
 
   @Auth('reports.access')
@@ -40,6 +40,7 @@ export class ReportsController {
     @Query('from') from: string,
     @Query('to') to: string,
   ) {
+    assertCanViewReport(u.permissions, key);
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
     return this.reports.run(key, branchId, from, to);
   }
@@ -55,6 +56,7 @@ export class ReportsController {
     @Query('from') from: string,
     @Query('to') to: string,
   ) {
+    assertCanViewReport(u.permissions, key);
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
     const r = await this.reports.run(key, branchId, from, to);
     return toCsv(r.columns, r.rows);
@@ -74,6 +76,7 @@ export class ReportsController {
   ) {
     if (!isExportFormat(format))
       throw new BadRequestException('format must be csv, xlsx or pdf');
+    assertCanViewReport(u.permissions, key);
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
     const r = await this.reports.run(key, branchId, from, to);
     const body = await renderReport(r, format, `${from} to ${to}`);

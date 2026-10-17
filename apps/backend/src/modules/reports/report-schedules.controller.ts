@@ -8,6 +8,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import { EmailService } from '../email/email.service';
+import { assertCanViewReport } from './reports.service';
 import { ReportSchedulesService } from './report-schedules.service';
 
 const createSchema = z.object({
@@ -39,6 +40,7 @@ export class ReportSchedulesController {
   @Post()
   @UsePipes(new ZodValidationPipe(createSchema))
   async create(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: z.infer<typeof createSchema>) {
+    assertCanViewReport(u.permissions, body.reportKey);
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
     return this.schedules.create(branchId, body);
   }

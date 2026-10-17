@@ -35,7 +35,7 @@ export class TablesController {
     private readonly branchAccess: BranchAccessService,
   ) {}
 
-  @Auth('tables.manage')
+  @Auth('tables.view')
   @Get('requests')
   async listRequests(
     @CurrentUser() user: SessionUser,
@@ -45,7 +45,7 @@ export class TablesController {
     return this.tablesService.listOpenRequests(branchId);
   }
 
-  @Auth('tables.manage')
+  @Auth('tables.view', 'orders.edit')
   @Patch('requests/:id/resolve')
   async resolveRequest(
     @CurrentUser() user: SessionUser,
@@ -56,7 +56,7 @@ export class TablesController {
     return this.tablesService.resolveRequest(branchId, id);
   }
 
-  @Auth()
+  @Auth('tables.view')
   @Get('floors')
   async listFloors(
     @CurrentUser() user: SessionUser,
@@ -140,7 +140,7 @@ export class TablesController {
     return this.tablesService.updateTable(branchId, id, body as never);
   }
 
-  @Auth('tables.manage')
+  @Auth('tables.view', 'orders.edit')
   @Patch(':id/status')
   async updateStatus(
     @CurrentUser() user: SessionUser,

@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useBranch } from "@/hooks/use-branch";
 import {
   useCategories,
@@ -36,6 +37,9 @@ import { cn } from "@/lib/utils";
 
 export default function MenuPage() {
   const { branchId } = useBranch();
+  const { data: me } = useCurrentUser();
+  // menu.view alone is read-only; every edit control needs menu.manage.
+  const canManage = hasPermission(me?.user, "menu.manage");
   const { data: categories, isLoading: categoriesLoading } = useCategories(branchId);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>(undefined);
   const { data: items, isLoading: itemsLoading } = useMenuItems(branchId, selectedCategoryId);
@@ -67,7 +71,7 @@ export default function MenuPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Menu</h1>
-          <p className="text-sm text-muted-foreground">Categories, items, and pricing</p>
+          <p className="text-sm text-muted-foreground">{canManage ? "Categories, items, and pricing" : "Categories, items, and pricing (view only)"}</p>
         </div>
       </div>
 
@@ -106,7 +110,8 @@ export default function MenuPage() {
                       </span>
                     )}
                   </span>
-                  <div className="flex shrink-0 gap-1">
+                  {canManage && (
+<div className="flex shrink-0 gap-1">
                     <Button variant="ghost" size="sm" className="h-10 gap-1.5 px-3" onClick={() => setEditingCategory(selectedCategory)}>
                       <Pencil className="h-4 w-4" /> Edit
                     </Button>
@@ -114,6 +119,7 @@ export default function MenuPage() {
                       <Trash2 className="h-4 w-4" /> Delete
                     </Button>
                   </div>
+)}
                 </div>
               )}
             </div>
@@ -151,10 +157,11 @@ export default function MenuPage() {
                       <span className="sr-only">Hidden from website</span>
                     </span>
                   )}
-                  <span className="shrink-0 text-xs text-muted-foreground group-hover:hidden">
+                  <span className={cn("shrink-0 text-xs text-muted-foreground", canManage && "group-hover:hidden")}>
                     {cat._count.items}
                   </span>
-                  <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+                  {canManage && (
+<div className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -174,19 +181,20 @@ export default function MenuPage() {
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
+)}
                 </div>
               ))}
             </div>
             </>
           )}
 
-          <AddCategoryDialog branchId={branchId} />
+          {canManage && <AddCategoryDialog branchId={branchId} />}
         </Card>
 
         <Card className="flex flex-col gap-4 p-4 sm:p-6">
           <div className="flex items-center justify-between">
             <h2 className="text-[18px] font-medium text-foreground">Items</h2>
-            <AddItemDialog branchId={branchId} categories={categories ?? []} />
+            {canManage && <AddItemDialog branchId={branchId} categories={categories ?? []} />}
           </div>
 
           {itemsLoading ? (
@@ -220,7 +228,8 @@ export default function MenuPage() {
                     </div>
                     <p className="shrink-0 text-sm font-semibold tabular-nums text-foreground">{formatCurrency(item.price)}</p>
                   </div>
-                  <div className="flex justify-end gap-1">
+                  {canManage && (
+<div className="flex justify-end gap-1">
                     <Button variant="outline" size="sm" className={cn("h-10 gap-1.5 px-3", item.isCombo && "text-primary")} onClick={() => setComboItem(item)}>
                       <Layers className="h-4 w-4" /> Combo
                     </Button>
@@ -243,6 +252,7 @@ export default function MenuPage() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
+)}
                 </li>
               ))}
             </ul>
@@ -294,7 +304,8 @@ export default function MenuPage() {
                       {Number(item.taxRatePercent)}%
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center justify-end gap-1">
+                      {canManage && (
+<div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
@@ -332,6 +343,7 @@ export default function MenuPage() {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
+)}
                     </TableCell>
                   </TableRow>
                 ))}

@@ -41,7 +41,7 @@ export class MenuController {
 
   // --- Categories ---------------------------------------------------------
 
-  @Auth('menu.manage')
+  @Auth('menu.view')
   @Get('categories')
   async listCategories(
     @CurrentUser() user: SessionUser,
@@ -115,7 +115,7 @@ export class MenuController {
 
   // --- Menu items -----------------------------------------------------------
 
-  @Auth()
+  @Auth('menu.view')
   @Get('items')
   async listItems(
     @CurrentUser() user: SessionUser,
@@ -126,7 +126,7 @@ export class MenuController {
     return this.menuService.listItems(branchId, categoryId);
   }
 
-  @Auth()
+  @Auth('menu.view')
   @Get('items/:id')
   async getItem(
     @CurrentUser() user: SessionUser,

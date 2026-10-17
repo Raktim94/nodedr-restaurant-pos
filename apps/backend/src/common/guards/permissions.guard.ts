@@ -5,7 +5,10 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { PermissionKey } from '@nodedr-restaurant/types';
+import {
+  permissionSatisfied,
+  type PermissionKey,
+} from '@nodedr-restaurant/types';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import type { AuthenticatedRequest } from '../types/authenticated-request';
 
@@ -30,7 +33,7 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const hasAll = required.every((permission) =>
-      user.permissions.includes(permission),
+      permissionSatisfied(user.permissions, permission),
     );
     if (!hasAll) {
       throw new ForbiddenException(

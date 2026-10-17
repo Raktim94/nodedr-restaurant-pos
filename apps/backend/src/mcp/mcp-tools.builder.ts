@@ -5,9 +5,10 @@ import {
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type {
-  ReservationStatusDto,
-  SessionUser,
+import {
+  permissionSatisfied,
+  type ReservationStatusDto,
+  type SessionUser,
 } from '@nodedr-restaurant/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { BranchAccessService } from '../common/services/branch-access.service';
@@ -19,7 +20,10 @@ import { DeliveryService } from '../modules/delivery/delivery.service';
 import { AccountingService } from '../modules/accounting/accounting.service';
 import { MarketingService } from '../modules/marketing/marketing.service';
 import { OperationsService } from '../modules/operations/operations.service';
-import { ReportsService } from '../modules/reports/reports.service';
+import {
+  assertCanViewReport,
+  ReportsService,
+} from '../modules/reports/reports.service';
 import { HrService } from '../modules/hr/hr.service';
 import { AttendanceService } from '../modules/attendance/attendance.service';
 import { TablesService } from '../modules/tables/tables.service';
@@ -249,7 +253,7 @@ export class McpToolsBuilder {
         return errorResult(new Error(`Unknown tool "${request.params.name}"`));
       if (
         tool.requiredPermission &&
-        !actor.permissions.includes(tool.requiredPermission)
+        !permissionSatisfied(actor.permissions, tool.requiredPermission)
       ) {
         return errorResult(
           new Error(`Missing permission: ${tool.requiredPermission}`),
@@ -297,6 +301,7 @@ export class McpToolsBuilder {
           required: ['branchId'],
         },
         readOnly: true,
+        requiredPermission: 'dashboard.sales.view',
         handler: async (args) => {
           const branchId = args.string('branchId');
           await this.assertBranch(actor, branchId);
@@ -710,6 +715,7 @@ export class McpToolsBuilder {
         requiredPermission: 'reports.access',
         handler: async (args) => {
           const branchId = args.string('branchId');
+          assertCanViewReport(actor.permissions, args.string('report'));
           await this.assertBranch(actor, branchId);
           return json(
             await this.reports.run(

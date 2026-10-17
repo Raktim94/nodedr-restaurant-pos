@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MoreHorizontal } from "lucide-react";
 import type { SessionUser } from "@nodedr-restaurant/types";
+import { hasPermission } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/context";
 import { useNavBadges } from "@/hooks/use-nav-badges";
@@ -28,7 +29,7 @@ export function MobileBottomNav({
   const badges = useNavBadges();
 
   const allowed = NAV_ITEMS.filter(
-    (item) => !item.permission || user?.permissions.includes(item.permission),
+    (item) => !item.permission || hasPermission(user, item.permission),
   );
   const primary = PRIMARY_HREFS.map((href) => allowed.find((i) => i.href === href))
     .filter((i): i is (typeof allowed)[number] => !!i)

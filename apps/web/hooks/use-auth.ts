@@ -1,6 +1,6 @@
 "use client";
 
-import type { LoginDto, RegisterDto, SessionUser } from "@nodedr-restaurant/types";
+import { permissionSatisfied, type LoginDto, type RegisterDto, type SessionUser } from "@nodedr-restaurant/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -43,5 +43,5 @@ export function useLogout() {
 }
 
 export function hasPermission(user: SessionUser | undefined, permission: string): boolean {
-  return user?.permissions.includes(permission) ?? false;
+  return user ? permissionSatisfied(user.permissions, permission) : false;
 }

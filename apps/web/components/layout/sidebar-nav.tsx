@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { SessionUser } from "@nodedr-restaurant/types";
+import { hasPermission } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/context";
 import { useNavBadges } from "@/hooks/use-nav-badges";
@@ -22,7 +23,7 @@ export function SidebarNav({
 
   return (
     <nav className="flex flex-col gap-1 px-3">
-      {NAV_ITEMS.filter((item) => !item.permission || user?.permissions.includes(item.permission)).map(
+      {NAV_ITEMS.filter((item) => !item.permission || hasPermission(user, item.permission)).map(
         (item) => {
           const isActive = pathname?.startsWith(item.href);
           const Icon = item.icon;

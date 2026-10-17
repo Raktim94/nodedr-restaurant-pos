@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
+import { permissionSatisfied } from '@nodedr-restaurant/types';
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { localDate, localMinuteAndDay, zonedRange } from '../../common/time';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -37,6 +42,44 @@ export const REPORT_CATALOG = [
   },
 ] as const;
 
+// Reports that expose revenue / sales totals. They need the dedicated
+// dashboard.sales.view permission on top of reports.access, so granting
+// reports.access (e.g. to an inventory manager) never leaks sales figures.
+export const SALES_REPORT_KEYS: ReadonlySet<string> = new Set([
+  'sales-daily',
+  'sales-by-item',
+  'sales-by-category',
+  'popular-items',
+  'slow-movers',
+  'payment-methods',
+  'discounts',
+  'tax',
+  'peak-hours',
+  'food-cost',
+  'customers',
+  'retention',
+  'staff-sales',
+]);
+
+export function canViewReport(
+  permissions: readonly string[],
+  key: string,
+): boolean {
+  return (
+    !SALES_REPORT_KEYS.has(key) ||
+    permissionSatisfied(permissions, 'dashboard.sales.view')
+  );
+}
+
+export function assertCanViewReport(
+  permissions: readonly string[],
+  key: string,
+): void {
+  if (!canViewReport(permissions, key)) {
+    throw new ForbiddenException('Missing permission: dashboard.sales.view');
+  }
+}
+
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -48,8 +91,8 @@ export class ReportsService {
     private readonly accounting: AccountingService,
   ) {}
 
-  catalog() {
-    return REPORT_CATALOG;
+  catalog(permissions: readonly string[]) {
+    return REPORT_CATALOG.filter((r) => canViewReport(permissions, r.key));
   }
 
   async run(

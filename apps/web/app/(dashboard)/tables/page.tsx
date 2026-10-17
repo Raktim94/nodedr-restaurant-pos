@@ -13,14 +13,19 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ResponsiveTabs } from "@/components/ui/nav-picker";
 import { TableRequestsBar } from "@/components/tables/table-requests-bar";
+import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useBranch } from "@/hooks/use-branch";
 import { useFloors, type RestaurantTable } from "@/hooks/use-tables";
 
 export default function TablesPage() {
   const { branchId } = useBranch();
+  const { data: me } = useCurrentUser();
+  // tables.view is read-only (status updates stay available); layout edits need tables.manage.
+  const canManage = hasPermission(me?.user, "tables.manage");
   const { data: floors, isLoading } = useFloors(branchId);
   const [activeFloorId, setActiveFloorId] = useState<string | undefined>(undefined);
-  const [editMode, setEditMode] = useState(false);
+  const [editModeRequested, setEditMode] = useState(false);
+  const editMode = canManage && editModeRequested;
   const [editorTable, setEditorTable] = useState<RestaurantTable | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   // Forces a fresh mount of TableEditorDialog every time it's opened, so its
@@ -85,7 +90,7 @@ export default function TablesPage() {
               : "Live floor status — tap a table to update it"}
           </p>
         </div>
-        {floors && floors.length > 0 && (
+        {canManage && floors && floors.length > 0 && (
           <Button variant={editMode ? "default" : "outline"} size="sm" className="h-11 w-full sm:h-8 sm:w-auto" onClick={() => setEditMode((v) => !v)}>
             <LayoutGrid className="h-4 w-4" />
             {editMode ? "Done editing" : "Edit floor plan"}
@@ -182,8 +187,8 @@ export default function TablesPage() {
       ) : (
         <Card className="flex flex-col items-center gap-3 p-16 text-center">
           <p className="text-sm font-medium text-foreground">No floors yet</p>
-          <p className="text-sm text-muted-foreground">Add your first floor to start building the layout.</p>
-          <AddFloorDialog branchId={branchId} />
+          <p className="text-sm text-muted-foreground">{canManage ? "Add your first floor to start building the layout." : "Ask a manager to set up the floor plan."}</p>
+          {canManage && <AddFloorDialog branchId={branchId} />}
         </Card>
       )}
 
