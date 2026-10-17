@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument -- supertest bodies are untyped by design */
 // Role-permission policy end-to-end against a REAL, migrated + seeded Postgres.
 //   PERMISSIONS_E2E=1 DATABASE_URL=... JWT_SECRET=x npm run test:e2e -- permissions
 // Creates one throw-away staff login per role under the seeded demo restaurant.
@@ -58,8 +57,10 @@ run('Role permissions (e2e)', () => {
       .send({ email: 'owner@demo.local', password: 'Password123!' })
       .expect(201);
     agents.OWNER = owner;
-    const roles = (await owner.get('/api/v1/users/roles').expect(200))
-      .body as { id: string; name: string }[];
+    const roles = (await owner.get('/api/v1/users/roles').expect(200)).body as {
+      id: string;
+      name: string;
+    }[];
     for (const name of ROLES) {
       const role = roles.find((r) => r.name === name)!;
       const email = `${name.toLowerCase()}-${tag}@demo.local`;
@@ -86,8 +87,12 @@ run('Role permissions (e2e)', () => {
     await app.close();
   });
 
-  const status = async (role: string, method: 'get' | 'post' | 'patch', path: string, body?: object) =>
-    (await agents[role][method](`/api/v1${path}`).send(body)).status;
+  const status = async (
+    role: string,
+    method: 'get' | 'post' | 'patch',
+    path: string,
+    body?: object,
+  ) => (await agents[role][method](`/api/v1${path}`).send(body)).status;
 
   it('only owner/admin/accountant/cashier can read dashboard revenue and trends', async () => {
     for (const role of ['OWNER', 'ACCOUNTANT', 'CASHIER']) {
@@ -109,11 +114,37 @@ run('Role permissions (e2e)', () => {
   });
 
   it('hides sales reports from roles without dashboard.sales.view', async () => {
-    expect(await status('INVENTORY_MANAGER', 'get', `/reports/sales-daily${q}&from=2026-01-01&to=2026-12-31`)).toBe(403);
-    expect(await status('RESTAURANT_MANAGER', 'get', `/reports/tax${q}&from=2026-01-01&to=2026-12-31`)).toBe(403);
-    expect(await status('INVENTORY_MANAGER', 'get', `/reports/waste${q}&from=2026-01-01&to=2026-12-31`)).toBe(200);
-    expect(await status('ACCOUNTANT', 'get', `/reports/sales-daily${q}&from=2026-01-01&to=2026-12-31`)).toBe(200);
-    const catalog = (await agents.INVENTORY_MANAGER.get('/api/v1/reports').expect(200)).body as { key: string }[];
+    expect(
+      await status(
+        'INVENTORY_MANAGER',
+        'get',
+        `/reports/sales-daily${q}&from=2026-01-01&to=2026-12-31`,
+      ),
+    ).toBe(403);
+    expect(
+      await status(
+        'RESTAURANT_MANAGER',
+        'get',
+        `/reports/tax${q}&from=2026-01-01&to=2026-12-31`,
+      ),
+    ).toBe(403);
+    expect(
+      await status(
+        'INVENTORY_MANAGER',
+        'get',
+        `/reports/waste${q}&from=2026-01-01&to=2026-12-31`,
+      ),
+    ).toBe(200);
+    expect(
+      await status(
+        'ACCOUNTANT',
+        'get',
+        `/reports/sales-daily${q}&from=2026-01-01&to=2026-12-31`,
+      ),
+    ).toBe(200);
+    const catalog = (
+      await agents.INVENTORY_MANAGER.get('/api/v1/reports').expect(200)
+    ).body as { key: string }[];
     expect(catalog.some((r) => r.key === 'sales-daily')).toBe(false);
     expect(catalog.some((r) => r.key === 'waste')).toBe(true);
   });
@@ -122,21 +153,42 @@ run('Role permissions (e2e)', () => {
     expect(await status('WAITER', 'get', `/menu/categories${q}`)).toBe(200);
     expect(await status('WAITER', 'get', `/menu/items${q}`)).toBe(200);
     expect(await status('WAITER', 'get', `/tables/floors${q}`)).toBe(200);
-    expect(await status('WAITER', 'post', `/menu/categories${q}`, { name: 'x' })).toBe(403);
-    expect(await status('WAITER', 'post', `/tables/floors${q}`, { name: 'x' })).toBe(403);
+    expect(
+      await status('WAITER', 'post', `/menu/categories${q}`, { name: 'x' }),
+    ).toBe(403);
+    expect(
+      await status('WAITER', 'post', `/tables/floors${q}`, { name: 'x' }),
+    ).toBe(403);
     expect(await status('WAITER', 'patch', `/tables/layout${q}`, [])).toBe(403);
   });
 
   it('waiter keeps operational access: create an order and update a table status', async () => {
-    const floors = (await agents.WAITER.get(`/api/v1/tables/floors${q}`).expect(200)).body as { tables: { id: string }[] }[];
+    const floors = (
+      await agents.WAITER.get(`/api/v1/tables/floors${q}`).expect(200)
+    ).body as { tables: { id: string }[] }[];
     const tableId = floors.flatMap((f) => f.tables)[0].id;
-    expect(await status('WAITER', 'patch', `/tables/${tableId}/status${q}`, { status: 'CLEANING' })).toBe(200);
-    expect(await status('WAITER', 'patch', `/tables/${tableId}/status${q}`, { status: 'AVAILABLE' })).toBe(200);
-    const items = (await agents.WAITER.get(`/api/v1/menu/items${q}`).expect(200)).body as { id: string }[];
+    expect(
+      await status('WAITER', 'patch', `/tables/${tableId}/status${q}`, {
+        status: 'CLEANING',
+      }),
+    ).toBe(200);
+    expect(
+      await status('WAITER', 'patch', `/tables/${tableId}/status${q}`, {
+        status: 'AVAILABLE',
+      }),
+    ).toBe(200);
+    const items = (
+      await agents.WAITER.get(`/api/v1/menu/items${q}`).expect(200)
+    ).body as { id: string }[];
     expect(
       await status('WAITER', 'post', `/orders${q}`, {
         type: 'TAKEAWAY',
-        items: [{ menuItemId: items.find((i) => i.id === 'demo-item-cola')!.id, quantity: 1 }],
+        items: [
+          {
+            menuItemId: items.find((i) => i.id === 'demo-item-cola')!.id,
+            quantity: 1,
+          },
+        ],
       }),
     ).toBe(201);
   });

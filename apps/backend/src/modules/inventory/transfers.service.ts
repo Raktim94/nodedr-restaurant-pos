@@ -54,11 +54,14 @@ export class TransfersService {
       }),
     ]);
     if (!from || !to)
-      throw new BadRequestException('Both branches must belong to this restaurant');
+      throw new BadRequestException(
+        'Both branches must belong to this restaurant',
+      );
     const source = await this.prisma.ingredient.findFirst({
       where: { id: dto.ingredientId, branchId: fromBranchId },
     });
-    if (!source) throw new BadRequestException('Ingredient not found in this branch');
+    if (!source)
+      throw new BadRequestException('Ingredient not found in this branch');
 
     return this.prisma.$transaction(async (tx) => {
       const portions = await this.stock.consumeStock(
@@ -72,7 +75,10 @@ export class TransfersService {
           userId,
         },
       );
-      const totalCost = portions.reduce((s, p) => s + p.quantity * p.unitCost, 0);
+      const totalCost = portions.reduce(
+        (s, p) => s + p.quantity * p.unitCost,
+        0,
+      );
       const unitCost = round4(totalCost / dto.quantity);
 
       // Same-named ingredient at the destination, created on first transfer.
@@ -95,7 +101,9 @@ export class TransfersService {
         );
 
       await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${dest.id} FOR UPDATE`;
-      const fresh = await tx.ingredient.findUniqueOrThrow({ where: { id: dest.id } });
+      const fresh = await tx.ingredient.findUniqueOrThrow({
+        where: { id: dest.id },
+      });
       const batch = await tx.stockBatch.create({
         data: {
           branchId: to.id,
@@ -125,7 +133,10 @@ export class TransfersService {
       );
       await tx.ingredient.update({
         where: { id: dest.id },
-        data: { currentStock: round3(Number(fresh.currentStock) + dto.quantity), costPerUnit: avg },
+        data: {
+          currentStock: round3(Number(fresh.currentStock) + dto.quantity),
+          costPerUnit: avg,
+        },
       });
 
       return tx.stockTransfer.create({
