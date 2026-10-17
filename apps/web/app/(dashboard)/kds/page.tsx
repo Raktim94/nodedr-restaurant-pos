@@ -1,13 +1,14 @@
 "use client";
 
 import type { KotStatusDto } from "@nodedr-restaurant/types";
-import { useEffect, useState } from "react";
 import { PerformanceWidget } from "@/components/kds/performance-widget";
 import { TicketCard } from "@/components/kds/ticket-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
 import { useKdsSound } from "@/hooks/use-kds-sound";
 import { useKdsStations, useKdsTickets, type KotTicket } from "@/hooks/use-kds";
+import { useKdsStationPreference } from "@/hooks/use-kds-station";
+import { resolveStation } from "@/lib/kds-station";
 import { cn } from "@/lib/utils";
 
 const COLUMNS: { status: KotStatusDto; label: string }[] = [
@@ -17,33 +18,15 @@ const COLUMNS: { status: KotStatusDto; label: string }[] = [
   { status: "READY", label: "Ready" },
 ];
 
-// The station this screen is pinned to is remembered per device + branch, so a
-// kitchen tablet reopens on its own station after a reload or restart.
-const stationKey = (branchId: string | null) => `kds-station:${branchId}`;
-
 export default function KdsPage() {
   const { branchId } = useBranch();
-  const [stationId, setStationId] = useState("");
-  const { data: stations } = useKdsStations(branchId);
-  useEffect(() => {
-    try {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setStationId(localStorage.getItem(stationKey(branchId)) ?? "");
-    } catch {
-      /* storage blocked: stay on "all stations" */
-    }
-  }, [branchId]);
-  // A saved station that was since deleted must not leave the screen empty.
-  const activeStation = stations?.some((s) => s.id === stationId) ? stationId : "";
-  const chooseStation = (id: string) => {
-    setStationId(id);
-    try {
-      localStorage.setItem(stationKey(branchId), id);
-    } catch {
-      /* storage blocked: choice lasts until reload */
-    }
-  };
-  const { data: tickets, isLoading } = useKdsTickets(branchId, activeStation);
+  const { data: stations, isError: stationsFailed } = useKdsStations(branchId);
+  // The station is a per-device choice (each kitchen screen shows its own), so
+  // it is remembered in this browser per branch - see lib/kds-station.ts.
+  const pref = useKdsStationPreference(branchId);
+  const { active: activeStation, stale, ready } = resolveStation(pref.saved, stations, stationsFailed);
+  const canFetch = pref.ready && ready;
+  const { data: tickets, isLoading } = useKdsTickets(branchId, activeStation, canFetch);
   useKdsSound(branchId);
 
   const byStatus = (status: KotStatusDto): KotTicket[] =>
@@ -65,7 +48,7 @@ export default function KdsPage() {
               key={s.id || "all"}
               type="button"
               aria-pressed={s.id === activeStation}
-              onClick={() => chooseStation(s.id)}
+              onClick={() => pref.choose(s.id)}
               className={cn(
                 "min-h-11 rounded-full border px-4 text-sm font-medium transition-colors",
                 s.id === activeStation
@@ -77,6 +60,17 @@ export default function KdsPage() {
             </button>
           ))}
         </div>
+      )}
+
+      {stale && (
+        <p role="status" className="text-xs text-warning">
+          The station saved on this screen no longer exists, so all stations are shown. Pick a station to pin it.
+        </p>
+      )}
+      {pref.saveFailed && (
+        <p role="alert" className="text-xs text-destructive">
+          This browser blocked saving the choice, so it will reset when the page reloads.
+        </p>
       )}
 
       <PerformanceWidget branchId={branchId} />
@@ -91,14 +85,14 @@ export default function KdsPage() {
               </span>
             </div>
             <div className="flex flex-1 flex-col gap-3 overflow-y-auto pb-2">
-              {isLoading &&
+              {(isLoading || !canFetch) &&
                 Array.from({ length: 2 }).map((_, i) => (
                   <Skeleton key={i} className="h-32 rounded-2xl" />
                 ))}
               {byStatus(col.status).map((ticket) => (
                 <TicketCard key={ticket.id} ticket={ticket} branchId={branchId} />
               ))}
-              {!isLoading && byStatus(col.status).length === 0 && (
+              {canFetch && !isLoading && byStatus(col.status).length === 0 && (
                 <p className="py-6 text-center text-xs text-muted-foreground">No tickets</p>
               )}
             </div>

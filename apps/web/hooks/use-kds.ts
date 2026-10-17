@@ -41,14 +41,14 @@ export function useKdsStations(branchId: string | null) {
 }
 
 /** stationId "" = every station (the default, and what this screen always did). */
-export function useKdsTickets(branchId: string | null, stationId = "") {
+export function useKdsTickets(branchId: string | null, stationId = "", enabled = true) {
   return useQuery({
     queryKey: ["kds", "tickets", branchId, stationId],
     queryFn: () =>
       api.get<KotTicket[]>(
         `/kds/tickets?branchId=${branchId}${stationId ? `&stationId=${encodeURIComponent(stationId)}` : ""}`,
       ),
-    enabled: !!branchId,
+    enabled: !!branchId && enabled,
     refetchInterval: 20_000,
   });
 }
