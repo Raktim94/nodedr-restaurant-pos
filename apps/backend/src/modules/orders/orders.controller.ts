@@ -27,10 +27,14 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import {
+  buildKotEscPosJob,
   buildOpenDrawer,
-  buildReceiptEscPos,
+  buildReceiptEscPosJob,
   buildTestSlip,
+  resolveProfile,
+  type EscposKotOrder,
   type EscposReceiptOrder,
+  type PrintResult,
 } from './escpos-receipt';
 import {
   PrinterNotFoundError,
@@ -43,6 +47,36 @@ import { buildKotHtml } from './kot.html';
 import { buildReceiptHtml } from './receipt.html';
 
 type ReceiptData = Awaited<ReturnType<OrdersService['getReceiptData']>>;
+
+function branchPrinterProfile(branch: {
+  printerPaperWidthMm: number;
+  printerCodepage: string;
+  printerColumns: number | null;
+}) {
+  return resolveProfile({
+    paperWidthMm: branch.printerPaperWidthMm,
+    codepage: branch.printerCodepage,
+    columns: branch.printerColumns,
+  });
+}
+
+function toKotOrder(order: ReceiptData): EscposKotOrder {
+  return {
+    orderNumber: order.orderNumber,
+    type: order.type,
+    createdAt: order.createdAt,
+    table: order.table
+      ? { label: order.table.name ?? `#${order.table.number}` }
+      : null,
+    customer: order.customer ? { name: order.customer.name ?? 'Guest' } : null,
+    items: order.items.map((item) => ({
+      nameSnapshot: item.nameSnapshot,
+      quantity: item.quantity,
+      kitchenNote: item.kitchenNote,
+      modifiers: item.modifiers.map((m) => ({ nameSnapshot: m.nameSnapshot })),
+    })),
+  };
+}
 
 function toEscposOrder(order: ReceiptData): EscposReceiptOrder {
   return {
@@ -275,25 +309,7 @@ export class OrdersController {
     const order = await this.ordersService.getReceiptData(branchId, id);
     const html = buildKotHtml({
       branchName: order.branch.name,
-      order: {
-        orderNumber: order.orderNumber,
-        type: order.type,
-        createdAt: order.createdAt,
-        table: order.table
-          ? { label: order.table.name ?? `#${order.table.number}` }
-          : null,
-        customer: order.customer
-          ? { name: order.customer.name ?? 'Guest' }
-          : null,
-        items: order.items.map((item) => ({
-          nameSnapshot: item.nameSnapshot,
-          quantity: item.quantity,
-          kitchenNote: item.kitchenNote,
-          modifiers: item.modifiers.map((m) => ({
-            nameSnapshot: m.nameSnapshot,
-          })),
-        })),
-      },
+      order: toKotOrder(order),
     });
     res.type('html').send(html);
   }
@@ -325,10 +341,18 @@ export class OrdersController {
 
   @Auth('bills.print')
   @Post('print/test')
-  async printTest() {
+  async printTest(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId?: string,
+  ) {
+    let profile = resolveProfile();
+    if (branchId) {
+      await this.branchAccess.assertAccess(user.restaurantId, branchId);
+      profile = await this.ordersService.printerProfile(branchId);
+    }
     try {
-      await sendRaw(buildTestSlip());
-      return { ok: true };
+      await sendRaw(buildTestSlip(profile));
+      return { ok: true, profile };
     } catch (err) {
       if (err instanceof PrinterNotFoundError) {
         throw new ServiceUnavailableException(err.message);
@@ -352,6 +376,8 @@ export class OrdersController {
     }
   }
 
+  // Bill on the thermal printer: native ESC/POS text, branch paper width and
+  // code page (`width` = 58|80 overrides the branch setting for this job).
   @Auth('bills.print')
   @Post(':id/print/usb')
   async printUsb(
@@ -363,7 +389,15 @@ export class OrdersController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     const order = await this.ordersService.getReceiptData(branchId, id);
-    const buffer = buildReceiptEscPos({
+    const stored = branchPrinterProfile(order.branch);
+    const profile =
+      width === '58' || width === '80'
+        ? resolveProfile({
+            paperWidthMm: Number(width),
+            codepage: stored.codepage,
+          })
+        : stored;
+    const job = buildReceiptEscPosJob({
       restaurantName: order.branch.restaurant.name,
       currency: order.branch.restaurant.currency,
       branch: {
@@ -377,12 +411,40 @@ export class OrdersController {
         taxId: order.branch.taxId,
       },
       order: toEscposOrder(order),
-      width: width === '58' ? 32 : 42,
+      profile,
       openDrawer: drawer === 'true',
     });
+    return this.sendJob(job);
+  }
+
+  // Kitchen ticket on the thermal printer. Same data as the browser KOT, but
+  // printed as native text; no prices or taxes.
+  @Auth('orders.create')
+  @Post(':id/print/kot/usb')
+  async printKotUsb(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const order = await this.ordersService.getReceiptData(branchId, id);
+    const job = buildKotEscPosJob({
+      branchName: order.branch.name,
+      order: toKotOrder(order),
+      profile: branchPrinterProfile(order.branch),
+    });
+    return this.sendJob(job);
+  }
+
+  private async sendJob(job: PrintResult) {
     try {
-      await sendRaw(buffer);
-      return { ok: true };
+      await sendRaw(job.buffer);
+      return {
+        ok: true,
+        // Non-empty when the code page could not represent some characters;
+        // the ticket says so on paper and the UI offers the browser fallback.
+        unsupportedChars: job.unsupportedChars,
+      };
     } catch (err) {
       if (err instanceof PrinterNotFoundError) {
         throw new ServiceUnavailableException(err.message);

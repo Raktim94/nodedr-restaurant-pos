@@ -1,19 +1,13 @@
-// Builds a raw ESC/POS byte buffer for direct-USB thermal printing — ported
-// from nodedr-pos's backend/src/lib/escposReceipt.js and adapted to this
-// app's Order/OrderItem data shape (see receipt.html.ts for the same data
-// rendered as HTML instead). Fixed-width monospace grid at a known column
-// count (42 for 80mm paper, 32 for 58mm) so plain string padding lines up
-// exactly.
-//
-// Unicode limitation (unlike receipt.html.ts, which is full Unicode):
-// generic ESC/POS thermal printers default to a single-byte codepage
-// (usually CP437/PC850), not UTF-8. `toPrinterText` normalizes accented
-// Latin letters down to their base letter and replaces anything else with
-// "?" — a real, documented trade-off of the USB path specifically.
+// Builds raw ESC/POS jobs for direct-USB thermal printing from this app's
+// Order data (receipt.html.ts / kot.html.ts render the same data as HTML for
+// the browser-print fallback). Everything is native printer text: items,
+// quantities, modifiers, notes and totals use the printer's own fonts with
+// ESC/POS alignment, bold and size commands, never a bitmap. Layout, wrapping,
+// code page handling and the end-of-job reset live in escpos/encoder.ts.
 //
 // Multi-region tax (2026-09-27): same regime/mode-aware labeling as
-// receipt.html.ts — see that file's note. order.subtotal/taxAmount/
-// totalAmount are unchanged here too; only which rows get printed differs.
+// receipt.html.ts. order.subtotal/taxAmount/totalAmount are unchanged here
+// too; only which rows get printed differs.
 
 import {
   resolveTaxIdLabel,
@@ -22,86 +16,36 @@ import {
   type TaxMode,
   type TaxRegime,
 } from '@nodedr-restaurant/types';
+import {
+  CMD,
+  EscposWriter,
+  resolveProfile,
+  type PrinterProfile,
+} from './escpos/encoder';
 
-const ESC = 0x1b;
-const GS = 0x1d;
+export { resolveProfile, type PrinterProfile } from './escpos/encoder';
 
-const CMD = {
-  init: Buffer.from([ESC, 0x40]),
-  codepagePc437: Buffer.from([ESC, 0x74, 0x00]),
-  alignLeft: Buffer.from([ESC, 0x61, 0x00]),
-  boldOn: Buffer.from([ESC, 0x45, 0x01]),
-  boldOff: Buffer.from([ESC, 0x45, 0x00]),
-  // ESC p m t1 t2 — pulse pin 2 for 50 ms on / 500 ms off, the standard
-  // "open cash drawer" kick for drawers wired to the printer's RJ11 port.
-  openDrawer: Buffer.from([ESC, 0x70, 0x00, 0x19, 0xfa]),
-  feedAndCut: Buffer.concat([
-    Buffer.from('\n\n\n\n'),
-    Buffer.from([GS, 0x56, 0x00]),
-  ]),
+// Preferred symbol first; used only when the selected code page can print it,
+// otherwise the ISO-style code after it (never a '?').
+const CURRENCY_SYMBOLS: Record<string, [string, string]> = {
+  INR: ['Rs.', 'Rs.'],
+  USD: ['$', 'USD '],
+  EUR: ['\u20ac', 'EUR '],
+  GBP: ['\u00a3', 'GBP '],
 };
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  INR: 'Rs.',
-  USD: '$',
-  EUR: 'EUR',
-  GBP: 'GBP',
-};
-
-function toPrinterText(value: string | null | undefined): string {
-  return String(value ?? '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\x20-\x7e]/g, '?');
+function currencySymbol(w: EscposWriter, currency: string): string {
+  const [preferred, fallback] = CURRENCY_SYMBOLS[currency] ?? [
+    `${currency} `,
+    `${currency} `,
+  ];
+  return [...preferred].every((c) => w.has(c)) ? preferred : fallback;
 }
 
-function center(s: string, width: number): string {
-  s = s.slice(0, width);
-  const total = width - s.length;
-  const left = Math.floor(total / 2);
-  return ' '.repeat(left) + s + ' '.repeat(total - left);
-}
-
-function row(label: string, value: string, width: number): string {
-  label = String(label);
-  value = String(value);
-  const space = width - label.length - value.length;
-  if (space < 1) {
-    label = label.slice(0, Math.max(0, width - value.length - 1));
-    return (
-      label +
-      ' '.repeat(Math.max(0, width - label.length - value.length)) +
-      value
-    );
-  }
-  return label + ' '.repeat(space) + value;
-}
-
-function rule(width: number): string {
-  return '-'.repeat(width);
-}
-
-function wrap(text: string, width: number): string[] {
-  const lines: string[] = [];
-  for (const paragraph of toPrinterText(text).split('\n')) {
-    let line = '';
-    for (const word of paragraph.split(' ')) {
-      let w = word;
-      while (w.length > width) {
-        lines.push(w.slice(0, width));
-        w = w.slice(width);
-      }
-      const candidate = line ? `${line} ${w}` : w;
-      if (candidate.length > width) {
-        if (line) lines.push(line);
-        line = w;
-      } else {
-        line = candidate;
-      }
-    }
-    lines.push(line);
-  }
-  return lines.length > 0 ? lines : [''];
+export interface PrintResult {
+  buffer: Buffer;
+  /** Characters printed as '?' because the code page cannot represent them. */
+  unsupportedChars: string[];
 }
 
 export interface EscposReceiptOrder {
@@ -128,13 +72,25 @@ export interface EscposReceiptOrder {
   payments: { method: string; amount: number }[];
 }
 
-export function buildReceiptEscPos({
+interface JobFormat {
+  profile?: PrinterProfile;
+  /** IANA time zone / locale for the printed timestamp (server default if omitted). */
+  timeZone?: string;
+  locale?: string;
+}
+
+const stamp = (d: Date | string, f: JobFormat) =>
+  new Date(d).toLocaleString(f.locale, { timeZone: f.timeZone });
+
+export function buildReceiptEscPosJob({
   restaurantName,
   branch,
   currency,
   order,
-  width = 42,
   openDrawer = false,
+  profile = resolveProfile(),
+  timeZone,
+  locale,
 }: {
   restaurantName: string;
   branch: {
@@ -149,123 +105,169 @@ export function buildReceiptEscPos({
   };
   currency: string;
   order: EscposReceiptOrder;
-  width?: number;
   /** Also kick the cash drawer (for cash payments). */
   openDrawer?: boolean;
-}): Buffer {
-  const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
+} & JobFormat): PrintResult {
+  const w = new EscposWriter(profile);
+  const sym = currencySymbol(w, currency);
   const money = (n: number) => `${sym}${Number(n).toFixed(2)}`;
-  const date = new Date(order.createdAt);
   const taxLabel = resolveTaxLabel(branch.taxRegime, branch.taxLabel);
   const taxIdValue =
     branch.taxId ||
     (branch.taxRegime === 'INDIA_GST' ? branch.gstNumber : null);
   const taxIdLabel = resolveTaxIdLabel(branch.taxRegime);
 
-  const lines: { text: string; bold?: boolean }[] = [];
-  const push = (s = '', opts: { bold?: boolean } = {}) =>
-    lines.push({ text: s, ...opts });
-
-  push(center(toPrinterText(restaurantName), width), { bold: true });
-  push(center(toPrinterText(branch.name), width));
-  if (branch.address)
-    for (const l of wrap(branch.address, width)) push(center(l, width));
-  if (branch.phone) push(center(toPrinterText(`Ph: ${branch.phone}`), width));
-  if (taxIdValue)
-    push(center(toPrinterText(`${taxIdLabel}: ${taxIdValue}`), width));
-  push(rule(width));
-  push(toPrinterText(date.toLocaleString()));
-  push(
-    toPrinterText(
-      `Order: #${order.orderNumber} - ${order.type.replace('_', ' ')}`,
-    ),
-  );
-  if (order.table) push(toPrinterText(`Table: ${order.table.label}`));
-  if (order.customer) {
-    const cust = `Guest: ${order.customer.name}${order.customer.phone ? ` - ${order.customer.phone}` : ''}`;
-    for (const l of wrap(cust, width)) push(l);
+  w.text(restaurantName, { align: 'center', bold: true, size: 'big' });
+  w.text(branch.name, { align: 'center' });
+  if (branch.address) w.text(branch.address, { align: 'center' });
+  if (branch.phone) w.text(`Ph: ${branch.phone}`, { align: 'center' });
+  if (taxIdValue) {
+    w.text(`${taxIdLabel}: ${taxIdValue}`, { align: 'center' });
   }
-  push(rule(width));
+  w.rule();
+  w.text(stamp(order.createdAt, { timeZone, locale }));
+  w.text(`Order: #${order.orderNumber} - ${order.type.replace('_', ' ')}`);
+  if (order.table) w.text(`Table: ${order.table.label}`);
+  if (order.customer) {
+    w.text(
+      `Guest: ${order.customer.name}${order.customer.phone ? ` - ${order.customer.phone}` : ''}`,
+    );
+  }
+  w.rule();
 
   for (const item of order.items) {
-    for (const l of wrap(item.nameSnapshot, width)) push(l);
-    for (const mod of item.modifiers) {
-      for (const l of wrap(`+ ${mod.nameSnapshot}`, width)) push(`  ${l}`);
-    }
-    push(
-      row(
-        `  ${item.quantity} x ${money(item.unitPriceSnapshot)}`,
-        money(item.lineTotal),
-        width,
-      ),
+    w.text(item.nameSnapshot, { bold: true });
+    for (const mod of item.modifiers) w.text(`  + ${mod.nameSnapshot}`);
+    w.row(
+      `${item.quantity} x ${money(item.unitPriceSnapshot)}`,
+      money(item.lineTotal),
+      { indent: 2 },
     );
     if (Number(item.taxRateSnapshot) > 0) {
-      push(`  ${taxLabel} @ ${item.taxRateSnapshot}%`);
+      w.text(`  ${taxLabel} @ ${item.taxRateSnapshot}%`);
     }
   }
-  push(rule(width));
+  w.rule();
 
   if (branch.taxMode === 'EXCLUSIVE') {
-    push(row('Subtotal', money(order.subtotal - order.taxAmount), width));
+    w.row('Subtotal', money(order.subtotal - order.taxAmount));
     if (order.discountAmount > 0) {
-      push(row('Discount', `-${money(order.discountAmount)}`, width));
+      w.row('Discount', `-${money(order.discountAmount)}`);
     }
-    if (order.taxAmount > 0) {
-      push(row(taxLabel, money(order.taxAmount), width));
-    }
+    if (order.taxAmount > 0) w.row(taxLabel, money(order.taxAmount));
   } else {
-    push(row('Subtotal', money(order.subtotal), width));
+    w.row('Subtotal', money(order.subtotal));
     if (order.discountAmount > 0) {
-      push(row('Discount', `-${money(order.discountAmount)}`, width));
+      w.row('Discount', `-${money(order.discountAmount)}`);
     }
     if (order.taxAmount > 0) {
-      // Prices are tax-inclusive — this is a breakup of tax already inside
+      // Prices are tax-inclusive - this is a breakup of tax already inside
       // the total above, not an additional charge (see ARCHITECTURE.md).
       if (TAX_REGIME_PRESETS[branch.taxRegime].splitCgstSgst) {
         const half =
           Math.round((order.taxAmount / 2 + Number.EPSILON) * 100) / 100;
-        push(row('CGST (incl.)', money(half), width));
-        push(row('SGST (incl.)', money(order.taxAmount - half), width));
+        w.row('CGST (incl.)', money(half));
+        w.row('SGST (incl.)', money(order.taxAmount - half));
       } else {
-        push(row(`${taxLabel} (incl.)`, money(order.taxAmount), width));
+        w.row(`${taxLabel} (incl.)`, money(order.taxAmount));
       }
     }
   }
   if (order.loyaltyDiscountAmount > 0) {
-    push(
-      row(
-        `Loyalty (${order.loyaltyPointsRedeemed} pts)`,
-        `-${money(order.loyaltyDiscountAmount)}`,
-        width,
-      ),
+    w.row(
+      `Loyalty (${order.loyaltyPointsRedeemed} pts)`,
+      `-${money(order.loyaltyDiscountAmount)}`,
     );
   }
-  if (order.tipAmount > 0) {
-    push(row('Tip', money(order.tipAmount), width));
-  }
-  push(rule(width));
-  push(row('GRAND TOTAL', money(order.totalAmount), width), { bold: true });
+  if (order.tipAmount > 0) w.row('Tip', money(order.tipAmount));
+  w.rule();
+  w.row('TOTAL', money(order.totalAmount), { bold: true, size: 'tall' });
 
   if (order.payments.length > 0) {
-    push(rule(width));
+    w.rule();
     for (const p of order.payments) {
-      push(row(`Paid (${p.method})`, money(p.amount), width));
+      w.row(`Paid (${p.method})`, money(p.amount));
     }
   }
 
-  push(rule(width));
-  push(center('Thank you! Visit again.', width));
+  w.rule();
+  w.text('Thank you! Visit again.', { align: 'center' });
+  return {
+    buffer: w.finish({ drawer: openDrawer }),
+    unsupportedChars: [...w.unsupported],
+  };
+}
 
-  const segments = [CMD.init, CMD.codepagePc437, CMD.alignLeft];
-  for (const { text, bold } of lines) {
-    const lineBuffer = Buffer.from(`${text}\n`, 'latin1');
-    segments.push(
-      bold ? Buffer.concat([CMD.boldOn, lineBuffer, CMD.boldOff]) : lineBuffer,
-    );
+export interface EscposKotOrder {
+  orderNumber: string;
+  type: string;
+  createdAt: Date;
+  table: { label: string } | null;
+  customer: { name: string } | null;
+  items: {
+    nameSnapshot: string;
+    quantity: number;
+    kitchenNote: string | null;
+    modifiers: { nameSnapshot: string }[];
+  }[];
+}
+
+/** Kitchen ticket: quantities, modifiers and notes only - no prices or tax. */
+export function buildKotEscPosJob({
+  branchName,
+  order,
+  profile = resolveProfile(),
+  timeZone,
+  locale,
+}: {
+  branchName: string;
+  order: EscposKotOrder;
+} & JobFormat): PrintResult {
+  const w = new EscposWriter(profile);
+  w.text('KITCHEN ORDER', { align: 'center', bold: true, size: 'tall' });
+  w.text(branchName, { align: 'center' });
+  w.rule();
+  w.text(`#${order.orderNumber}`, { bold: true, size: 'big' });
+  w.text(
+    `${order.type.replace('_', ' ')}${order.table ? ` - Table ${order.table.label}` : ''}`,
+    { bold: true, size: 'tall' },
+  );
+  if (order.customer) w.text(`Guest: ${order.customer.name}`);
+  w.text(stamp(order.createdAt, { timeZone, locale }));
+  w.rule('=');
+
+  let units = 0;
+  for (const item of order.items) {
+    units += item.quantity;
+    w.text(`${item.quantity} x ${item.nameSnapshot}`, {
+      bold: true,
+      size: 'tall',
+    });
+    for (const mod of item.modifiers) w.text(`    + ${mod.nameSnapshot}`);
+    if (item.kitchenNote) {
+      w.text(`    NOTE: ${item.kitchenNote}`, { bold: true });
+    }
+    w.blank();
   }
-  segments.push(CMD.feedAndCut);
-  if (openDrawer) segments.push(CMD.openDrawer);
-  return Buffer.concat(segments);
+  w.rule('=');
+  w.text(`${order.items.length} line(s), ${units} item(s)`);
+  return {
+    buffer: w.finish(),
+    unsupportedChars: [...w.unsupported],
+  };
+}
+
+/** Back-compatible wrapper: just the bytes. */
+export function buildReceiptEscPos(
+  args: Parameters<typeof buildReceiptEscPosJob>[0],
+): Buffer {
+  return buildReceiptEscPosJob(args).buffer;
+}
+
+export function buildKotEscPos(
+  args: Parameters<typeof buildKotEscPosJob>[0],
+): Buffer {
+  return buildKotEscPosJob(args).buffer;
 }
 
 /** Just the drawer pulse, for a "No sale" / test open. */
@@ -273,17 +275,29 @@ export function buildOpenDrawer(): Buffer {
   return Buffer.concat([CMD.init, CMD.openDrawer]);
 }
 
-export function buildTestSlip(): Buffer {
-  return Buffer.concat([
-    Buffer.from([ESC, 0x40]),
-    Buffer.from([ESC, 0x61, 0x01]),
-    Buffer.from([ESC, 0x45, 0x01]),
-    Buffer.from('Nodedr OrderRestro\n'),
-    Buffer.from([ESC, 0x45, 0x00]),
-    Buffer.from('Printer test OK\n'),
-    Buffer.from([ESC, 0x61, 0x00]),
-    Buffer.from(`${new Date().toLocaleString()}\n`),
-    Buffer.from('\n\n\n\n'),
-    Buffer.from([GS, 0x56, 0x00]),
-  ]);
+/**
+ * Test slip for a new printer: column ruler (checks the paper width setting),
+ * accented / currency sample (checks the code page) and the size/bold styles.
+ * If the sample line shows wrong glyphs, change the code page in settings.
+ */
+export function buildTestSlip(
+  profile: PrinterProfile = resolveProfile(),
+): Buffer {
+  const w = new EscposWriter(profile);
+  w.text('Nodedr OrderRestro', { align: 'center', bold: true, size: 'big' });
+  w.text('Printer test OK', { align: 'center' });
+  w.rule();
+  const ruler = '1234567890'.repeat(7).slice(0, profile.columns);
+  w.text(ruler);
+  w.text(
+    `${profile.paperWidthMm} mm - ${profile.columns} columns - ${profile.codepage}`,
+  );
+  w.text(
+    'Accents: \u00e1\u00e9\u00ed\u00f3\u00fa \u00f1 \u00fc \u00bf? \u00a1! \u20ac \u00a3',
+  );
+  w.text('Bold', { bold: true });
+  w.text('Tall text', { size: 'tall' });
+  w.text('Wide text', { size: 'wide' });
+  w.text(stamp(new Date(), {}));
+  return w.finish();
 }

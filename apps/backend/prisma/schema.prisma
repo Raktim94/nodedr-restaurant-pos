@@ -132,6 +132,12 @@ model Branch {
   kioskDineInEnabled   Boolean @default(true)
   kioskTakeawayEnabled Boolean @default(true)
 
+  // Direct ESC/POS thermal printing. Columns null = derived from paper width
+  // (58 mm -> 32, 80 mm -> 48); set it for printers with a narrower head.
+  printerPaperWidthMm Int     @default(80)
+  printerCodepage     String  @default("CP858")
+  printerColumns      Int?
+
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

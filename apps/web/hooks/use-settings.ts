@@ -38,6 +38,9 @@ export interface BranchSettings {
   kioskToken: string | null;
   kioskDineInEnabled: boolean;
   kioskTakeawayEnabled: boolean;
+  printerPaperWidthMm: 58 | 80;
+  printerCodepage: "CP437" | "CP850" | "CP858" | "CP1252";
+  printerColumns: number | null;
 }
 
 export function useSettings(branchId: string | null) {

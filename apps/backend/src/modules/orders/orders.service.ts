@@ -21,6 +21,7 @@ import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { MarketingService } from '../marketing/marketing.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
+import { resolveProfile } from './escpos/encoder';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import {
@@ -67,6 +68,22 @@ export class OrdersService {
     });
     if (!order) throw new NotFoundException('Order not found');
     return order;
+  }
+
+  async printerProfile(branchId: string) {
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: {
+        printerPaperWidthMm: true,
+        printerCodepage: true,
+        printerColumns: true,
+      },
+    });
+    return resolveProfile({
+      paperWidthMm: branch?.printerPaperWidthMm,
+      codepage: branch?.printerCodepage,
+      columns: branch?.printerColumns,
+    });
   }
 
   async getReceiptData(branchId: string, id: string) {

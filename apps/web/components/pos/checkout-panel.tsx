@@ -14,7 +14,7 @@ import { CustomerPicker } from "@/components/pos/customer-picker";
 import type { Customer } from "@/hooks/use-customers";
 import { lookupGiftCard } from "@/hooks/use-gift-cards";
 import { useCancelOrder, useCheckoutOrder, type CreatedOrder } from "@/hooks/use-orders";
-import { usePrintOrderUsb } from "@/hooks/use-print";
+import { usePrintKotUsb, usePrintOrderUsb, type PrintJobResult } from "@/hooks/use-print";
 import { useSettings } from "@/hooks/use-settings";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
@@ -52,6 +52,11 @@ export function CheckoutPanel({
   const checkout = useCheckoutOrder(branchId);
   const cancelOrder = useCancelOrder(branchId);
   const printUsb = usePrintOrderUsb(branchId);
+  const printKotUsb = usePrintKotUsb(branchId);
+  const onPrinted = (r: PrintJobResult) =>
+    r.unsupportedChars?.length
+      ? toast.warning(`Sent, but ${r.unsupportedChars.join(" ")} cannot be printed by this printer's code page. Use browser print for the full text.`)
+      : toast.success("Sent to the thermal printer");
   const [completed, setCompleted] = useState<CreatedOrder | null>(null);
   const { data: settings } = useSettings(branchId);
   const loyaltyPointValue = Number(settings?.restaurant.loyaltyPointValue ?? 1);
@@ -185,20 +190,20 @@ export function CheckoutPanel({
             variant="outline"
             onClick={() => branchId && openReceiptPrint(completed.id, branchId)}
           >
-            Print receipt
+            Print / PDF (browser)
           </Button>
           <Button
             variant="outline"
             disabled={printUsb.isPending}
             onClick={() =>
               printUsb.mutate({ orderId: completed.id, drawer: completed.payments?.some((p) => p.method === "CASH") }, {
-                onSuccess: () => toast.success("Sent to the USB printer"),
+                onSuccess: onPrinted,
                 onError: (err) =>
-                  toast.error(err instanceof ApiError ? err.message : "Could not print to USB printer"),
+                  toast.error(err instanceof ApiError ? err.message : "Could not print to the thermal printer"),
               })
             }
           >
-            {printUsb.isPending ? "Printing…" : "Print via USB"}
+            {printUsb.isPending ? "Printing…" : "Thermal print"}
           </Button>
           <Button onClick={onDone}>New order</Button>
         </div>
@@ -246,6 +251,7 @@ export function CheckoutPanel({
       <div>
         <div className="flex items-start justify-between gap-3">
           <p className="text-sm text-muted-foreground">Order #{order.orderNumber} sent to kitchen</p>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
           <Button
             type="button"
             variant="outline"
@@ -254,8 +260,26 @@ export function CheckoutPanel({
             onClick={() => branchId && openKotPrint(order.id, branchId)}
           >
             <Printer className="h-4 w-4" />
-            Print KOT
+            KOT (browser)
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={printKotUsb.isPending}
+            onClick={() =>
+              printKotUsb.mutate(order.id, {
+                onSuccess: onPrinted,
+                onError: (err) =>
+                  toast.error(err instanceof ApiError ? err.message : "Could not print to the thermal printer"),
+              })
+            }
+          >
+            <Printer className="h-4 w-4" />
+            {printKotUsb.isPending ? "Printing…" : "KOT (thermal)"}
+          </Button>
+          </div>
         </div>
         <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
           {formatCurrency(order.subtotal)}

@@ -18,9 +18,15 @@ export function usePrinterDiagnostics() {
   });
 }
 
-export function usePrintTestSlip() {
+export interface PrintJobResult {
+  ok: true;
+  /** Characters the printer's code page cannot print (shown as "?" on paper). */
+  unsupportedChars?: string[];
+}
+
+export function usePrintTestSlip(branchId?: string | null) {
   return useMutation({
-    mutationFn: () => api.post<{ ok: true }>("/orders/print/test"),
+    mutationFn: () => api.post<{ ok: true }>(`/orders/print/test${branchId ? `?branchId=${branchId}` : ""}`),
   });
 }
 
@@ -28,7 +34,14 @@ export function usePrintTestSlip() {
 export function usePrintOrderUsb(branchId: string | null) {
   return useMutation({
     mutationFn: ({ orderId, drawer }: { orderId: string; drawer?: boolean }) =>
-      api.post<{ ok: true }>(`/orders/${orderId}/print/usb?branchId=${branchId}${drawer ? "&drawer=true" : ""}`),
+      api.post<PrintJobResult>(`/orders/${orderId}/print/usb?branchId=${branchId}${drawer ? "&drawer=true" : ""}`),
+  });
+}
+
+/** Kitchen ticket straight to the thermal printer (native text, no prices). */
+export function usePrintKotUsb(branchId: string | null) {
+  return useMutation({
+    mutationFn: (orderId: string) => api.post<PrintJobResult>(`/orders/${orderId}/print/kot/usb?branchId=${branchId}`),
   });
 }
 

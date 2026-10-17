@@ -48,5 +48,9 @@ export const branchSettingsSchema = z.object({
   // Self-service kiosk: which service-mode buttons the start screen offers.
   kioskDineInEnabled: z.boolean().optional(),
   kioskTakeawayEnabled: z.boolean().optional(),
+  // Thermal printer (direct ESC/POS): paper, code page and column override.
+  printerPaperWidthMm: z.union([z.literal(58), z.literal(80)]).optional(),
+  printerCodepage: z.enum(["CP437", "CP850", "CP858", "CP1252"]).optional(),
+  printerColumns: z.number().int().min(20).max(64).nullable().optional(),
 });
 export type BranchSettingsDto = z.infer<typeof branchSettingsSchema>;

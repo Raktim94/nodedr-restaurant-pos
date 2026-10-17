@@ -36,3 +36,16 @@ JOIN "permissions" v ON v."key" = 'dashboard.sales.view'
 WHERE r."isSystem" = true
   AND r."name" IN ('OWNER', 'ADMINISTRATOR', 'ACCOUNTANT', 'CASHIER')
 ON CONFLICT DO NOTHING;
+
+-- Waiters now read the floor plan through tables.view and still update table
+-- status / resolve requests (tables.view + orders.edit). The old default also
+-- gave the system WAITER role tables.manage, which allows creating, moving and
+-- deleting tables and floors; take that one grant back. Custom roles are left
+-- alone, and an owner can re-grant it per role in Settings -> Roles.
+DELETE FROM "role_permissions" rp
+USING "roles" r, "permissions" p
+WHERE rp."roleId" = r."id"
+  AND rp."permissionId" = p."id"
+  AND r."isSystem" = true
+  AND r."name" = 'WAITER'
+  AND p."key" = 'tables.manage';
