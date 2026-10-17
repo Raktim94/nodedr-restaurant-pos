@@ -147,7 +147,12 @@ partially built, the note says what's missing.
 
 | Feature | Status | Note |
 |---|---|---|
-| Everything in this category | Planned | No kiosk mode/route anywhere in the codebase |
+| Customer-facing kiosk route (`/kiosk/<token>`) | Shipped | Public, token-gated, menu + basket only; Spanish-first with English; see [`docs/KIOSK-AND-KDS.md`](./docs/KIOSK-AND-KDS.md) |
+| Order flow: start → eat here / take away → menu & search → options → basket → review → submit once → order number | Shipped | Server recomputes prices/modifiers/tax; idempotent submit; no personal data collected |
+| Kitchen display per station + kiosk orders in realtime | Shipped | KDS station picker (remembered per device) |
+| Kiosk payment | Planned | Kiosk orders are created unpaid; payment is taken at the counter |
+| 80 mm ticket / QR scanner | Partial | Browser print dialog and USB-HID keyboard-wedge scanner paths only; **not verified on the real hardware** — see doc |
+| Offline / queued kiosk orders | Not supported | The kiosk needs a live connection and never queues orders locally |
 
 ## 📱 QR / Table Ordering
 

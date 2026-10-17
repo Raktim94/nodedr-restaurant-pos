@@ -1,12 +1,14 @@
 "use client";
 
 import type { KotStatusDto } from "@nodedr-restaurant/types";
+import { useEffect, useState } from "react";
 import { PerformanceWidget } from "@/components/kds/performance-widget";
 import { TicketCard } from "@/components/kds/ticket-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
 import { useKdsSound } from "@/hooks/use-kds-sound";
-import { useKdsTickets, type KotTicket } from "@/hooks/use-kds";
+import { useKdsStations, useKdsTickets, type KotTicket } from "@/hooks/use-kds";
+import { cn } from "@/lib/utils";
 
 const COLUMNS: { status: KotStatusDto; label: string }[] = [
   { status: "NEW", label: "New" },
@@ -15,9 +17,33 @@ const COLUMNS: { status: KotStatusDto; label: string }[] = [
   { status: "READY", label: "Ready" },
 ];
 
+// The station this screen is pinned to is remembered per device + branch, so a
+// kitchen tablet reopens on its own station after a reload or restart.
+const stationKey = (branchId: string | null) => `kds-station:${branchId}`;
+
 export default function KdsPage() {
   const { branchId } = useBranch();
-  const { data: tickets, isLoading } = useKdsTickets(branchId);
+  const [stationId, setStationId] = useState("");
+  const { data: stations } = useKdsStations(branchId);
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStationId(localStorage.getItem(stationKey(branchId)) ?? "");
+    } catch {
+      /* storage blocked: stay on "all stations" */
+    }
+  }, [branchId]);
+  // A saved station that was since deleted must not leave the screen empty.
+  const activeStation = stations?.some((s) => s.id === stationId) ? stationId : "";
+  const chooseStation = (id: string) => {
+    setStationId(id);
+    try {
+      localStorage.setItem(stationKey(branchId), id);
+    } catch {
+      /* storage blocked: choice lasts until reload */
+    }
+  };
+  const { data: tickets, isLoading } = useKdsTickets(branchId, activeStation);
   useKdsSound(branchId);
 
   const byStatus = (status: KotStatusDto): KotTicket[] =>
@@ -31,6 +57,27 @@ export default function KdsPage() {
         </h1>
         <p className="text-sm text-muted-foreground">Live order tickets by station</p>
       </div>
+
+      {stations && stations.length > 0 && (
+        <div role="group" aria-label="Station" className="flex flex-wrap gap-2">
+          {[{ id: "", name: "All stations" }, ...stations].map((s) => (
+            <button
+              key={s.id || "all"}
+              type="button"
+              aria-pressed={s.id === activeStation}
+              onClick={() => chooseStation(s.id)}
+              className={cn(
+                "min-h-11 rounded-full border px-4 text-sm font-medium transition-colors",
+                s.id === activeStation
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-muted-foreground hover:bg-secondary",
+              )}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <PerformanceWidget branchId={branchId} />
 

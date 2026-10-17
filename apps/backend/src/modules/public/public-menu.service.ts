@@ -26,9 +26,18 @@ export class PublicMenuService {
   async getMenuByQrToken(qrToken: string) {
     const table = await this.resolveTable(qrToken);
     const branch = table.floor.branch;
+    const categories = await this.menuCategoriesForBranch(branch.id);
+    return {
+      branchName: branch.name,
+      tableName: table.name ?? `Table ${table.number}`,
+      categories,
+    };
+  }
 
-    const categories = await this.prisma.menuCategory.findMany({
-      where: { branchId: branch.id, isActive: true, showOnWebsite: true },
+  /** Customer-visible menu tree, shared by the table-QR page and the kiosk. */
+  menuCategoriesForBranch(branchId: string) {
+    return this.prisma.menuCategory.findMany({
+      where: { branchId, isActive: true, showOnWebsite: true },
       orderBy: { sortOrder: 'asc' },
       include: {
         items: {
@@ -40,6 +49,7 @@ export class PublicMenuService {
             description: true,
             imageUrl: true,
             price: true,
+            taxRatePercent: true,
             isVeg: true,
             isVegan: true,
             spiceLevel: true,
@@ -71,12 +81,6 @@ export class PublicMenuService {
         },
       },
     });
-
-    return {
-      branchName: branch.name,
-      tableName: table.name ?? `Table ${table.number}`,
-      categories,
-    };
   }
 
   async createOrder(qrToken: string, items: CartItemDto[], guestName: string) {

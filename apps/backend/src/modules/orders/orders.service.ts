@@ -116,7 +116,11 @@ export class OrdersService {
     branchId: string,
     userId: string,
     dto: CreateOrderDto,
-    options: { channel?: 'STAFF' | 'ONLINE'; requireAcceptance?: boolean } = {},
+    options: {
+      channel?: 'STAFF' | 'ONLINE';
+      requireAcceptance?: boolean;
+      clientRequestId?: string;
+    } = {},
   ) {
     const channel = options.channel ?? 'STAFF';
     // Online orders wait for a staff member to accept them unless this
@@ -268,6 +272,7 @@ export class OrdersService {
           customerId: dto.customerId,
           guestName: dto.guestName,
           notes: dto.notes,
+          clientRequestId: options.clientRequestId,
           createdById: userId,
           subtotal: totals.subtotal,
           taxAmount: totals.taxAmount,

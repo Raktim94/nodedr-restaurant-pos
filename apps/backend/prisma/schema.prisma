@@ -123,6 +123,15 @@ model Branch {
   autoConfirmOrders       Boolean @default(false)
   autoConfirmReservations Boolean @default(false)
 
+  // Self-service kiosk (2026-10-17). kioskToken is the opaque, unguessable
+  // credential in the public /kiosk/<token> URL (same idea as
+  // Table.qrToken); null = kiosk switched off for this branch. The two
+  // flags choose which "eat here / take away" buttons the start screen
+  // offers; if only one is on the choice step is skipped.
+  kioskToken           String? @unique
+  kioskDineInEnabled   Boolean @default(true)
+  kioskTakeawayEnabled Boolean @default(true)
+
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1259,6 +1268,11 @@ model Order {
 
   notes String?
 
+  // Client-generated idempotency key for public/unauthenticated order
+  // submits (kiosk). A retry after a dropped connection carries the same
+  // key and gets the original order back instead of creating a second one.
+  clientRequestId String?
+
   // Delivery (Phase 5). deliveryFee is added on top of the item total at
   // checkout; the zone's fee is snapshotted so later zone edits never
   // rewrite history.
@@ -1291,6 +1305,7 @@ model Order {
   refunds             Refund[]
 
   @@unique([branchId, orderNumber])
+  @@unique([branchId, clientRequestId])
   @@index([branchId, status])
   @@index([branchId, deliveryStatus])
   @@map("orders")

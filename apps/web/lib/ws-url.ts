@@ -11,11 +11,12 @@
 export function resolveWsUrl(): string {
   if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
   if (typeof window !== "undefined") {
-    // Behind HTTPS (a real deployment through a tunnel/proxy) the backend's
-    // own port isn't reachable from the browser — use this same origin,
-    // where next.config.ts proxies /socket.io to the backend.
-    if (window.location.protocol === "https:") return window.location.origin;
-    return `${window.location.protocol}//${window.location.hostname}:4001`;
+    // Always this same origin, over HTTP or HTTPS: next.config.ts proxies
+    // /socket.io to the backend, and in the shipped compose stack the
+    // backend's own port is NOT published, so the old http-> ":4001"
+    // fallback could never connect from another device on the LAN (the
+    // kitchen tablet's live ticket updates silently fell back to polling).
+    return window.location.origin;
   }
   return "http://localhost:4001";
 }

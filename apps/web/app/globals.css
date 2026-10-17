@@ -125,6 +125,51 @@
   --sidebar-ring: #FB7185;
 }
 
+/* Customer kiosk (/kiosk/*): always the light palette, whatever the device's
+   dark-mode setting, so contrast is predictable from standing distance. Only
+   custom properties are redefined here (no element rules), so Tailwind
+   utilities are unaffected. */
+.kiosk-root {
+  color-scheme: light;
+  --background: #FBF9F8;
+  --foreground: #111827;
+  --card: #FFFFFF;
+  --card-foreground: #111827;
+  --popover: #FFFFFF;
+  --popover-foreground: #111827;
+  --primary: #9F1239;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F5F1F0;
+  --secondary-foreground: #111827;
+  --muted: #F5F1F0;
+  --muted-foreground: #4B5563;
+  --accent: #FDF2F4;
+  --accent-foreground: #9F1239;
+  --destructive: #B91C1C;
+  --success: #15803D;
+  --warning: #B45309;
+  --border: #D9CFCC;
+  --input: #C9BDBA;
+  --ring: #9F1239;
+  /* Explicit system fallbacks so the kiosk never renders in a serif face if the
+     bundled web font is unavailable (offline start-up, blocked fonts CDN). */
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* The dashboard's coarse-pointer rule above sets a 44px floor on every
+   button/input. It is unlayered, so it would silently beat any Tailwind
+   min-height on kiosk controls; the kiosk's own (larger) 48px floor must be
+   unlayered too and more specific. Bigger tiles get their height from padding. */
+.kiosk-root button,
+.kiosk-root [role="button"],
+.kiosk-root input {
+  min-height: max(48px, 3rem);
+}
+.kiosk-root button {
+  min-width: max(48px, 3rem);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

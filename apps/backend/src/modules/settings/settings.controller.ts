@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Patch,
   Post,
   Query,
@@ -83,5 +84,19 @@ export class SettingsController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.settingsService.updateBranch(branchId, user.id, body as never);
+  }
+
+  @Auth('settings.manage')
+  @Post('kiosk/:action')
+  async setKiosk(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('action') action: string,
+  ) {
+    if (action !== 'enable' && action !== 'rotate' && action !== 'disable') {
+      throw new BadRequestException('Unknown kiosk action');
+    }
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.settingsService.setKioskToken(branchId, user.id, action);
   }
 }

@@ -29,6 +29,16 @@ export class KdsController {
   ) {}
 
   @Auth('kds.manage')
+  @Get('stations')
+  async listStations(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.kdsService.listStations(branchId);
+  }
+
+  @Auth('kds.manage')
   @Get('tickets')
   async listTickets(
     @CurrentUser() user: SessionUser,

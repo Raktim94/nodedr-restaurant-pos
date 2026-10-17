@@ -108,6 +108,29 @@ export const publicOrderSchema = z.object({
 });
 export type PublicOrderDto = z.infer<typeof publicOrderSchema>;
 
+// Self-service kiosk order. No name or any other personal data is collected.
+// requestId is a client-generated idempotency key: the kiosk keeps the same
+// one for every retry of the same basket, so a dropped connection can never
+// turn into a second order. Free-text kitchen notes are deliberately not
+// accepted on this unauthenticated surface.
+export const kioskServiceTypeSchema = z.enum(["DINE_IN", "TAKEAWAY"]);
+export type KioskServiceType = z.infer<typeof kioskServiceTypeSchema>;
+export const kioskOrderSchema = z.object({
+  requestId: z.string().uuid(),
+  serviceType: kioskServiceTypeSchema,
+  items: z
+    .array(
+      z.object({
+        menuItemId: z.string().min(1).max(64),
+        quantity: z.number().int().positive().max(20),
+        modifierIds: z.array(z.string().max(64)).max(30).default([]),
+      }),
+    )
+    .min(1)
+    .max(50),
+});
+export type KioskOrderDto = z.infer<typeof kioskOrderSchema>;
+
 export const checkoutSchema = z.object({
   customerId: z.string().optional(),
   discountPercent: z.coerce.number().min(0).max(100).optional(),

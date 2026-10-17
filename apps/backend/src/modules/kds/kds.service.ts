@@ -9,6 +9,15 @@ export class KdsService {
     private readonly ordersService: OrdersService,
   ) {}
 
+  /** Stations a KDS screen can be pinned to; needs only kds.manage (not menu.manage). */
+  listStations(branchId: string) {
+    return this.prisma.kitchenStation.findMany({
+      where: { branchId },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   async listActiveTickets(branchId: string, stationId?: string) {
     return this.prisma.kot.findMany({
       where: {

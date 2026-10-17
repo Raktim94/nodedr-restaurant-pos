@@ -2,6 +2,7 @@
 
 import { Clock, Trash2, X } from "lucide-react";
 import { useState } from "react";
+import { ScanOrderInput } from "@/components/orders/scan-order-input";
 import { DeleteOrdersDialog } from "@/components/orders/delete-orders-dialog";
 import { ChannelBadge, TypeBadge } from "@/components/orders/channel-badges";
 import { Badge } from "@/components/ui/badge";
@@ -92,6 +93,8 @@ export default function OrdersPage() {
           Accept new online orders and manage everything in progress
         </p>
       </div>
+
+      <ScanOrderInput branchId={branchId} />
 
       <div className="flex flex-wrap gap-2">
         {TABS.map((t) => (

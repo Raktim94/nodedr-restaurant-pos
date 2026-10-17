@@ -443,6 +443,7 @@ docs/           Screenshots and supplementary docs
 | [`ACCESSIBILITY.md`](./ACCESSIBILITY.md) | WCAG 2.1 AA target, what's implemented, testing methodology, known gaps |
 | [`COMPLIANCE-INDIA.md`](./COMPLIANCE-INDIA.md) | How the architecture relates to the DPDP Act 2023, IT Rules, GST invoicing, and CCPA dark-patterns guidelines |
 | [`SECURITY-AUDIT-REPORT.md`](./SECURITY-AUDIT-REPORT.md) | Full Critical/High/Medium/Low security audit findings + fixes, and Windows/MSIX Store-readiness status (what's verified vs. not tested) |
+| [`docs/KIOSK-AND-KDS.md`](./docs/KIOSK-AND-KDS.md) | Customer self-service kiosk and kitchen-display (KDS) tablet setup: URL/launch, Android notes, printer/scanner status, tests |
 | [`docs/integrations-api.md`](./docs/integrations-api.md) | MCP server (for AI clients) and the public integration REST API (for an external website's backend) — auth, endpoints, examples |
 
 ## Development notes

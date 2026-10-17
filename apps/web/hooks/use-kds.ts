@@ -31,10 +31,23 @@ export interface KotTicket {
   }[];
 }
 
-export function useKdsTickets(branchId: string | null) {
+export function useKdsStations(branchId: string | null) {
   return useQuery({
-    queryKey: ["kds", "tickets", branchId],
-    queryFn: () => api.get<KotTicket[]>(`/kds/tickets?branchId=${branchId}`),
+    queryKey: ["kds", "stations", branchId],
+    queryFn: () => api.get<{ id: string; name: string }[]>(`/kds/stations?branchId=${branchId}`),
+    enabled: !!branchId,
+    staleTime: 60_000,
+  });
+}
+
+/** stationId "" = every station (the default, and what this screen always did). */
+export function useKdsTickets(branchId: string | null, stationId = "") {
+  return useQuery({
+    queryKey: ["kds", "tickets", branchId, stationId],
+    queryFn: () =>
+      api.get<KotTicket[]>(
+        `/kds/tickets?branchId=${branchId}${stationId ? `&stationId=${encodeURIComponent(stationId)}` : ""}`,
+      ),
     enabled: !!branchId,
     refetchInterval: 20_000,
   });

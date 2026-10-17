@@ -35,6 +35,9 @@ export interface BranchSettings {
   taxId: string | null;
   autoConfirmOrders: boolean;
   autoConfirmReservations: boolean;
+  kioskToken: string | null;
+  kioskDineInEnabled: boolean;
+  kioskTakeawayEnabled: boolean;
 }
 
 export function useSettings(branchId: string | null) {
@@ -67,6 +70,15 @@ export function useUpdateBranchSettings(branchId: string | null) {
   return useMutation({
     mutationFn: (dto: BranchSettingsDto) =>
       api.patch(`/settings/branch?branchId=${branchId}`, dto),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings", branchId] }),
+  });
+}
+
+export function useSetKiosk(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (action: "enable" | "rotate" | "disable") =>
+      api.post<{ kioskToken: string | null }>(`/settings/kiosk/${action}?branchId=${branchId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings", branchId] }),
   });
 }

@@ -10,6 +10,7 @@ import {
   type TaxMode,
   type TaxRegime,
 } from "@nodedr-restaurant/types";
+import { KioskCard } from "@/components/settings/kiosk-card";
 import { PrinterDiagnosticsCard } from "@/components/settings/printer-diagnostics-card";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { Button } from "@/components/ui/button";
@@ -65,6 +66,8 @@ export default function SettingsPage() {
       )}
 
       {data && <OnlineOrdersCard key={data.branch.id} branchId={branchId} branch={data.branch} />}
+
+      {data && <KioskCard key={`kiosk-${data.branch.id}`} branchId={branchId} branch={data.branch} />}
 
       <NotificationSettingsCard />
 

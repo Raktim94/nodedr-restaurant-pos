@@ -37,23 +37,39 @@ interface I18nContextValue {
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
-export function I18nProvider({ children }: { children: React.ReactNode }) {
+export function I18nProvider({
+  children,
+  fixedLocale,
+}: {
+  children: React.ReactNode;
+  /**
+   * Pins the starting language and never reads or writes the saved choice or
+   * the browser language — for a shared public screen (the kiosk), where one
+   * customer's language pick must not leak into the staff UI or stick for the
+   * next customer.
+   */
+  fixedLocale?: Locale;
+}) {
   // Starts at the fixed default on both server and first client render
   // (so hydration matches), then swaps to the saved/browser locale right
   // after mount — the same pattern the QR page already uses for
   // sessionStorage reads.
-  const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
+  const [locale, setLocaleState] = useState<Locale>(fixedLocale ?? DEFAULT_LOCALE);
 
   useEffect(() => {
+    if (fixedLocale) return;
     const saved = localStorage.getItem(STORAGE_KEY);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocaleState(isLocale(saved) ? saved : detectBrowserLocale());
-  }, []);
+  }, [fixedLocale]);
 
-  const setLocale = useCallback((next: Locale) => {
-    localStorage.setItem(STORAGE_KEY, next);
-    setLocaleState(next);
-  }, []);
+  const setLocale = useCallback(
+    (next: Locale) => {
+      if (!fixedLocale) localStorage.setItem(STORAGE_KEY, next);
+      setLocaleState(next);
+    },
+    [fixedLocale],
+  );
 
   const t = useCallback(
     (key: string, vars?: Record<string, string | number>) => {
