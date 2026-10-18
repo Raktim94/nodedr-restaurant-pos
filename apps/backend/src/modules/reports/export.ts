@@ -5,17 +5,15 @@ import type { ReportResult } from './reports.service';
 
 export type ExportFormat = 'csv' | 'xlsx' | 'pdf';
 
-export const EXPORT_TYPES: Record<
-  ExportFormat,
-  { mime: string; ext: string }
-> = {
-  csv: { mime: 'text/csv; charset=utf-8', ext: 'csv' },
-  xlsx: {
-    mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ext: 'xlsx',
-  },
-  pdf: { mime: 'application/pdf', ext: 'pdf' },
-};
+export const EXPORT_TYPES: Record<ExportFormat, { mime: string; ext: string }> =
+  {
+    csv: { mime: 'text/csv; charset=utf-8', ext: 'csv' },
+    xlsx: {
+      mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ext: 'xlsx',
+    },
+    pdf: { mime: 'application/pdf', ext: 'pdf' },
+  };
 
 export function isExportFormat(v: string): v is ExportFormat {
   return v === 'csv' || v === 'xlsx' || v === 'pdf';
@@ -43,7 +41,11 @@ export async function buildXlsx(
   const head = ws.addRow(r.columns);
   head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   head.eachCell((c) => {
-    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF7A1F3D' } };
+    c.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF7A1F3D' },
+    };
   });
   for (const row of r.rows) ws.addRow(row.map(cell));
   r.columns.forEach((name, i) => {
@@ -91,7 +93,10 @@ export function buildPdf(r: ReportResult, subtitle: string): Promise<Buffer> {
         drawRow(r.columns, true);
         return;
       }
-      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8.5).fillColor('#000000');
+      doc
+        .font(bold ? 'Helvetica-Bold' : 'Helvetica')
+        .fontSize(8.5)
+        .fillColor('#000000');
       let h = 0;
       vals.forEach((v, i) => {
         const t = doc.heightOfString(v, { width: colW - 6 });
@@ -110,7 +115,11 @@ export function buildPdf(r: ReportResult, subtitle: string): Promise<Buffer> {
     drawRow(r.columns, true);
     for (const row of r.rows) drawRow(row.map(fmt), false);
     if (!r.rows.length) {
-      doc.moveDown().fontSize(10).fillColor('#666666').text('No data for this period.');
+      doc
+        .moveDown()
+        .fontSize(10)
+        .fillColor('#666666')
+        .text('No data for this period.');
     }
     doc.end();
   });

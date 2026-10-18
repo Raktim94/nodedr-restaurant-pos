@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type {
   DocumentDto,
   EquipmentDto,
@@ -156,7 +160,13 @@ export class OperationsService {
       where: { id, branchId },
       include: {
         files: {
-          select: { id: true, fileName: true, mimeType: true, size: true, createdAt: true },
+          select: {
+            id: true,
+            fileName: true,
+            mimeType: true,
+            size: true,
+            createdAt: true,
+          },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -168,33 +178,51 @@ export class OperationsService {
   async addDocumentFile(
     branchId: string,
     id: string,
-    file: { originalname: string; mimetype: string; size: number; buffer: Buffer },
+    file: {
+      originalname: string;
+      mimetype: string;
+      size: number;
+      buffer: Buffer;
+    },
   ) {
     await this.getDocument(branchId, id);
     if (!ATTACHMENT_TYPES.has(file.mimetype))
       throw new BadRequestException(
         'Attach a PDF, image, text, Word or Excel file',
       );
-    const count = await this.prisma.documentFile.count({ where: { documentId: id } });
+    const count = await this.prisma.documentFile.count({
+      where: { documentId: id },
+    });
     if (count >= 10)
       throw new BadRequestException('A document can hold at most 10 files');
     const created = await this.prisma.documentFile.create({
       data: {
         documentId: id,
         // Strip path separators and control characters from the client name.
-        fileName: file.originalname.replace(/[\\/\u0000-\u001f"]/g, '_').slice(0, 150) || 'file',
+        fileName:
+          file.originalname
+            .replace(/[\\/\u0000-\u001f"]/g, '_')
+            .slice(0, 150) || 'file',
         mimeType: file.mimetype,
         size: file.size,
         data: new Uint8Array(file.buffer),
       },
-      select: { id: true, fileName: true, mimeType: true, size: true, createdAt: true },
+      select: {
+        id: true,
+        fileName: true,
+        mimeType: true,
+        size: true,
+        createdAt: true,
+      },
     });
     return created;
   }
 
   async getDocumentFile(branchId: string, id: string, fileId: string) {
     await this.getDocument(branchId, id);
-    const f = await this.prisma.documentFile.findFirst({ where: { id: fileId, documentId: id } });
+    const f = await this.prisma.documentFile.findFirst({
+      where: { id: fileId, documentId: id },
+    });
     if (!f) throw new NotFoundException('File not found');
     return f;
   }

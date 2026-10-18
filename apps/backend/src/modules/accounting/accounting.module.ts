@@ -10,7 +10,12 @@ import { LedgerService } from './ledger.service';
 @Module({
   imports: [AuditModule],
   controllers: [AccountingController, LedgerController],
-  providers: [AccountingService, LedgerService, BranchAccessService, BranchTimeService],
+  providers: [
+    AccountingService,
+    LedgerService,
+    BranchAccessService,
+    BranchTimeService,
+  ],
   exports: [AccountingService],
 })
 export class AccountingModule {}

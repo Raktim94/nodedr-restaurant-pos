@@ -11,7 +11,12 @@ import { ReportsService } from './reports.service';
 @Module({
   imports: [AccountingModule, AuditModule],
   controllers: [ReportsController, ReportSchedulesController],
-  providers: [ReportsService, ReportSchedulesService, BranchAccessService, BranchTimeService],
+  providers: [
+    ReportsService,
+    ReportSchedulesService,
+    BranchAccessService,
+    BranchTimeService,
+  ],
   exports: [ReportsService],
 })
 export class ReportsModule {}

@@ -6,8 +6,18 @@ describe('parseStatement', () => {
       'Date,Description,Amount\n2026-10-02,Milk supplier,-1200.50\n2026-10-03,UPI settlement,"4,500.00"',
     );
     expect(rows).toEqual([
-      { postedOn: '2026-10-02', description: 'Milk supplier', reference: '', amount: -1200.5 },
-      { postedOn: '2026-10-03', description: 'UPI settlement', reference: '', amount: 4500 },
+      {
+        postedOn: '2026-10-02',
+        description: 'Milk supplier',
+        reference: '',
+        amount: -1200.5,
+      },
+      {
+        postedOn: '2026-10-03',
+        description: 'UPI settlement',
+        reference: '',
+        amount: 4500,
+      },
     ]);
   });
 
@@ -22,7 +32,9 @@ describe('parseStatement', () => {
   });
 
   it('skips unreadable rows and reports their line numbers', () => {
-    const { rows, skipped } = parseStatement('Date,Description,Amount\nnot a date,x,5\n2026-10-01,ok,5');
+    const { rows, skipped } = parseStatement(
+      'Date,Description,Amount\nnot a date,x,5\n2026-10-01,ok,5',
+    );
     expect(rows).toHaveLength(1);
     expect(skipped).toEqual([2]);
   });

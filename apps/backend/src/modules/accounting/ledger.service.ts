@@ -291,10 +291,14 @@ export class LedgerService {
         unmatched: count('UNMATCHED'),
         ignored: count('IGNORED'),
         moneyIn: round2(
-          txs.filter((t) => Number(t.amount) > 0).reduce((s, t) => s + Number(t.amount), 0),
+          txs
+            .filter((t) => Number(t.amount) > 0)
+            .reduce((s, t) => s + Number(t.amount), 0),
         ),
         moneyOut: round2(
-          txs.filter((t) => Number(t.amount) < 0).reduce((s, t) => s + Number(t.amount), 0),
+          txs
+            .filter((t) => Number(t.amount) < 0)
+            .reduce((s, t) => s + Number(t.amount), 0),
         ),
       },
       transactions: txs.map((t) => ({
@@ -356,12 +360,12 @@ export class LedgerService {
       this.prisma.bankTransaction.findFirst({ where: { id, branchId } }),
       this.prisma.expense.findFirst({ where: { id: expenseId, branchId } }),
     ]);
-    if (!t || !e) throw new NotFoundException('Transaction or expense not found');
+    if (!t || !e)
+      throw new NotFoundException('Transaction or expense not found');
     const used = await this.prisma.bankTransaction.findFirst({
       where: { branchId, expenseId, NOT: { id } },
     });
-    if (used)
-      throw new BadRequestException('That expense is already matched');
+    if (used) throw new BadRequestException('That expense is already matched');
     return this.prisma.bankTransaction.update({
       where: { id },
       data: { status: 'MATCHED', expenseId },
@@ -379,45 +383,55 @@ export class LedgerService {
   async balanceSheet(branchId: string, asOf: string) {
     const end = new Date(`${asOf}T23:59:59.999Z`);
     const endDate = new Date(`${asOf}T00:00:00.000Z`);
-    const [payments, refunds, expenses, supplierPaid, payroll, ingredients, invoices, giftCards] =
-      await Promise.all([
-        this.prisma.payment.aggregate({
-          where: {
-            order: { branchId },
-            createdAt: { lte: end },
-            method: { in: ['CASH', 'CARD', 'UPI', 'WALLET', 'BANK_TRANSFER', 'OTHER'] },
+    const [
+      payments,
+      refunds,
+      expenses,
+      supplierPaid,
+      payroll,
+      ingredients,
+      invoices,
+      giftCards,
+    ] = await Promise.all([
+      this.prisma.payment.aggregate({
+        where: {
+          order: { branchId },
+          createdAt: { lte: end },
+          method: {
+            in: ['CASH', 'CARD', 'UPI', 'WALLET', 'BANK_TRANSFER', 'OTHER'],
           },
-          _sum: { amount: true },
-        }),
-        this.prisma.refund.aggregate({
-          where: { order: { branchId }, createdAt: { lte: end } },
-          _sum: { amount: true },
-        }),
-        this.prisma.expense.aggregate({
-          where: { branchId, spentOn: { lte: endDate } },
-          _sum: { amount: true },
-        }),
-        this.prisma.supplierPayment.aggregate({
-          where: { branchId, paidAt: { lte: end } },
-          _sum: { amount: true },
-        }),
-        this.prisma.payrollRun.findMany({
-          where: { branchId, status: 'FINALIZED', periodEnd: { lte: endDate } },
-          include: { lines: true },
-        }),
-        this.prisma.ingredient.findMany({
-          where: { branchId },
-          select: { currentStock: true, costPerUnit: true },
-        }),
-        this.prisma.supplierInvoice.findMany({
-          where: { branchId, invoiceDate: { lte: end } },
-          select: { totalAmount: true, amountPaid: true },
-        }),
-        this.prisma.giftCard.findMany({
-          where: { branchId },
-          select: { balance: true },
-        }),
-      ]);
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.refund.aggregate({
+        where: { order: { branchId }, createdAt: { lte: end } },
+        _sum: { amount: true },
+      }),
+      this.prisma.expense.aggregate({
+        where: { branchId, spentOn: { lte: endDate } },
+        _sum: { amount: true },
+      }),
+      this.prisma.supplierPayment.aggregate({
+        where: { branchId, paidAt: { lte: end } },
+        _sum: { amount: true },
+      }),
+      this.prisma.payrollRun.findMany({
+        where: { branchId, status: 'FINALIZED', periodEnd: { lte: endDate } },
+        include: { lines: true },
+      }),
+      this.prisma.ingredient.findMany({
+        where: { branchId },
+        select: { currentStock: true, costPerUnit: true },
+      }),
+      this.prisma.supplierInvoice.findMany({
+        where: { branchId, invoiceDate: { lte: end } },
+        select: { totalAmount: true, amountPaid: true },
+      }),
+      this.prisma.giftCard.findMany({
+        where: { branchId },
+        select: { balance: true },
+      }),
+    ]);
     const payrollPaid = round2(
       payroll
         .flatMap((r) => r.lines)
@@ -435,7 +449,8 @@ export class LedgerService {
     );
     const inventory = round2(
       ingredients.reduce(
-        (s, i) => s + Math.max(0, Number(i.currentStock)) * Number(i.costPerUnit),
+        (s, i) =>
+          s + Math.max(0, Number(i.currentStock)) * Number(i.costPerUnit),
         0,
       ),
     );

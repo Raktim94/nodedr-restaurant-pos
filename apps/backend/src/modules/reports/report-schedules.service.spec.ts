@@ -2,19 +2,34 @@ import { isDue, periodFor } from './report-schedules.service';
 
 describe('periodFor', () => {
   it('daily is yesterday', () => {
-    expect(periodFor('DAILY', '2026-10-11')).toEqual({ from: '2026-10-10', to: '2026-10-10' });
+    expect(periodFor('DAILY', '2026-10-11')).toEqual({
+      from: '2026-10-10',
+      to: '2026-10-10',
+    });
   });
   it('weekly is the previous seven days', () => {
-    expect(periodFor('WEEKLY', '2026-10-12')).toEqual({ from: '2026-10-05', to: '2026-10-11' });
+    expect(periodFor('WEEKLY', '2026-10-12')).toEqual({
+      from: '2026-10-05',
+      to: '2026-10-11',
+    });
   });
   it('monthly is the previous calendar month, across a year boundary', () => {
-    expect(periodFor('MONTHLY', '2026-10-01')).toEqual({ from: '2026-09-01', to: '2026-09-30' });
-    expect(periodFor('MONTHLY', '2027-01-01')).toEqual({ from: '2026-12-01', to: '2026-12-31' });
+    expect(periodFor('MONTHLY', '2026-10-01')).toEqual({
+      from: '2026-09-01',
+      to: '2026-09-30',
+    });
+    expect(periodFor('MONTHLY', '2027-01-01')).toEqual({
+      from: '2026-12-01',
+      to: '2026-12-31',
+    });
   });
 });
 
 describe('isDue', () => {
-  const s = (frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY') => ({ frequency, lastSentAt: null });
+  const s = (frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY') => ({
+    frequency,
+    lastSentAt: null,
+  });
   it('waits until 06:00 local', () => {
     expect(isDue(s('DAILY'), '2026-10-11', 5, null)).toBe(false);
     expect(isDue(s('DAILY'), '2026-10-11', 6, null)).toBe(true);

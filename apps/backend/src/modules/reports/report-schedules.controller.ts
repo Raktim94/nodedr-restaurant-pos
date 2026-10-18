@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UsePipes } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UsePipes,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { SessionUser } from '@nodedr-restaurant/types';
 import { z } from 'zod';
@@ -30,16 +40,26 @@ export class ReportSchedulesController {
 
   @Auth('reports.access', 'data.export')
   @Get()
-  async list(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async list(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
-    return { emailConfigured: this.email.isConfigured(), schedules: await this.schedules.list(branchId) };
+    return {
+      emailConfigured: this.email.isConfigured(),
+      schedules: await this.schedules.list(branchId),
+    };
   }
 
   @Auth('reports.access', 'data.export')
   @AuditAction('report_schedule.created', 'ReportSchedule')
   @Post()
   @UsePipes(new ZodValidationPipe(createSchema))
-  async create(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: z.infer<typeof createSchema>) {
+  async create(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: z.infer<typeof createSchema>,
+  ) {
     assertCanViewReport(u.permissions, body.reportKey);
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
     return this.schedules.create(branchId, body);
@@ -48,14 +68,23 @@ export class ReportSchedulesController {
   @Auth('reports.access', 'data.export')
   @Patch(':id')
   @UsePipes(new ZodValidationPipe(activeSchema))
-  async toggle(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: z.infer<typeof activeSchema>) {
+  async toggle(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: z.infer<typeof activeSchema>,
+  ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
     return this.schedules.setActive(branchId, id, body.isActive);
   }
 
   @Auth('reports.access', 'data.export')
   @Post(':id/send')
-  async sendNow(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async sendNow(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
     return this.schedules.sendNow(branchId, id);
   }
@@ -63,7 +92,11 @@ export class ReportSchedulesController {
   @Auth('reports.access', 'data.export')
   @AuditAction('report_schedule.deleted', 'ReportSchedule')
   @Delete(':id')
-  async remove(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async remove(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
     return this.schedules.remove(branchId, id);
   }

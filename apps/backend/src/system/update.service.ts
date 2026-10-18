@@ -70,7 +70,10 @@ export class UpdateService {
     };
     this.cache = info;
     this.cacheExpiresAt =
-      Date.now() + (info.building || latestVersion === null ? BUILDING_CACHE_TTL_MS : CACHE_TTL_MS);
+      Date.now() +
+      (info.building || latestVersion === null
+        ? BUILDING_CACHE_TTL_MS
+        : CACHE_TTL_MS);
     return info;
   }
 
@@ -102,7 +105,9 @@ export class UpdateService {
           Authorization: `Bearer ${process.env.UPDATER_TOKEN ?? ''}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ version: info.latestVersion.replace(/^v/i, '') }),
+        body: JSON.stringify({
+          version: info.latestVersion.replace(/^v/i, ''),
+        }),
         signal: AbortSignal.timeout(10000),
       });
     } catch (err) {
@@ -126,7 +131,11 @@ export class UpdateService {
 
   // What the updater is doing right now, so the UI can surface a failure
   // (e.g. no internet to pull images) instead of waiting forever.
-  async getProgress(): Promise<{ state: string; step?: string | null; error?: string | null }> {
+  async getProgress(): Promise<{
+    state: string;
+    step?: string | null;
+    error?: string | null;
+  }> {
     const base = (process.env.UPDATER_URL ?? '').trim().replace(/\/$/, '');
     if (!base) return { state: 'unavailable' };
     try {
@@ -135,7 +144,11 @@ export class UpdateService {
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) return { state: 'unknown' };
-      return (await res.json()) as { state: string; step?: string | null; error?: string | null };
+      return (await res.json()) as {
+        state: string;
+        step?: string | null;
+        error?: string | null;
+      };
     } catch {
       return { state: 'unknown' };
     }
@@ -154,15 +167,18 @@ export class UpdateService {
       );
       if (!tokRes.ok) return null;
       const { token } = (await tokRes.json()) as { token: string };
-      const res = await fetch(`https://ghcr.io/v2/${repo}/manifests/${version}`, {
-        method: 'HEAD',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept:
-            'application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json',
+      const res = await fetch(
+        `https://ghcr.io/v2/${repo}/manifests/${version}`,
+        {
+          method: 'HEAD',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept:
+              'application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json',
+          },
+          signal: AbortSignal.timeout(6000),
         },
-        signal: AbortSignal.timeout(6000),
-      });
+      );
       if (res.status === 404) return false;
       return res.ok ? true : null;
     } catch {

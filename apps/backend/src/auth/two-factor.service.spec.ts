@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { UnauthorizedException } from '@nestjs/common';
 import { base32Decode, generateSecret, hotp, sealSecret, stepAt } from './totp';
 import { TwoFactorService } from './two-factor.service';

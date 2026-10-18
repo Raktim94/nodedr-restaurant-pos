@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type { ReportFrequency, ReportSchedule } from '@prisma/client';
 import { BranchTimeService } from '../../common/services/branch-time.service';
@@ -77,7 +82,9 @@ export class ReportSchedulesService {
       throw new BadRequestException('Unknown report');
     if (!isExportFormat(dto.format))
       throw new BadRequestException('Format must be csv, xlsx or pdf');
-    const recipients = [...new Set(dto.recipients.map((r) => r.trim().toLowerCase()))];
+    const recipients = [
+      ...new Set(dto.recipients.map((r) => r.trim().toLowerCase())),
+    ];
     if (!recipients.length || recipients.some((r) => !EMAIL.test(r)))
       throw new BadRequestException('Enter valid recipient email addresses');
     return this.prisma.reportSchedule.create({
@@ -87,7 +94,10 @@ export class ReportSchedulesService {
 
   async setActive(branchId: string, id: string, isActive: boolean) {
     await this.get(branchId, id);
-    return this.prisma.reportSchedule.update({ where: { id }, data: { isActive } });
+    return this.prisma.reportSchedule.update({
+      where: { id },
+      data: { isActive },
+    });
   }
 
   async remove(branchId: string, id: string) {
@@ -97,7 +107,9 @@ export class ReportSchedulesService {
   }
 
   private async get(branchId: string, id: string) {
-    const s = await this.prisma.reportSchedule.findFirst({ where: { id, branchId } });
+    const s = await this.prisma.reportSchedule.findFirst({
+      where: { id, branchId },
+    });
     if (!s) throw new NotFoundException('Schedule not found');
     return s;
   }
@@ -120,14 +132,21 @@ export class ReportSchedulesService {
         subject,
         text: `Your scheduled ${result.title} report for ${from} to ${to} is attached.\n\nSent by NodeDR OrderRestro.`,
         attachments: [
-          { filename: `${s.reportKey}_${from}_${to}.${t.ext}`, content: body, contentType: t.mime.split(';')[0] },
+          {
+            filename: `${s.reportKey}_${from}_${to}.${t.ext}`,
+            content: body,
+            contentType: t.mime.split(';')[0],
+          },
         ],
       })),
     );
     if (!out.sent) throw new BadRequestException('No email could be delivered');
     await this.prisma.reportSchedule.update({
       where: { id: s.id },
-      data: { lastSentAt: new Date(), lastError: out.failed ? `${out.failed} recipient(s) failed` : null },
+      data: {
+        lastSentAt: new Date(),
+        lastError: out.failed ? `${out.failed} recipient(s) failed` : null,
+      },
     });
     return out;
   }
@@ -148,19 +167,26 @@ export class ReportSchedulesService {
       hourCycle: 'h23',
     }).formatToParts(new Date());
     const g = (t: string) => parts.find((p) => p.type === t)?.value ?? '00';
-    return { date: `${g('year')}-${g('month')}-${g('day')}`, hour: Number(g('hour')) };
+    return {
+      date: `${g('year')}-${g('month')}-${g('day')}`,
+      hour: Number(g('hour')),
+    };
   }
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async tick() {
     try {
       if (!this.email.isConfigured()) return;
-      const schedules = await this.prisma.reportSchedule.findMany({ where: { isActive: true } });
+      const schedules = await this.prisma.reportSchedule.findMany({
+        where: { isActive: true },
+      });
       for (const s of schedules) {
         const tz = await this.time.tzForBranch(s.branchId);
         const now = this.localToday(tz);
         const lastLocal = s.lastSentAt
-          ? new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(s.lastSentAt)
+          ? new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(
+              s.lastSentAt,
+            )
           : null;
         if (!isDue(s, now.date, now.hour, lastLocal)) continue;
         try {
@@ -169,11 +195,16 @@ export class ReportSchedulesService {
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           this.logger.warn(`Scheduled report ${s.id} failed: ${msg}`);
-          await this.prisma.reportSchedule.update({ where: { id: s.id }, data: { lastError: msg.slice(0, 300) } });
+          await this.prisma.reportSchedule.update({
+            where: { id: s.id },
+            data: { lastError: msg.slice(0, 300) },
+          });
         }
       }
     } catch (err) {
-      this.logger.error(`Report schedule tick failed: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.error(
+        `Report schedule tick failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 }
