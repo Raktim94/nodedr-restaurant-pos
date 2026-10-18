@@ -11,6 +11,8 @@ export interface KotTicket {
   ticketNumber: string;
   status: KotStatusDto;
   isPriority: boolean;
+  printedCount: number;
+  lastPrintError: string | null;
   createdAt: string;
   station: { id: string; name: string } | null;
   order: {
@@ -78,10 +80,12 @@ export function useSetKotPriority(branchId: string | null) {
   });
 }
 
+/** `reprint` false = first print (409 if already printed); true = extra copy stamped REPRINT. */
 export function useReprintKot(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.post(`/kds/tickets/${id}/reprint?branchId=${branchId}`),
+    mutationFn: ({ id, reprint }: { id: string; reprint: boolean }) =>
+      api.post(`/kds/tickets/${id}/${reprint ? "reprint" : "print"}?branchId=${branchId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] }),
   });
 }

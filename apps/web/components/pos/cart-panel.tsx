@@ -37,6 +37,10 @@ export function CartPanel({
   isSubmitting,
   existingOrderNumber,
   onViewExistingOrder,
+  openBills,
+  selectedBillId,
+  onSelectBill,
+  checkingTable = false,
   delivery,
   onDeliveryChange,
   scheduledFor,
@@ -55,6 +59,12 @@ export function CartPanel({
   isSubmitting: boolean;
   existingOrderNumber?: string;
   onViewExistingOrder?: () => void;
+  /** All unpaid bills on the selected table (more than one is possible). */
+  openBills?: { id: string; orderNumber: string }[];
+  selectedBillId?: string | null;
+  onSelectBill?: (id: string) => void;
+  /** The table's open bills are still loading - sending now could start a duplicate bill. */
+  checkingTable?: boolean;
   delivery: DeliveryDetails;
   onDeliveryChange: (d: DeliveryDetails) => void;
   scheduledFor: string;
@@ -65,7 +75,7 @@ export function CartPanel({
     orderType !== "DELIVERY" ||
     (delivery.address.trim().length >= 5 && delivery.pincode.trim().length >= 3 && delivery.phone.trim().length >= 6);
   const canSubmit =
-    lines.length > 0 && (orderType !== "DINE_IN" || !!tableId) && deliveryReady && !isSubmitting;
+    lines.length > 0 && (orderType !== "DINE_IN" || !!tableId) && deliveryReady && !isSubmitting && !checkingTable;
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -139,6 +149,29 @@ export function CartPanel({
         </label>
       )}
 
+      {checkingTable && (
+        <p role="status" className="rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+          Checking this table&apos;s open bills…
+        </p>
+      )}
+      {openBills && openBills.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" role="group" aria-label="Open bills on this table">
+          <span>{openBills.length} open bills here — add to:</span>
+          {openBills.map((b) => (
+            <Button
+              key={b.id}
+              type="button"
+              size="sm"
+              variant={b.id === selectedBillId ? "default" : "outline"}
+              className="h-7 px-2 text-xs"
+              aria-pressed={b.id === selectedBillId}
+              onClick={() => onSelectBill?.(b.id)}
+            >
+              #{b.orderNumber}
+            </Button>
+          ))}
+        </div>
+      )}
       {existingOrderNumber && (
         <div className="flex items-center justify-between gap-3 rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
           <span>

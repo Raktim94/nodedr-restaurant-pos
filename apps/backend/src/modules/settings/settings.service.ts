@@ -69,6 +69,20 @@ export class SettingsService {
         );
       }
     }
+    if (dto.printerConnection === 'NETWORK' || dto.printerHost !== undefined) {
+      const current = await this.prisma.branch.findUnique({
+        where: { id: branchId },
+        select: { printerConnection: true, printerHost: true },
+      });
+      const connection = dto.printerConnection ?? current?.printerConnection;
+      const host =
+        dto.printerHost !== undefined ? dto.printerHost : current?.printerHost;
+      if (connection === 'NETWORK' && !host) {
+        throw new BadRequestException(
+          'Enter the printer address (IP or host name) for network printing',
+        );
+      }
+    }
     // Picking a new regime without also stating a mode gets that regime's
     // own default (INDIA_GST/EU_VAT/ES_IVA -> inclusive, US_SALES_TAX ->
     // exclusive) — a picker that silently kept the old mode across a

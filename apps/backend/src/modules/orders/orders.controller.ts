@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -16,10 +17,17 @@ import {
   addOrderItemsSchema,
   checkoutSchema,
   createOrderSchema,
+  cancelOrderSchema,
   deleteOrdersSchema,
   mergeOrdersSchema,
   refundSchema,
+  removeOrderItemSchema,
+  updateOrderItemSchema,
+  updateOrderSchema,
   type CheckoutDto,
+  type RemoveOrderItemDto,
+  type UpdateOrderDto,
+  type UpdateOrderItemDto,
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
@@ -27,7 +35,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import {
-  buildKotEscPosJob,
+  buildKotTestSlip,
   buildOpenDrawer,
   buildReceiptEscPosJob,
   buildTestSlip,
@@ -36,12 +44,17 @@ import {
   type EscposReceiptOrder,
   type PrintResult,
 } from './escpos-receipt';
+import { probeNetworkPrinter } from './escpos-network';
 import {
   PrinterNotFoundError,
   findPrinterDescriptor,
   probeCharDevices,
-  sendRaw,
 } from './escpos-usb';
+import { KotPrintService } from './kot-print.service';
+import {
+  sendToBranchPrinter,
+  type BranchPrinterTarget,
+} from './printer-transport';
 import { OrdersService } from './orders.service';
 import { buildKotHtml } from './kot.html';
 import { buildReceiptHtml } from './receipt.html';
@@ -120,6 +133,7 @@ export class OrdersController {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly branchAccess: BranchAccessService,
+    private readonly kotPrint: KotPrintService,
   ) {}
 
   @Auth('orders.create')
@@ -215,9 +229,73 @@ export class OrdersController {
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId: string,
     @Param('id') id: string,
+    @Body() body?: unknown,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.ordersService.cancelOrder(branchId, id, user.id);
+    const { reason } = cancelOrderSchema.partial().parse(body ?? {});
+    return this.ordersService.cancelOrder(branchId, id, user.id, reason);
+  }
+
+  // --- Bill corrections (open bills only) -----------------------------------
+  // Paid bills are never edited in place: they go through refund (money and,
+  // where chosen, stock), which keeps the ledger and audit trail intact.
+
+  @Auth('orders.edit')
+  @Patch(':id')
+  @UsePipes(new ZodValidationPipe(updateOrderSchema))
+  async update(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.ordersService.updateOrder(
+      branchId,
+      id,
+      user.id,
+      body as UpdateOrderDto,
+    );
+  }
+
+  @Auth('orders.edit')
+  @Patch(':id/items/:itemId')
+  @UsePipes(new ZodValidationPipe(updateOrderItemSchema))
+  async updateItem(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.ordersService.updateOrderItem(
+      branchId,
+      id,
+      itemId,
+      user.id,
+      body as UpdateOrderItemDto,
+    );
+  }
+
+  @Auth('orders.edit')
+  @Post(':id/items/:itemId/remove')
+  @UsePipes(new ZodValidationPipe(removeOrderItemSchema))
+  async removeItem(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Param('itemId') itemId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.ordersService.removeOrderItem(
+      branchId,
+      id,
+      itemId,
+      user.id,
+      (body as RemoveOrderItemDto).reason,
+    );
   }
 
   // What discount checkout would apply right now (happy hour and/or a
@@ -323,57 +401,104 @@ export class OrdersController {
 
   @Auth('bills.print')
   @Get('print/diagnostics')
-  async printDiagnostics() {
+  async printDiagnostics(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId?: string,
+  ) {
     const lpDevices = await probeCharDevices();
     const libusbPrinter = findPrinterDescriptor();
-    const canPrint = lpDevices.length > 0 || libusbPrinter !== null;
+    let network: {
+      host: string;
+      port: number;
+      reachable: boolean;
+      error: string | null;
+    } | null = null;
+    let connection = 'USB';
+    if (branchId) {
+      await this.branchAccess.assertAccess(user.restaurantId, branchId);
+      const target = await this.ordersService.printerTarget(branchId);
+      connection = target.printerConnection;
+      if (connection === 'NETWORK' && target.printerHost) {
+        network = {
+          host: target.printerHost,
+          port: target.printerPort,
+          ...(await probeNetworkPrinter({
+            host: target.printerHost,
+            port: target.printerPort,
+          })),
+        };
+      }
+    }
+    const canPrint =
+      connection === 'NETWORK'
+        ? network?.reachable === true
+        : lpDevices.length > 0 || libusbPrinter !== null;
     return {
+      connection,
       lpDevices,
       libusbPrinter,
+      network,
       canPrint,
       notes: canPrint
         ? []
-        : [
-            'No printer detected. On the till, check `lsusb` lists it and `ls -l /dev/usb/lp0` exists; the backend container needs the USB passthrough from docker-compose.yml (Linux host only).',
-          ],
+        : connection === 'NETWORK'
+          ? [
+              network
+                ? `Cannot reach ${network.host}:${network.port} from the server${network.error ? ` (${network.error})` : ''}.`
+                : 'Network printing is selected but no printer address is set.',
+            ]
+          : [
+              'No printer detected. On the till, check `lsusb` lists it and `ls -l /dev/usb/lp0` exists; the backend container needs the USB passthrough from docker-compose.yml (Linux host only). A server in the cloud cannot reach a USB or LAN printer - use a network printer the server can reach, or the browser print buttons.',
+            ],
     };
   }
 
+  // Test slip. kind=kot prints a sample kitchen ticket so the kitchen printer
+  // can be checked end to end (paper width, code page, wording).
   @Auth('bills.print')
   @Post('print/test')
   async printTest(
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId?: string,
+    @Query('kind') kind?: string,
   ) {
     let profile = resolveProfile();
+    let target: BranchPrinterTarget = {
+      printerConnection: 'USB',
+      printerHost: null,
+      printerPort: 9100,
+    };
     if (branchId) {
       await this.branchAccess.assertAccess(user.restaurantId, branchId);
       profile = await this.ordersService.printerProfile(branchId);
+      target = await this.ordersService.printerTarget(branchId);
     }
-    try {
-      await sendRaw(buildTestSlip(profile));
-      return { ok: true, profile };
-    } catch (err) {
-      if (err instanceof PrinterNotFoundError) {
-        throw new ServiceUnavailableException(err.message);
-      }
-      throw err;
-    }
+    const buffer =
+      kind === 'kot'
+        ? buildKotTestSlip(profile).buffer
+        : buildTestSlip(profile);
+    await this.deliver(target, buffer);
+    return { ok: true, profile };
   }
 
   // Opens the cash drawer wired to the thermal printer ("No sale" / test).
   @Auth('bills.print')
   @Post('print/drawer')
-  async openDrawer() {
-    try {
-      await sendRaw(buildOpenDrawer());
-      return { ok: true };
-    } catch (err) {
-      if (err instanceof PrinterNotFoundError) {
-        throw new ServiceUnavailableException(err.message);
-      }
-      throw err;
+  async openDrawer(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId?: string,
+  ) {
+    let target: BranchPrinterTarget = {
+      printerConnection: 'USB',
+      printerHost: null,
+      printerPort: 9100,
+    };
+    if (branchId) {
+      await this.branchAccess.assertAccess(user.restaurantId, branchId);
+      target = await this.ordersService.printerTarget(branchId);
     }
+    await this.deliver(target, buildOpenDrawer());
+    return { ok: true };
   }
 
   // Bill on the thermal printer: native ESC/POS text, branch paper width and
@@ -414,43 +539,56 @@ export class OrdersController {
       profile,
       openDrawer: drawer === 'true',
     });
-    return this.sendJob(job);
+    return this.sendJob(job, order.branch);
   }
 
-  // Kitchen ticket on the thermal printer. Same data as the browser KOT, but
-  // printed as native text; no prices or taxes.
+  // Kitchen tickets of an order on the thermal printer: one ticket per kitchen
+  // round/station, only those not printed yet. A repeat call answers 409
+  // ALREADY_PRINTED instead of printing a duplicate; `reprint=true` prints
+  // every ticket again, stamped REPRINT.
+  @Auth('orders.create')
+  @Post(':id/print/kot')
+  async printKot(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Query('reprint') reprint?: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.kotPrint.printOrder(branchId, id, reprint === 'true');
+  }
+
+  // Kept for older clients; same behaviour as POST :id/print/kot.
   @Auth('orders.create')
   @Post(':id/print/kot/usb')
   async printKotUsb(
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId: string,
     @Param('id') id: string,
+    @Query('reprint') reprint?: string,
   ) {
-    await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    const order = await this.ordersService.getReceiptData(branchId, id);
-    const job = buildKotEscPosJob({
-      branchName: order.branch.name,
-      order: toKotOrder(order),
-      profile: branchPrinterProfile(order.branch),
-    });
-    return this.sendJob(job);
+    return this.printKot(user, branchId, id, reprint);
   }
 
-  private async sendJob(job: PrintResult) {
+  private async deliver(target: BranchPrinterTarget, buffer: Buffer) {
     try {
-      await sendRaw(job.buffer);
-      return {
-        ok: true,
-        // Non-empty when the code page could not represent some characters;
-        // the ticket says so on paper and the UI offers the browser fallback.
-        unsupportedChars: job.unsupportedChars,
-      };
+      await sendToBranchPrinter(target, buffer);
     } catch (err) {
       if (err instanceof PrinterNotFoundError) {
         throw new ServiceUnavailableException(err.message);
       }
       throw err;
     }
+  }
+
+  private async sendJob(job: PrintResult, target: BranchPrinterTarget) {
+    await this.deliver(target, job.buffer);
+    return {
+      ok: true,
+      // Non-empty when the code page could not represent some characters;
+      // the ticket says so on paper and the UI offers the browser fallback.
+      unsupportedChars: job.unsupportedChars,
+    };
   }
 
   @Auth('refunds.process')

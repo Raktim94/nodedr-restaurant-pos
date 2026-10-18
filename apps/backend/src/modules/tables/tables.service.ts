@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -130,6 +131,20 @@ export class TablesService {
     assignedWaiterId?: string,
   ) {
     await this.assertTableInBranch(branchId, id);
+    // A table with an unpaid bill cannot be marked free/reserved/cleaning by
+    // hand - that is how a live order ended up hidden behind an "Available"
+    // tile. Pay or cancel the bill first (both release the table themselves).
+    if (status !== 'OCCUPIED') {
+      const open = await this.prisma.order.findFirst({
+        where: { tableId: id, status: 'OPEN' },
+        select: { orderNumber: true },
+      });
+      if (open) {
+        throw new ConflictException(
+          `This table has an open bill (#${open.orderNumber}) - pay or cancel it first`,
+        );
+      }
+    }
     const table = await this.prisma.table.update({
       where: { id },
       data: {

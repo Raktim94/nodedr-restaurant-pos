@@ -14,6 +14,8 @@ import type {
   CreateOrderDto,
   RefundDto,
   SessionUser,
+  UpdateOrderDto,
+  UpdateOrderItemDto,
 } from '@nodedr-restaurant/types';
 import { AuditService } from '../../audit/audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
@@ -105,9 +107,16 @@ export class OrdersService {
   // an item from a category the owner switched off under "Show on website" —
   // hiding it from the menu listing alone would still let someone order it
   // with a known item id.
-  private async assertOrderableOnWebsite(branchId: string, menuItemIds: string[]) {
+  private async assertOrderableOnWebsite(
+    branchId: string,
+    menuItemIds: string[],
+  ) {
     const hidden = await this.prisma.menuItem.findMany({
-      where: { id: { in: menuItemIds }, branchId, category: { showOnWebsite: false } },
+      where: {
+        id: { in: menuItemIds },
+        branchId,
+        category: { showOnWebsite: false },
+      },
       select: { name: true },
     });
     if (hidden.length > 0) {
@@ -151,7 +160,8 @@ export class OrdersService {
       acceptance = branch?.autoConfirmOrders ? 'ACCEPTED' : 'PENDING';
     }
     const menuItemIds = [...new Set(dto.items.map((i) => i.menuItemId))];
-    if (channel === 'ONLINE') await this.assertOrderableOnWebsite(branchId, menuItemIds);
+    if (channel === 'ONLINE')
+      await this.assertOrderableOnWebsite(branchId, menuItemIds);
     const menuItems = await this.prisma.menuItem.findMany({
       where: { id: { in: menuItemIds }, branchId },
     });
@@ -420,7 +430,8 @@ export class OrdersService {
     }
 
     const menuItemIds = [...new Set(items.map((i) => i.menuItemId))];
-    if (options.websiteOnly) await this.assertOrderableOnWebsite(branchId, menuItemIds);
+    if (options.websiteOnly)
+      await this.assertOrderableOnWebsite(branchId, menuItemIds);
     const menuItems = await this.prisma.menuItem.findMany({
       where: { id: { in: menuItemIds }, branchId },
     });
@@ -670,29 +681,97 @@ export class OrdersService {
     return { deleted: ids.length };
   }
 
-  async cancelOrder(branchId: string, orderId: string, userId: string) {
+  // Frees a table only when nothing else is still open on it. Two bills can
+  // share a table (a second round opened separately, a QR order), so "this
+  // order is done" must not blank the table out from under the other one.
+  private async releaseTableIfIdle(
+    tx: Prisma.TransactionClient,
+    tableId: string | null,
+    exceptOrderId: string,
+  ) {
+    if (!tableId) return;
+    const stillOpen = await tx.order.count({
+      where: { tableId, status: 'OPEN', id: { not: exceptOrderId } },
+    });
+    if (stillOpen === 0) {
+      await tx.table.update({
+        where: { id: tableId },
+        data: { status: 'AVAILABLE', statusSince: new Date() },
+      });
+    }
+  }
+
+  async printerTarget(branchId: string) {
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: {
+        printerConnection: true,
+        printerHost: true,
+        printerPort: true,
+      },
+    });
+    return (
+      branch ?? {
+        printerConnection: 'USB',
+        printerHost: null,
+        printerPort: 9100,
+      }
+    );
+  }
+
+  // Cancels an unpaid order. Rules (unchanged): only OPEN orders, and not
+  // once the kitchen has started cooking. An OPEN order has taken no payment
+  // and no stock (stock leaves at checkout), so there is nothing to reverse;
+  // paid orders go through refund() instead. The status flip is conditional on
+  // OPEN, so a checkout racing this call can never end up both PAID and
+  // CANCELLED.
+  async cancelOrder(
+    branchId: string,
+    orderId: string,
+    userId: string,
+    reason?: string,
+  ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
-      include: { kots: true },
+      include: { kots: true, payments: true },
     });
     if (!order) throw new NotFoundException('Order not found');
     if (order.status !== 'OPEN') {
-      throw new BadRequestException('Only an open order can be cancelled');
+      throw new BadRequestException(
+        order.status === 'PAID'
+          ? 'This bill is already paid - use Refund to reverse it'
+          : 'Only an open order can be cancelled',
+      );
+    }
+    if (order.payments.length > 0) {
+      throw new BadRequestException(
+        'This order already has a payment - refund it instead of cancelling',
+      );
     }
     const alreadyStarted = order.kots.some((kot) =>
       ['PREPARING', 'READY', 'SERVED'].includes(kot.status),
     );
     if (alreadyStarted) {
       throw new BadRequestException(
-        'The kitchen has already started this order — it can no longer be cancelled from here',
+        'The kitchen has already started this order - it can no longer be cancelled from here',
       );
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.order.update({
-        where: { id: orderId },
-        data: { status: 'CANCELLED' },
+      const flipped = await tx.order.updateMany({
+        where: { id: orderId, status: 'OPEN' },
+        data: {
+          status: 'CANCELLED',
+          cancelReason: reason ?? null,
+          cancelledAt: new Date(),
+          cancelledById: userId,
+        },
       });
+      if (flipped.count === 0) {
+        throw new ConflictException(
+          'This order was just paid or changed - refresh and check it',
+        );
+      }
       await tx.kot.updateMany({
         where: { orderId, status: { notIn: ['SERVED', 'CANCELLED'] } },
         data: { status: 'CANCELLED' },
@@ -701,22 +780,7 @@ export class OrdersService {
         where: { kot: { orderId }, status: { notIn: ['SERVED', 'CANCELLED'] } },
         data: { status: 'CANCELLED' },
       });
-
-      if (order.tableId) {
-        const otherOpenOrders = await tx.order.count({
-          where: {
-            tableId: order.tableId,
-            status: 'OPEN',
-            id: { not: orderId },
-          },
-        });
-        if (otherOpenOrders === 0) {
-          await tx.table.update({
-            where: { id: order.tableId },
-            data: { status: 'AVAILABLE', statusSince: new Date() },
-          });
-        }
-      }
+      await this.releaseTableIfIdle(tx, order.tableId, orderId);
     });
 
     this.realtime.emitToBranch(branchId, 'order.updated', {
@@ -724,6 +788,11 @@ export class OrdersService {
       status: 'CANCELLED',
     });
     this.realtime.emitToBranch(branchId, 'kot.updated', { orderId });
+    if (order.tableId) {
+      this.realtime.emitToBranch(branchId, 'table.updated', {
+        id: order.tableId,
+      });
+    }
 
     await this.audit.record({
       userId,
@@ -734,6 +803,8 @@ export class OrdersService {
         orderNumber: order.orderNumber,
         tableId: order.tableId,
         type: order.type,
+        reason: reason ?? null,
+        total: order.totalAmount.toString(),
       },
     });
     void this.webhooks.emitForBranch(branchId, 'order.cancelled', {
@@ -742,6 +813,250 @@ export class OrdersService {
       type: order.type,
     });
 
+    return this.getOrder(branchId, orderId);
+  }
+
+  private async recomputeTotals(tx: Prisma.TransactionClient, orderId: string) {
+    const items = await tx.orderItem.findMany({ where: { orderId } });
+    const totals = computeOrderTotals(
+      items.map((item) =>
+        priceLine({
+          quantity: item.quantity,
+          unitPriceInclusive: Number(item.lineTotal) / item.quantity,
+          taxRatePercent: Number(item.taxRateSnapshot),
+        }),
+      ),
+    );
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        subtotal: totals.subtotal,
+        taxAmount: totals.taxAmount,
+        totalAmount: totals.subtotal,
+      },
+    });
+  }
+
+  private async editableOrder(branchId: string, orderId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, branchId },
+      include: { items: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'OPEN') {
+      throw new BadRequestException(
+        order.status === 'PAID'
+          ? 'This bill is paid and cannot be edited - use Refund to correct it'
+          : 'Only an open bill can be edited',
+      );
+    }
+    return order;
+  }
+
+  // Header corrections on an open bill. Moving to another table keeps the
+  // order (and its tickets) intact and fixes both tables' status together.
+  async updateOrder(
+    branchId: string,
+    orderId: string,
+    userId: string,
+    dto: UpdateOrderDto,
+  ) {
+    const order = await this.editableOrder(branchId, orderId);
+
+    if (dto.customerId) {
+      const customer = await this.prisma.customer.findFirst({
+        where: { id: dto.customerId, branchId },
+        select: { id: true },
+      });
+      if (!customer) throw new BadRequestException('Customer not found');
+    }
+
+    const moving = dto.tableId && dto.tableId !== order.tableId;
+    if (moving) {
+      if (order.type !== 'DINE_IN') {
+        throw new BadRequestException('Only dine-in bills have a table');
+      }
+      const target = await this.prisma.table.findFirst({
+        where: { id: dto.tableId, floor: { branchId } },
+      });
+      if (!target) throw new BadRequestException('Table not found');
+      if (target.status === 'OUT_OF_SERVICE') {
+        throw new BadRequestException('That table is out of service');
+      }
+      const occupant = await this.prisma.order.findFirst({
+        where: { tableId: target.id, status: 'OPEN', id: { not: orderId } },
+        select: { orderNumber: true },
+      });
+      if (occupant) {
+        throw new ConflictException(
+          `That table already has open bill #${occupant.orderNumber} - merge the bills instead`,
+        );
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          ...(moving ? { tableId: dto.tableId } : {}),
+          ...(dto.guestName !== undefined ? { guestName: dto.guestName } : {}),
+          ...(dto.guestCount !== undefined
+            ? { guestCount: dto.guestCount }
+            : {}),
+          ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+          ...(dto.customerId !== undefined
+            ? { customerId: dto.customerId }
+            : {}),
+        },
+      });
+      if (moving) {
+        await tx.table.update({
+          where: { id: dto.tableId },
+          data: { status: 'OCCUPIED', statusSince: new Date() },
+        });
+        await this.releaseTableIfIdle(tx, order.tableId, orderId);
+      }
+    });
+
+    this.realtime.emitToBranch(branchId, 'order.updated', { id: orderId });
+    this.realtime.emitToBranch(branchId, 'kot.updated', { orderId });
+    if (moving) {
+      for (const id of [order.tableId, dto.tableId]) {
+        if (id) this.realtime.emitToBranch(branchId, 'table.updated', { id });
+      }
+    }
+    await this.audit.record({
+      userId,
+      action: moving ? 'order.table_changed' : 'order.edited',
+      entity: 'Order',
+      entityId: orderId,
+      metadata: {
+        orderNumber: order.orderNumber,
+        changes: dto as unknown as Prisma.InputJsonValue,
+        fromTableId: order.tableId,
+      },
+    });
+    return this.getOrder(branchId, orderId);
+  }
+
+  // The kitchen must not lose track of food it is already making, so a line
+  // can only be lowered/removed while its ticket is still queued.
+  private async assertLineNotStarted(
+    tx: Prisma.TransactionClient,
+    itemId: string,
+  ) {
+    const started = await tx.kotItem.findFirst({
+      where: {
+        orderItemId: itemId,
+        OR: [
+          { status: { in: ['PREPARING', 'READY', 'SERVED'] } },
+          { kot: { status: { in: ['PREPARING', 'READY', 'SERVED'] } } },
+        ],
+      },
+    });
+    if (started) {
+      throw new ConflictException(
+        'The kitchen has already started this item - it can no longer be changed here',
+      );
+    }
+  }
+
+  async updateOrderItem(
+    branchId: string,
+    orderId: string,
+    itemId: string,
+    userId: string,
+    dto: UpdateOrderItemDto,
+  ) {
+    const order = await this.editableOrder(branchId, orderId);
+    const item = order.items.find((i) => i.id === itemId);
+    if (!item) throw new NotFoundException('Item not found on this bill');
+    if (dto.quantity > item.quantity) {
+      throw new BadRequestException(
+        'To order more, add the item again so the kitchen gets a new ticket',
+      );
+    }
+    if (dto.quantity === item.quantity) return this.getOrder(branchId, orderId);
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.assertLineNotStarted(tx, itemId);
+      const unit = Number(item.lineTotal) / item.quantity;
+      await tx.orderItem.update({
+        where: { id: itemId },
+        data: {
+          quantity: dto.quantity,
+          lineTotal: round2(unit * dto.quantity),
+        },
+      });
+      await this.recomputeTotals(tx, orderId);
+    });
+
+    this.realtime.emitToBranch(branchId, 'order.updated', { id: orderId });
+    this.realtime.emitToBranch(branchId, 'kot.updated', { orderId });
+    await this.audit.record({
+      userId,
+      action: 'order.item_changed',
+      entity: 'Order',
+      entityId: orderId,
+      metadata: {
+        orderNumber: order.orderNumber,
+        item: item.nameSnapshot,
+        from: item.quantity,
+        to: dto.quantity,
+        reason: dto.reason ?? null,
+      },
+    });
+    return this.getOrder(branchId, orderId);
+  }
+
+  async removeOrderItem(
+    branchId: string,
+    orderId: string,
+    itemId: string,
+    userId: string,
+    reason: string,
+  ) {
+    const order = await this.editableOrder(branchId, orderId);
+    const item = order.items.find((i) => i.id === itemId);
+    if (!item) throw new NotFoundException('Item not found on this bill');
+    if (order.items.length === 1) {
+      throw new BadRequestException(
+        'This is the only item - cancel the order instead',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.assertLineNotStarted(tx, itemId);
+      await tx.orderItem.delete({ where: { id: itemId } });
+      // A ticket left with nothing on it is cancelled, not left dangling.
+      const empty = await tx.kot.findMany({
+        where: { orderId, items: { none: {} }, status: { not: 'CANCELLED' } },
+        select: { id: true },
+      });
+      if (empty.length > 0) {
+        await tx.kot.updateMany({
+          where: { id: { in: empty.map((k) => k.id) } },
+          data: { status: 'CANCELLED' },
+        });
+      }
+      await this.recomputeTotals(tx, orderId);
+    });
+
+    this.realtime.emitToBranch(branchId, 'order.updated', { id: orderId });
+    this.realtime.emitToBranch(branchId, 'kot.updated', { orderId });
+    await this.audit.record({
+      userId,
+      action: 'order.item_removed',
+      entity: 'Order',
+      entityId: orderId,
+      metadata: {
+        orderNumber: order.orderNumber,
+        item: item.nameSnapshot,
+        quantity: item.quantity,
+        lineTotal: item.lineTotal.toString(),
+        reason,
+      },
+    });
     return this.getOrder(branchId, orderId);
   }
 
@@ -937,12 +1252,7 @@ export class OrdersService {
       );
       stockSkipped = deduction.skipped;
 
-      if (order.tableId) {
-        await tx.table.update({
-          where: { id: order.tableId },
-          data: { status: 'AVAILABLE', statusSince: new Date() },
-        });
-      }
+      await this.releaseTableIfIdle(tx, order.tableId, orderId);
 
       // Loyalty earn on net spend (excluding tip), only once the sale is
       // actually paid — an atomic increment (race-free by construction, no
@@ -1226,10 +1536,7 @@ export class OrdersService {
       });
 
       if (source.tableId && source.tableId !== target.tableId) {
-        await tx.table.update({
-          where: { id: source.tableId },
-          data: { status: 'AVAILABLE', statusSince: new Date() },
-        });
+        await this.releaseTableIfIdle(tx, source.tableId, sourceOrderId);
       }
 
       return result;
@@ -1515,23 +1822,6 @@ export class OrdersService {
       }
     }
 
-    return updated;
-  }
-
-  async reprintKot(branchId: string, kotId: string) {
-    const kot = await this.prisma.kot.findFirst({
-      where: { id: kotId, order: { branchId } },
-    });
-    if (!kot) throw new NotFoundException('KOT not found');
-
-    const updated = await this.prisma.kot.update({
-      where: { id: kotId },
-      data: { printedCount: { increment: 1 } },
-    });
-    this.realtime.emitToBranch(branchId, 'kot.reprinted', {
-      id: updated.id,
-      printedCount: updated.printedCount,
-    });
     return updated;
   }
 

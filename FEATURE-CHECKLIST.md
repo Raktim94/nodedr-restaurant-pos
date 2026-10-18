@@ -28,12 +28,13 @@ partially built, the note says what's missing.
 | Split bill | Partial | Display-only equal-split calculator, not separate per-guest checks |
 | Merge bills | Shipped | `mergeOrders()` |
 | Transfer items between bills | Planned | |
-| Transfer table | Planned | No dedicated table-transfer action (merge exists, not a move) |
+| Transfer table | Shipped | Move an open bill to a free table from Edit bill; both tables' status updated, tickets kept |
 | Merge tables | Shipped | Bill-merge across tables |
 | Reorder previous items | Planned | |
 | Repeat last order | Planned | |
-| Cancel item | Planned | Order-level void exists via refund; no per-item cancel before send |
-| Void order | Partial | Refund flow covers post-payment; no pre-payment void |
+| Cancel item | Shipped | Remove a line (reason required, audited) or lower its quantity on an open bill while the kitchen has not started it |
+| Void order | Shipped | Pre-payment: Cancel order (reason, audited, releases table + KDS tickets; `orders.cancel`). Post-payment: Refund |
+| Edit bill | Shipped | Open bills only (quantities, lines, table, guest/note); paid bills are never edited in place - refund instead |
 | Refund | Shipped | Capped at refundable remainder |
 | Partial refund | Shipped | |
 | Exchange | Planned | |
@@ -334,8 +335,10 @@ partially built, the note says what's missing.
 | Feature | Status | Note |
 |---|---|---|
 | Receipt printer (browser print) | Shipped | HTML receipt via print dialog |
-| Direct USB/ESC-POS printer | Shipped | Ported from nodedr-pos (kernel usblp + libusb fallback), diagnostics + test-print in Settings (2026-08-14) |
-| Kitchen printers, label printers, weighing scales, payment terminals | Planned | |
+| Direct USB/ESC-POS printer | Shipped | Ported from nodedr-pos (kernel usblp + libusb fallback), diagnostics + test-print in Settings (2026-08-14). Not verified on real hardware |
+| Network (TCP/9100) ESC/POS printer | Shipped | Per-branch address; verified against a local TCP listener only, not a physical printer. Server must be able to reach the printer |
+| Kitchen ticket thermal print | Shipped | Per ticket, once-only (409 on repeat), REPRINT-stamped copies, test ticket; see docs/PERMISSIONS-STOCK-PRINTING.md |
+| Label printers, weighing scales, payment terminals | Planned | Kitchen printers: see the thermal rows above |
 | Barcode scanners | Planned | |
 | Customer displays, kiosks, tablets as POS terminals | Planned | |
 | Device registration/health/remote config | Planned | |

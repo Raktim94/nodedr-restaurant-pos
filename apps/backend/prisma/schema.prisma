@@ -137,6 +137,11 @@ model Branch {
   printerPaperWidthMm Int     @default(80)
   printerCodepage     String  @default("CP858")
   printerColumns      Int?
+  // "USB" = printer attached to the machine running the backend; "NETWORK" =
+  // raw ESC/POS over TCP to printerHost:printerPort (usually 9100).
+  printerConnection   String  @default("USB")
+  printerHost         String?
+  printerPort         Int     @default(9100)
 
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -1294,7 +1299,10 @@ model Order {
   loyaltyDiscountAmount Decimal @default(0) @db.Decimal(12, 2)
   totalAmount           Decimal @default(0) @db.Decimal(12, 2)
 
-  notes String?
+  notes         String?
+  cancelReason  String?
+  cancelledAt   DateTime?
+  cancelledById String?
 
   // Client-generated idempotency key for public/unauthenticated order
   // submits (kiosk). A retry after a dropped connection carries the same
@@ -1408,10 +1416,12 @@ model Kot {
   stationId String?
   station   KitchenStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
 
-  ticketNumber String
-  status       KotStatus @default(NEW)
-  isPriority   Boolean   @default(false)
-  printedCount Int       @default(0)
+  ticketNumber   String
+  status         KotStatus @default(NEW)
+  isPriority     Boolean   @default(false)
+  printedCount   Int       @default(0)
+  printedAt      DateTime?
+  lastPrintError String?
 
   createdAt  DateTime  @default(now())
   acceptedAt DateTime?

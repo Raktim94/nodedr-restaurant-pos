@@ -41,6 +41,9 @@ export interface BranchSettings {
   printerPaperWidthMm: 58 | 80;
   printerCodepage: "CP437" | "CP850" | "CP858" | "CP1252";
   printerColumns: number | null;
+  printerConnection: "USB" | "NETWORK";
+  printerHost: string | null;
+  printerPort: number;
 }
 
 export function useSettings(branchId: string | null) {

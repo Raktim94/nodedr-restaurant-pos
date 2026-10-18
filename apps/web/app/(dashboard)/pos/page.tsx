@@ -3,10 +3,11 @@
 import { ChevronLeft, MonitorSmartphone, ShoppingCart } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import { publishDisplay } from "@/lib/customer-display";
 import { CartPanel, type DeliveryDetails, type PosOrderType } from "@/components/pos/cart-panel";
 import { cartLineKey, type CartLine } from "@/components/pos/cart-line";
+import { clearDraft, switchTableDraft, type Drafts } from "@/lib/pos-drafts";
 import { CheckoutPanel } from "@/components/pos/checkout-panel";
 import { KitchenProgressWidget } from "@/components/pos/kitchen-progress-widget";
 import { ModifierPickerDialog } from "@/components/pos/modifier-picker-dialog";
@@ -20,6 +21,7 @@ import {
   useCreateOrder,
   useOpenOrdersForTable,
   type CreatedOrder,
+  type OpenOrder,
 } from "@/hooks/use-orders";
 import { useFloors, type RestaurantTable } from "@/hooks/use-tables";
 import { ApiError } from "@/lib/api";
@@ -36,6 +38,7 @@ export default function PosPage() {
 
 function PosPageInner() {
   const { branchId } = useBranch();
+  const { note, clear: clearNote, toast } = useNoteToast();
   const { data: floors } = useFloors(branchId);
   const tables = floors?.flatMap((f) => f.tables) ?? [];
   const preselectedTableId = useSearchParams().get("tableId") ?? "";
@@ -44,9 +47,27 @@ function PosPageInner() {
   const [orderType, setOrderType] = useState<PosOrderType>("DINE_IN");
   const [delivery, setDelivery] = useState<DeliveryDetails>({ address: "", pincode: "", phone: "" });
   const [scheduledFor, setScheduledFor] = useState("");
-  const [tableId, setTableId] = useState(preselectedTableId);
+  const [tableId, setTableIdRaw] = useState(preselectedTableId);
+  // Unsent cart per table, so switching tables never moves or loses items.
+  const [drafts, setDrafts] = useState<Drafts<CartLine>>({});
+  const setTableId = (next: string) => {
+    if (next === tableId) return;
+    const r = switchTableDraft(drafts, tableId, next, lines);
+    setDrafts(r.drafts);
+    setLines(r.lines);
+    setSelectedBillId(null);
+    setTableIdRaw(next);
+  };
+  const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [activeOrder, setActiveOrder] = useState<CreatedOrder | null>(null);
+  const [activeCustomer, setActiveCustomer] = useState<OpenOrder["customer"]>(null);
+  // /pos?tableId=... can change while this page stays mounted.
+  const [seenPreselected, setSeenPreselected] = useState(preselectedTableId);
+  if (preselectedTableId !== seenPreselected) {
+    setSeenPreselected(preselectedTableId);
+    if (preselectedTableId && !activeOrder) setTableId(preselectedTableId);
+  }
   // Phones show the menu full-screen and the cart/checkout as an overlay; from
   // lg up both sit side by side and this flag is ignored.
   const [cartOpen, setCartOpen] = useState(false);
@@ -71,11 +92,18 @@ function PosPageInner() {
 
   const createOrder = useCreateOrder(branchId);
   const addOrderItems = useAddOrderItems(branchId);
-  const { data: existingOrders } = useOpenOrdersForTable(
+  const openBillsQuery = useOpenOrdersForTable(
     branchId,
     orderType === "DINE_IN" ? tableId || null : null,
   );
-  const existingOrder = existingOrders?.[0];
+  const existingOrders = openBillsQuery.data;
+  // A table can carry several open bills; the user picks which one gets the
+  // new items (default: the newest). Until the table's bills are loaded we do
+  // not know whether this is a new bill or a new round, so submitting waits.
+  const checkingTable =
+    orderType === "DINE_IN" && !!tableId && (openBillsQuery.isPending || openBillsQuery.isFetching);
+  const existingOrder =
+    existingOrders?.find((o) => o.id === selectedBillId) ?? existingOrders?.[0];
 
   const addLine = (menuItemId: string, name: string, unitPrice: number, modifierIds: string[], modifierLabel: string) => {
     const key = cartLineKey(menuItemId, modifierIds);
@@ -124,6 +152,8 @@ function PosPageInner() {
   const removeLine = (key: string) => setLines((prev) => prev.filter((l) => l.key !== key));
 
   const handleSubmit = () => {
+    if (checkingTable) return;
+    const sentTableId = tableId;
     const items = lines.map((l) => ({
       menuItemId: l.menuItemId,
       quantity: l.quantity,
@@ -135,6 +165,8 @@ function PosPageInner() {
         { orderId: existingOrder.id, dto: { items } },
         {
           onSuccess: (order) => {
+            setDrafts((d) => clearDraft(d, sentTableId));
+            setActiveCustomer(existingOrder.customer);
             setActiveOrder(order);
             toast.success(`Added to order #${order.orderNumber} — sent to kitchen`);
           },
@@ -156,6 +188,8 @@ function PosPageInner() {
       },
       {
         onSuccess: (order) => {
+          setDrafts((d) => clearDraft(d, sentTableId));
+          setActiveCustomer(null);
           setActiveOrder(order);
           setCartOpen(true);
           toast.success(`Order #${order.orderNumber} sent to kitchen`);
@@ -167,6 +201,7 @@ function PosPageInner() {
 
   const viewExistingOrder = () => {
     if (existingOrder) {
+      setActiveCustomer(existingOrder.customer);
       setActiveOrder(existingOrder);
       setCartOpen(true);
     }
@@ -175,8 +210,11 @@ function PosPageInner() {
   const resetForNewOrder = () => {
     setActiveOrder(null);
     setCartOpen(false);
+    // The sent cart is gone; other tables' unsent drafts stay.
     setLines([]);
-    setTableId("");
+    setSelectedBillId(null);
+    setTableIdRaw("");
+    setActiveCustomer(null);
     setDelivery({ address: "", pincode: "", phone: "" });
     setScheduledFor("");
   };
@@ -193,6 +231,7 @@ function PosPageInner() {
 
   return (
     <div className="flex h-[calc(100dvh-10rem)] flex-col gap-4 lg:h-[calc(100dvh-8rem)]">
+      <StatusNote note={note} onClear={clearNote} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <KitchenProgressWidget branchId={branchId} />
@@ -239,7 +278,7 @@ function PosPageInner() {
               <CheckoutPanel
                 order={activeOrder}
                 branchId={branchId}
-                initialCustomer={existingOrder?.customer}
+                initialCustomer={activeCustomer}
                 onDone={resetForNewOrder}
               />
             ) : (
@@ -257,6 +296,10 @@ function PosPageInner() {
                 isSubmitting={createOrder.isPending || addOrderItems.isPending}
                 existingOrderNumber={existingOrder?.orderNumber}
                 onViewExistingOrder={existingOrder ? viewExistingOrder : undefined}
+                openBills={existingOrders?.map((o) => ({ id: o.id, orderNumber: o.orderNumber }))}
+                selectedBillId={existingOrder?.id ?? null}
+                onSelectBill={setSelectedBillId}
+                checkingTable={checkingTable}
                 delivery={delivery}
                 onDeliveryChange={setDelivery}
                 scheduledFor={scheduledFor}
@@ -267,7 +310,7 @@ function PosPageInner() {
         </div>
       )}
 
-      {!showTablePicker && !cartOpen && (lines.length > 0 || activeOrder) && (
+      {!showTablePicker && !cartOpen && (lines.length > 0 || activeOrder || existingOrder) && (
         <button
           type="button"
           onClick={() => setCartOpen(true)}
@@ -278,9 +321,11 @@ function PosPageInner() {
             <ShoppingCart className="h-5 w-5" />
             {activeOrder
               ? `Order #${activeOrder.orderNumber} — pay`
-              : `View cart · ${lines.reduce((n, l) => n + l.quantity, 0)} items`}
+              : lines.length > 0
+                ? `View cart · ${lines.reduce((n, l) => n + l.quantity, 0)} items`
+                : `Open bill #${existingOrder?.orderNumber} — view`}
           </span>
-          {!activeOrder && (
+          {!activeOrder && lines.length > 0 && (
             <span className="text-sm font-semibold tabular-nums">
               {formatCurrency(lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0))}
             </span>

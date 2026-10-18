@@ -5,6 +5,7 @@ import { NotificationsModule } from '../../notifications/notifications.module';
 import { GiftCardsModule } from '../gift-cards/gift-cards.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { MarketingModule } from '../marketing/marketing.module';
+import { KotPrintService } from './kot-print.service';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { ScheduledOrdersService } from './scheduled-orders.service';
@@ -18,7 +19,12 @@ import { ScheduledOrdersService } from './scheduled-orders.service';
     MarketingModule,
   ],
   controllers: [OrdersController],
-  providers: [OrdersService, ScheduledOrdersService, BranchAccessService],
-  exports: [OrdersService],
+  providers: [
+    OrdersService,
+    KotPrintService,
+    ScheduledOrdersService,
+    BranchAccessService,
+  ],
+  exports: [OrdersService, KotPrintService],
 })
 export class OrdersModule {}

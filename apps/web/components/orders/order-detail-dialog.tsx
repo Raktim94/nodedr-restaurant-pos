@@ -1,13 +1,17 @@
 "use client";
 
-import { Check, MessageCircle, Phone, X } from "lucide-react";
-import { toast } from "sonner";
+import { Check, MessageCircle, Pencil, Phone, X } from "lucide-react";
+import { useState } from "react";
+import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ChannelBadge, TypeBadge } from "@/components/orders/channel-badges";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAcceptOrder, useCancelOrder, useOrder, useRejectOrder } from "@/hooks/use-orders";
+import { CancelOrderDialog, useCanCancelOrders } from "@/components/orders/cancel-order-dialog";
+import { EditBillDialog } from "@/components/orders/edit-bill-dialog";
+import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
+import { useAcceptOrder, useOrder, useRejectOrder } from "@/hooks/use-orders";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +29,12 @@ export function OrderDetailDialog({
   const { data: order, isLoading } = useOrder(branchId, open ? orderId : null);
   const accept = useAcceptOrder(branchId);
   const reject = useRejectOrder(branchId);
-  const cancel = useCancelOrder(branchId);
+  const { note, clear: clearNote, toast } = useNoteToast();
+  const canCancelRole = useCanCancelOrders();
+  const { data: me } = useCurrentUser();
+  const canEditRole = hasPermission(me?.user, "orders.edit");
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const customerName = order?.guestName ?? order?.customer?.name ?? "Walk-in guest";
   const pending = order?.status === "OPEN" && order?.acceptance === "PENDING";
   const canCancel = order?.status === "OPEN" && !pending;
@@ -53,6 +62,7 @@ export function OrderDetailDialog({
             {order && <ChannelBadge channel={order.channel} />}
           </DialogTitle>
         </DialogHeader>
+        <StatusNote note={note} onClear={clearNote} />
 
         {isLoading || !order ? (
           <div className="flex flex-col gap-2">
@@ -81,16 +91,16 @@ export function OrderDetailDialog({
                   <div key={item.id} className="flex items-center justify-between gap-2 px-3 py-2">
                     <div className="flex flex-col">
                       <span className="font-medium text-foreground">
-                        {item.quantity}× {item.name}
+                        {item.quantity}× {item.nameSnapshot}
                       </span>
                       {item.modifiers.length > 0 && (
                         <span className="text-xs text-muted-foreground">
-                          {item.modifiers.map((m) => m.name).join(", ")}
+                          {item.modifiers.map((m) => m.nameSnapshot).join(", ")}
                         </span>
                       )}
                     </div>
                     <span className="tabular-nums text-foreground">
-                      {formatCurrency(item.totalPrice)}
+                      {formatCurrency(item.lineTotal)}
                     </span>
                   </div>
                 ))}
@@ -166,14 +176,45 @@ export function OrderDetailDialog({
                 </Button>
               </div>
             )}
+            {order.status === "CANCELLED" && order.cancelReason && (
+              <p className="rounded-lg bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+                Cancelled: {order.cancelReason}
+              </p>
+            )}
+            {order.status === "PAID" && (
+              <p className="rounded-lg bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+                This bill is paid. To correct it, issue a refund from the Dashboard — paid bills are never edited in place.
+              </p>
+            )}
             {canCancel && (
-              <Button
-                variant="destructive"
-                disabled={cancel.isPending}
-                onClick={() => run(() => cancel.mutateAsync(order.id), "Order cancelled")}
-              >
-                <X className="mr-1.5 h-4 w-4" /> Cancel order
-              </Button>
+              <div className="flex gap-2">
+                {canEditRole && (
+                  <Button variant="outline" className="flex-1" onClick={() => setEditOpen(true)}>
+                    <Pencil className="mr-1.5 h-4 w-4" /> Edit bill
+                  </Button>
+                )}
+                {canCancelRole ? (
+                  <Button variant="destructive" className="flex-1" onClick={() => setCancelOpen(true)}>
+                    <X className="mr-1.5 h-4 w-4" /> Cancel order
+                  </Button>
+                ) : (
+                  <p className="flex-1 self-center text-xs text-muted-foreground">
+                    Cancelling needs a manager — ask one to cancel this order.
+                  </p>
+                )}
+              </div>
+            )}
+            {order && (
+              <>
+                <CancelOrderDialog
+                  branchId={branchId}
+                  orderId={order.id}
+                  orderNumber={order.orderNumber}
+                  open={cancelOpen}
+                  onOpenChange={setCancelOpen}
+                  />
+                <EditBillDialog branchId={branchId} orderId={order.id} open={editOpen} onOpenChange={setEditOpen} />
+              </>
             )}
           </div>
         )}

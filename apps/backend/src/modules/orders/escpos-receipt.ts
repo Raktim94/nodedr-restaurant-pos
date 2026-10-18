@@ -204,6 +204,8 @@ export interface EscposKotOrder {
   createdAt: Date;
   table: { label: string } | null;
   customer: { name: string } | null;
+  /** Order-level note ("allergy: nuts"), printed above the items. */
+  notes?: string | null;
   items: {
     nameSnapshot: string;
     quantity: number;
@@ -212,20 +214,42 @@ export interface EscposKotOrder {
   }[];
 }
 
+/** Which kitchen ticket this is; `reprint` > 0 prints a REPRINT banner. */
+export interface KotTicketInfo {
+  number: string;
+  station?: string | null;
+  reprint?: number;
+}
+
 /** Kitchen ticket: quantities, modifiers and notes only - no prices or tax. */
 export function buildKotEscPosJob({
   branchName,
   order,
+  ticket,
   profile = resolveProfile(),
   timeZone,
   locale,
 }: {
   branchName: string;
   order: EscposKotOrder;
+  ticket?: KotTicketInfo;
 } & JobFormat): PrintResult {
   const w = new EscposWriter(profile);
   w.text('KITCHEN ORDER', { align: 'center', bold: true, size: 'tall' });
+  if (ticket?.reprint) {
+    w.text(`*** REPRINT #${ticket.reprint} ***`, {
+      align: 'center',
+      bold: true,
+      size: 'tall',
+    });
+  }
   w.text(branchName, { align: 'center' });
+  if (ticket) {
+    w.text(
+      `Ticket ${ticket.number}${ticket.station ? ` - ${ticket.station}` : ''}`,
+      { align: 'center' },
+    );
+  }
   w.rule();
   w.text(`#${order.orderNumber}`, { bold: true, size: 'big' });
   w.text(
@@ -234,6 +258,7 @@ export function buildKotEscPosJob({
   );
   if (order.customer) w.text(`Guest: ${order.customer.name}`);
   w.text(stamp(order.createdAt, { timeZone, locale }));
+  if (order.notes) w.text(`ORDER NOTE: ${order.notes}`, { bold: true });
   w.rule('=');
 
   let units = 0;
@@ -300,4 +325,32 @@ export function buildTestSlip(
   w.text('Wide text', { size: 'wide' });
   w.text(stamp(new Date(), {}));
   return w.finish();
+}
+
+/** A sample kitchen ticket, to prove the kitchen printer end to end. */
+export function buildKotTestSlip(
+  profile: PrinterProfile = resolveProfile(),
+  branchName = 'Test print',
+): PrintResult {
+  return buildKotEscPosJob({
+    branchName,
+    profile,
+    ticket: { number: 'TEST-1', station: 'Kitchen' },
+    order: {
+      orderNumber: 'TEST',
+      type: 'DINE_IN',
+      createdAt: new Date(),
+      table: { label: '1' },
+      customer: null,
+      notes: 'This is only a test - no food to make',
+      items: [
+        {
+          nameSnapshot: 'Sample dish',
+          quantity: 2,
+          kitchenNote: 'No onion',
+          modifiers: [{ nameSnapshot: 'Extra spicy' }],
+        },
+      ],
+    },
+  });
 }

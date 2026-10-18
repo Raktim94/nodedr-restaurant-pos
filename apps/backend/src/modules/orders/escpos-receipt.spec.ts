@@ -1,6 +1,7 @@
 import { readJob } from './escpos/read-job';
 import {
   buildKotEscPosJob,
+  buildKotTestSlip,
   buildOpenDrawer,
   buildReceiptEscPos,
   buildReceiptEscPosJob,
@@ -224,6 +225,48 @@ describe('kitchen ticket job', () => {
     expect(text).toContain('1 x Crema Catalana');
     expect(text).toContain('2 line(s), 3 item(s)');
     expect(text).not.toMatch(/[€$]|TOTAL|IVA|Subtotal|Paid|\d\.\d{2}/);
+  });
+
+  it('stamps a reprint clearly and names the ticket and station', () => {
+    const copy = readJob(
+      buildKotEscPosJob({
+        branchName: 'Casa',
+        order: kot,
+        ticket: { number: 'ab12-2', station: 'Tandoor', reprint: 2 },
+        ...fmt,
+      }).buffer,
+    ).text;
+    expect(copy).toContain('*** REPRINT #2 ***');
+    expect(copy).toContain('Ticket ab12-2 - Tandoor');
+    const first = readJob(
+      buildKotEscPosJob({
+        branchName: 'Casa',
+        order: kot,
+        ticket: { number: 'ab12-1', reprint: 0 },
+        ...fmt,
+      }).buffer,
+    ).text;
+    expect(first).not.toContain('REPRINT');
+  });
+
+  it('prints the order-level note above the items', () => {
+    const { text } = readJob(
+      buildKotEscPosJob({
+        branchName: 'Casa',
+        order: { ...kot, notes: 'Nut allergy' },
+        ...fmt,
+      }).buffer,
+    );
+    expect(text.indexOf('ORDER NOTE: Nut allergy')).toBeGreaterThan(-1);
+    expect(text.indexOf('ORDER NOTE')).toBeLessThan(text.indexOf('Paella'));
+  });
+
+  it('builds a sample kitchen ticket for the test print', () => {
+    const { text } = readJob(buildKotTestSlip().buffer);
+    expect(text).toContain('KITCHEN ORDER');
+    expect(text).toContain('2 x Sample dish');
+    expect(text).toContain('+ Extra spicy');
+    expect(text).toContain('NOTE: No onion');
   });
 
   it('wraps a long note on 58 mm paper', () => {

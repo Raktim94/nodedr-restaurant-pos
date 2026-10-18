@@ -1,6 +1,6 @@
 "use client";
 
-import type { AddOrderItemsDto, CheckoutDto, CreateOrderDto, RefundDto } from "@nodedr-restaurant/types";
+import type { AddOrderItemsDto, CheckoutDto, CreateOrderDto, RefundDto, UpdateOrderDto } from "@nodedr-restaurant/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Customer } from "@/hooks/use-customers";
 import { api } from "@/lib/api";
@@ -25,6 +25,9 @@ export function useCreateOrder(branchId: string | null) {
   return useMutation({
     mutationFn: (dto: CreateOrderDto) => api.post<CreatedOrder>(`/orders?branchId=${branchId}`, dto),
     onSuccess: () => {
+      // Without refreshing the per-table open-bill cache, going Table 1 -> 2 ->
+      // 1 showed Table 1 as having no order and the next send opened a duplicate.
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard", "summary", branchId] });
     },
@@ -37,6 +40,7 @@ export function useCheckoutOrder(branchId: string | null) {
     mutationFn: ({ orderId, dto }: { orderId: string; dto: CheckoutDto }) =>
       api.post<CreatedOrder>(`/orders/${orderId}/checkout?branchId=${branchId}`, dto),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard", "summary", branchId] });
     },
@@ -62,6 +66,7 @@ export interface OpenOrder {
 export type OrderChannel = "STAFF" | "ONLINE";
 export type AcceptanceStatus = "NOT_REQUIRED" | "PENDING" | "ACCEPTED" | "REJECTED";
 
+// Shape of GET /orders/:id (the order row with its relations).
 export interface OrderDetail {
   id: string;
   orderNumber: string;
@@ -69,8 +74,11 @@ export interface OrderDetail {
   status: string;
   channel: OrderChannel;
   acceptance: AcceptanceStatus;
+  tableId: string | null;
   guestName: string | null;
+  guestCount: number | null;
   notes: string | null;
+  cancelReason: string | null;
   subtotal: string;
   taxAmount: string;
   discountAmount: string;
@@ -78,15 +86,23 @@ export interface OrderDetail {
   totalAmount: string;
   createdAt: string;
   billedAt: string | null;
-  table: { id: string; name: string | null; number: number } | null;
+  table: { id: string; name: string | null; number: string } | null;
   customer: Customer | null;
   items: {
     id: string;
-    name: string;
+    menuItemId: string;
+    nameSnapshot: string;
     quantity: number;
-    unitPrice: string;
-    totalPrice: string;
-    modifiers: { id: string; name: string; price: string }[];
+    unitPriceSnapshot: string;
+    lineTotal: string;
+    kitchenNote: string | null;
+    modifiers: { id: string; nameSnapshot: string; priceAdjSnapshot: string }[];
+  }[];
+  kots: {
+    id: string;
+    status: string;
+    printedCount: number;
+    items: { orderItemId: string; status: string }[];
   }[];
   payments: { id: string; method: string; amount: string }[];
 }
@@ -172,6 +188,9 @@ export function useOpenOrdersForTable(branchId: string | null, tableId: string |
     queryKey: ["orders", "open", branchId, "table", tableId],
     queryFn: () => api.get<OpenOrder[]>(`/orders?branchId=${branchId}&tableId=${tableId}`),
     enabled: !!branchId && !!tableId,
+    // A table's bills change from other terminals; never trust a cached list.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 }
 
@@ -181,7 +200,7 @@ export function useAddOrderItems(branchId: string | null) {
     mutationFn: ({ orderId, dto }: { orderId: string; dto: AddOrderItemsDto }) =>
       api.post<CreatedOrder>(`/orders/${orderId}/items?branchId=${branchId}`, dto),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders", "open", branchId] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
     },
   });
@@ -199,16 +218,48 @@ export function useMergeOrder(branchId: string | null) {
   });
 }
 
+// Everything a changed bill can touch on screen: lists, the table map, the
+// kitchen screen, dashboard figures.
+function invalidateBillViews(queryClient: ReturnType<typeof useQueryClient>, branchId: string | null) {
+  queryClient.invalidateQueries({ queryKey: ["orders"] });
+  queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
+  queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] });
+  queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+}
+
 export function useCancelOrder(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (orderId: string) =>
-      api.post<CreatedOrder>(`/orders/${orderId}/cancel?branchId=${branchId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
-      queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] });
-    },
+    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
+      api.post<CreatedOrder>(`/orders/${orderId}/cancel?branchId=${branchId}`, { reason }),
+    onSuccess: () => invalidateBillViews(queryClient, branchId),
+  });
+}
+
+export function useUpdateOrder(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orderId, dto }: { orderId: string; dto: UpdateOrderDto }) =>
+      api.patch<OrderDetail>(`/orders/${orderId}?branchId=${branchId}`, dto),
+    onSuccess: () => invalidateBillViews(queryClient, branchId),
+  });
+}
+
+export function useUpdateOrderItem(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orderId, itemId, quantity }: { orderId: string; itemId: string; quantity: number }) =>
+      api.patch<OrderDetail>(`/orders/${orderId}/items/${itemId}?branchId=${branchId}`, { quantity }),
+    onSuccess: () => invalidateBillViews(queryClient, branchId),
+  });
+}
+
+export function useRemoveOrderItem(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orderId, itemId, reason }: { orderId: string; itemId: string; reason: string }) =>
+      api.post<OrderDetail>(`/orders/${orderId}/items/${itemId}/remove?branchId=${branchId}`, { reason }),
+    onSuccess: () => invalidateBillViews(queryClient, branchId),
   });
 }
 

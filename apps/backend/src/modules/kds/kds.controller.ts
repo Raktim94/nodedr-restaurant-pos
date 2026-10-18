@@ -88,6 +88,19 @@ export class KdsController {
     return this.kdsService.setPriority(branchId, id, isPriority);
   }
 
+  // First print of a ticket (409 ALREADY_PRINTED if it already went out).
+  @Auth('kds.manage')
+  @Post('tickets/:id/print')
+  async print(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.kdsService.print(branchId, id, false);
+  }
+
+  // Deliberate extra copy, stamped REPRINT on paper.
   @Auth('kds.manage')
   @Post('tickets/:id/reprint')
   async reprint(
@@ -96,6 +109,6 @@ export class KdsController {
     @Param('id') id: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.kdsService.reprint(branchId, id);
+    return this.kdsService.print(branchId, id, true);
   }
 }

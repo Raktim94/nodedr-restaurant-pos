@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { io } from "socket.io-client";
+import { REALTIME_EVENTS, realtimeInvalidations } from "@/lib/realtime-keys";
 import { resolveWsUrl } from "@/lib/ws-url";
 
 // One socket connection per mounted consumer, joined to the branch's room
@@ -17,21 +18,13 @@ export function useRealtime(branchId: string | null) {
 
     const socket = io(resolveWsUrl(), { query: { branchId }, withCredentials: true });
 
-    const invalidate = (keys: string[][]) => {
-      keys.forEach((key) => queryClient.invalidateQueries({ queryKey: key }));
-    };
-
-    socket.on("kot.created", () => invalidate([["kds"], ["dashboard"]]));
-    socket.on("kot.updated", () => invalidate([["kds"], ["dashboard"]]));
-    socket.on("table.updated", () => invalidate([["floors", branchId]]));
-    socket.on("table.layout.updated", () => invalidate([["floors", branchId]]));
-    socket.on("order.created", () => invalidate([["dashboard"], ["floors", branchId]]));
-    socket.on("order.updated", () => invalidate([["dashboard"], ["floors", branchId]]));
-    // Reservations list previously only loaded on mount / 30s poll — a
-    // reservation booked from another terminal (or the website via the
-    // integrations API) wouldn't show up until the next poll tick.
-    socket.on("reservation.created", () => invalidate([["reservations", branchId], ["dashboard"]]));
-    socket.on("reservation.updated", () => invalidate([["reservations", branchId], ["dashboard"]]));
+    for (const event of REALTIME_EVENTS) {
+      socket.on(event, () => {
+        realtimeInvalidations(event, branchId).forEach((queryKey) =>
+          queryClient.invalidateQueries({ queryKey }),
+        );
+      });
+    }
 
     return () => {
       socket.disconnect();

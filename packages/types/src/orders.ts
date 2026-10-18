@@ -182,6 +182,37 @@ export const mergeOrdersSchema = z.object({
 });
 export type MergeOrdersDto = z.infer<typeof mergeOrdersSchema>;
 
+// Edit an open bill: move it to another table and/or fix header details.
+export const updateOrderSchema = z
+  .object({
+    tableId: z.string().min(1).optional(),
+    guestName: z.string().trim().max(80).nullable().optional(),
+    guestCount: z.number().int().min(1).max(100).nullable().optional(),
+    notes: z.string().trim().max(500).nullable().optional(),
+    customerId: z.string().min(1).nullable().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, "Nothing to change");
+export type UpdateOrderDto = z.infer<typeof updateOrderSchema>;
+
+// Correct one line of an open bill. Lowering a quantity or removing a line is
+// only possible while the kitchen has not started it; adding more goes
+// through "add items" so the kitchen gets a fresh ticket.
+export const updateOrderItemSchema = z.object({
+  quantity: z.number().int().min(1).max(999),
+  reason: z.string().trim().max(200).optional(),
+});
+export type UpdateOrderItemDto = z.infer<typeof updateOrderItemSchema>;
+
+export const removeOrderItemSchema = z.object({
+  reason: z.string().trim().min(1, "A reason is required").max(200),
+});
+export type RemoveOrderItemDto = z.infer<typeof removeOrderItemSchema>;
+
+export const cancelOrderSchema = z.object({
+  reason: z.string().trim().min(1, "A reason is required").max(200),
+});
+export type CancelOrderDto = z.infer<typeof cancelOrderSchema>;
+
 export const kotItemStatusUpdateSchema = z.object({
   status: kotStatusSchema,
 });

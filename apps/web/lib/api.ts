@@ -5,6 +5,7 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public issues?: unknown,
+    public code?: string,
   ) {
     super(message);
   }
@@ -26,7 +27,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ message: res.statusText }));
-    throw new ApiError(body.message ?? "Request failed", res.status, body.issues);
+    throw new ApiError(body.message ?? "Request failed", res.status, body.issues, body.code);
   }
 
   if (res.status === 204) return undefined as T;

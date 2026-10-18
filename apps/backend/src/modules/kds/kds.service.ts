@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { KotPrintService } from '../orders/kot-print.service';
 import { OrdersService } from '../orders/orders.service';
 
 @Injectable()
@@ -7,6 +8,7 @@ export class KdsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ordersService: OrdersService,
+    private readonly kotPrint: KotPrintService,
   ) {}
 
   /** Stations a KDS screen can be pinned to; needs only kds.manage (not menu.manage). */
@@ -46,8 +48,10 @@ export class KdsService {
     return this.ordersService.updateKotStatus(branchId, kotId, status);
   }
 
-  reprint(branchId: string, kotId: string) {
-    return this.ordersService.reprintKot(branchId, kotId);
+  // Prints the ticket on the kitchen printer. `reprint` must be explicit for a
+  // ticket that was already printed; the paper says REPRINT in that case.
+  print(branchId: string, kotId: string, reprint: boolean) {
+    return this.kotPrint.printTicket(branchId, kotId, reprint);
   }
 
   setPriority(branchId: string, kotId: string, isPriority: boolean) {

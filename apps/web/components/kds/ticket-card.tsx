@@ -1,8 +1,9 @@
 "use client";
 
+import { ApiError } from "@/lib/api";
 import { Flame, Printer, Star, Timer } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ContactDetailsDialog } from "@/components/contact-details-dialog";
@@ -47,6 +48,7 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
   const updateStatus = useUpdateKotStatus(branchId);
   const setPriority = useSetKotPriority(branchId);
   const reprint = useReprintKot(branchId);
+  const { note, clear: clearNote, toast } = useNoteToast();
   const nextStatus = NEXT_STATUS[ticket.status];
   const isLate = elapsed >= 15;
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -58,6 +60,7 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
         (isLate || ticket.isPriority) && "border-warning/50 ring-1 ring-warning/30",
       )}
     >
+      <StatusNote note={note} onClear={clearNote} />
       <ContactDetailsDialog
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
@@ -142,12 +145,21 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
           variant="outline"
           size="icon"
           className="h-9 w-9 shrink-0"
-          title="Reprint ticket"
+          title={ticket.printedCount > 0 ? "Reprint ticket (marked REPRINT)" : "Print ticket"}
+          aria-label={ticket.printedCount > 0 ? "Reprint ticket" : "Print ticket"}
           disabled={reprint.isPending}
           onClick={() =>
-            reprint.mutate(ticket.id, {
-              onSuccess: () => toast.success("Ticket sent to reprint"),
-            })
+            reprint.mutate(
+              { id: ticket.id, reprint: ticket.printedCount > 0 },
+              {
+                onSuccess: () =>
+                  toast.success(
+                    ticket.printedCount > 0 ? "Reprint sent to the kitchen printer" : "Ticket sent to the kitchen printer",
+                  ),
+                onError: (err) =>
+                  toast.error(err instanceof ApiError ? err.message : "Could not print the ticket"),
+              },
+            )
           }
         >
           <Printer className="h-4 w-4" />

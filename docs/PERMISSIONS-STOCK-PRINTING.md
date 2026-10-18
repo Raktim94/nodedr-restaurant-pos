@@ -69,9 +69,36 @@ order of the day was deleted; they are now `max(sequence)+1`.
 
 Both **Bill** and **KOT** have two paths in the POS:
 - *Print / PDF (browser)*: HTML in a hidden iframe → OS print dialog (also Save as PDF). Unchanged.
-- *Thermal print* / *KOT (thermal)*: `POST /v1/orders/:id/print/usb` and `/print/kot/usb`, native
-  ESC/POS text sent to the USB printer attached to the **server** (Linux host with USB passthrough).
-  Nothing is rendered as an image.
+- *Thermal print* / *KOT (thermal)*: `POST /v1/orders/:id/print/usb` and `/print/kot`, native
+  ESC/POS text sent from the **server** to the branch printer. Nothing is rendered as an image.
+
+### Connection (Settings → Thermal printer → Connection)
+- **USB (on this server)** - the original path: a USB printer attached to the machine running the
+  backend (Linux host with USB passthrough; kernel `usblp` first, libusb fallback).
+- **Network (IP address)** - raw ESC/POS over TCP to `printerHost:printerPort` (default port **9100**,
+  the JetDirect/"RAW" port most Epson-compatible LAN printers listen on). Enter the address, save it,
+  choose *Network*, then press *Test kitchen ticket*. Settings shows "Printer reachable at host:port"
+  or the reason it is not (refused, unreachable, timed out).
+- **The printer must be reachable from the backend.** The backend opens the connection, not the
+  browser. A server hosted in the cloud cannot reach a USB printer or a private LAN address in the
+  restaurant; there, use the browser print buttons, a VPN to the restaurant network, or run
+  OrderRestro on a machine inside it. This is why kitchen printing "did nothing" on remote servers.
+
+### Kitchen tickets (KOT)
+- One ticket per kitchen round and station, built from that ticket's own lines: order number, table
+  (or order type), guest, time, quantity x item, modifiers, the line note and the order note. No prices.
+- **No accidental duplicates.** The first print of a ticket claims it atomically (`printedCount` 0 → 1)
+  before sending, so a double tap, a second tablet or a client retry cannot print it twice
+  (`409 ALREADY_PRINTED`). If the printer fails the claim is released and a retry prints it once. A new
+  round (*Add another round*) prints only its new ticket.
+- **Intentional reprint:** `POST /v1/orders/:id/print/kot?reprint=true` or the KDS ticket's printer button
+  on an already-printed ticket. Paper says `*** REPRINT #n ***`. (The KDS "reprint" button used to only
+  increase a counter and print nothing.)
+- **Errors:** an unreachable/misconfigured printer returns `503` with the reason; the last error is kept
+  on the ticket (`lastPrintError`). Messages appear inline in the screen you pressed the button on.
+- Test prints: *Send test print* (receipt slip with column ruler and accents) and *Test kitchen ticket*
+  (sample ticket) - `POST /v1/orders/print/test[?kind=kot]`.
+- Migration `20261019000000_kot_printing_and_cancel_audit` is additive (existing branches stay on USB).
 
 Settings → Printer: paper width (58/80 mm), character set (CP858 default for Spanish and €, CP850,
 CP437, WPC1252) and an optional column override.
@@ -84,10 +111,50 @@ CP437, WPC1252) and an optional column override.
   bold, underline, inverse, alignment) before the cut. The KOT has no prices or taxes.
 - Migration `20261018020000_printer_settings` is additive.
 
-**Not verified on hardware.** Byte output is covered by deterministic tests; how a given printer
-renders it is not. On the target model run *Send test print*: the ruler line should fill exactly one
+**Not verified on real printer hardware.** Byte output is covered by deterministic tests, and the
+network path was verified end to end against a local TCP listener that records the bytes (ticket
+contents, once-only printing, reprint stamp, dead-printer error and retry) - not against a physical
+printer from any manufacturer, and no printer model or brand compatibility is claimed. How a given
+printer renders the bytes is not tested. On the target model run *Send test print*: the ruler line should fill exactly one
 line, the accents line should read `áéíóú ñ ü ¿? ¡! € £`, and the cutter should cut. Some clones
 number code pages differently (`ESC t n`); if accents are wrong, try another character set.
+
+## Table switching, cancelling and editing bills
+
+Root causes fixed (all reproduced before fixing):
+- **Table 1 "disappearing" / duplicate bills.** Creating or paying a bill did not refresh the cached
+  list of open bills per table, so Table 1 → Table 2 → Table 1 showed Table 1 as empty and the next send
+  opened a *second* bill; the list was also not refreshed by live updates from other terminals, and a
+  send while the new table's bills were still loading could start a duplicate bill. One cart was shared
+  by all tables, and only the first of several open bills on a table was reachable.
+  The POS now refreshes the table's bills on every change/live event, waits for them before sending,
+  keeps an unsent cart **per table**, lets you choose between several open bills, and follows
+  `?tableId=` changes.
+- **Table freed under a live bill.** Paying/merging one of two bills on a table marked the table
+  Available, and the Tables screen let anyone set Available/Cleaning/Reserved on a table with an unpaid
+  bill. A table is now released only when nothing else is open on it, and a manual change on a table
+  with an open bill is refused (409).
+- **Cancel "did nothing".** The Cancel button used the browser `confirm()` (silently suppressed on
+  kiosk/PWA tablets), was shown to Cashier and Waiter who lack `orders.cancel` (every attempt a 403 with
+  no visible message), and every `toast.*` message was invisible because the toast host was removed in
+  1.3.0. Cancel is now an in-app dialog with a required reason, shown only to roles that can cancel,
+  with the result and any error rendered inline.
+
+Rules (server-enforced):
+- Cancel (`POST /orders/:id/cancel`, `orders.cancel`): open and unpaid only; blocked once the kitchen is
+  cooking or if any payment exists; the status flip is conditional so a racing checkout cannot also be
+  cancelled. Releases the table (unless another bill is open there), withdraws the kitchen tickets
+  (they leave the KDS). Nothing was paid and no stock was taken (stock leaves at checkout), so there is
+  nothing to reverse. Reason, time and user are stored and audited; the order stays in History.
+- Edit an **open** bill (`orders.edit`: Waiter, Cashier, Manager): lower a quantity
+  (`PATCH /orders/:id/items/:itemId`), remove a line with a required reason
+  (`POST /orders/:id/items/:itemId/remove`), move to another free table (`PATCH /orders/:id`), fix guest
+  name/note. Subtotal, tax and total are recomputed from the lines; lines the kitchen has started are
+  locked; the last line cannot be removed (cancel instead); raising a quantity goes through *Add another
+  round* so the kitchen gets a new ticket. Every change is written to the audit log with before/after.
+- **Paid bills are never edited in place** (`400`). Correct them with *Refund* (money, and stock for the
+  units that came back). Admins can still delete finished orders (password-confirmed, audit snapshot).
+- Moving a bill onto a table that has its own open bill is refused (409); merge the bills instead.
 
 ## KDS station
 
@@ -102,6 +169,9 @@ a deleted station falls back to "All stations" with a notice, and a blocked brow
 
 - `npm test` (backend): permission policy against real controller metadata, sales-report gating,
   stock planning, ESC/POS bytes/wrapping/code pages/KOT/test slip.
-- `npm test` (web): route access by role, KDS station storage.
+- `npm test` (web): route access by role, KDS station storage, per-table cart drafts, realtime cache keys.
+- `LIFECYCLE_E2E=1 npm run test:e2e -- orders-lifecycle`: table switching, cancel, bill edits, role
+  allow/deny and KOT printing against a local TCP "printer".
+- `apps/web/e2e/bill_flow.py` (Playwright): table switching, edit, cancel, printer card, 375/768/1440 px.
 - Opt-in end-to-end against a seeded database: `PERMISSIONS_E2E=1`, `INVENTORY_E2E=1`, `KIOSK_E2E=1`
   with `npm run test:e2e -- <name>`.

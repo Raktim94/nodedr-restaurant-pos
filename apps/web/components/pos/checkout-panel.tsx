@@ -1,11 +1,11 @@
 "use client";
 
 import type { PaymentMethodDto } from "@nodedr-restaurant/types";
-import { ArrowLeft, CheckCircle2, Printer } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Pencil, Printer } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
+import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,8 +13,11 @@ import { PaymentMethodButtons } from "@/components/pos/payment-method-buttons";
 import { CustomerPicker } from "@/components/pos/customer-picker";
 import type { Customer } from "@/hooks/use-customers";
 import { lookupGiftCard } from "@/hooks/use-gift-cards";
-import { useCancelOrder, useCheckoutOrder, type CreatedOrder } from "@/hooks/use-orders";
-import { usePrintKotUsb, usePrintOrderUsb, type PrintJobResult } from "@/hooks/use-print";
+import { CancelOrderDialog, useCanCancelOrders } from "@/components/orders/cancel-order-dialog";
+import { EditBillDialog } from "@/components/orders/edit-bill-dialog";
+import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
+import { useCheckoutOrder, useOrder, type CreatedOrder } from "@/hooks/use-orders";
+import { usePrintKot, usePrintOrderUsb, type PrintJobResult } from "@/hooks/use-print";
 import { useSettings } from "@/hooks/use-settings";
 import { api, ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
@@ -28,7 +31,7 @@ import { round2 } from "@/lib/pricing-preview";
 const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "OTHER"];
 
 export function CheckoutPanel({
-  order,
+  order: orderSnapshot,
   branchId,
   initialCustomer = null,
   onDone,
@@ -38,6 +41,18 @@ export function CheckoutPanel({
   initialCustomer?: Customer | null;
   onDone: () => void;
 }) {
+  // The order passed in is a snapshot from when it was sent; the live copy
+  // carries edits (removed lines, new totals) and a cancel/pay by someone else.
+  const { data: live } = useOrder(branchId, orderSnapshot.id);
+  const order: CreatedOrder = live
+    ? {
+        ...orderSnapshot,
+        subtotal: live.subtotal,
+        taxAmount: live.taxAmount,
+        totalAmount: live.totalAmount,
+        status: live.status,
+      }
+    : orderSnapshot;
   const [method, setMethod] = useState<PaymentMethodDto>("CASH");
   const [discountPercent, setDiscountPercent] = useState("0");
   const [tipAmount, setTipAmount] = useState("0");
@@ -50,13 +65,40 @@ export function CheckoutPanel({
   const [couponInput, setCouponInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState("");
   const checkout = useCheckoutOrder(branchId);
-  const cancelOrder = useCancelOrder(branchId);
+  const { note, clear: clearNote, toast } = useNoteToast();
+  const canCancelRole = useCanCancelOrders();
+  const { data: me } = useCurrentUser();
+  const canEditRole = hasPermission(me?.user, "orders.edit");
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const printUsb = usePrintOrderUsb(branchId);
-  const printKotUsb = usePrintKotUsb(branchId);
+  const printKot = usePrintKot(branchId);
   const onPrinted = (r: PrintJobResult) =>
     r.unsupportedChars?.length
       ? toast.warning(`Sent, but ${r.unsupportedChars.join(" ")} cannot be printed by this printer's code page. Use browser print for the full text.`)
       : toast.success("Sent to the thermal printer");
+  // First print sends only tickets not yet printed. If they already went out
+  // (e.g. a double tap or retry) the server refuses to print a duplicate and we
+  // offer an explicit, REPRINT-stamped copy instead.
+  const printKotNow = (reprint: boolean) =>
+    printKot.mutate(
+      { orderId: order.id, reprint },
+      {
+        onSuccess: (r) => {
+          onPrinted(r);
+          if (reprint) toast.success("Reprint sent — marked REPRINT on paper");
+        },
+        onError: (err) => {
+          if (err instanceof ApiError && err.code === "ALREADY_PRINTED") {
+            toast.info("The kitchen ticket was already printed", {
+              action: { label: "Print a REPRINT", onClick: () => printKotNow(true) },
+            });
+            return;
+          }
+          toast.error(err instanceof ApiError ? err.message : "Could not print to the kitchen printer");
+        },
+      },
+    );
   const [completed, setCompleted] = useState<CreatedOrder | null>(null);
   const { data: settings } = useSettings(branchId);
   const loyaltyPointValue = Number(settings?.restaurant.loyaltyPointValue ?? 1);
@@ -173,6 +215,7 @@ export function CheckoutPanel({
   if (completed) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+        <StatusNote note={note} onClear={clearNote} className="w-full text-left" />
         <CheckCircle2 className="h-10 w-10 text-success" />
         <p className="text-lg font-semibold text-foreground">
           Order #{order.orderNumber} paid
@@ -211,21 +254,28 @@ export function CheckoutPanel({
     );
   }
 
-  const handleCancel = () => {
-    if (!confirm(`Cancel order #${order.orderNumber}? This can't be undone.`)) return;
-    cancelOrder.mutate(order.id, {
-      onSuccess: () => {
-        toast.success(`Order #${order.orderNumber} cancelled`);
-        onDone();
-      },
-      onError: (err) =>
-        toast.error(err instanceof ApiError ? err.message : "Could not cancel order"),
-    });
-  };
+  // Someone else (another terminal) already closed this bill.
+  if (order.status === "CANCELLED" || (order.status === "PAID" && !completed)) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+        <StatusNote note={note} onClear={clearNote} className="w-full text-left" />
+        <p className="text-sm font-medium text-foreground">
+          Order #{order.orderNumber} was {order.status === "CANCELLED" ? "cancelled" : "already paid"}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {order.status === "CANCELLED"
+            ? "The kitchen tickets were withdrawn and the table is free again. The order stays in History."
+            : "Nothing more to do here."}
+        </p>
+        <Button onClick={onDone}>Done</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col gap-5 overflow-y-auto">
-      <div className="flex items-start justify-between gap-3">
+      <StatusNote note={note} onClear={clearNote} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Button
           type="button"
           variant="ghost"
@@ -236,20 +286,37 @@ export function CheckoutPanel({
           <ArrowLeft className="h-4 w-4" />
           Back
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="shrink-0 text-destructive hover:text-destructive"
-          disabled={cancelOrder.isPending}
-          onClick={handleCancel}
-        >
-          Cancel order
-        </Button>
+        <div className="flex flex-wrap justify-end gap-2">
+          {canEditRole && (
+            <Button type="button" variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+              <Pencil className="h-4 w-4" />
+              Edit bill
+            </Button>
+          )}
+          {canCancelRole && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setCancelOpen(true)}
+            >
+              Cancel order
+            </Button>
+          )}
+        </div>
+        <CancelOrderDialog
+          branchId={branchId}
+          orderId={order.id}
+          orderNumber={order.orderNumber}
+          open={cancelOpen}
+          onOpenChange={setCancelOpen}
+        />
+        <EditBillDialog branchId={branchId} orderId={order.id} open={editOpen} onOpenChange={setEditOpen} />
       </div>
 
       <div>
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
           <p className="text-sm text-muted-foreground">Order #{order.orderNumber} sent to kitchen</p>
           <div className="flex shrink-0 flex-wrap justify-end gap-2">
           <Button
@@ -267,17 +334,11 @@ export function CheckoutPanel({
             variant="outline"
             size="sm"
             className="shrink-0"
-            disabled={printKotUsb.isPending}
-            onClick={() =>
-              printKotUsb.mutate(order.id, {
-                onSuccess: onPrinted,
-                onError: (err) =>
-                  toast.error(err instanceof ApiError ? err.message : "Could not print to the thermal printer"),
-              })
-            }
+            disabled={printKot.isPending}
+            onClick={() => printKotNow(false)}
           >
             <Printer className="h-4 w-4" />
-            {printKotUsb.isPending ? "Printing…" : "KOT (thermal)"}
+            {printKot.isPending ? "Printing…" : "KOT (thermal)"}
           </Button>
           </div>
         </div>

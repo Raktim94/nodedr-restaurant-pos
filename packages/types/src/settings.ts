@@ -52,5 +52,16 @@ export const branchSettingsSchema = z.object({
   printerPaperWidthMm: z.union([z.literal(58), z.literal(80)]).optional(),
   printerCodepage: z.enum(["CP437", "CP850", "CP858", "CP1252"]).optional(),
   printerColumns: z.number().int().min(20).max(64).nullable().optional(),
+  // How the server reaches the thermal printer: USB attached to the server,
+  // or a network printer (raw ESC/POS over TCP, normally port 9100).
+  printerConnection: z.enum(["USB", "NETWORK"]).optional(),
+  printerHost: z
+    .string()
+    .trim()
+    .max(253)
+    .regex(/^[A-Za-z0-9.-]+$/, "Use an IP address or host name")
+    .nullable()
+    .optional(),
+  printerPort: z.number().int().min(1).max(65535).optional(),
 });
 export type BranchSettingsDto = z.infer<typeof branchSettingsSchema>;
