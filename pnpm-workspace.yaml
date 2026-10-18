@@ -4,7 +4,7 @@ packages:
 overrides:
   lodash: ^4.18.1
   postcss: ^8.5.25
-  sharp: ^0.35.4
+  sharp: ^0.35.5
   # Blanket, not scoped to @nestjs/swagger: the other js-yaml consumer in
   # the tree (@istanbuljs/load-nyc-config, via jest's coverage tooling)
   # only calls the shared `.load()` API, which exists unchanged on both the
@@ -19,6 +19,11 @@ overrides:
   deepmerge-ts: ^8.0.0
   undici: ^7.29.1
   ip-address: ^10.5.1
+  handlebars: ^4.7.10
+  proxy-addr: ^2.0.8
+  source-map-js: ^1.2.2
+  postcss-selector-parser: ^7.1.6
+  uuid: ^11.1.1
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
