@@ -1,3 +1,5 @@
+import { runningAudioContext } from "./audio-unlock";
+
 // Haptic + sound feedback for an incoming staff notification (new order,
 // order ready, etc. — see notification-bell.tsx). Sibling to
 // `celebrate.ts` (guest QR order-confirmation feedback), reusing the same
@@ -31,7 +33,10 @@ export function playNotificationBeep() {
   if (!Ctx) return;
 
   try {
-    const ctx = new Ctx();
+    // Prefer the page-wide context that a tap already unlocked (see
+    // audio-unlock.ts); a fresh one may be blocked by autoplay policy.
+    const shared = runningAudioContext();
+    const ctx = shared ?? new Ctx();
     const beeps: [start: number, duration: number][] = [
       [0, 0.09],
       [0.14, 0.09],
@@ -54,7 +59,7 @@ export function playNotificationBeep() {
       osc.stop(t0 + duration + 0.02);
     });
 
-    setTimeout(() => ctx.close(), 500);
+    if (!shared) setTimeout(() => ctx.close(), 500);
   } catch {
     // Autoplay/permissions edge cases — the visual bell badge still stands.
   }

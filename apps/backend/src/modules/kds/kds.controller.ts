@@ -11,6 +11,8 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import {
   kotItemStatusUpdateSchema,
+  rejectKotSchema,
+  rejectOrderSchema,
   setPrioritySchema,
   type SessionUser,
 } from '@nodedr-restaurant/types';
@@ -49,6 +51,55 @@ export class KdsController {
     return this.kdsService.listActiveTickets(branchId, stationId);
   }
 
+  // Orders waiting to be accepted - shown on the kitchen screen so they can be
+  // answered there.
+  @Auth('orders.accept')
+  @Get('incoming')
+  async listIncoming(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.kdsService.listIncoming(branchId);
+  }
+
+  @Auth('orders.accept')
+  @Post('incoming/:id/accept')
+  async acceptIncoming(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.kdsService.acceptIncoming(branchId, id, user.id);
+  }
+
+  @Auth('orders.accept')
+  @Post('incoming/:id/reject')
+  @UsePipes(new ZodValidationPipe(rejectOrderSchema))
+  async declineIncoming(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const { reason } = body as { reason: string };
+    return this.kdsService.declineIncoming(branchId, id, user.id, reason);
+  }
+
+  // Kitchen progress for the order-taking screens (POS / tables): ticket
+  // status only, no guest contact details.
+  @Auth('orders.create')
+  @Get('progress')
+  async progress(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.kdsService.progress(branchId);
+  }
+
   @Auth('kds.manage')
   @Get('performance')
   async getPerformance(
@@ -71,7 +122,31 @@ export class KdsController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     const { status } = body as { status: string };
-    return this.kdsService.updateStatus(branchId, id, status);
+    return this.kdsService.updateStatus(branchId, id, status, user.id);
+  }
+
+  // The kitchen declining a ticket. Needs a reason; a ticket already being
+  // cooked can only be rejected by someone who may also cancel orders, and
+  // only with an explicit confirmation.
+  @Auth('kds.manage')
+  @Post('tickets/:id/reject')
+  @UsePipes(new ZodValidationPipe(rejectKotSchema))
+  async rejectTicket(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const { reason, confirmStarted } = body as {
+      reason: string;
+      confirmStarted?: boolean;
+    };
+    return this.kdsService.rejectTicket(branchId, id, user.id, {
+      reason,
+      confirmStarted,
+      mayRejectStarted: user.permissions.includes('orders.cancel'),
+    });
   }
 
   @Auth('kds.manage')

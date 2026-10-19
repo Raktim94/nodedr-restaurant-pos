@@ -8,14 +8,17 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import type {
-  CartItemDto,
-  CheckoutDto,
-  CreateOrderDto,
-  RefundDto,
-  SessionUser,
-  UpdateOrderDto,
-  UpdateOrderItemDto,
+import {
+  canTransitionKot,
+  KOT_STARTED_STATUSES,
+  type BillPreviewDto,
+  type CartItemDto,
+  type CheckoutDto,
+  type CreateOrderDto,
+  type RefundDto,
+  type SessionUser,
+  type UpdateOrderDto,
+  type UpdateOrderItemDto,
 } from '@nodedr-restaurant/types';
 import { AuditService } from '../../audit/audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
@@ -32,7 +35,21 @@ import {
   round2,
   toEffectiveInclusiveUnitPrice,
 } from './pricing';
+import {
+  computeBill,
+  discountPercentOf,
+  manualDiscountEntry,
+  settlePayments,
+  type Bill,
+} from './settlement';
 import type { TaxMode } from '@nodedr-restaurant/types';
+
+const KOT_FORWARD_STATUSES = [
+  'ACCEPTED',
+  'PREPARING',
+  'READY',
+  'SERVED',
+] as const;
 
 @Injectable()
 export class OrdersService {
@@ -357,7 +374,12 @@ export class OrdersService {
       return created;
     });
 
-    this.realtime.emitToBranch(branchId, 'order.created', { id: order.id });
+    // `acceptance` rides along so a kitchen screen can sound the alert for an
+    // order that is waiting on a yes/no (it has no ticket to announce yet).
+    this.realtime.emitToBranch(branchId, 'order.created', {
+      id: order.id,
+      acceptance,
+    });
 
     const full = await this.getOrder(branchId, order.id);
 
@@ -371,7 +393,7 @@ export class OrdersService {
       const who = full.guestName ?? full.customer?.name ?? undefined;
       if (acceptance === 'PENDING') {
         // Needs a decision: goes to anyone who can accept/cancel orders.
-        await this.notifications.notifyByPermission(branchId, 'orders.cancel', {
+        await this.notifications.notifyByPermission(branchId, 'orders.accept', {
           type: 'order.pending',
           title: 'New online order — accept?',
           body: `Order ${full.orderNumber} (${full.type.replace('_', ' ')})${who ? ` — ${who}` : ''} · ₹${Number(full.totalAmount)}`,
@@ -417,9 +439,10 @@ export class OrdersService {
   ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
-      include: { items: true },
+      include: { items: true, payments: { select: { id: true } } },
     });
     if (!order) throw new NotFoundException('Order not found');
+    this.assertNoPayments(order);
     await this.validateModifierSelections(
       branchId,
       items,
@@ -559,13 +582,30 @@ export class OrdersService {
     });
     if (!order) throw new NotFoundException('Order not found');
     if (order.status !== 'OPEN' || order.acceptance !== 'PENDING') {
-      throw new BadRequestException('This order is not waiting for acceptance');
+      throw new ConflictException(
+        order.acceptance === 'ACCEPTED'
+          ? 'This order was already accepted'
+          : order.acceptance === 'REJECTED' || order.status === 'CANCELLED'
+            ? 'This order was already declined or cancelled'
+            : 'This order is not waiting for acceptance',
+      );
     }
     await this.prisma.$transaction(async (tx) => {
-      await tx.order.update({
-        where: { id: orderId },
-        data: { acceptance: 'ACCEPTED' },
+      // Compare-and-set: two staff tapping Accept at once (or a double tap)
+      // must not both pass, or the kitchen would get the tickets twice.
+      const flipped = await tx.order.updateMany({
+        where: { id: orderId, status: 'OPEN', acceptance: 'PENDING' },
+        data: {
+          acceptance: 'ACCEPTED',
+          acceptedAt: new Date(),
+          acceptedById: userId,
+        },
       });
+      if (flipped.count === 0) {
+        throw new ConflictException(
+          'This order was just accepted or declined by someone else',
+        );
+      }
       if (!this.isDeferred(order.scheduledFor ?? undefined)) {
         await this.generateKots(tx, orderId, branchId, order.items);
       }
@@ -598,20 +638,20 @@ export class OrdersService {
     return this.getOrder(branchId, orderId);
   }
 
-  async rejectOrder(branchId: string, orderId: string, userId: string) {
-    const order = await this.prisma.order.findFirst({
-      where: { id: orderId, branchId },
-      select: { status: true, acceptance: true },
+  // Declining an incoming order. The order is kept (acceptance REJECTED,
+  // status CANCELLED, source ONLINE_DECLINED) with who declined it and why;
+  // nothing is deleted.
+  async rejectOrder(
+    branchId: string,
+    orderId: string,
+    userId: string,
+    reason: string,
+  ) {
+    return this.withdrawOrder(branchId, orderId, userId, {
+      reason,
+      source: 'ONLINE_DECLINED',
+      declineIncoming: true,
     });
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== 'OPEN' || order.acceptance !== 'PENDING') {
-      throw new BadRequestException('This order is not waiting for acceptance');
-    }
-    await this.prisma.order.update({
-      where: { id: orderId },
-      data: { acceptance: 'REJECTED' },
-    });
-    return this.cancelOrder(branchId, orderId, userId);
   }
 
   // Permanently removes finished (PAID / CANCELLED) orders. Admin-only twice
@@ -730,13 +770,44 @@ export class OrdersService {
     orderId: string,
     userId: string,
     reason?: string,
+    options: { source?: 'STAFF' | 'CUSTOMER'; confirmStarted?: boolean } = {},
   ) {
+    return this.withdrawOrder(branchId, orderId, userId, {
+      reason,
+      source: options.source ?? 'STAFF',
+      confirmStarted: options.confirmStarted,
+    });
+  }
+
+  // The one path that takes an order off the floor, whoever asked for it:
+  // staff, the guest, the kitchen refusing the only ticket, or a declined
+  // online order. The record always stays (status CANCELLED + source + reason
+  // + who/when + audit row); money and stock are untouched because neither
+  // has moved before payment.
+  private async withdrawOrder(
+    branchId: string,
+    orderId: string,
+    userId: string,
+    options: {
+      reason?: string;
+      source: 'STAFF' | 'CUSTOMER' | 'KITCHEN_REJECTED' | 'ONLINE_DECLINED';
+      confirmStarted?: boolean;
+      declineIncoming?: boolean;
+    },
+  ) {
+    const reason = options.reason?.trim() || undefined;
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
       include: { kots: true, payments: true },
     });
     if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== 'OPEN') {
+    if (options.declineIncoming) {
+      if (order.status !== 'OPEN' || order.acceptance !== 'PENDING') {
+        throw new ConflictException(
+          'This order is not waiting for acceptance - it may already have been accepted or declined',
+        );
+      }
+    } else if (order.status !== 'OPEN') {
       throw new BadRequestException(
         order.status === 'PAID'
           ? 'This bill is already paid - use Refund to reverse it'
@@ -748,23 +819,42 @@ export class OrdersService {
         'This order already has a payment - refund it instead of cancelling',
       );
     }
-    const alreadyStarted = order.kots.some((kot) =>
-      ['PREPARING', 'READY', 'SERVED'].includes(kot.status),
-    );
-    if (alreadyStarted) {
+    const statuses = order.kots.map((k) => k.status);
+    if (statuses.includes('SERVED')) {
       throw new BadRequestException(
-        'The kitchen has already started this order - it can no longer be cancelled from here',
+        'Part of this order was already served - remove the items that were not served instead of cancelling it',
       );
+    }
+    const alreadyStarted = statuses.some((st) =>
+      (KOT_STARTED_STATUSES as readonly string[]).includes(st),
+    );
+    if (alreadyStarted && !options.confirmStarted) {
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'KITCHEN_STARTED',
+        message:
+          'The kitchen has already started this order. Confirm to cancel it anyway - the food in progress will be wasted.',
+      });
+    }
+    const pastNew = statuses.some((st) => st !== 'NEW' && st !== 'CANCELLED');
+    if (!reason && (pastNew || options.declineIncoming)) {
+      throw new BadRequestException('A reason is required');
     }
 
     await this.prisma.$transaction(async (tx) => {
       const flipped = await tx.order.updateMany({
-        where: { id: orderId, status: 'OPEN' },
+        where: {
+          id: orderId,
+          status: 'OPEN',
+          ...(options.declineIncoming ? { acceptance: 'PENDING' } : {}),
+        },
         data: {
           status: 'CANCELLED',
           cancelReason: reason ?? null,
           cancelledAt: new Date(),
           cancelledById: userId,
+          cancelSource: options.source,
+          ...(options.declineIncoming ? { acceptance: 'REJECTED' } : {}),
         },
       });
       if (flipped.count === 0) {
@@ -773,37 +863,37 @@ export class OrdersService {
         );
       }
       await tx.kot.updateMany({
-        where: { orderId, status: { notIn: ['SERVED', 'CANCELLED'] } },
+        where: {
+          orderId,
+          status: { notIn: ['SERVED', 'CANCELLED', 'REJECTED'] },
+        },
         data: { status: 'CANCELLED' },
       });
       await tx.kotItem.updateMany({
-        where: { kot: { orderId }, status: { notIn: ['SERVED', 'CANCELLED'] } },
+        where: {
+          kot: { orderId },
+          status: { notIn: ['SERVED', 'CANCELLED'] },
+        },
         data: { status: 'CANCELLED' },
       });
       await this.releaseTableIfIdle(tx, order.tableId, orderId);
     });
 
-    this.realtime.emitToBranch(branchId, 'order.updated', {
-      id: orderId,
-      status: 'CANCELLED',
-    });
-    this.realtime.emitToBranch(branchId, 'kot.updated', { orderId });
-    if (order.tableId) {
-      this.realtime.emitToBranch(branchId, 'table.updated', {
-        id: order.tableId,
-      });
-    }
+    this.emitOrderWithdrawn(branchId, orderId, order.tableId);
 
     await this.audit.record({
       userId,
-      action: 'order.cancelled',
+      action: options.declineIncoming ? 'order.declined' : 'order.cancelled',
       entity: 'Order',
       entityId: orderId,
       metadata: {
         orderNumber: order.orderNumber,
         tableId: order.tableId,
         type: order.type,
+        source: options.source,
         reason: reason ?? null,
+        kitchenStarted: alreadyStarted,
+        ticketStatuses: statuses,
         total: order.totalAmount.toString(),
       },
     });
@@ -814,6 +904,21 @@ export class OrdersService {
     });
 
     return this.getOrder(branchId, orderId);
+  }
+
+  private emitOrderWithdrawn(
+    branchId: string,
+    orderId: string,
+    tableId: string | null,
+  ) {
+    this.realtime.emitToBranch(branchId, 'order.updated', {
+      id: orderId,
+      status: 'CANCELLED',
+    });
+    this.realtime.emitToBranch(branchId, 'kot.updated', { orderId });
+    if (tableId) {
+      this.realtime.emitToBranch(branchId, 'table.updated', { id: tableId });
+    }
   }
 
   private async recomputeTotals(tx: Prisma.TransactionClient, orderId: string) {
@@ -840,7 +945,7 @@ export class OrdersService {
   private async editableOrder(branchId: string, orderId: string) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
-      include: { items: true },
+      include: { items: true, payments: { select: { id: true } } },
     });
     if (!order) throw new NotFoundException('Order not found');
     if (order.status !== 'OPEN') {
@@ -850,7 +955,18 @@ export class OrdersService {
           : 'Only an open bill can be edited',
       );
     }
+    this.assertNoPayments(order);
     return order;
+  }
+
+  // Once a part-payment is on a bill its figures are fixed (see resolveBill),
+  // so lines can no longer be added, changed or removed under it.
+  private assertNoPayments(order: { payments: unknown[] }) {
+    if (order.payments.length > 0) {
+      throw new ConflictException(
+        'A payment has already been taken on this bill - settle the balance, or refund, before changing the items',
+      );
+    }
   }
 
   // Header corrections on an open bill. Moving to another table keeps the
@@ -1085,6 +1201,210 @@ export class OrdersService {
     };
   }
 
+  // Everything that decides what a bill comes to, from the order as it stands
+  // plus what the cashier entered. Once a payment has been taken the figures
+  // are locked to what was stored then (a later round of payments must settle
+  // the same bill), and further adjustments are refused rather than ignored.
+  private async resolveBill(
+    branchId: string,
+    order: Prisma.OrderGetPayload<{
+      include: { items: true; payments: true; customer: true };
+    }>,
+    adj: BillPreviewDto,
+    customerId: string | null,
+  ) {
+    const paid = round2(
+      order.payments.reduce((sum, p) => sum + Number(p.amount), 0),
+    );
+    const locked = order.payments.length > 0;
+    const asked =
+      (adj.discountPercent ?? 0) > 0 ||
+      (adj.discountFlat ?? 0) > 0 ||
+      (adj.tipAmount ?? 0) > 0 ||
+      (adj.loyaltyPointsToRedeem ?? 0) > 0 ||
+      !!adj.couponCode;
+
+    if (locked) {
+      if (asked) {
+        throw new BadRequestException(
+          'Discount, tip and loyalty points are locked once a payment has been taken on this bill',
+        );
+      }
+      const bill: Bill = {
+        subtotal: Number(order.subtotal),
+        discountAmount: Number(order.discountAmount),
+        discountPercent: discountPercentOf(
+          Number(order.subtotal),
+          Number(order.discountAmount),
+        ),
+        taxAmount: Number(order.taxAmount),
+        loyaltyDiscountAmount: Number(order.loyaltyDiscountAmount),
+        tipAmount: Number(order.tipAmount),
+        deliveryFee: Number(order.deliveryFee),
+        totalDue: Number(order.totalAmount),
+      };
+      return {
+        bill,
+        locked,
+        paid,
+        auto: { amount: 0 } as {
+          amount: number;
+          couponId?: string;
+          couponCode?: string | null;
+          promotionName?: string | null;
+        },
+        pointsToRedeem: order.loyaltyPointsRedeemed,
+      };
+    }
+
+    const branch = await this.prisma.branch.findUniqueOrThrow({
+      where: { id: branchId },
+      include: { restaurant: true },
+    });
+    const lines = order.items.map((item) =>
+      priceLine({
+        quantity: item.quantity,
+        unitPriceInclusive: Number(item.lineTotal) / item.quantity,
+        taxRatePercent: Number(item.taxRateSnapshot),
+      }),
+    );
+    // Coupon / happy-hour discount, worked out on the bill's own subtotal and
+    // added to any manual discount. A bad coupon code throws here, before
+    // anything is charged.
+    const auto = await this.marketing.resolveCheckoutDiscount(
+      branchId,
+      round2(lines.reduce((sum, l) => sum + l.lineTotal, 0)),
+      adj.couponCode,
+    );
+    const pointsToRedeem = adj.loyaltyPointsToRedeem ?? 0;
+    if (pointsToRedeem > 0 && !customerId) {
+      throw new BadRequestException(
+        'Cannot redeem loyalty points without a customer on the order',
+      );
+    }
+    const bill = computeBill({
+      lines,
+      discountPercent: adj.discountPercent,
+      discountFlat: adj.discountFlat,
+      autoDiscount: auto.amount,
+      loyaltyDiscountRequested:
+        pointsToRedeem * Number(branch.restaurant.loyaltyPointValue),
+      tip: adj.tipAmount,
+      deliveryFee: Number(order.deliveryFee),
+    });
+    return { bill, locked, paid, auto, pointsToRedeem };
+  }
+
+  // The figures a bill would settle at right now - what the Print Bill button
+  // and the payment summary show. Read-only: nothing is saved, no status
+  // changes, so it can be run any number of times.
+  async previewBill(branchId: string, orderId: string, adj: BillPreviewDto) {
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, branchId },
+      include: { items: true, payments: true, customer: true },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status === 'CANCELLED') {
+      throw new BadRequestException('This order was cancelled');
+    }
+    if (order.status === 'PAID') {
+      const total = Number(order.totalAmount);
+      return {
+        locked: true,
+        status: order.status,
+        subtotal: Number(order.subtotal),
+        discountAmount: Number(order.discountAmount),
+        discountPercent: discountPercentOf(
+          Number(order.subtotal),
+          Number(order.discountAmount),
+        ),
+        discountType: order.discountType,
+        discountValue: order.discountValue ? Number(order.discountValue) : null,
+        couponCode: order.couponCode,
+        promotionName: order.promotionName,
+        taxAmount: Number(order.taxAmount),
+        loyaltyPointsRedeemed: order.loyaltyPointsRedeemed,
+        loyaltyDiscountAmount: Number(order.loyaltyDiscountAmount),
+        tipAmount: Number(order.tipAmount),
+        deliveryFee: Number(order.deliveryFee),
+        totalDue: total,
+        amountPaid: total,
+        balanceDue: 0,
+      };
+    }
+    const customerId = order.customerId;
+    const { bill, locked, paid, auto, pointsToRedeem } = await this.resolveBill(
+      branchId,
+      order,
+      adj,
+      customerId,
+    );
+    const entry = locked
+      ? order.discountType
+        ? {
+            type: order.discountType,
+            value: Number(order.discountValue ?? 0),
+          }
+        : null
+      : manualDiscountEntry(adj.discountPercent ?? 0, adj.discountFlat ?? 0);
+    return {
+      locked,
+      status: order.status,
+      ...bill,
+      discountType: entry?.type ?? null,
+      discountValue: entry?.value ?? null,
+      couponCode: locked ? order.couponCode : (auto.couponCode ?? null),
+      promotionName: locked
+        ? order.promotionName
+        : (auto.promotionName ?? null),
+      loyaltyPointsRedeemed:
+        bill.loyaltyDiscountAmount > 0 ? pointsToRedeem : 0,
+      amountPaid: paid,
+      balanceDue: Math.max(round2(bill.totalDue - paid), 0),
+    };
+  }
+
+  // Receipt data plus the numbers to print for it. A paid order prints what
+  // was stored; an open one prints the bill as previewed, marked provisional,
+  // so the paper always matches what Complete Payment will charge.
+  async getBillForPrint(
+    branchId: string,
+    orderId: string,
+    adj: BillPreviewDto,
+  ) {
+    const [order, view] = await Promise.all([
+      this.getReceiptData(branchId, orderId),
+      this.previewBill(branchId, orderId, adj),
+    ]);
+    const open = order.status !== 'PAID';
+    return {
+      order,
+      overrides: {
+        subtotal: view.subtotal,
+        discountAmount: view.discountAmount,
+        discountPercent: view.discountPercent,
+        taxAmount: view.taxAmount,
+        tipAmount: view.tipAmount,
+        loyaltyPointsRedeemed: view.loyaltyPointsRedeemed,
+        loyaltyDiscountAmount: view.loyaltyDiscountAmount,
+        totalAmount: view.totalDue,
+        amountPaid: view.amountPaid,
+        balanceDue: view.balanceDue,
+        isProvisional: open,
+      },
+    };
+  }
+
+  async recordBillPrinted(branchId: string, orderId: string, userId: string) {
+    await this.audit.record({
+      userId,
+      action: 'order.bill_printed',
+      entity: 'Order',
+      entityId: orderId,
+      metadata: { branchId },
+    });
+  }
+
   async checkout(
     branchId: string,
     orderId: string,
@@ -1093,18 +1413,32 @@ export class OrdersService {
   ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
-      include: { items: true, customer: true },
+      include: { items: true, customer: true, payments: true },
     });
     if (!order) throw new NotFoundException('Order not found');
+
+    // A retry of an attempt that already went through gets that result back.
+    if (dto.requestId) {
+      const replay = order.payments.some(
+        (p) => p.clientRequestId === dto.requestId,
+      );
+      if (replay) return this.checkoutResult(branchId, orderId);
+    }
     if (order.status !== 'OPEN') {
       throw new BadRequestException('Order is not open for checkout');
+    }
+    // Accepting is a separate decision from paying: an incoming order nobody
+    // has accepted yet cannot be settled.
+    if (order.acceptance === 'PENDING') {
+      throw new ConflictException(
+        'This order has not been accepted yet - accept it before taking payment',
+      );
     }
 
     const branch = await this.prisma.branch.findUniqueOrThrow({
       where: { id: branchId },
       include: { restaurant: true },
     });
-    const loyaltyPointValue = Number(branch.restaurant.loyaltyPointValue);
     const loyaltyEarnPerCurrency = branch.restaurant.loyaltyEarnPerCurrency;
 
     // A customer can be attached at billing time instead of when the order
@@ -1120,199 +1454,216 @@ export class OrdersService {
       effectiveCustomerId = customer.id;
     }
 
-    const lines = order.items.map((item) =>
-      priceLine({
-        quantity: item.quantity,
-        unitPriceInclusive: Number(item.lineTotal) / item.quantity,
-        taxRatePercent: Number(item.taxRateSnapshot),
-      }),
-    );
-    // Coupon / happy-hour discount, worked out on the bill's own subtotal
-    // and added to any manual discount the cashier entered. A bad coupon
-    // code throws here, before anything is charged.
-    const autoDiscount = await this.marketing.resolveCheckoutDiscount(
+    const { bill, locked, paid, auto, pointsToRedeem } = await this.resolveBill(
       branchId,
-      round2(lines.reduce((sum, l) => sum + l.lineTotal, 0)),
-      dto.couponCode,
+      order,
+      dto,
+      effectiveCustomerId,
     );
-    const totals = computeOrderTotals(
-      lines,
+    const balance = round2(bill.totalDue - paid);
+    const entry = manualDiscountEntry(
       dto.discountPercent ?? 0,
-      (dto.discountFlat ?? 0) + autoDiscount.amount,
-    );
-
-    // Loyalty redemption is a further flat discount on top of
-    // discountPercent/discountFlat — capped so it can never make the bill
-    // negative, and capped by the customer's actual point balance (checked
-    // again inside the transaction against a fresh read, not this
-    // pre-transaction snapshot, to avoid a stale-balance race).
-    const pointsToRedeem = dto.loyaltyPointsToRedeem ?? 0;
-    if (pointsToRedeem > 0 && !effectiveCustomerId) {
-      throw new BadRequestException(
-        'Cannot redeem loyalty points without a customer on the order',
-      );
-    }
-    const requestedLoyaltyDiscount = round2(
-      Math.min(pointsToRedeem * loyaltyPointValue, totals.totalAmount),
-    );
-    const totalDue = round2(
-      totals.totalAmount -
-        requestedLoyaltyDiscount +
-        (dto.tipAmount ?? 0) +
-        Number(order.deliveryFee),
-    );
-
-    const tipAmount = round2(dto.tipAmount ?? 0);
-    const manualPaymentsTotal = round2(
-      dto.payments.reduce((sum, p) => sum + p.amount, 0),
+      dto.discountFlat ?? 0,
     );
 
     let stockSkipped: { menuItemId: string; name: string; reason: string }[] =
       [];
-    const updated = await this.prisma.$transaction(async (tx) => {
-      let loyaltyDiscountAmount = 0;
-      let actualPointsRedeemed = 0;
+    let settlement!: ReturnType<typeof settlePayments>;
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        let actualPointsRedeemed = order.loyaltyPointsRedeemed;
+        let loyaltyDiscountAmount = Number(order.loyaltyDiscountAmount);
 
-      if (autoDiscount.couponId) {
-        await this.marketing.redeemCoupon(tx, autoDiscount.couponId);
-      }
-
-      if (pointsToRedeem > 0 && effectiveCustomerId) {
-        const customer = await tx.customer.findUniqueOrThrow({
-          where: { id: effectiveCustomerId },
-        });
-        if (customer.loyaltyPoints < pointsToRedeem) {
-          throw new BadRequestException(
-            `Customer only has ${customer.loyaltyPoints} loyalty points available`,
-          );
+        if (!locked) {
+          loyaltyDiscountAmount = 0;
+          actualPointsRedeemed = 0;
+          if (auto.couponId) {
+            await this.marketing.redeemCoupon(tx, auto.couponId);
+          }
+          if (pointsToRedeem > 0 && effectiveCustomerId) {
+            const customer = await tx.customer.findUniqueOrThrow({
+              where: { id: effectiveCustomerId },
+            });
+            if (customer.loyaltyPoints < pointsToRedeem) {
+              throw new BadRequestException(
+                `Customer only has ${customer.loyaltyPoints} loyalty points available`,
+              );
+            }
+            actualPointsRedeemed = pointsToRedeem;
+            loyaltyDiscountAmount = bill.loyaltyDiscountAmount;
+            // Guarded atomic decrement, not a read-then-write `set`: two
+            // concurrent checkouts redeeming points for the same customer
+            // could otherwise both read the same stale balance and one
+            // redemption would be silently lost. The `loyaltyPoints: { gte }`
+            // guard only lets the update through if the balance is still
+            // sufficient at update time.
+            const redeemResult = await tx.customer.updateMany({
+              where: {
+                id: effectiveCustomerId,
+                loyaltyPoints: { gte: pointsToRedeem },
+              },
+              data: { loyaltyPoints: { decrement: pointsToRedeem } },
+            });
+            if (redeemResult.count === 0) {
+              throw new BadRequestException(
+                'Customer loyalty balance changed — please retry checkout',
+              );
+            }
+          }
         }
-        actualPointsRedeemed = pointsToRedeem;
-        loyaltyDiscountAmount = requestedLoyaltyDiscount;
-        // Guarded atomic decrement, not a read-then-write `set`: two
-        // concurrent checkouts redeeming points for the same customer could
-        // otherwise both read the same stale balance and one redemption
-        // would be silently lost (customer effectively spends the same
-        // points twice). The `loyaltyPoints: { gte }` guard only lets the
-        // update through if the balance is still sufficient at update time.
-        const redeemResult = await tx.customer.updateMany({
-          where: {
-            id: effectiveCustomerId,
-            loyaltyPoints: { gte: pointsToRedeem },
-          },
-          data: { loyaltyPoints: { decrement: pointsToRedeem } },
-        });
-        if (redeemResult.count === 0) {
-          throw new BadRequestException(
-            'Customer loyalty balance changed — please retry checkout',
-          );
-        }
-      }
 
-      let giftCardAmountApplied = 0;
-      if (dto.giftCardCode) {
-        const remainingAfterManual = round2(totalDue - manualPaymentsTotal);
-        if (remainingAfterManual > 0) {
-          const result = await this.giftCards.debit(
-            tx,
-            branchId,
-            dto.giftCardCode,
-            remainingAfterManual,
-          );
-          giftCardAmountApplied = result.amountApplied;
-          await tx.giftCardRedemption.create({
-            data: {
-              giftCardId: result.giftCardId,
-              orderId,
-              amount: giftCardAmountApplied,
-            },
-          });
-        }
-      }
-
-      const totalCovered = round2(manualPaymentsTotal + giftCardAmountApplied);
-      if (totalCovered < totalDue) {
-        throw new BadRequestException(
-          `Payments (${totalCovered}) do not cover the total due (${totalDue})`,
+        const manualTotal = round2(
+          dto.payments.reduce((sum, p) => sum + p.amount, 0),
         );
-      }
+        let giftCardApplied = 0;
+        if (dto.giftCardCode) {
+          const remainingAfterManual = round2(balance - manualTotal);
+          if (remainingAfterManual > 0) {
+            const result = await this.giftCards.debit(
+              tx,
+              branchId,
+              dto.giftCardCode,
+              remainingAfterManual,
+            );
+            giftCardApplied = result.amountApplied;
+            await tx.giftCardRedemption.create({
+              data: {
+                giftCardId: result.giftCardId,
+                orderId,
+                amount: giftCardApplied,
+              },
+            });
+          }
+        }
 
-      // Stock moves exactly once, in this same transaction as the OPEN->PAID
-      // update below (a losing concurrent checkout rolls its deduction back).
-      // Shortages never block the sale; unmapped tracked items are reported
-      // after commit instead of being skipped silently.
-      const deduction = await this.inventory.deductForOrder(
-        tx,
-        branchId,
-        userId,
-        orderId,
-        order.items.map((item) => ({
-          menuItemId: item.menuItemId,
-          quantity: item.quantity,
-        })),
-      );
-      stockSkipped = deduction.skipped;
+        settlement = settlePayments({
+          balance,
+          payments: dto.payments,
+          giftCardApplied,
+          allowPartial: dto.allowPartial,
+        });
 
-      await this.releaseTableIfIdle(tx, order.tableId, orderId);
-
-      // Loyalty earn on net spend (excluding tip), only once the sale is
-      // actually paid — an atomic increment (race-free by construction, no
-      // read-then-write window) rather than a computed `set`.
-      if (effectiveCustomerId) {
-        const netSpend = round2(totals.totalAmount - loyaltyDiscountAmount);
-        const pointsEarned = Math.floor(netSpend / loyaltyEarnPerCurrency);
-        if (pointsEarned > 0) {
-          await tx.customer.update({
-            where: { id: effectiveCustomerId },
-            data: { loyaltyPoints: { increment: pointsEarned } },
+        const paymentRows = settlement.payments.map((p, i) => ({
+          method: p.method as never,
+          amount: p.amount,
+          tendered: p.tendered,
+          changeGiven: p.changeGiven,
+          reference: p.reference,
+          createdById: userId,
+          clientRequestId: i === 0 ? (dto.requestId ?? null) : null,
+        }));
+        if (giftCardApplied > 0) {
+          paymentRows.push({
+            method: 'GIFT_CARD' as never,
+            amount: giftCardApplied,
+            tendered: null,
+            changeGiven: null,
+            reference: dto.giftCardCode,
+            createdById: userId,
+            clientRequestId:
+              paymentRows.length === 0 ? (dto.requestId ?? null) : null,
           });
         }
-      }
 
-      // Table update runs first so the nested `table` include below reflects
-      // the post-checkout status, not a stale pre-update snapshot.
-      //
-      // `status: 'OPEN'` in the where clause (an "extended where" filter,
-      // supported since Prisma 4.5 for update/delete on a unique record) is
-      // the actual concurrency guard: the initial `order.status !== 'OPEN'`
-      // check above ran outside this transaction, so two simultaneous
-      // checkout requests for the same order could otherwise both pass it
-      // and both reach here, producing two payment rows, a double inventory
-      // deduction, and double loyalty points. This update only succeeds if
-      // the row is still OPEN at commit time; Prisma throws P2025 (caught
-      // below) for the loser, and the whole transaction — including the
-      // gift card debit and loyalty point changes already applied above —
-      // rolls back with it.
-      try {
-        return await tx.order.update({
+        // The bill's figures are fixed by the first payment, whether or not
+        // it settles the bill.
+        const lockedFigures = locked
+          ? {}
+          : {
+              ...(effectiveCustomerId && !order.customerId
+                ? { customerId: effectiveCustomerId }
+                : {}),
+              discountAmount: bill.discountAmount,
+              discountType: entry?.type ?? null,
+              discountValue: entry?.value ?? null,
+              taxAmount: bill.taxAmount,
+              couponCode: auto.couponCode ?? null,
+              promotionName: auto.promotionName ?? null,
+              loyaltyPointsRedeemed: actualPointsRedeemed,
+              loyaltyDiscountAmount,
+              tipAmount: bill.tipAmount,
+              totalAmount: bill.totalDue,
+            };
+
+        if (!settlement.fullyPaid) {
+          await tx.order.update({
+            where: { id: orderId, status: 'OPEN' },
+            data: { ...lockedFigures, payments: { create: paymentRows } },
+          });
+          return;
+        }
+
+        // Stock moves exactly once, in this same transaction as the
+        // OPEN->PAID update below (a losing concurrent checkout rolls its
+        // deduction back). Shortages never block the sale; unmapped tracked
+        // items are reported after commit instead of being skipped silently.
+        const deduction = await this.inventory.deductForOrder(
+          tx,
+          branchId,
+          userId,
+          orderId,
+          order.items.map((item) => ({
+            menuItemId: item.menuItemId,
+            quantity: item.quantity,
+          })),
+        );
+        stockSkipped = deduction.skipped;
+
+        await this.releaseTableIfIdle(tx, order.tableId, orderId);
+
+        // Loyalty earn on net spend (excluding tip), only once the sale is
+        // actually paid — an atomic increment (race-free by construction, no
+        // read-then-write window) rather than a computed `set`.
+        if (effectiveCustomerId) {
+          const netSpend = round2(
+            bill.subtotal - bill.discountAmount - loyaltyDiscountAmount,
+          );
+          const pointsEarned = Math.floor(netSpend / loyaltyEarnPerCurrency);
+          if (pointsEarned > 0) {
+            await tx.customer.update({
+              where: { id: effectiveCustomerId },
+              data: { loyaltyPoints: { increment: pointsEarned } },
+            });
+          }
+        }
+
+        // `status: 'OPEN'` in the where clause is the actual concurrency
+        // guard: the initial status check above ran outside this
+        // transaction, so two simultaneous checkout requests for the same
+        // order could otherwise both pass it and both reach here, producing
+        // two payment rows, a double inventory deduction and double loyalty
+        // points. This update only succeeds if the row is still OPEN at
+        // commit time; Prisma throws P2025 (caught below) for the loser, and
+        // the whole transaction — including the gift card debit and loyalty
+        // changes already applied above — rolls back with it.
+        await tx.order.update({
           where: { id: orderId, status: 'OPEN' },
           data: {
-            ...(effectiveCustomerId && !order.customerId
-              ? { customerId: effectiveCustomerId }
-              : {}),
-            discountAmount: totals.discountAmount,
-            couponCode: autoDiscount.couponCode,
-            promotionName: autoDiscount.promotionName,
-            loyaltyPointsRedeemed: actualPointsRedeemed,
-            loyaltyDiscountAmount,
-            tipAmount,
-            totalAmount: totalDue,
+            ...lockedFigures,
             status: 'PAID',
             billedAt: new Date(),
-            payments: { create: dto.payments },
+            payments: { create: paymentRows },
           },
-          include: { payments: true, table: true },
         });
-      } catch (err) {
-        if (
-          err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === 'P2025'
-        ) {
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        if (err.code === 'P2025') {
           throw new ConflictException(
             'This order was already checked out by another request.',
           );
         }
-        throw err;
+        // Same requestId arrived twice at once: the second is a replay.
+        if (err.code === 'P2002' && dto.requestId) {
+          return this.checkoutResult(branchId, orderId);
+        }
       }
+      throw err;
+    }
+
+    const updated = await this.prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: { payments: true, table: true },
     });
 
     if (stockSkipped.length > 0) {
@@ -1330,24 +1681,89 @@ export class OrdersService {
       });
     }
 
+    await this.audit.record({
+      userId,
+      action: settlement.fullyPaid
+        ? 'order.paid'
+        : 'order.partial_payment_recorded',
+      entity: 'Order',
+      entityId: orderId,
+      metadata: {
+        orderNumber: updated.orderNumber,
+        amountDue: bill.totalDue,
+        paidNow: settlement.paidNow,
+        balanceAfter: settlement.balanceAfter,
+        changeDue: settlement.changeDue,
+        methods: settlement.payments.map((p) => `${p.method}:${p.amount}`),
+      },
+    });
+
     this.realtime.emitToBranch(branchId, 'order.updated', {
       id: updated.id,
-      status: 'PAID',
+      ...(settlement.fullyPaid
+        ? { status: 'PAID' }
+        : { balanceDue: settlement.balanceAfter }),
     });
-    void this.webhooks.emitForBranch(branchId, 'order.paid', {
-      orderId: updated.id,
-      orderNumber: updated.orderNumber,
-      type: updated.type,
-      total: Number(updated.totalAmount),
-      tip: Number(updated.tipAmount),
-      discount: Number(updated.discountAmount),
-      couponCode: updated.couponCode,
-      payments: updated.payments.map((p) => ({
-        method: p.method,
-        amount: Number(p.amount),
-      })),
+    if (settlement.fullyPaid) {
+      if (order.tableId) {
+        this.realtime.emitToBranch(branchId, 'table.updated', {
+          id: order.tableId,
+        });
+      }
+      void this.webhooks.emitForBranch(branchId, 'order.paid', {
+        orderId: updated.id,
+        orderNumber: updated.orderNumber,
+        type: updated.type,
+        total: Number(updated.totalAmount),
+        tip: Number(updated.tipAmount),
+        discount: Number(updated.discountAmount),
+        couponCode: updated.couponCode,
+        payments: updated.payments.map((p) => ({
+          method: p.method,
+          amount: Number(p.amount),
+        })),
+      });
+    }
+    return {
+      ...updated,
+      settlement: {
+        amountDue: bill.totalDue,
+        amountPaid: round2(paid + settlement.paidNow),
+        balanceDue: settlement.balanceAfter,
+        changeDue: settlement.changeDue,
+        fullyPaid: settlement.fullyPaid,
+      },
+    };
+  }
+
+  // Current settlement state of an order, for answering a replayed request.
+  private async checkoutResult(branchId: string, orderId: string) {
+    const updated = await this.prisma.order.findFirstOrThrow({
+      where: { id: orderId, branchId },
+      include: { payments: true, table: true },
     });
-    return updated;
+    const amountPaid = round2(
+      updated.payments.reduce((sum, p) => sum + Number(p.amount), 0),
+    );
+    const total = Number(updated.totalAmount);
+    return {
+      ...updated,
+      settlement: {
+        amountDue: total,
+        amountPaid,
+        balanceDue:
+          updated.status === 'PAID'
+            ? 0
+            : Math.max(round2(total - amountPaid), 0),
+        changeDue: round2(
+          updated.payments.reduce(
+            (sum, p) => sum + Number(p.changeGiven ?? 0),
+            0,
+          ),
+        ),
+        fullyPaid: updated.status === 'PAID',
+      },
+    };
   }
 
   async refund(
@@ -1485,13 +1901,21 @@ export class OrdersService {
       throw new BadRequestException('Cannot merge an order into itself');
     }
     const [target, source] = await Promise.all([
-      this.prisma.order.findFirst({ where: { id: targetOrderId, branchId } }),
-      this.prisma.order.findFirst({ where: { id: sourceOrderId, branchId } }),
+      this.prisma.order.findFirst({
+        where: { id: targetOrderId, branchId },
+        include: { payments: { select: { id: true } } },
+      }),
+      this.prisma.order.findFirst({
+        where: { id: sourceOrderId, branchId },
+        include: { payments: { select: { id: true } } },
+      }),
     ]);
     if (!target || !source) throw new NotFoundException('Order not found');
     if (target.status !== 'OPEN' || source.status !== 'OPEN') {
       throw new BadRequestException('Both orders must be open to merge');
     }
+    this.assertNoPayments(target);
+    this.assertNoPayments(source);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.orderItem.updateMany({
@@ -1765,7 +2189,24 @@ export class OrdersService {
     }
   }
 
-  async updateKotStatus(branchId: string, kotId: string, status: string) {
+  // Moves a kitchen ticket one step forward (NEW -> ACCEPTED -> PREPARING ->
+  // READY -> SERVED). The move is checked against the shared state machine and
+  // applied as a compare-and-set on the status the caller saw, so a stale
+  // screen or a double tap can neither skip a step nor repeat one. Asking for
+  // the status the ticket already has is a harmless no-op (no second
+  // timestamp, event or notification).
+  async updateKotStatus(
+    branchId: string,
+    kotId: string,
+    status: string,
+    userId?: string,
+  ) {
+    if (!(KOT_FORWARD_STATUSES as readonly string[]).includes(status)) {
+      throw new BadRequestException(
+        'A ticket can only move to accepted, preparing, ready or served - use reject to decline it',
+      );
+    }
+    const target = status as (typeof KOT_FORWARD_STATUSES)[number];
     const kot = await this.prisma.kot.findFirst({
       where: { id: kotId, order: { branchId } },
       include: {
@@ -1779,32 +2220,63 @@ export class OrdersService {
       },
     });
     if (!kot) throw new NotFoundException('KOT not found');
+    if (kot.status === target) return kot;
+    if (!canTransitionKot(kot.status, target)) {
+      throw new ConflictException(
+        `This ticket is ${kot.status.toLowerCase()} - it cannot move to ${target.toLowerCase()}. Refresh to see its current state.`,
+      );
+    }
 
-    const timestamps: Record<string, Date> = {};
-    if (status === 'ACCEPTED') timestamps.acceptedAt = new Date();
-    if (status === 'READY') timestamps.readyAt = new Date();
-    if (status === 'SERVED') timestamps.servedAt = new Date();
+    const now = new Date();
+    const stamps: Prisma.KotUpdateManyMutationInput = {};
+    if (target === 'ACCEPTED') stamps.acceptedAt = now;
+    if (target === 'READY') stamps.readyAt = now;
+    if (target === 'SERVED') stamps.servedAt = now;
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.kot.update({
-        where: { id: kotId },
-        data: { status: status as never, ...timestamps },
+      const moved = await tx.kot.updateMany({
+        where: { id: kotId, status: kot.status },
+        data: {
+          status: target,
+          ...stamps,
+          ...(target === 'ACCEPTED' && userId ? { acceptedById: userId } : {}),
+        },
       });
+      if (moved.count === 0) {
+        throw new ConflictException(
+          'This ticket was just updated by someone else - refresh to see its current state',
+        );
+      }
       await tx.kotItem.updateMany({
         where: { kotId },
-        data: { status: status as never },
+        data: { status: target },
       });
-      return result;
+      return tx.kot.findUniqueOrThrow({ where: { id: kotId } });
     });
 
     this.realtime.emitToBranch(branchId, 'kot.updated', updated);
+    this.realtime.emitToBranch(branchId, 'order.updated', {
+      id: kot.order.id,
+    });
+    await this.audit.record({
+      userId,
+      action: 'kot.status_changed',
+      entity: 'Kot',
+      entityId: kotId,
+      metadata: {
+        orderNumber: kot.order.orderNumber,
+        ticketNumber: kot.ticketNumber,
+        from: kot.status,
+        to: target,
+      },
+    });
 
     // Waiter assignment lives on Table (assignedWaiterId), not Order — a
     // KOT's order carries a table only for dine-in; takeaway/delivery orders
     // have no table and therefore no assigned waiter to notify, which is
     // exactly the "skip silently if not set" case.
     const assignedWaiterId = kot.order.table?.assignedWaiterId;
-    if (status === 'READY' && assignedWaiterId) {
+    if (target === 'READY' && assignedWaiterId) {
       try {
         await this.notifications.notifyUser(assignedWaiterId, branchId, {
           type: 'order.ready',
@@ -1823,6 +2295,179 @@ export class OrdersService {
     }
 
     return updated;
+  }
+
+  // The kitchen declining a ticket. It is never a silent disappearance: the
+  // ticket is kept as REJECTED with who/when/why, the guest-facing order is
+  // updated to match, and an audit row is written.
+  //   - NEW / ACCEPTED: any kitchen user may reject.
+  //   - PREPARING: food is already in progress, so the caller must confirm it
+  //     explicitly and hold orders.cancel as well (checked by the controller
+  //     via `mayRejectStarted`).
+  //   - READY / SERVED / already withdrawn: not rejectable.
+  // If this was the order's only live ticket and nothing is paid, the whole
+  // order is withdrawn (source KITCHEN_REJECTED) so the table is freed and the
+  // order stops showing as open. If other rounds are still live, only this
+  // ticket's lines come off the bill.
+  async rejectKot(
+    branchId: string,
+    kotId: string,
+    userId: string,
+    input: {
+      reason: string;
+      confirmStarted?: boolean;
+      mayRejectStarted: boolean;
+    },
+  ) {
+    const reason = input.reason.trim();
+    if (!reason) throw new BadRequestException('A reason is required');
+    const kot = await this.prisma.kot.findFirst({
+      where: { id: kotId, order: { branchId } },
+      include: {
+        items: { include: { orderItem: true } },
+        order: { include: { kots: true, payments: true } },
+      },
+    });
+    if (!kot) throw new NotFoundException('KOT not found');
+    const current = kot.status;
+    if (current === 'REJECTED') return kot;
+    if (!canTransitionKot(current, 'REJECTED')) {
+      throw new ConflictException(
+        `This ticket is ${current.toLowerCase()} - it can no longer be rejected`,
+      );
+    }
+    const started = (KOT_STARTED_STATUSES as readonly string[]).includes(
+      current,
+    );
+    if (started) {
+      if (!input.mayRejectStarted) {
+        throw new ForbiddenException(
+          'The kitchen has already started this ticket - only a manager can reject it',
+        );
+      }
+      if (!input.confirmStarted) {
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'KITCHEN_STARTED',
+          message:
+            'This ticket is already being prepared. Confirm to reject it anyway - the food in progress will be wasted.',
+        });
+      }
+    }
+    const order = kot.order;
+    if (order.status !== 'OPEN') {
+      throw new ConflictException('This order is no longer open');
+    }
+    if (order.payments.length > 0) {
+      throw new BadRequestException(
+        'This order already has a payment - refund it instead of rejecting a ticket',
+      );
+    }
+
+    const otherLive = order.kots.some(
+      (k) => k.id !== kotId && !['CANCELLED', 'REJECTED'].includes(k.status),
+    );
+    const lineIds = kot.items.map((i) => i.orderItemId);
+    const rejectedLines = kot.items.map((i) => ({
+      item: i.orderItem.nameSnapshot,
+      quantity: i.orderItem.quantity,
+      lineTotal: i.orderItem.lineTotal.toString(),
+    }));
+
+    await this.prisma.$transaction(async (tx) => {
+      const moved = await tx.kot.updateMany({
+        where: { id: kotId, status: kot.status },
+        data: {
+          status: 'REJECTED',
+          rejectedAt: new Date(),
+          rejectedById: userId,
+          rejectReason: reason,
+        },
+      });
+      if (moved.count === 0) {
+        throw new ConflictException(
+          'This ticket was just updated by someone else - refresh to see its current state',
+        );
+      }
+      await tx.kotItem.updateMany({
+        where: { kotId },
+        data: { status: 'CANCELLED' },
+      });
+
+      if (!otherLive) {
+        const flipped = await tx.order.updateMany({
+          where: { id: order.id, status: 'OPEN' },
+          data: {
+            status: 'CANCELLED',
+            cancelReason: reason,
+            cancelledAt: new Date(),
+            cancelledById: userId,
+            cancelSource: 'KITCHEN_REJECTED',
+          },
+        });
+        if (flipped.count === 0) {
+          throw new ConflictException(
+            'This order was just paid or changed - refresh and check it',
+          );
+        }
+        await this.releaseTableIfIdle(tx, order.tableId, order.id);
+        return;
+      }
+
+      // Another round is still being worked: take only this ticket's lines
+      // off the bill so the guest is not charged for what was refused. Its
+      // KotItem rows are removed with the lines, so the rejected lines are
+      // preserved in the audit snapshot below.
+      if (lineIds.length > 0) {
+        await tx.orderItem.deleteMany({ where: { id: { in: lineIds } } });
+        await this.recomputeTotals(tx, order.id);
+      }
+    });
+
+    this.realtime.emitToBranch(branchId, 'kot.updated', {
+      id: kotId,
+      orderId: order.id,
+      status: 'REJECTED',
+    });
+    this.emitOrderWithdrawn(
+      branchId,
+      order.id,
+      otherLive ? null : order.tableId,
+    );
+    if (otherLive) {
+      this.realtime.emitToBranch(branchId, 'order.updated', { id: order.id });
+    }
+    await this.audit.record({
+      userId,
+      action: 'kot.rejected',
+      entity: 'Kot',
+      entityId: kotId,
+      metadata: {
+        orderNumber: order.orderNumber,
+        ticketNumber: kot.ticketNumber,
+        from: current,
+        reason,
+        wholeOrderCancelled: !otherLive,
+        kitchenStarted: started,
+        lines: rejectedLines,
+      },
+    });
+
+    try {
+      await this.notifications.notifyByPermission(branchId, 'orders.create', {
+        type: 'order.rejected',
+        title: 'Kitchen rejected a ticket',
+        body: `Order ${order.orderNumber}: ${reason}`,
+        entity: 'Order',
+        entityId: order.id,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to notify staff of rejected ticket ${kotId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    return this.prisma.kot.findUniqueOrThrow({ where: { id: kotId } });
   }
 
   async setKotPriority(branchId: string, kotId: string, isPriority: boolean) {

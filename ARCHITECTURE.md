@@ -84,6 +84,65 @@ in `ROADMAP.md` Phase 8, not silently dropped.
   aggregate; it does not write back transactional data into a branch.
   Tracked in `ROADMAP.md` Phase 6.
 
+## Order lifecycle: three states that are deliberately separate
+
+An order moves through three independent state machines. Conflating them is
+what made "paid but still cooking" and "accepted but unpaid" impossible to
+represent, so the API keeps them apart and enforces each on the server.
+
+| State | Values | Who moves it |
+|---|---|---|
+| **Acceptance** (`Order.acceptance`) | `NOT_REQUIRED` (staff-entered / auto-confirmed) · `PENDING` → `ACCEPTED` or `REJECTED` | `orders.accept` (kitchen, cashier, waiter, manager) |
+| **Kitchen ticket** (`Kot.status`) | `NEW` → `ACCEPTED` → `PREPARING` → `READY` → `SERVED`; `REJECTED` (kitchen declined) and `CANCELLED` (order withdrawn) are terminal | `kds.manage` for the forward steps and for rejecting before cooking starts |
+| **Billing** (`Order.status`) | `OPEN` → `PAID`, or `OPEN` → `CANCELLED`; part payments leave it `OPEN` | `bills.print` to take payment, `orders.cancel` to cancel |
+
+- The ticket state machine lives in `packages/types/src/order-lifecycle.ts`
+  (`KOT_TRANSITIONS`) and is used by both the API and the screens, so a
+  screen only offers moves the API will accept. The API applies each move as a
+  compare-and-set on the status the caller saw: a double tap, a stale screen
+  or two cooks racing get a `409`, never a skipped or repeated step. Asking for
+  the status a ticket already has is a no-op.
+- A pending online order has **no kitchen ticket** until it is accepted, so it
+  cannot be cooked or paid by mistake. Declining keeps the record
+  (`acceptance REJECTED`, `status CANCELLED`, `cancelSource ONLINE_DECLINED`,
+  reason, who, when).
+- Nothing is deleted to represent a cancellation. `Order.cancelSource`
+  separates `STAFF`, `CUSTOMER`, `KITCHEN_REJECTED` and `ONLINE_DECLINED`.
+  Cancelling or rejecting food that is already being cooked needs an explicit
+  `confirmStarted` (and, for the kitchen reject, `orders.cancel` too); served
+  food can only be corrected through refund/bill edits.
+- Kitchen reject: rejecting an order's only live ticket withdraws the whole
+  order and frees the table; if another round is still live, only the rejected
+  ticket's lines come off the bill (kept in the audit snapshot).
+- Realtime pushes (`order.*`, `kot.*`, `table.updated`) are only hints to
+  refetch. State is always re-read from the API, and a screen refetches
+  everything when its socket reconnects, so a missed push cannot leave it
+  stale.
+
+### Billing and settlement
+
+- `POST /orders/:id/bill-preview` prices a bill (discount, coupon, tip, loyalty,
+  delivery) on the server without saving anything. The printed bill
+  (`GET /orders/:id/receipt?…`, thermal `POST …/print/usb?…`) is rendered from
+  the same function, so the paper always equals what *Complete payment* will
+  charge. Printing is read-only: it never changes status, takes payment or
+  opens the till, and can be repeated freely (each print leaves an audit row).
+- Discount and tax: prices are tax-inclusive. A discount is taken off the
+  inclusive price, so it also reduces the taxable value: the stored tax breakup
+  is scaled by `(subtotal − discount) / subtotal`. Loyalty points are tender,
+  not a price cut, and leave tax alone. Tips and delivery fees sit outside the
+  taxable subtotal. The discount is shown everywhere as both a percentage and
+  a currency amount (`discountType`/`discountValue` keep how it was entered).
+  The arithmetic is in `modules/orders/settlement.ts` (pure, unit-tested).
+- Payments: `Payment.amount` is what was applied to the bill (so revenue and the
+  till are right); cash handed over is `tendered`, the difference `changeGiven`.
+  A card/UPI payment can never exceed the balance. `allowPartial` records
+  payments without closing the bill; the first payment locks the bill's
+  discount/tip/points, items can no longer be changed under it, and the table
+  stays occupied until the balance is cleared. Each checkout attempt carries a
+  `requestId` so a retry or double tap records its payments once. A gift card
+  is recorded as a `GIFT_CARD` payment too, so "amount paid" is complete.
+
 ## Monorepo layout
 
 ```

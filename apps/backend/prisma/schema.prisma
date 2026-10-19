@@ -1250,6 +1250,21 @@ enum OrderChannel {
 // Accept/reject gate for online orders. NOT_REQUIRED = staff-entered or
 // auto-confirmed-by-QR orders that never wait; PENDING = waiting for staff to
 // accept (no kitchen ticket is printed yet); ACCEPTED/REJECTED = decided.
+// Why an order ended up CANCELLED, so a kitchen rejection or a declined online
+// order is never confused with staff or the guest withdrawing it.
+enum CancelSource {
+  STAFF
+  CUSTOMER
+  KITCHEN_REJECTED
+  ONLINE_DECLINED
+}
+
+// How the manual discount on a bill was entered.
+enum ManualDiscountType {
+  PERCENT
+  FIXED
+}
+
 enum AcceptanceStatus {
   NOT_REQUIRED
   PENDING
@@ -1303,6 +1318,16 @@ model Order {
   cancelReason  String?
   cancelledAt   DateTime?
   cancelledById String?
+  cancelSource  CancelSource?
+
+  // Who accepted an incoming order and when (acceptance gate only).
+  acceptedAt   DateTime?
+  acceptedById String?
+
+  // The manual discount as the cashier entered it, kept next to the computed
+  // discountAmount so a bill can show both the percentage and the amount.
+  discountType  ManualDiscountType?
+  discountValue Decimal?            @db.Decimal(12, 2)
 
   // Client-generated idempotency key for public/unauthenticated order
   // submits (kiosk). A retry after a dropped connection carries the same
@@ -1398,6 +1423,7 @@ enum KotStatus {
   READY
   SERVED
   CANCELLED
+  REJECTED // kitchen declined the ticket (CANCELLED = order withdrawn from the floor)
 }
 
 enum KotItemStatus {
@@ -1427,6 +1453,12 @@ model Kot {
   acceptedAt DateTime?
   readyAt    DateTime?
   servedAt   DateTime?
+
+  // Who moved the ticket and, for a rejection, when and why.
+  acceptedById String?
+  rejectedAt   DateTime?
+  rejectedById String?
+  rejectReason String?
 
   items KotItem[]
 
@@ -1537,11 +1569,20 @@ model Payment {
   orderId String
   order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  method    PaymentMethod
-  amount    Decimal       @db.Decimal(12, 2)
-  reference String? // gateway/UPI txn ref
-  createdAt DateTime      @default(now())
+  method          PaymentMethod
+  amount          Decimal       @db.Decimal(12, 2) // applied to the bill (net of change)
+  reference       String? // gateway/UPI txn ref
+  // Cash actually handed over and the change given back, when the guest paid
+  // more than was applied. Null on older payments and exact payments.
+  tendered        Decimal?      @db.Decimal(12, 2)
+  changeGiven     Decimal?      @db.Decimal(12, 2)
+  createdById     String?
+  // Client-generated key for one checkout attempt, so a retried or
+  // double-tapped request records its payments once.
+  clientRequestId String?
+  createdAt       DateTime      @default(now())
 
+  @@unique([orderId, clientRequestId])
   @@index([orderId])
   @@map("payments")
 }

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { billQueryString, type BillQuery } from "@/lib/print";
 
 export interface PrinterDiagnostics {
   connection: "USB" | "NETWORK";
@@ -36,11 +37,17 @@ export function usePrintTestSlip(branchId?: string | null, kind?: "kot") {
   });
 }
 
-/** `drawer` also kicks the cash drawer — pass true when the bill was paid in cash. */
+/**
+ * `drawer` also kicks the cash drawer — pass true when the bill was paid in
+ * cash. `adjustments` prices a not-yet-paid bill the way the screen shows it;
+ * a bill printed before payment never opens the drawer.
+ */
 export function usePrintOrderUsb(branchId: string | null) {
   return useMutation({
-    mutationFn: ({ orderId, drawer }: { orderId: string; drawer?: boolean }) =>
-      api.post<PrintJobResult>(`/orders/${orderId}/print/usb?branchId=${branchId}${drawer ? "&drawer=true" : ""}`),
+    mutationFn: ({ orderId, drawer, adjustments }: { orderId: string; drawer?: boolean; adjustments?: BillQuery }) =>
+      api.post<PrintJobResult>(
+        `/orders/${orderId}/print/usb?branchId=${branchId}${drawer ? "&drawer=true" : ""}${billQueryString(adjustments)}`,
+      ),
   });
 }
 

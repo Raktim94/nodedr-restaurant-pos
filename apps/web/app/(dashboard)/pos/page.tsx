@@ -37,9 +37,10 @@ export default function PosPage() {
 }
 
 function PosPageInner() {
-  const { branchId } = useBranch();
+  const { branchId, isLoading: branchLoading } = useBranch();
   const { note, clear: clearNote, toast } = useNoteToast();
-  const { data: floors } = useFloors(branchId);
+  const floorsQuery = useFloors(branchId);
+  const floors = floorsQuery.data;
   const tables = floors?.flatMap((f) => f.tables) ?? [];
   const preselectedTableId = useSearchParams().get("tableId") ?? "";
 
@@ -248,9 +249,22 @@ function PosPageInner() {
         </a>
       </div>
 
+      {!branchLoading && !branchId && (
+        <p role="alert" className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
+          No branch is available for your account, so there are no tables or menu to show. Ask an administrator to assign you to a branch.
+        </p>
+      )}
+
       {showTablePicker ? (
         <Card className="flex-1 overflow-hidden p-5">
-          <PosTablePicker floors={floors ?? []} onSelect={handleTablePick} />
+          <PosTablePicker
+            floors={floors ?? []}
+            onSelect={handleTablePick}
+            isLoading={floorsQuery.isLoading || branchLoading}
+            error={floorsQuery.isError ? floorsQuery.error : null}
+            onRetry={() => void floorsQuery.refetch()}
+            retrying={floorsQuery.isFetching}
+          />
         </Card>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden lg:grid-cols-[1fr_360px]">

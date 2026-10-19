@@ -36,6 +36,9 @@ export function CancelOrderDialog({
   onCancelled?: () => void;
 }) {
   const [reason, setReason] = useState("");
+  const [byGuest, setByGuest] = useState(false);
+  // Set once the server says cooking has begun; the next press then confirms.
+  const [startedWarning, setStartedWarning] = useState<string | null>(null);
   const cancel = useCancelOrder(branchId);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,15 +46,27 @@ export function CancelOrderDialog({
     e.preventDefault();
     setError(null);
     cancel.mutate(
-      { orderId, reason: reason.trim() },
+      {
+        orderId,
+        reason: reason.trim(),
+        source: byGuest ? "CUSTOMER" : "STAFF",
+        confirmStarted: startedWarning ? true : undefined,
+      },
       {
         onSuccess: () => {
           setReason("");
+          setByGuest(false);
+          setStartedWarning(null);
           onOpenChange(false);
           onCancelled?.();
         },
-        onError: (err) =>
-          setError(err instanceof ApiError ? err.message : "Could not cancel the order. Try again."),
+        onError: (err) => {
+          if (err instanceof ApiError && err.code === "KITCHEN_STARTED") {
+            setStartedWarning(err.message);
+            return;
+          }
+          setError(err instanceof ApiError ? err.message : "Could not cancel the order. Try again.");
+        },
       },
     );
   };
@@ -60,7 +75,10 @@ export function CancelOrderDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) setError(null);
+        if (!next) {
+          setError(null);
+          setStartedWarning(null);
+        }
         onOpenChange(next);
       }}
     >
@@ -70,7 +88,7 @@ export function CancelOrderDialog({
             <DialogTitle>Cancel order #{orderNumber}?</DialogTitle>
             <DialogDescription>
               The kitchen tickets are withdrawn and the table is freed. Nothing has been paid or taken
-              from stock yet. The order stays in History with your reason.
+              from stock yet. The order stays in History with your reason and name.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
@@ -92,17 +110,36 @@ export function CancelOrderDialog({
               ))}
             </div>
           </div>
+          <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              className="h-5 w-5"
+              checked={byGuest}
+              onChange={(e) => setByGuest(e.target.checked)}
+            />
+            The guest asked to cancel
+          </label>
+          {startedWarning && (
+            <p role="alert" className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
+              {startedWarning}
+            </p>
+          )}
           {error && (
             <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </p>
           )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" className="h-11" onClick={() => onOpenChange(false)}>
               Keep order
             </Button>
-            <Button type="submit" variant="destructive" disabled={cancel.isPending || reason.trim().length === 0}>
-              {cancel.isPending ? "Cancelling…" : "Cancel order"}
+            <Button
+              type="submit"
+              variant="destructive"
+              className="h-11"
+              disabled={cancel.isPending || reason.trim().length === 0}
+            >
+              {cancel.isPending ? "Cancelling…" : startedWarning ? "Cancel anyway" : "Cancel order"}
             </Button>
           </DialogFooter>
         </form>

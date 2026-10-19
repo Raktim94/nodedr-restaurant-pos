@@ -18,6 +18,9 @@ export const kotStatusSchema = z.enum([
   "READY",
   "SERVED",
   "CANCELLED",
+  // Kitchen declined the ticket (distinct from CANCELLED, which is the order
+  // being withdrawn from the floor). Set only through the reject endpoint.
+  "REJECTED",
 ]);
 export type KotStatusDto = z.infer<typeof kotStatusSchema>;
 
@@ -131,23 +134,45 @@ export const kioskOrderSchema = z.object({
 });
 export type KioskOrderDto = z.infer<typeof kioskOrderSchema>;
 
-export const checkoutSchema = z.object({
-  customerId: z.string().optional(),
+// What a cashier may enter against a bill. Shared by the bill preview and
+// checkout so the figures on the printed bill are exactly what is charged.
+const billAdjustmentFields = {
   discountPercent: z.coerce.number().min(0).max(100).optional(),
   discountFlat: z.coerce.number().min(0).optional(),
   tipAmount: z.coerce.number().min(0).optional(),
-  loyaltyPointsToRedeem: z.number().int().min(0).optional(),
-  giftCardCode: z.string().optional(),
+  loyaltyPointsToRedeem: z.coerce.number().int().min(0).optional(),
   couponCode: z.string().trim().min(3).max(24).optional(),
+};
+
+export const billPreviewSchema = z.object({
+  ...billAdjustmentFields,
+});
+export type BillPreviewDto = z.infer<typeof billPreviewSchema>;
+
+export const checkoutSchema = z.object({
+  ...billAdjustmentFields,
+  customerId: z.string().optional(),
+  giftCardCode: z.string().optional(),
   payments: z
     .array(
       z.object({
         method: paymentMethodSchema,
+        // Amount applied to the bill.
         amount: z.coerce.number().positive(),
+        // Cash handed over, when more than `amount` (the difference is the
+        // change given back). Only meaningful for CASH.
+        tendered: z.coerce.number().positive().optional(),
         reference: z.string().optional(),
       }),
     )
     .default([]),
+  // Record these payments without closing the bill when they do not cover it
+  // (the rest stays as an outstanding balance). Without it, a short payment
+  // is rejected, as before.
+  allowPartial: z.boolean().optional(),
+  // One per checkout attempt; a repeat of the same key is answered with the
+  // original result instead of charging again.
+  requestId: z.string().min(8).max(64).optional(),
 });
 export type CheckoutDto = z.infer<typeof checkoutSchema>;
 
@@ -210,13 +235,33 @@ export type RemoveOrderItemDto = z.infer<typeof removeOrderItemSchema>;
 
 export const cancelOrderSchema = z.object({
   reason: z.string().trim().min(1, "A reason is required").max(200),
+  // Required to cancel once the kitchen has started cooking: an explicit
+  // acknowledgement that food is already in progress.
+  confirmStarted: z.boolean().optional(),
+  // Who asked for it: staff by default, or the guest changing their mind.
+  source: z.enum(["STAFF", "CUSTOMER"]).optional(),
 });
 export type CancelOrderDto = z.infer<typeof cancelOrderSchema>;
 
+// Forward moves only. Declining a ticket goes through rejectKotSchema and
+// withdrawing an order through cancelOrderSchema, so neither can be reached by
+// sending an arbitrary status here.
 export const kotItemStatusUpdateSchema = z.object({
-  status: kotStatusSchema,
+  status: z.enum(["ACCEPTED", "PREPARING", "READY", "SERVED"]),
 });
 export type KotItemStatusUpdateDto = z.infer<typeof kotItemStatusUpdateSchema>;
+
+export const rejectKotSchema = z.object({
+  reason: z.string().trim().min(1, "A reason is required").max(200),
+  // Needed once the kitchen has started cooking the ticket.
+  confirmStarted: z.boolean().optional(),
+});
+export type RejectKotDto = z.infer<typeof rejectKotSchema>;
+
+export const rejectOrderSchema = z.object({
+  reason: z.string().trim().min(1, "A reason is required").max(200),
+});
+export type RejectOrderDto = z.infer<typeof rejectOrderSchema>;
 
 
 export const publicRequestSchema = z.object({ type: z.enum(["WAITER", "BILL"]) });

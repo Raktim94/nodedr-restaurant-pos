@@ -25,7 +25,20 @@ function getPrintFrame(): HTMLIFrameElement {
   return frame;
 }
 
-export function openReceiptPrint(orderId: string, branchId: string) {
+/** Bill figures the cashier has typed but not yet saved (see receipt route). */
+export type BillQuery = Record<string, string | number | undefined>;
+
+export function billQueryString(adj: BillQuery = {}): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(adj)) {
+    if (v !== undefined && v !== "" && v !== 0) q.set(k, String(v));
+  }
+  const s = q.toString();
+  return s ? `&${s}` : "";
+}
+
+/** Browser print of the bill (open order) or receipt (paid order). Read-only. */
+export function openReceiptPrint(orderId: string, branchId: string, adj: BillQuery = {}) {
   const frame = getPrintFrame();
   frame.onload = () => {
     const win = frame.contentWindow;
@@ -38,7 +51,7 @@ export function openReceiptPrint(orderId: string, branchId: string) {
     }
   };
   // Force a reload even if printing the same order twice in a row.
-  frame.src = `/api/v1/orders/${orderId}/receipt?branchId=${branchId}&t=${Date.now()}`;
+  frame.src = `/api/v1/orders/${orderId}/receipt?branchId=${branchId}${billQueryString(adj)}&t=${Date.now()}`;
 }
 
 export function openKotPrint(orderId: string, branchId: string) {

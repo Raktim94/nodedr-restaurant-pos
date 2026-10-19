@@ -61,6 +61,13 @@ export interface EscposReceiptOrder {
   loyaltyPointsRedeemed: number;
   loyaltyDiscountAmount: number;
   totalAmount: number;
+  /** Discount as a percentage of the subtotal, printed next to the amount. */
+  discountPercent?: number;
+  /** A bill handed over before payment: no "paid in full" wording. */
+  isProvisional?: boolean;
+  /** Applied so far / still owed; printed when set. */
+  amountPaid?: number;
+  balanceDue?: number;
   items: {
     nameSnapshot: string;
     quantity: number;
@@ -69,7 +76,17 @@ export interface EscposReceiptOrder {
     taxRateSnapshot: number;
     modifiers: { nameSnapshot: string; priceAdjSnapshot: number }[];
   }[];
-  payments: { method: string; amount: number }[];
+  payments: {
+    method: string;
+    amount: number;
+    tendered?: number | null;
+    changeGiven?: number | null;
+  }[];
+}
+
+/** "Discount (10%)" when the percentage is known, else plain "Discount". */
+export function discountLabel(percent?: number): string {
+  return percent && percent > 0 ? `Discount (${Number(percent)}%)` : 'Discount';
 }
 
 interface JobFormat {
@@ -152,13 +169,19 @@ export function buildReceiptEscPosJob({
   if (branch.taxMode === 'EXCLUSIVE') {
     w.row('Subtotal', money(order.subtotal - order.taxAmount));
     if (order.discountAmount > 0) {
-      w.row('Discount', `-${money(order.discountAmount)}`);
+      w.row(
+        discountLabel(order.discountPercent),
+        `-${money(order.discountAmount)}`,
+      );
     }
     if (order.taxAmount > 0) w.row(taxLabel, money(order.taxAmount));
   } else {
     w.row('Subtotal', money(order.subtotal));
     if (order.discountAmount > 0) {
-      w.row('Discount', `-${money(order.discountAmount)}`);
+      w.row(
+        discountLabel(order.discountPercent),
+        `-${money(order.discountAmount)}`,
+      );
     }
     if (order.taxAmount > 0) {
       // Prices are tax-inclusive - this is a breakup of tax already inside
@@ -181,17 +204,34 @@ export function buildReceiptEscPosJob({
   }
   if (order.tipAmount > 0) w.row('Tip', money(order.tipAmount));
   w.rule();
-  w.row('TOTAL', money(order.totalAmount), { bold: true, size: 'tall' });
+  w.row(order.isProvisional ? 'TOTAL DUE' : 'TOTAL', money(order.totalAmount), {
+    bold: true,
+    size: 'tall',
+  });
 
   if (order.payments.length > 0) {
     w.rule();
     for (const p of order.payments) {
       w.row(`Paid (${p.method})`, money(p.amount));
+      if (p.tendered != null && p.changeGiven != null && p.changeGiven > 0) {
+        w.row(`  Received`, money(p.tendered));
+        w.row(`  Change`, money(p.changeGiven));
+      }
     }
+  }
+  if (order.amountPaid !== undefined && order.balanceDue !== undefined) {
+    w.rule();
+    w.row('Amount paid', money(order.amountPaid));
+    w.row('Balance due', money(order.balanceDue), { bold: true });
   }
 
   w.rule();
-  w.text('Thank you! Visit again.', { align: 'center' });
+  w.text(
+    order.isProvisional
+      ? 'Bill only - not a receipt. Payment pending.'
+      : 'Thank you! Visit again.',
+    { align: 'center' },
+  );
   return {
     buffer: w.finish({ drawer: openDrawer }),
     unsupportedChars: [...w.unsupported],

@@ -1,6 +1,6 @@
 "use client";
 
-import type { KotStatusDto } from "@nodedr-restaurant/types";
+import { KOT_NEXT_STATUS, type KotStatusDto } from "@nodedr-restaurant/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -18,6 +18,8 @@ export interface KotTicket {
   order: {
     orderNumber: string;
     type: string;
+    channel: "STAFF" | "ONLINE";
+    notes: string | null;
     table: { number: string; name: string | null } | null;
     guestName: string | null;
     customer: { name: string | null; phone: string | null } | null;
@@ -60,16 +62,104 @@ export function useUpdateKotStatus(branchId: string | null) {
   return useMutation({
     mutationFn: ({ id, status }: { id: string; status: KotStatusDto }) =>
       api.patch(`/kds/tickets/${id}/status?branchId=${branchId}`, { status }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] }),
+    // Also on error: a 409 means the ticket moved on another screen, and the
+    // board must show where it really is rather than the stale step.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["kds"] }),
   });
 }
 
-export const NEXT_STATUS: Partial<Record<KotStatusDto, KotStatusDto>> = {
-  NEW: "ACCEPTED",
-  ACCEPTED: "PREPARING",
-  PREPARING: "READY",
-  READY: "SERVED",
-};
+export const NEXT_STATUS = KOT_NEXT_STATUS;
+
+/** The kitchen declining a ticket; `confirmStarted` once cooking has begun. */
+export function useRejectKot(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason, confirmStarted }: { id: string; reason: string; confirmStarted?: boolean }) =>
+      api.post(`/kds/tickets/${id}/reject?branchId=${branchId}`, { reason, confirmStarted }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["kds"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
+    },
+  });
+}
+
+export interface IncomingOrder {
+  id: string;
+  orderNumber: string;
+  type: string;
+  channel: "STAFF" | "ONLINE";
+  guestName: string | null;
+  notes: string | null;
+  createdAt: string;
+  scheduledFor: string | null;
+  table: { number: string; name: string | null } | null;
+  customer: { name: string | null; phone: string | null } | null;
+  items: {
+    id: string;
+    nameSnapshot: string;
+    quantity: number;
+    kitchenNote: string | null;
+    modifiers: { nameSnapshot: string }[];
+  }[];
+}
+
+/** Orders waiting for a yes/no. Only fetched for users who may answer them. */
+export function useKdsIncoming(branchId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ["kds", "incoming", branchId],
+    queryFn: () => api.get<IncomingOrder[]>(`/kds/incoming?branchId=${branchId}`),
+    enabled: !!branchId && enabled,
+    refetchInterval: 15_000,
+  });
+}
+
+function invalidateAfterAnswer(queryClient: ReturnType<typeof useQueryClient>, branchId: string | null) {
+  queryClient.invalidateQueries({ queryKey: ["kds"] });
+  queryClient.invalidateQueries({ queryKey: ["orders"] });
+  queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
+}
+
+export function useAcceptIncoming(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => api.post(`/kds/incoming/${orderId}/accept?branchId=${branchId}`),
+    onSettled: () => invalidateAfterAnswer(queryClient, branchId),
+  });
+}
+
+export function useDeclineIncoming(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
+      api.post(`/kds/incoming/${orderId}/reject?branchId=${branchId}`, { reason }),
+    onSettled: () => invalidateAfterAnswer(queryClient, branchId),
+  });
+}
+
+export interface KitchenProgressTicket {
+  id: string;
+  orderId: string;
+  status: KotStatusDto;
+  createdAt: string;
+  readyAt: string | null;
+  order: {
+    orderNumber: string;
+    type: string;
+    table: { id: string; number: string; name: string | null } | null;
+  };
+}
+
+/** Where each live ticket is - for order-taking screens, no guest details. */
+export function useKdsProgress(branchId: string | null) {
+  return useQuery({
+    queryKey: ["kds", "progress", branchId],
+    queryFn: () => api.get<KitchenProgressTicket[]>(`/kds/progress?branchId=${branchId}`),
+    enabled: !!branchId,
+    refetchInterval: 20_000,
+  });
+}
 
 export function useSetKotPriority(branchId: string | null) {
   const queryClient = useQueryClient();

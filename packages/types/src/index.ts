@@ -20,3 +20,4 @@ export * from "./tax";
 export * from "./hr";
 export * from "./accounting";
 export * from "./marketing";
+export * from "./order-lifecycle";

@@ -51,6 +51,13 @@ interface ReceiptOrder {
   loyaltyPointsRedeemed: number;
   loyaltyDiscountAmount: number;
   totalAmount: number;
+  /** Discount as a percentage of the subtotal, printed next to the amount. */
+  discountPercent?: number;
+  /** A bill handed over before payment: no "paid in full" wording. */
+  isProvisional?: boolean;
+  /** Applied so far / still owed; printed when set. */
+  amountPaid?: number;
+  balanceDue?: number;
   items: {
     nameSnapshot: string;
     quantity: number;
@@ -59,7 +66,12 @@ interface ReceiptOrder {
     taxRateSnapshot: number;
     modifiers: { nameSnapshot: string; priceAdjSnapshot: number }[];
   }[];
-  payments: { method: string; amount: number }[];
+  payments: {
+    method: string;
+    amount: number;
+    tendered?: number | null;
+    changeGiven?: number | null;
+  }[];
 }
 
 export function buildReceiptHtml({
@@ -122,7 +134,12 @@ export function buildReceiptHtml({
     // customer expects to see is subtotal - taxAmount).
     totalRows.push(['Subtotal', money(order.subtotal - order.taxAmount)]);
     if (order.discountAmount > 0) {
-      totalRows.push(['Discount', `- ${money(order.discountAmount)}`]);
+      totalRows.push([
+        order.discountPercent && order.discountPercent > 0
+          ? `Discount (${Number(order.discountPercent)}%)`
+          : 'Discount',
+        `- ${money(order.discountAmount)}`,
+      ]);
     }
     if (order.taxAmount > 0) {
       totalRows.push([taxLabel, money(order.taxAmount)]);
@@ -130,7 +147,12 @@ export function buildReceiptHtml({
   } else {
     totalRows.push(['Subtotal', money(order.subtotal)]);
     if (order.discountAmount > 0) {
-      totalRows.push(['Discount', `- ${money(order.discountAmount)}`]);
+      totalRows.push([
+        order.discountPercent && order.discountPercent > 0
+          ? `Discount (${Number(order.discountPercent)}%)`
+          : 'Discount',
+        `- ${money(order.discountAmount)}`,
+      ]);
     }
     if (order.taxAmount > 0) {
       // Prices are tax-inclusive (see ARCHITECTURE.md) — this is a breakup
@@ -155,10 +177,25 @@ export function buildReceiptHtml({
     totalRows.push(['Tip', money(order.tipAmount)]);
   }
 
-  const paymentRows = order.payments.map(
-    (p) =>
+  const paymentRows = order.payments.flatMap((p) => {
+    const rows = [
       `<tr><td>Paid (${esc(p.method)})</td><td class="num">${money(p.amount)}</td></tr>`,
-  );
+    ];
+    if (p.tendered != null && p.changeGiven != null && p.changeGiven > 0) {
+      rows.push(
+        `<tr><td class="sub">&nbsp;&nbsp;Received</td><td class="num sub">${money(p.tendered)}</td></tr>`,
+        `<tr><td class="sub">&nbsp;&nbsp;Change</td><td class="num sub">${money(p.changeGiven)}</td></tr>`,
+      );
+    }
+    return rows;
+  });
+  const settlementRows =
+    order.amountPaid !== undefined && order.balanceDue !== undefined
+      ? `<hr class="rule"><table class="totals">
+          <tr><td>Amount paid</td><td class="num">${money(order.amountPaid)}</td></tr>
+          <tr class="grand"><td>Balance due</td><td class="num">${money(order.balanceDue)}</td></tr>
+        </table>`
+      : '';
 
   return `<!doctype html>
 <html>
@@ -218,15 +255,20 @@ export function buildReceiptHtml({
     <hr class="rule">
     <table class="totals">
       ${totalRows.map(([l, v]) => `<tr><td>${esc(l)}</td><td class="num">${esc(v)}</td></tr>`).join('')}
-      <tr class="grand"><td>GRAND TOTAL</td><td class="num">${money(order.totalAmount)}</td></tr>
+      <tr class="grand"><td>${order.isProvisional ? 'TOTAL DUE' : 'GRAND TOTAL'}</td><td class="num">${money(order.totalAmount)}</td></tr>
     </table>
     ${
       paymentRows.length > 0
         ? `<hr class="rule"><table class="totals">${paymentRows.join('')}</table>`
         : ''
     }
+    ${settlementRows}
     <hr class="rule">
-    <p class="footer">Thank you! Visit again.</p>
+    <p class="footer">${
+      order.isProvisional
+        ? 'Bill only &mdash; not a receipt. Payment pending.'
+        : 'Thank you! Visit again.'
+    }</p>
   </div>
 </body>
 </html>`;

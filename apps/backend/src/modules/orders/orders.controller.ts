@@ -15,15 +15,18 @@ import { ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import {
   addOrderItemsSchema,
+  billPreviewSchema,
   checkoutSchema,
   createOrderSchema,
   cancelOrderSchema,
   deleteOrdersSchema,
   mergeOrdersSchema,
   refundSchema,
+  rejectOrderSchema,
   removeOrderItemSchema,
   updateOrderItemSchema,
   updateOrderSchema,
+  type BillPreviewDto,
   type CheckoutDto,
   type RemoveOrderItemDto,
   type UpdateOrderDto,
@@ -91,7 +94,26 @@ function toKotOrder(order: ReceiptData): EscposKotOrder {
   };
 }
 
-function toEscposOrder(order: ReceiptData): EscposReceiptOrder {
+// Figures that replace the stored ones on a printed bill (an open order's
+// bill is priced from what the cashier entered, not from what is saved yet).
+type BillOverrides = {
+  subtotal: number;
+  discountAmount: number;
+  discountPercent: number;
+  taxAmount: number;
+  tipAmount: number;
+  loyaltyPointsRedeemed: number;
+  loyaltyDiscountAmount: number;
+  totalAmount: number;
+  amountPaid: number;
+  balanceDue: number;
+  isProvisional: boolean;
+};
+
+function toEscposOrder(
+  order: ReceiptData,
+  overrides?: BillOverrides,
+): EscposReceiptOrder {
   return {
     orderNumber: order.orderNumber,
     type: order.type,
@@ -109,6 +131,7 @@ function toEscposOrder(order: ReceiptData): EscposReceiptOrder {
     loyaltyPointsRedeemed: order.loyaltyPointsRedeemed,
     loyaltyDiscountAmount: Number(order.loyaltyDiscountAmount),
     totalAmount: Number(order.totalAmount),
+    ...overrides,
     items: order.items.map((item) => ({
       nameSnapshot: item.nameSnapshot,
       quantity: item.quantity,
@@ -123,8 +146,25 @@ function toEscposOrder(order: ReceiptData): EscposReceiptOrder {
     payments: order.payments.map((p) => ({
       method: p.method,
       amount: Number(p.amount),
+      tendered: p.tendered ? Number(p.tendered) : null,
+      changeGiven: p.changeGiven ? Number(p.changeGiven) : null,
     })),
   };
+}
+
+// Typing a discount or coupon onto a bill needs discounts.apply, whether it is
+// being previewed, printed or charged.
+function assertMayAdjust(user: SessionUser, adj: BillPreviewDto) {
+  if (
+    ((adj.discountPercent ?? 0) > 0 ||
+      (adj.discountFlat ?? 0) > 0 ||
+      !!adj.couponCode) &&
+    !user.permissions.includes('discounts.apply')
+  ) {
+    throw new ForbiddenException(
+      'Missing permission to apply a discount at checkout',
+    );
+  }
 }
 
 @ApiTags('orders')
@@ -201,7 +241,7 @@ export class OrdersController {
     return this.ordersService.addItems(branchId, id, items);
   }
 
-  @Auth('orders.edit')
+  @Auth('orders.accept')
   @Post(':id/accept')
   async accept(
     @CurrentUser() user: SessionUser,
@@ -212,15 +252,18 @@ export class OrdersController {
     return this.ordersService.acceptOrder(branchId, id, user.id);
   }
 
-  @Auth('orders.cancel')
+  @Auth('orders.accept')
   @Post(':id/reject')
+  @UsePipes(new ZodValidationPipe(rejectOrderSchema))
   async reject(
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId: string,
     @Param('id') id: string,
+    @Body() body: unknown,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.ordersService.rejectOrder(branchId, id, user.id);
+    const { reason } = body as { reason: string };
+    return this.ordersService.rejectOrder(branchId, id, user.id, reason);
   }
 
   @Auth('orders.cancel')
@@ -232,8 +275,13 @@ export class OrdersController {
     @Body() body?: unknown,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    const { reason } = cancelOrderSchema.partial().parse(body ?? {});
-    return this.ordersService.cancelOrder(branchId, id, user.id, reason);
+    const { reason, confirmStarted, source } = cancelOrderSchema
+      .partial()
+      .parse(body ?? {});
+    return this.ordersService.cancelOrder(branchId, id, user.id, reason, {
+      confirmStarted,
+      source,
+    });
   }
 
   // --- Bill corrections (open bills only) -----------------------------------
@@ -315,6 +363,22 @@ export class OrdersController {
     return this.ordersService.previewDiscount(branchId, id, body?.couponCode);
   }
 
+  // The bill as it would settle right now, priced by the server. Read-only.
+  @Auth('bills.print')
+  @Post(':id/bill-preview')
+  @UsePipes(new ZodValidationPipe(billPreviewSchema))
+  async billPreview(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    const adj = body as BillPreviewDto;
+    assertMayAdjust(user, adj);
+    return this.ordersService.previewBill(branchId, id, adj);
+  }
+
   @Auth('bills.print')
   @Post(':id/checkout')
   @UsePipes(new ZodValidationPipe(checkoutSchema))
@@ -326,6 +390,7 @@ export class OrdersController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     const dto = body as CheckoutDto;
+    assertMayAdjust(user, dto);
     // `bills.print` (required above) only covers settling a bill at its
     // already-priced total — discounting it further is a distinct,
     // separately-grantable permission (see packages/types/src/permissions.ts;
@@ -347,16 +412,30 @@ export class OrdersController {
     return this.ordersService.checkout(branchId, id, user.id, dto);
   }
 
+  // The bill / receipt page. For an open order it is the BILL as priced from
+  // the adjustments in the query (same fields as bill-preview) and says
+  // "payment pending"; for a paid order it is the receipt. Either way it only
+  // reads: printing it any number of times never charges or closes anything.
   @Auth('bills.print')
   @Get(':id/receipt')
   async receipt(
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId: string,
     @Param('id') id: string,
+    @Query() query: Record<string, string>,
     @Res() res: Response,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    const order = await this.ordersService.getReceiptData(branchId, id);
+    const adj = billPreviewSchema.parse(query);
+    assertMayAdjust(user, adj);
+    const { order, overrides } = await this.ordersService.getBillForPrint(
+      branchId,
+      id,
+      adj,
+    );
+    if (overrides.isProvisional) {
+      await this.ordersService.recordBillPrinted(branchId, id, user.id);
+    }
     const html = buildReceiptHtml({
       restaurantName: order.branch.restaurant.name,
       currency: order.branch.restaurant.currency,
@@ -370,7 +449,7 @@ export class OrdersController {
         taxLabel: order.branch.taxLabel,
         taxId: order.branch.taxId,
       },
-      order: toEscposOrder(order),
+      order: toEscposOrder(order, overrides),
     });
     res.type('html').send(html);
   }
@@ -511,9 +590,19 @@ export class OrdersController {
     @Param('id') id: string,
     @Query('width') width?: string,
     @Query('drawer') drawer?: string,
+    @Query() query: Record<string, string> = {},
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    const order = await this.ordersService.getReceiptData(branchId, id);
+    const adj = billPreviewSchema.parse(query);
+    assertMayAdjust(user, adj);
+    const { order, overrides } = await this.ordersService.getBillForPrint(
+      branchId,
+      id,
+      adj,
+    );
+    if (overrides.isProvisional) {
+      await this.ordersService.recordBillPrinted(branchId, id, user.id);
+    }
     const stored = branchPrinterProfile(order.branch);
     const profile =
       width === '58' || width === '80'
@@ -535,9 +624,10 @@ export class OrdersController {
         taxLabel: order.branch.taxLabel,
         taxId: order.branch.taxId,
       },
-      order: toEscposOrder(order),
+      order: toEscposOrder(order, overrides),
       profile,
-      openDrawer: drawer === 'true',
+      // A bill handed over before payment never pops the till.
+      openDrawer: drawer === 'true' && !overrides.isProvisional,
     });
     return this.sendJob(job, order.branch);
   }

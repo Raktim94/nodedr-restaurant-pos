@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { QueryError } from "@/components/ui/query-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ResponsiveTabs } from "@/components/ui/nav-picker";
 import { useCategories, useMenuItems, type MenuItem } from "@/hooks/use-menu";
@@ -17,7 +18,7 @@ export function ProductGrid({
   const { data: categories } = useCategories(branchId);
   const [activeCategoryId, setActiveCategoryId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
-  const { data: items, isLoading } = useMenuItems(branchId, activeCategoryId);
+  const { data: items, isLoading, isError, error, refetch, isFetching } = useMenuItems(branchId, activeCategoryId);
 
   const filtered = items?.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -40,6 +41,9 @@ export function ProductGrid({
         />
       )}
 
+      {isError && !items ? (
+        <QueryError error={error} what="the menu" onRetry={() => void refetch()} retrying={isFetching} />
+      ) : (
       <div className="grid flex-1 auto-rows-min grid-cols-2 gap-3 overflow-y-auto pb-4 sm:grid-cols-3 xl:grid-cols-4">
         {isLoading &&
           Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
@@ -64,6 +68,7 @@ export function ProductGrid({
           </p>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -11,6 +11,12 @@ test("order and table pushes refresh the per-table open bill cache", () => {
   assert.ok(keys("order.updated").includes("floors/b1"));
 });
 
+test("order pushes refresh the kitchen screen (incoming orders, cancelled/declined tickets)", () => {
+  for (const e of ["order.created", "order.updated"]) {
+    assert.ok(keys(e).includes("kds"), `${e} must refresh the kitchen screen`);
+  }
+});
+
 test("kitchen pushes refresh the kitchen screen", () => {
   assert.ok(keys("kot.updated").includes("kds"));
   assert.ok(keys("kot.reprinted").includes("kds"));

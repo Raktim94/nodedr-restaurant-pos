@@ -10,10 +10,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Skeleton } from "@/components/ui/skeleton";
 import { CancelOrderDialog, useCanCancelOrders } from "@/components/orders/cancel-order-dialog";
 import { EditBillDialog } from "@/components/orders/edit-bill-dialog";
+import { ReasonDialog } from "@/components/orders/reason-dialog";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useAcceptOrder, useOrder, useRejectOrder } from "@/hooks/use-orders";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+const CANCEL_SOURCE_LABEL = {
+  STAFF: "Cancelled by staff",
+  CUSTOMER: "Cancelled at the guest's request",
+  KITCHEN_REJECTED: "Rejected by the kitchen",
+  ONLINE_DECLINED: "Declined when it came in",
+} as const;
 
 export function OrderDetailDialog({
   branchId,
@@ -33,7 +41,9 @@ export function OrderDetailDialog({
   const canCancelRole = useCanCancelOrders();
   const { data: me } = useCurrentUser();
   const canEditRole = hasPermission(me?.user, "orders.edit");
+  const canAnswer = hasPermission(me?.user, "orders.accept");
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [declineOpen, setDeclineOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const customerName = order?.guestName ?? order?.customer?.name ?? "Walk-in guest";
   const pending = order?.status === "OPEN" && order?.acceptance === "PENDING";
@@ -157,28 +167,29 @@ export function OrderDetailDialog({
               </p>
             )}
 
-            {pending && (
+            {pending && canAnswer && (
               <div className="flex gap-2">
                 <Button
-                  className="flex-1"
+                  className="h-11 flex-1"
                   disabled={accept.isPending}
                   onClick={() => run(() => accept.mutateAsync(order.id), "Order accepted — sent to the kitchen")}
                 >
                   <Check className="mr-1.5 h-4 w-4" /> Accept order
                 </Button>
-                <Button
-                  variant="destructive"
-                  className="flex-1"
-                  disabled={reject.isPending}
-                  onClick={() => run(() => reject.mutateAsync(order.id), "Order rejected")}
-                >
-                  <X className="mr-1.5 h-4 w-4" /> Reject
+                <Button variant="destructive" className="h-11 flex-1" onClick={() => setDeclineOpen(true)}>
+                  <X className="mr-1.5 h-4 w-4" /> Decline
                 </Button>
               </div>
             )}
-            {order.status === "CANCELLED" && order.cancelReason && (
+            {pending && !canAnswer && (
               <p className="rounded-lg bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-                Cancelled: {order.cancelReason}
+                Waiting for someone with permission to accept or decline orders.
+              </p>
+            )}
+            {order.status === "CANCELLED" && (
+              <p className="rounded-lg bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+                {CANCEL_SOURCE_LABEL[order.cancelSource ?? "STAFF"]}
+                {order.cancelReason ? `: ${order.cancelReason}` : ""}
               </p>
             )}
             {order.status === "PAID" && (
@@ -214,6 +225,21 @@ export function OrderDetailDialog({
                   onOpenChange={setCancelOpen}
                   />
                 <EditBillDialog branchId={branchId} orderId={order.id} open={editOpen} onOpenChange={setEditOpen} />
+                <ReasonDialog
+                  open={declineOpen}
+                  onOpenChange={setDeclineOpen}
+                  title={`Decline order #${order.orderNumber}?`}
+                  description="The guest's order is not made. It stays in History with your reason and name, and nothing is charged."
+                  reasons={["Closing soon", "Out of stock", "Too busy", "Outside delivery area"]}
+                  confirmLabel="Decline order"
+                  keepLabel="Go back"
+                  onSubmit={(reason) =>
+                    reject.mutateAsync({ orderId: order.id, reason }).then(() => {
+                      toast.success("Order declined");
+                      onOpenChange(false);
+                    })
+                  }
+                />
               </>
             )}
           </div>

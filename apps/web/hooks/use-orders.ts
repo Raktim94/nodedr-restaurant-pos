@@ -1,6 +1,13 @@
 "use client";
 
-import type { AddOrderItemsDto, CheckoutDto, CreateOrderDto, RefundDto, UpdateOrderDto } from "@nodedr-restaurant/types";
+import type {
+  AddOrderItemsDto,
+  CheckoutDto,
+  CreateOrderDto,
+  KotStatusDto,
+  RefundDto,
+  UpdateOrderDto,
+} from "@nodedr-restaurant/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Customer } from "@/hooks/use-customers";
 import { api } from "@/lib/api";
@@ -17,7 +24,18 @@ export interface CreatedOrder {
   totalAmount: string;
   deliveryFee?: string;
   status: string;
-  payments?: { method: string; amount: string }[];
+  payments?: { method: string; amount: string; tendered?: string | null; changeGiven?: string | null }[];
+}
+
+/** What a checkout call answers with: the order plus where its settlement stands. */
+export interface CheckoutResult extends CreatedOrder {
+  settlement: {
+    amountDue: number;
+    amountPaid: number;
+    balanceDue: number;
+    changeDue: number;
+    fullyPaid: boolean;
+  };
 }
 
 export function useCreateOrder(branchId: string | null) {
@@ -34,12 +52,52 @@ export function useCreateOrder(branchId: string | null) {
   });
 }
 
+/** The bill as the server prices it right now; never saves anything. */
+export interface BillPreview {
+  locked: boolean;
+  status: string;
+  subtotal: number;
+  discountAmount: number;
+  discountPercent: number;
+  discountType: "PERCENT" | "FIXED" | null;
+  discountValue: number | null;
+  couponCode: string | null;
+  promotionName: string | null;
+  taxAmount: number;
+  loyaltyPointsRedeemed: number;
+  loyaltyDiscountAmount: number;
+  tipAmount: number;
+  deliveryFee: number;
+  totalDue: number;
+  amountPaid: number;
+  balanceDue: number;
+}
+
+export type BillAdjustments = Pick<
+  CheckoutDto,
+  "discountPercent" | "tipAmount" | "loyaltyPointsToRedeem" | "couponCode" | "customerId"
+>;
+
+export function useBillPreview(branchId: string | null, orderId: string, adj: BillAdjustments, enabled = true) {
+  // `customerId` only matters at checkout; the server prices from the order.
+  const { customerId: _customerId, ...priced } = adj;
+  void _customerId;
+  return useQuery({
+    queryKey: ["orders", "bill", branchId, orderId, priced],
+    queryFn: () => api.post<BillPreview>(`/orders/${orderId}/bill-preview?branchId=${branchId}`, priced),
+    enabled: !!branchId && enabled,
+    retry: false,
+    // Keep the last figures on screen while a changed discount is repriced.
+    placeholderData: (previous) => previous,
+  });
+}
+
 export function useCheckoutOrder(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ orderId, dto }: { orderId: string; dto: CheckoutDto }) =>
-      api.post<CreatedOrder>(`/orders/${orderId}/checkout?branchId=${branchId}`, dto),
-    onSuccess: () => {
+      api.post<CheckoutResult>(`/orders/${orderId}/checkout?branchId=${branchId}`, dto),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard", "summary", branchId] });
@@ -100,11 +158,25 @@ export interface OrderDetail {
   }[];
   kots: {
     id: string;
-    status: string;
+    status: KotStatusDto;
     printedCount: number;
+    rejectReason: string | null;
     items: { orderItemId: string; status: string }[];
   }[];
-  payments: { id: string; method: string; amount: string }[];
+  cancelSource: "STAFF" | "CUSTOMER" | "KITCHEN_REJECTED" | "ONLINE_DECLINED" | null;
+  discountType: "PERCENT" | "FIXED" | null;
+  discountValue: string | null;
+  loyaltyPointsRedeemed: number;
+  loyaltyDiscountAmount: string;
+  deliveryFee?: string;
+  payments: {
+    id: string;
+    method: string;
+    amount: string;
+    tendered: string | null;
+    changeGiven: string | null;
+    createdAt: string;
+  }[];
 }
 
 export function useOrder(branchId: string | null, orderId: string | null) {
@@ -155,7 +227,7 @@ export function useAcceptOrder(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (orderId: string) => api.post(`/orders/${orderId}/accept?branchId=${branchId}`),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
@@ -166,9 +238,11 @@ export function useAcceptOrder(branchId: string | null) {
 export function useRejectOrder(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (orderId: string) => api.post(`/orders/${orderId}/reject?branchId=${branchId}`),
-    onSuccess: () => {
+    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
+      api.post(`/orders/${orderId}/reject?branchId=${branchId}`, { reason }),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["kds"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
@@ -223,15 +297,24 @@ export function useMergeOrder(branchId: string | null) {
 function invalidateBillViews(queryClient: ReturnType<typeof useQueryClient>, branchId: string | null) {
   queryClient.invalidateQueries({ queryKey: ["orders"] });
   queryClient.invalidateQueries({ queryKey: ["floors", branchId] });
-  queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] });
+  queryClient.invalidateQueries({ queryKey: ["kds"] });
   queryClient.invalidateQueries({ queryKey: ["dashboard"] });
 }
 
 export function useCancelOrder(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) =>
-      api.post<CreatedOrder>(`/orders/${orderId}/cancel?branchId=${branchId}`, { reason }),
+    mutationFn: ({
+      orderId,
+      reason,
+      source,
+      confirmStarted,
+    }: {
+      orderId: string;
+      reason: string;
+      source?: "STAFF" | "CUSTOMER";
+      confirmStarted?: boolean;
+    }) => api.post<CreatedOrder>(`/orders/${orderId}/cancel?branchId=${branchId}`, { reason, source, confirmStarted }),
     onSuccess: () => invalidateBillViews(queryClient, branchId),
   });
 }

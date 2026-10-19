@@ -276,14 +276,18 @@ run('Orders: tables, cancel, bill edits, KOT printing (e2e)', () => {
       expect(await tableStatus(tables.D)).toBe('AVAILABLE');
     });
 
-    it('is blocked once the kitchen is cooking, and the order stays intact', async () => {
+    it('needs an explicit confirmation once the kitchen is cooking, and the order stays intact', async () => {
       const order = await newOrder(tables.D);
       const [kot] = await kotsOf(order.id);
-      await o()
-        .patch(`/kds/tickets/${kot.id}/status${q}`, { status: 'PREPARING' })
-        .expect(200);
-      const res = await o().post(`/orders/${order.id}/cancel${q}`, {});
-      expect(res.status).toBe(400);
+      for (const status of ['ACCEPTED', 'PREPARING'])
+        await o()
+          .patch(`/kds/tickets/${kot.id}/status${q}`, { status })
+          .expect(200);
+      const res = await o().post(`/orders/${order.id}/cancel${q}`, {
+        reason: 'Guest left',
+      });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('KITCHEN_STARTED');
       expect(res.body.message).toMatch(/kitchen has already started/i);
       expect(
         (await o().get(`/orders/${order.id}${q}`).expect(200)).body.status,
@@ -384,9 +388,10 @@ run('Orders: tables, cancel, bill edits, KOT printing (e2e)', () => {
         { menuItemId: menuItem2Id, quantity: 1, modifierIds: [] },
       ]);
       const kots = await kotsOf(order.id);
-      await o()
-        .patch(`/kds/tickets/${kots[0].id}/status${q}`, { status: 'PREPARING' })
-        .expect(200);
+      for (const status of ['ACCEPTED', 'PREPARING'])
+        await o()
+          .patch(`/kds/tickets/${kots[0].id}/status${q}`, { status })
+          .expect(200);
       // Every line on the cooking ticket is locked; lines on other tickets are not.
       const detail = (await o().get(`/orders/${order.id}${q}`).expect(200))
         .body;

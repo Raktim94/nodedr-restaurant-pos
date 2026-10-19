@@ -6,6 +6,8 @@ import { useState } from "react";
 import { ElapsedTimer } from "@/components/tables/elapsed-timer";
 import { TableShapeIcon } from "@/components/tables/table-shape-icon";
 import { ResponsiveTabs } from "@/components/ui/nav-picker";
+import { QueryError } from "@/components/ui/query-error";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { Floor, RestaurantTable } from "@/hooks/use-tables";
 import { cn } from "@/lib/utils";
 
@@ -33,15 +35,40 @@ const STATUS_LABEL: Record<TableStatusDto, string> = {
 export function PosTablePicker({
   floors,
   onSelect,
+  isLoading = false,
+  error = null,
+  onRetry,
+  retrying = false,
 }: {
   floors: Floor[];
   onSelect: (table: RestaurantTable) => void;
+  isLoading?: boolean;
+  /** The floor request failed: say so, never show it as "no tables". */
+  error?: unknown;
+  onRetry?: () => void;
+  retrying?: boolean;
 }) {
   const [activeFloorId, setActiveFloorId] = useState<string | undefined>(undefined);
   const activeFloor = floors.find((f) => f.id === (activeFloorId ?? floors[0]?.id));
 
+  if (error && floors.length === 0) {
+    return <QueryError error={error} what="the tables" onRetry={() => onRetry?.()} retrying={retrying} />;
+  }
+  if (isLoading && floors.length === 0) {
+    return (
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5" aria-busy="true">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <Skeleton key={i} className="h-28 rounded-2xl" />
+        ))}
+      </div>
+    );
+  }
   if (floors.length === 0) {
-    return <p className="py-10 text-center text-sm text-muted-foreground">No tables set up yet.</p>;
+    return (
+      <p className="py-10 text-center text-sm text-muted-foreground">
+        No tables are set up for this branch yet. A manager can add them under Tables.
+      </p>
+    );
   }
 
   return (
