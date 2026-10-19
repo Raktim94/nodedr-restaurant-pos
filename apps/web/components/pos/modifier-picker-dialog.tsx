@@ -61,7 +61,13 @@ function ModifierPickerBody({
   const hasPortions = item.halfPrice != null;
   const [portionKind, setPortionKind] = useState<PortionKind>("FULL");
   const [customLabel, setCustomLabel] = useState("");
-  const [customPrice, setCustomPrice] = useState("");
+  // Editable price per portion, pre-filled from the menu; staff can overwrite any of them.
+  const [prices, setPrices] = useState<Record<PortionKind, string>>({
+    HALF: item.halfPrice ?? "",
+    FULL: item.price ?? "",
+    CUSTOM: "",
+  });
+  const customPrice = prices[portionKind];
   const [selected, setSelected] = useState<Record<string, Set<string>>>(() => defaultSelection(item));
 
   const groups = item.modifierGroups.map((g) => g.modifierGroup);
@@ -83,16 +89,15 @@ function ModifierPickerBody({
   const handleConfirm = () => {
     let portion: Portion | undefined;
     if (hasPortions) {
-      if (portionKind === "CUSTOM") {
-        const price = Number(customPrice);
-        if (customPrice.trim() === "" || !Number.isFinite(price) || price < 0) {
-          toast.error("Enter a price for the custom portion");
-          return;
-        }
-        portion = { kind: "CUSTOM", customLabel: customLabel.trim() || undefined, customPrice: price };
-      } else {
-        portion = { kind: portionKind };
+      const price = Number(customPrice);
+      if (customPrice.trim() === "" || !Number.isFinite(price) || price < 0) {
+        toast.error(`Enter a price for the ${portionKind.toLowerCase()} portion`);
+        return;
       }
+      portion =
+        portionKind === "CUSTOM"
+          ? { kind: "CUSTOM", customLabel: customLabel.trim() || undefined, customPrice: price }
+          : { kind: portionKind, customPrice: price };
     }
     for (const group of groups) {
       const count = selected[group.id]?.size ?? 0;
@@ -141,16 +146,16 @@ function ModifierPickerBody({
                   )}
                 >
                   <span>{opt.label}</span>
-                  {opt.price != null && (
+                  {opt.kind !== "CUSTOM" && prices[opt.kind] !== "" && (
                     <span className="text-xs font-normal tabular-nums text-muted-foreground">
-                      {formatCurrency(opt.price)}
+                      {formatCurrency(prices[opt.kind])}
                     </span>
                   )}
                 </button>
               ))}
             </div>
-            {portionKind === "CUSTOM" && (
-              <div className="grid grid-cols-[1fr_7rem] gap-2">
+            <div className={cn("grid gap-2", portionKind === "CUSTOM" ? "grid-cols-[1fr_7rem]" : "grid-cols-1")}>
+              {portionKind === "CUSTOM" && (
                 <Input
                   placeholder="Label, e.g. Quarter"
                   maxLength={40}
@@ -158,19 +163,18 @@ function ModifierPickerBody({
                   onChange={(e) => setCustomLabel(e.target.value)}
                   aria-label="Custom portion label"
                 />
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  placeholder="Price"
-                  value={customPrice}
-                  onChange={(e) => setCustomPrice(e.target.value)}
-                  aria-label="Custom portion price"
-                  autoFocus
-                />
-              </div>
-            )}
+              )}
+              <Input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                placeholder="Price"
+                value={customPrice}
+                onChange={(e) => setPrices((p) => ({ ...p, [portionKind]: e.target.value }))}
+                aria-label={`${portionKind.toLowerCase()} portion price`}
+              />
+            </div>
           </div>
         )}
         {groups.map((group) => (

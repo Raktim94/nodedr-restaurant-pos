@@ -2008,6 +2008,10 @@ export class OrdersService {
         );
       }
       if (cartItem.portion === 'HALF') portionBase = Number(menuItem.halfPrice);
+      // Staff may type their own price for Half/Full too.
+      if (allowCustomPortion && cartItem.customPrice != null) {
+        portionBase = cartItem.customPrice;
+      }
       portionSuffix = cartItem.portion === 'HALF' ? ' (Half)' : ' (Full)';
     } else if (cartItem.portion === 'CUSTOM') {
       if (!allowCustomPortion) {

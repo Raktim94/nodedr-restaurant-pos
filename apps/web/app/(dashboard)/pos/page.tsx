@@ -142,11 +142,8 @@ function PosPageInner() {
       return sum + (mod ? Number(mod.priceAdjustment) : 0);
     }, 0);
     const base =
-      portion?.kind === "HALF"
-        ? Number(pickerItem.halfPrice)
-        : portion?.kind === "CUSTOM"
-          ? (portion.customPrice ?? 0)
-          : Number(pickerItem.price);
+      portion?.customPrice ??
+      (portion?.kind === "HALF" ? Number(pickerItem.halfPrice) : Number(pickerItem.price));
     addLine(
       pickerItem.id,
       portion ? `${pickerItem.name} (${portionText(portion)})` : pickerItem.name,
@@ -177,9 +174,8 @@ function PosPageInner() {
       ...(l.portion
         ? {
             portion: l.portion.kind,
-            ...(l.portion.kind === "CUSTOM"
-              ? { customPrice: l.portion.customPrice, customLabel: l.portion.customLabel }
-              : {}),
+            customPrice: l.portion.customPrice,
+            ...(l.portion.kind === "CUSTOM" ? { customLabel: l.portion.customLabel } : {}),
           }
         : {}),
     }));
