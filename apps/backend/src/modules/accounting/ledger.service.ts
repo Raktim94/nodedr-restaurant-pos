@@ -57,7 +57,7 @@ const num = (raw: string | undefined) => {
  */
 export function parseStatement(csv: string) {
   const lines = csv
-    .replace(/^﻿/, '')
+    .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
     .filter((l) => l.trim());
   if (lines.length < 2)

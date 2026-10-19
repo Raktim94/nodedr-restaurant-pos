@@ -1095,12 +1095,21 @@ export class McpToolsBuilder {
         name: 'cancel_order',
         title: 'Cancel order',
         description:
-          'Cancel an OPEN order the kitchen has not started yet. Fails if the kitchen already began preparing it, or if it is already paid (use refund_order instead).',
+          'Cancel an OPEN order. A reason is required once the kitchen has accepted a ticket. If the kitchen already began preparing, the call is refused unless confirmStarted is true (the food in progress is wasted). Fails if part was already served or the order is paid (use refund_order instead).',
         inputSchema: {
           type: 'object',
           properties: {
             branchId: { type: 'string' },
             orderId: { type: 'string' },
+            reason: { type: 'string', description: 'Why it is cancelled' },
+            confirmStarted: {
+              type: 'boolean',
+              description: 'Cancel even though cooking has started',
+            },
+            guestRequested: {
+              type: 'boolean',
+              description: 'The guest asked to cancel (default: staff)',
+            },
           },
           required: ['branchId', 'orderId'],
         },
@@ -1114,6 +1123,13 @@ export class McpToolsBuilder {
               branchId,
               args.string('orderId'),
               actor.id,
+              args.optionalString('reason'),
+              {
+                confirmStarted: args.optionalBoolean('confirmStarted'),
+                source: args.optionalBoolean('guestRequested')
+                  ? 'CUSTOMER'
+                  : 'STAFF',
+              },
             ),
           );
         },

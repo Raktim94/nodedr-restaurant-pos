@@ -201,6 +201,7 @@ export class OperationsService {
         // Strip path separators and control characters from the client name.
         fileName:
           file.originalname
+            // eslint-disable-next-line no-control-regex -- control characters are exactly what is being stripped
             .replace(/[\\/\u0000-\u001f"]/g, '_')
             .slice(0, 150) || 'file',
         mimeType: file.mimetype,
