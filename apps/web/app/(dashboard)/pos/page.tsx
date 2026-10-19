@@ -7,7 +7,7 @@ import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import { publishDisplay } from "@/lib/customer-display";
 import { BranchNotice } from "@/components/layout/branch-notice";
 import { CartPanel, type DeliveryDetails, type PosOrderType } from "@/components/pos/cart-panel";
-import { cartLineKey, type CartLine } from "@/components/pos/cart-line";
+import { cartLineKey, portionText, type CartLine, type Portion } from "@/components/pos/cart-line";
 import { clearDraft, switchTableDraft, type Drafts } from "@/lib/pos-drafts";
 import { CheckoutPanel } from "@/components/pos/checkout-panel";
 import { KitchenProgressWidget } from "@/components/pos/kitchen-progress-widget";
@@ -107,26 +107,33 @@ function PosPageInner() {
   const existingOrder =
     existingOrders?.find((o) => o.id === selectedBillId) ?? existingOrders?.[0];
 
-  const addLine = (menuItemId: string, name: string, unitPrice: number, modifierIds: string[], modifierLabel: string) => {
-    const key = cartLineKey(menuItemId, modifierIds);
+  const addLine = (
+    menuItemId: string,
+    name: string,
+    unitPrice: number,
+    modifierIds: string[],
+    modifierLabel: string,
+    portion?: Portion,
+  ) => {
+    const key = cartLineKey(menuItemId, modifierIds, portion);
     setLines((prev) => {
       const existing = prev.find((l) => l.key === key);
       if (existing) {
         return prev.map((l) => (l.key === key ? { ...l, quantity: l.quantity + 1 } : l));
       }
-      return [...prev, { key, menuItemId, name, unitPrice, quantity: 1, modifierIds, modifierLabel }];
+      return [...prev, { key, menuItemId, name, unitPrice, quantity: 1, modifierIds, modifierLabel, portion }];
     });
   };
 
   const handleSelect = (item: MenuItem) => {
-    if (item.modifierGroups.length > 0) {
+    if (item.modifierGroups.length > 0 || item.halfPrice != null) {
       setPickerItem(item);
       return;
     }
     addLine(item.id, item.name, Number(item.price), [], "");
   };
 
-  const handleModifierConfirm = (modifierIds: string[], modifierLabel: string) => {
+  const handleModifierConfirm = (modifierIds: string[], modifierLabel: string, portion?: Portion) => {
     if (!pickerItem) return;
     const modifierTotal = modifierIds.reduce((sum, id) => {
       const mod = pickerItem.modifierGroups
@@ -134,12 +141,19 @@ function PosPageInner() {
         .find((m) => m.id === id);
       return sum + (mod ? Number(mod.priceAdjustment) : 0);
     }, 0);
+    const base =
+      portion?.kind === "HALF"
+        ? Number(pickerItem.halfPrice)
+        : portion?.kind === "CUSTOM"
+          ? (portion.customPrice ?? 0)
+          : Number(pickerItem.price);
     addLine(
       pickerItem.id,
-      pickerItem.name,
-      Number(pickerItem.price) + modifierTotal,
+      portion ? `${pickerItem.name} (${portionText(portion)})` : pickerItem.name,
+      base + modifierTotal,
       modifierIds,
       modifierLabel,
+      portion,
     );
   };
 
@@ -160,6 +174,14 @@ function PosPageInner() {
       menuItemId: l.menuItemId,
       quantity: l.quantity,
       modifierIds: l.modifierIds,
+      ...(l.portion
+        ? {
+            portion: l.portion.kind,
+            ...(l.portion.kind === "CUSTOM"
+              ? { customPrice: l.portion.customPrice, customLabel: l.portion.customLabel }
+              : {}),
+          }
+        : {}),
     }));
 
     if (existingOrder) {
@@ -349,6 +371,7 @@ function PosPageInner() {
         open={!!pickerItem}
         onOpenChange={(open) => !open && setPickerItem(null)}
         onConfirm={handleModifierConfirm}
+        allowCustom
       />
     </div>
   );

@@ -230,7 +230,13 @@ export class OrdersService {
     }
 
     const lineInputs = dto.items.map((cartItem) =>
-      this.buildLine(cartItem, menuItemById, modifierById, taxMode),
+      this.buildLine(
+        cartItem,
+        menuItemById,
+        modifierById,
+        taxMode,
+        channel !== 'ONLINE',
+      ),
     );
     const totals = computeOrderTotals(lineInputs.map((l) => l.priced));
 
@@ -476,7 +482,13 @@ export class OrdersService {
     }
 
     const lineInputs = items.map((cartItem) =>
-      this.buildLine(cartItem, menuItemById, modifierById, taxMode),
+      this.buildLine(
+        cartItem,
+        menuItemById,
+        modifierById,
+        taxMode,
+        !options.websiteOnly && !options.enforceModifierLimits,
+      ),
     );
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -1980,9 +1992,33 @@ export class OrdersService {
     menuItemById: Map<string, Prisma.MenuItemGetPayload<Record<string, never>>>,
     modifierById: Map<string, Prisma.ModifierGetPayload<Record<string, never>>>,
     taxMode: TaxMode,
+    allowCustomPortion: boolean,
   ) {
     const menuItem = menuItemById.get(cartItem.menuItemId);
     if (!menuItem) throw new BadRequestException('Menu item not found');
+
+    // Portion decides the base price and a label baked into the name
+    // snapshot, so KOTs, receipts, KDS and reports all show "(Half)" etc.
+    let portionBase = Number(menuItem.price);
+    let portionSuffix = '';
+    if (cartItem.portion === 'HALF' || cartItem.portion === 'FULL') {
+      if (menuItem.halfPrice == null) {
+        throw new BadRequestException(
+          `${menuItem.name} has no half/full portions`,
+        );
+      }
+      if (cartItem.portion === 'HALF') portionBase = Number(menuItem.halfPrice);
+      portionSuffix = cartItem.portion === 'HALF' ? ' (Half)' : ' (Full)';
+    } else if (cartItem.portion === 'CUSTOM') {
+      if (!allowCustomPortion) {
+        throw new BadRequestException('Custom portions are staff-only');
+      }
+      if (cartItem.customPrice == null) {
+        throw new BadRequestException('Custom portion needs a price');
+      }
+      portionBase = cartItem.customPrice;
+      portionSuffix = ` (${cartItem.customLabel || 'Custom'})`;
+    }
 
     const selectedModifiers = cartItem.modifierIds.map((id) => {
       const modifier = modifierById.get(id);
@@ -1990,7 +2026,7 @@ export class OrdersService {
       return modifier;
     });
 
-    const basePrice = Number(menuItem.price);
+    const basePrice = portionBase;
     const modifierTotal = selectedModifiers.reduce(
       (sum, m) => sum + Number(m.priceAdjustment),
       0,
@@ -2018,7 +2054,7 @@ export class OrdersService {
       cartItem,
       menuItem: {
         id: menuItem.id,
-        name: menuItem.name,
+        name: menuItem.name + portionSuffix,
         price: unitPriceInclusive - round2(modifierTotal),
         taxRatePercent,
       },

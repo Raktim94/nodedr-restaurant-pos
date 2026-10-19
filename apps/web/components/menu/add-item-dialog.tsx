@@ -43,6 +43,7 @@ export function AddItemDialog({
   const [categoryId, setCategoryId] = useState<string>("");
   const [stationId, setStationId] = useState<string>("");
   const [price, setPrice] = useState("");
+  const [halfPrice, setHalfPrice] = useState("");
   const [taxRatePercent, setTaxRatePercent] = useState("5");
   const [isVeg, setIsVeg] = useState(true);
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
@@ -93,6 +94,7 @@ export function AddItemDialog({
         categoryId,
         stationId: stationId || undefined,
         price: Number(price),
+        halfPrice: halfPrice.trim() === "" ? undefined : Number(halfPrice),
         taxRatePercent: Number(taxRatePercent),
         isVeg,
         isVegan: false,
@@ -234,6 +236,22 @@ export function AddItemDialog({
                 required
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="add-half">Half portion price (optional)</Label>
+            <Input
+              id="add-half"
+              type="number"
+              min="0"
+              step="0.01"
+              value={halfPrice}
+              onChange={(e) => setHalfPrice(e.target.value)}
+              placeholder="Leave empty if there is no half/full choice"
+            />
+            <p className="text-xs text-muted-foreground">
+              When set, the POS asks Half / Full / Custom. The price above is the Full portion.
+            </p>
           </div>
 
           <div className="flex flex-col gap-2">

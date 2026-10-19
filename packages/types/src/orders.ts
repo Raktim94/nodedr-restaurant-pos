@@ -45,6 +45,11 @@ export const cartItemSchema = z.object({
   quantity: z.number().int().positive(),
   kitchenNote: z.string().optional(),
   modifierIds: z.array(z.string()).default([]),
+  // Half / full portion of an item that has a halfPrice. CUSTOM is a
+  // staff-typed price + label (never accepted from customer-facing channels).
+  portion: z.enum(["HALF", "FULL", "CUSTOM"]).optional(),
+  customPrice: z.number().nonnegative().max(1_000_000).optional(),
+  customLabel: z.string().trim().max(40).optional(),
 });
 export type CartItemDto = z.infer<typeof cartItemSchema>;
 

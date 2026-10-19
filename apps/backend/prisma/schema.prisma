@@ -1080,6 +1080,9 @@ model MenuItem {
   stockIngredient      Ingredient?       @relation("DirectStockItem", fields: [stockIngredientId], references: [id], onDelete: SetNull)
   stockQuantityPerSale Decimal           @default(1) @db.Decimal(12, 3)
 
+  // Price of a half portion; null = item has no portion picker. `price` is the full portion.
+  halfPrice Decimal? @db.Decimal(12, 2)
+
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

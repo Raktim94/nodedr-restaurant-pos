@@ -41,6 +41,7 @@ export interface MenuItem {
   name: string;
   imageUrl: string | null;
   price: string;
+  halfPrice: string | null;
   taxRatePercent: string;
   isVeg: boolean;
   isActive: boolean;

@@ -50,6 +50,7 @@ export function EditItemDialog({
   const [categoryId, setCategoryId] = useState(item.categoryId);
   const [stationId, setStationId] = useState(item.stationId ?? "");
   const [price, setPrice] = useState(item.price);
+  const [halfPrice, setHalfPrice] = useState(item.halfPrice ?? "");
   const [taxRatePercent, setTaxRatePercent] = useState(item.taxRatePercent);
   const [isVeg, setIsVeg] = useState(item.isVeg);
   const [imageUrl, setImageUrl] = useState<string | undefined>(item.imageUrl ?? undefined);
@@ -91,6 +92,7 @@ export function EditItemDialog({
           categoryId,
           stationId: stationId || undefined,
           price: Number(price),
+          halfPrice: halfPrice.trim() === "" ? null : Number(halfPrice),
           taxRatePercent: Number(taxRatePercent),
           isVeg,
           imageUrl,
@@ -211,6 +213,22 @@ export function EditItemDialog({
                 required
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="edit-half">Half portion price (optional)</Label>
+            <Input
+              id="edit-half"
+              type="number"
+              min="0"
+              step="0.01"
+              value={halfPrice}
+              onChange={(e) => setHalfPrice(e.target.value)}
+              placeholder="Leave empty if there is no half/full choice"
+            />
+            <p className="text-xs text-muted-foreground">
+              When set, the POS asks Half / Full / Custom. The price above is the Full portion.
+            </p>
           </div>
 
           <div className="flex flex-col gap-2">
