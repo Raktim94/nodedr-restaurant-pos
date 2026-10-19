@@ -1,5 +1,6 @@
 "use client";
 
+import { BranchNotice } from "@/components/layout/branch-notice";
 import { ChefHat, ClipboardList, Flame, Globe, ReceiptText, Store, Timer, TrendingUp, Trash2, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
@@ -83,6 +84,8 @@ export default function DashboardPage() {
         open={!!viewingOrderId}
         onOpenChange={(open) => !open && setViewingOrderId(null)}
       />
+
+      <BranchNotice />
 
       <PendingOrdersBanner branchId={branchId} />
 

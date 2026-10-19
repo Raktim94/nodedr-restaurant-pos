@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import { publishDisplay } from "@/lib/customer-display";
+import { BranchNotice } from "@/components/layout/branch-notice";
 import { CartPanel, type DeliveryDetails, type PosOrderType } from "@/components/pos/cart-panel";
 import { cartLineKey, type CartLine } from "@/components/pos/cart-line";
 import { clearDraft, switchTableDraft, type Drafts } from "@/lib/pos-drafts";
@@ -249,11 +250,7 @@ function PosPageInner() {
         </a>
       </div>
 
-      {!branchLoading && !branchId && (
-        <p role="alert" className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
-          No branch is available for your account, so there are no tables or menu to show. Ask an administrator to assign you to a branch.
-        </p>
-      )}
+      <BranchNotice />
 
       {showTablePicker ? (
         <Card className="flex-1 overflow-hidden p-5">

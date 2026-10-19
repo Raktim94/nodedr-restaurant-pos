@@ -10,6 +10,7 @@ import { TableTile } from "@/components/tables/table-tile";
 import { WaitlistPanel } from "@/components/tables/waitlist-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { BranchNotice } from "@/components/layout/branch-notice";
 import { QueryError } from "@/components/ui/query-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ResponsiveTabs } from "@/components/ui/nav-picker";
@@ -25,8 +26,8 @@ export default function TablesPage() {
   const canManage = hasPermission(me?.user, "tables.manage");
   const floorsQuery = useFloors(branchId);
   const { data: floors } = floorsQuery;
-  const { branches, isLoading: branchLoading } = useBranch();
-  const isLoading = floorsQuery.isLoading || (branchLoading && !branchId);
+  const { isLoading: branchLoading } = useBranch();
+  const isLoading = floorsQuery.isLoading || branchLoading;
   const [activeFloorId, setActiveFloorId] = useState<string | undefined>(undefined);
   const [editModeRequested, setEditMode] = useState(false);
   const editMode = canManage && editModeRequested;
@@ -111,13 +112,8 @@ export default function TablesPage() {
           onRetry={() => void floorsQuery.refetch()}
           retrying={floorsQuery.isFetching}
         />
-      ) : !branchId && branches.length === 0 ? (
-        <Card className="flex flex-col items-center gap-2 p-12 text-center">
-          <p className="text-sm font-medium text-foreground">No branch available</p>
-          <p className="text-sm text-muted-foreground">
-            Your account is not linked to a branch, so there are no tables to show. Ask an administrator.
-          </p>
-        </Card>
+      ) : !branchId ? (
+        <BranchNotice />
       ) : floors && floors.length > 0 ? (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_320px]">
           <div className="flex flex-col gap-4">

@@ -2,6 +2,7 @@
 
 import type { KotStatusDto } from "@nodedr-restaurant/types";
 import { useEffect } from "react";
+import { BranchNotice } from "@/components/layout/branch-notice";
 import { PerformanceWidget } from "@/components/kds/performance-widget";
 import { IncomingOrderCard } from "@/components/kds/incoming-order-card";
 import { LiveStatus } from "@/components/kds/live-status";
@@ -25,7 +26,7 @@ const COLUMNS: { status: KotStatusDto; label: string }[] = [
 ];
 
 export default function KdsPage() {
-  const { branchId, isLoading: branchLoading } = useBranch();
+  const { branchId } = useBranch();
   const { data: me } = useCurrentUser();
   const canAnswer = hasPermission(me?.user, "orders.accept");
   const { data: stations, isError: stationsFailed } = useKdsStations(branchId);
@@ -86,11 +87,7 @@ export default function KdsPage() {
         </p>
       )}
 
-      {!branchLoading && !branchId && (
-        <p role="alert" className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
-          No branch is available for your account, so there is nothing to show. Ask an administrator to assign you to a branch.
-        </p>
-      )}
+      <BranchNotice />
 
       {pendingOrders.length > 0 && (
         <section aria-label="Incoming orders" className="flex flex-col gap-2">
