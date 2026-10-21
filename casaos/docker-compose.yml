@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.6.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.8.0
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -82,7 +82,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.6.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.8.0
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -180,10 +180,20 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.1.0"
-  update_at: "2026-08-21"
+  version: "1.8.0"
+  update_at: "2026-10-21"
   release_notes:
     en_US: |-
+      1.8.0: adds Spain VERI*FACTU (Settings > VERI*FACTU): every paid sale
+      becomes a simplified invoice in a tamper-evident chain, the 80 mm
+      receipt prints the AEAT QR code, and records can be reported to the tax
+      agency with your own certificate. Implemented, not certified: it has
+      not been run against the live AEAT portal and no Declaracion
+      Responsable has been issued, so test with AEAT's pre-production portal
+      and ask your gestor before relying on it. Off by default; nothing
+      changes for other countries. Also includes everything since 1.1.0
+      (kiosk, half portions, printer settings and more).
+
       1.1.0: fixes a real fresh-install boot failure — CasaOS's own
       placeholder JWT_SECRET tripped a later safety check that made the
       backend refuse to start, so every out-of-the-box install crash-looped
