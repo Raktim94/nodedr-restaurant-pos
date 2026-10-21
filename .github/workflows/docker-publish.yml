@@ -22,8 +22,12 @@ name: Publish Docker images
 # project nodedr-pos) using the automatic `secrets.GITHUB_TOKEN` — no
 # manually-created registry credential needed.
 
+# A push to master publishes only :edge and :sha-<commit>, so unreleased code can never replace the image a
+# version tag (and every install pinned to it) points at. A version tag (vX.Y.Z) or a manual run with a
+# version publishes :<version> and :latest.
 on:
   push:
+    tags: ["v*"]
     branches: [master]
     paths:
       - "apps/backend/**"
@@ -33,7 +37,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag to publish (e.g. 1.0.0). Also pushed as :latest."
+        description: "Version tag to publish (e.g. 1.0.0). Also pushed as :latest. Leave empty to publish :edge only."
         required: false
         default: ""
 
@@ -68,13 +72,12 @@ jobs:
           OWNER: ${{ github.repository_owner }}
         run: |
           VERSION="$INPUT_VERSION"
+          if [ -z "$VERSION" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          # No version: a plain push to master. Build and publish :edge only.
           if [ -z "$VERSION" ]; then
-            GIT_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
-            if [ -n "$GIT_TAG" ]; then
-              VERSION="${GIT_TAG#v}"
-            else
-              VERSION="0.0.0-dev"
-            fi
+            VERSION="edge"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           # GHCR image paths must be lowercase.
@@ -162,8 +165,12 @@ jobs:
           IMAGE: ${{ env.REGISTRY }}/${{ needs.version.outputs.owner }}/${{ matrix.image }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          docker buildx imagetools create \
-            -t "$IMAGE:$VERSION" -t "$IMAGE:latest" \
+          if [ "$VERSION" = "edge" ]; then
+            TAGS="-t $IMAGE:edge -t $IMAGE:sha-${GITHUB_SHA::7}"
+          else
+            TAGS="-t $IMAGE:$VERSION -t $IMAGE:latest"
+          fi
+          docker buildx imagetools create $TAGS \
             $(printf "$IMAGE@sha256:%s " *)
       - name: Inspect
         env:
