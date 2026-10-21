@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useBranch } from "@/hooks/use-branch";
+import { useSettings } from "@/hooks/use-settings";
 import {
   useVerifactuActions,
   useVerifactuRecords,
@@ -261,6 +262,7 @@ function Records({ branchId, s }: { branchId: string; s: VerifactuSettings }) {
 export default function VerifactuPage() {
   const { branchId } = useBranch();
   const { data, isLoading } = useVerifactuSettings(branchId);
+  const country = useSettings(branchId).data?.branch.country;
 
   return (
     <div className="flex flex-col gap-6">
@@ -269,7 +271,11 @@ export default function VerifactuPage() {
         <p className="text-sm text-muted-foreground">Restaurant, branch, and staff configuration</p>
       </div>
       <SettingsTabs />
-      {isLoading || !data || !branchId ? (
+      {country && country !== "ES" ? (
+        <Card className="max-w-3xl p-6 text-sm">
+          VERI*FACTU applies only to branches in Spain. Set this branch&rsquo;s country to Spain (and its tax regime to Spain &ndash; IVA) under General to use it.
+        </Card>
+      ) : isLoading || !data || !branchId ? (
         <Skeleton className="h-72 max-w-3xl rounded-xl" />
       ) : (
         <>

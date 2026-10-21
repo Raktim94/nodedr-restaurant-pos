@@ -431,4 +431,28 @@ d('VERI*FACTU against PostgreSQL', () => {
       await prisma.verifactuRecord.count({ where: { branchId: ids.branchId } }),
     );
   });
+
+  it('never records for a branch outside Spain, even with the switch left on', async () => {
+    await prisma.branch.update({
+      where: { id: ids.branchId },
+      data: { country: 'FR' },
+    });
+    try {
+      const before = await prisma.verifactuRecord.count({
+        where: { branchId: ids.branchId },
+      });
+      const o = await paidOrder(30, [{ price: 10, qty: 1, rate: 10 }]);
+      expect(await record(o.id)).toBeNull();
+      expect(
+        await prisma.verifactuRecord.count({
+          where: { branchId: ids.branchId },
+        }),
+      ).toBe(before);
+    } finally {
+      await prisma.branch.update({
+        where: { id: ids.branchId },
+        data: { country: 'ES' },
+      });
+    }
+  });
 });

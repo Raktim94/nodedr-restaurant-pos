@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.8.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.8.1
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -82,7 +82,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.8.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.8.1
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -180,10 +180,12 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.8.0"
-  update_at: "2026-10-21"
+  version: "1.8.1"
+  update_at: "2026-10-22"
   release_notes:
     en_US: |-
+      1.8.1: VERI*FACTU now works only for branches in Spain: it is hidden and never records for any other country.
+
       1.8.0: adds Spain VERI*FACTU (Settings > VERI*FACTU): every paid sale
       becomes a simplified invoice in a tamper-evident chain, the 80 mm
       receipt prints the AEAT QR code, and records can be reported to the tax

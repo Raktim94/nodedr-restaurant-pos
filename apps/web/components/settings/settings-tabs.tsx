@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useNavBadges } from "@/hooks/use-nav-badges";
+import { useBranch } from "@/hooks/use-branch";
+import { useSettings } from "@/hooks/use-settings";
 import { cn } from "@/lib/utils";
 import { NavDot } from "@/components/layout/nav-dot";
 
@@ -12,6 +14,8 @@ interface SettingsTab {
   href: string;
   /** Omit to show the tab to anyone who can reach /settings at all. */
   permission?: string;
+  /** Only shown for branches in this country (ISO code). */
+  country?: string;
 }
 
 const TABS: SettingsTab[] = [
@@ -24,7 +28,7 @@ const TABS: SettingsTab[] = [
   { label: "API Keys", href: "/settings/api-keys" },
   { label: "Security", href: "/settings/security" },
   { label: "Webhooks", href: "/settings/webhooks", permission: "settings.manage" },
-  { label: "VERI*FACTU", href: "/settings/verifactu", permission: "settings.manage" },
+  { label: "VERI*FACTU", href: "/settings/verifactu", permission: "settings.manage", country: "ES" },
 ];
 
 export function SettingsTabs() {
@@ -32,9 +36,13 @@ export function SettingsTabs() {
   const { data } = useCurrentUser();
   const user = data?.user;
   const badges = useNavBadges();
+  const { branchId } = useBranch();
+  const branchCountry = useSettings(branchId).data?.branch.country;
 
   const visibleTabs = TABS.filter(
-    (tab) => !tab.permission || hasPermission(user, tab.permission),
+    (tab) =>
+      (!tab.permission || hasPermission(user, tab.permission)) &&
+      (!tab.country || branchCountry === tab.country),
   );
 
   return (

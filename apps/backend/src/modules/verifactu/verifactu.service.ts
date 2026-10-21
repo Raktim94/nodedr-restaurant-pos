@@ -423,7 +423,8 @@ export class VerifactuService {
       },
     });
     const s = order.branch.verifactuSettings;
-    if (!s?.enabled) return null;
+    // Spain only: a branch outside Spain never records, even if the switch was left on.
+    if (!s?.enabled || order.branch.country !== 'ES') return null;
     const problems = this.problems(order.branch);
     if (problems.length)
       throw new BadRequestException(
@@ -478,7 +479,7 @@ export class VerifactuService {
       },
     });
     const s = order.branch.verifactuSettings;
-    if (!s?.enabled) return null;
+    if (!s?.enabled || order.branch.country !== 'ES') return null;
     const original = await tx.verifactuRecord.findFirst({
       where: {
         orderId,
