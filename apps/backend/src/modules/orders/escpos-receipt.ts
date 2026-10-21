@@ -48,7 +48,17 @@ export interface PrintResult {
   unsupportedChars: string[];
 }
 
+export interface ReceiptVerifactu {
+  url: string;
+  heading: string;
+  legend: string;
+  short: string;
+  invoiceNumber: string;
+}
+
 export interface EscposReceiptOrder {
+  /** Spain VERI*FACTU invoice QR, printed on a paid receipt. */
+  verifactu?: ReceiptVerifactu | null;
   orderNumber: string;
   type: string;
   createdAt: Date;
@@ -223,6 +233,18 @@ export function buildReceiptEscPosJob({
     w.rule();
     w.row('Amount paid', money(order.amountPaid));
     w.row('Balance due', money(order.balanceDue), { bold: true });
+  }
+
+  if (order.verifactu && !order.isProvisional) {
+    w.rule();
+    w.text(`Factura simplificada ${order.verifactu.invoiceNumber}`, {
+      align: 'center',
+      bold: true,
+    });
+    w.text(order.verifactu.heading, { align: 'center' });
+    w.qr(order.verifactu.url);
+    w.text(order.verifactu.legend, { align: 'center' });
+    w.text(order.verifactu.short, { align: 'center', bold: true });
   }
 
   w.rule();

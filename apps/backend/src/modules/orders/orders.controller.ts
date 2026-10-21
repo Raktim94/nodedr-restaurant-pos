@@ -61,6 +61,7 @@ import {
 import { OrdersService } from './orders.service';
 import { buildKotHtml } from './kot.html';
 import { buildReceiptHtml } from './receipt.html';
+import { VerifactuService } from '../verifactu/verifactu.service';
 
 type ReceiptData = Awaited<ReturnType<OrdersService['getReceiptData']>>;
 
@@ -174,6 +175,7 @@ export class OrdersController {
     private readonly ordersService: OrdersService,
     private readonly branchAccess: BranchAccessService,
     private readonly kotPrint: KotPrintService,
+    private readonly verifactu: VerifactuService,
   ) {}
 
   @Auth('orders.create')
@@ -449,7 +451,12 @@ export class OrdersController {
         taxLabel: order.branch.taxLabel,
         taxId: order.branch.taxId,
       },
-      order: toEscposOrder(order, overrides),
+      order: {
+        ...toEscposOrder(order, overrides),
+        verifactu: overrides.isProvisional
+          ? null
+          : await this.verifactu.qrForOrder(order.id),
+      },
     });
     res.type('html').send(html);
   }
@@ -624,7 +631,12 @@ export class OrdersController {
         taxLabel: order.branch.taxLabel,
         taxId: order.branch.taxId,
       },
-      order: toEscposOrder(order, overrides),
+      order: {
+        ...toEscposOrder(order, overrides),
+        verifactu: overrides.isProvisional
+          ? null
+          : await this.verifactu.qrForOrder(order.id),
+      },
       profile,
       // A bill handed over before payment never pops the till.
       openDrawer: drawer === 'true' && !overrides.isProvisional,

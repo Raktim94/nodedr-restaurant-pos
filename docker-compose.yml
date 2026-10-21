@@ -41,6 +41,12 @@ services:
       CORS_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:1995}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       UPLOADS_DIR: "/data/uploads"
+      # Spain VERI*FACTU (Settings > VERI*FACTU). The producer identifier is a legal fact only the software
+      # producer can supply; leave it unset and the branch reports exactly what is missing. See docs/verifactu.md.
+      VERIFACTU_PRODUCER_ID: "${VERIFACTU_PRODUCER_ID:-}"
+      VERIFACTU_PRODUCER_NAME: "${VERIFACTU_PRODUCER_NAME:-}"
+      VERIFACTU_PRODUCER_COUNTRY: "${VERIFACTU_PRODUCER_COUNTRY:-}"
+      VERIFACTU_SYSTEM_ID: "${VERIFACTU_SYSTEM_ID:-}"
       # In-app updates (Settings > Updates): the backend asks the `updater`
       # container below to pull the latest published images. Unset these two
       # and the Update button simply says this install can't update itself.

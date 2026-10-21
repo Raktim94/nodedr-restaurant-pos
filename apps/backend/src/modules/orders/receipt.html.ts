@@ -13,6 +13,8 @@
 // (computed once, correctly, in pricing.ts — see its own multi-region
 // note) and are never recomputed here.
 
+import { qrSvg } from '../verifactu/verifactu.qr';
+import type { ReceiptVerifactu } from './escpos-receipt';
 import {
   resolveTaxIdLabel,
   resolveTaxLabel,
@@ -39,6 +41,8 @@ function esc(value: string | number | null | undefined): string {
 }
 
 interface ReceiptOrder {
+  /** Spain VERI*FACTU invoice QR, printed on a paid receipt. */
+  verifactu?: ReceiptVerifactu | null;
   orderNumber: string;
   type: string;
   createdAt: Date;
@@ -219,6 +223,8 @@ export function buildReceiptHtml({
   .sub { font-size: 10px; color: #777; }
   .totals td { padding: 1px 0; }
   .grand td { font-weight: 700; font-size: 13px; border-top: 1px solid #111; padding-top: 3px; }
+  .vf { text-align: center; font-size: 11px; }
+  .vf svg { display: block; margin: 4px auto; }
   .footer { text-align: center; margin-top: 6px; font-size: 11px; }
   @page { size: 80mm auto; margin: 0; }
   @media print {
@@ -263,6 +269,11 @@ export function buildReceiptHtml({
         : ''
     }
     ${settlementRows}
+    ${
+      order.verifactu && !order.isProvisional
+        ? `<hr class="rule"><div class="vf"><strong>Factura simplificada ${esc(order.verifactu.invoiceNumber)}</strong><div>${esc(order.verifactu.heading)}</div>${qrSvg(order.verifactu.url, '35mm')}<div>${esc(order.verifactu.legend)}</div><strong>${esc(order.verifactu.short)}</strong></div>`
+        : ''
+    }
     <hr class="rule">
     <p class="footer">${
       order.isProvisional

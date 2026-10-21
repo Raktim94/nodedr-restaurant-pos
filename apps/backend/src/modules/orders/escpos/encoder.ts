@@ -241,6 +241,27 @@ export class EscposWriter {
     return this;
   }
 
+  /**
+   * Native ESC/POS QR code (GS ( k, model 2, error correction M), centred. Module size 6 prints a
+   * VERI*FACTU-length URL at roughly 33 mm on 203 dpi paper, inside AEAT's 30-40 mm range.
+   */
+  qr(data: string, moduleSize = 6): this {
+    const bytes = Buffer.from(data, 'utf8');
+    const len = bytes.length + 3;
+    this.chunks.push(
+      Buffer.from([ESC, 0x61, 1]),
+      Buffer.from([GS, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]),
+      Buffer.from([GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, moduleSize]),
+      Buffer.from([GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31]),
+      Buffer.from([GS, 0x28, 0x6b, len & 0xff, len >> 8, 0x31, 0x50, 0x30]),
+      bytes,
+      Buffer.from([GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]),
+      Buffer.from('\n'),
+      CMD.alignLeft,
+    );
+    return this;
+  }
+
   rule(char = '-'): this {
     this.emit(char.repeat(this.profile.columns), {});
     return this;

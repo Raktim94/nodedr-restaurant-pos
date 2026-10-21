@@ -78,24 +78,26 @@ model Restaurant {
 }
 
 model Branch {
-  id               String            @id @default(cuid())
-  restaurantId     String
-  restaurant       Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  attendance       Attendance[]
-  deliveryZones    DeliveryZone[]
-  shifts           Shift[]
-  leaveRequests    LeaveRequest[]
-  payrollRuns      PayrollRun[]
-  expenses         Expense[]
-  budgets          Budget[]
-  bankTransactions BankTransaction[]
-  reportSchedules  ReportSchedule[]
-  cashClosings     CashClosing[]
-  coupons          Coupon[]
-  promotions       Promotion[]
-  campaigns        Campaign[]
-  equipment        Equipment[]
-  documents        Document[]
+  id                String             @id @default(cuid())
+  restaurantId      String
+  restaurant        Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  attendance        Attendance[]
+  deliveryZones     DeliveryZone[]
+  shifts            Shift[]
+  leaveRequests     LeaveRequest[]
+  payrollRuns       PayrollRun[]
+  expenses          Expense[]
+  budgets           Budget[]
+  bankTransactions  BankTransaction[]
+  reportSchedules   ReportSchedule[]
+  cashClosings      CashClosing[]
+  coupons           Coupon[]
+  promotions        Promotion[]
+  campaigns         Campaign[]
+  equipment         Equipment[]
+  documents         Document[]
+  verifactuSettings VerifactuSettings?
+  verifactuRecords  VerifactuRecord[]
 
   name      String
   address   String?
@@ -2171,4 +2173,96 @@ model ReportSchedule {
 
   @@index([branchId])
   @@map("report_schedules")
+}
+
+// ---------------------------------------------------------------------------
+// Spain VERI*FACTU (Real Decreto 1007/2023). Implemented, not certified: the
+// producer's Declaracion Responsable and a run against AEAT's pre-production
+// portal are still the operator's / producer's to do. See docs/verifactu.md.
+// ---------------------------------------------------------------------------
+enum VerifactuEnvironment {
+  TEST
+  PRODUCTION
+}
+
+enum VerifactuRecordType {
+  ALTA
+  ANULACION
+}
+
+enum VerifactuStatus {
+  PENDING
+  ACCEPTED
+  ACCEPTED_WITH_ERRORS
+  REJECTED
+  ERROR
+}
+
+model VerifactuSettings {
+  id       String @id @default(cuid())
+  branchId String @unique
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  enabled               Boolean              @default(false)
+  environment           VerifactuEnvironment @default(TEST)
+  // Series prefix of this branch's invoice numbers (T1-000001) and the next
+  // sequence numbers; refunds use their own R-series.
+  seriesPrefix          String               @default("T1")
+  nextNumber            Int                  @default(1)
+  nextRefundNumber      Int                  @default(1)
+  installationNumber    String
+  // The taxpayer's .p12/.pfx and its password, AES-256-GCM encrypted.
+  certEncrypted         Bytes?
+  certPasswordEncrypted Bytes?
+  certSubject           String?
+  certExpiresAt         DateTime?
+
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("verifactu_settings")
+}
+
+// Append-only fiscal log. Database triggers (migration 20261022000000) block
+// DELETE, TRUNCATE and any UPDATE of the record's identity, amounts, XML or
+// hash, and refuse a record that does not continue the issuer's chain.
+model VerifactuRecord {
+  id           String @id @default(cuid())
+  restaurantId String
+  branchId     String
+  branch       Branch @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  issuerNif    String
+  seq          Int
+
+  type          VerifactuRecordType
+  invoiceType   String
+  invoiceNumber String
+  issueDate     String // dd-MM-yyyy, Europe/Madrid
+  taxTotalCents Int
+  totalCents    Int
+  generatedAt   String // FechaHoraHusoGenRegistro
+  previousHash  String?
+  hash          String
+  xml           String
+  qrUrl         String?
+  environment   VerifactuEnvironment
+
+  // Not enforced as foreign keys: the fiscal log must outlive the order.
+  orderId  String?
+  refundId String?
+
+  status        VerifactuStatus @default(PENDING)
+  attempts      Int             @default(0)
+  nextAttemptAt DateTime        @default(now())
+  csv           String?
+  errorCode     String?
+  errorText     String?
+  responseXml   String?
+  submittedAt   DateTime?
+  createdAt     DateTime        @default(now())
+
+  @@unique([restaurantId, issuerNif, environment, seq])
+  @@unique([restaurantId, issuerNif, environment, invoiceNumber, type])
+  @@index([orderId])
+  @@index([branchId, status, nextAttemptAt])
+  @@map("verifactu_records")
 }

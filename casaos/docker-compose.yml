@@ -42,6 +42,8 @@ services:
       CORS_ORIGIN: "http://localhost:1995"
       COOKIE_SECURE: "false"
       UPLOADS_DIR: "/data/uploads"
+      # Spain VERI*FACTU producer identifier (see docs/verifactu.md). Only needed for Spanish installs.
+      VERIFACTU_PRODUCER_ID: ""
       # In-app "Update now" button (Settings > Updates) -> the updater below.
       UPDATER_URL: "http://nodedr-restaurant-pos-updater:8080"
       UPDATER_TOKEN: "nodedr-restaurant-updater"
@@ -65,6 +67,9 @@ services:
         - container: CORS_ORIGIN
           description:
             en_US: Origin allowed to call the API (CORS). Leave as the default for local/LAN use — only change for a VPS behind real HTTPS.
+        - container: VERIFACTU_PRODUCER_ID
+          description:
+            en_US: Spain only. The software producer's identifier for VERI*FACTU records (at most 20 characters). Leave empty outside Spain.
         - container: COOKIE_SECURE
           description:
             en_US: Set to true only when served over real HTTPS. Leave false for plain local/LAN use — a true value on plain HTTP silently breaks login (the session cookie gets dropped by the browser).

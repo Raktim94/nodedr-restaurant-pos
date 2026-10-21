@@ -43,6 +43,7 @@ import {
   type Bill,
 } from './settlement';
 import type { TaxMode } from '@nodedr-restaurant/types';
+import { VerifactuService } from '../verifactu/verifactu.service';
 
 const KOT_FORWARD_STATUSES = [
   'ACCEPTED',
@@ -64,6 +65,7 @@ export class OrdersService {
     private readonly notifications: NotificationsService,
     private readonly marketing: MarketingService,
     private readonly webhooks: WebhooksService,
+    private readonly verifactu: VerifactuService,
   ) {}
 
   async listOpen(branchId: string, tableId?: string) {
@@ -703,6 +705,13 @@ export class OrdersService {
         `Only finished transactions can be deleted — ${live
           .map((o) => `#${o.orderNumber}`)
           .join(', ')} still in progress`,
+      );
+    }
+
+    const invoiced = await this.verifactu.ordersWithRecords(ids);
+    if (invoiced.length > 0) {
+      throw new BadRequestException(
+        'Sales with a VERI*FACTU invoice cannot be deleted - the fiscal log must keep them. Refund the sale instead.',
       );
     }
 
@@ -1657,6 +1666,9 @@ export class OrdersService {
             payments: { create: paymentRows },
           },
         });
+        // Spain VERI*FACTU: the sale's fiscal record is written in this same transaction, so a sale
+        // is never paid without it (and a failure to produce it rolls the payment back).
+        await this.verifactu.recordPaidOrder(tx, orderId);
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -1825,6 +1837,7 @@ export class OrdersService {
           createdById: userId,
         },
       });
+      await this.verifactu.recordRefund(tx, orderId, created.id, dto.amount);
 
       // Money-only refunds never touch stock. Stock comes back only for the
       // units the staff member says were physically returned, capped at what

@@ -291,6 +291,90 @@ describe('kitchen ticket job', () => {
   });
 });
 
+describe('VERI*FACTU QR on the receipt', () => {
+  const verifactu = {
+    url: 'https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=B12345678&numserie=T1-000001&fecha=18-10-2026&importe=31.40',
+    heading: 'QR tributario:',
+    legend: 'Factura verificable en la sede electrónica de la AEAT',
+    short: 'VERI*FACTU',
+    invoiceNumber: 'T1-000001',
+  };
+  const job = (o: typeof order & { isProvisional?: boolean }) =>
+    buildReceiptEscPosJob({
+      restaurantName: 'Casa Ñandú',
+      currency: 'EUR',
+      branch,
+      order: { ...o, verifactu } as never,
+      profile: resolveProfile({ paperWidthMm: 80 }),
+      ...fmt,
+    });
+
+  it('prints a native, level-M, centred QR with the AEAT legend on a paid receipt', () => {
+    const { buffer } = job(order);
+    const text = buffer.toString('latin1');
+    // GS ( k: model 2, module size 6, error correction M (0x31), store the URL, print
+    expect(
+      buffer.includes(
+        Buffer.from([0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]),
+      ),
+    ).toBe(true);
+    expect(
+      buffer.includes(
+        Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, 0x06]),
+      ),
+    ).toBe(true);
+    expect(
+      buffer.includes(
+        Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31]),
+      ),
+    ).toBe(true);
+    const len = verifactu.url.length + 3;
+    expect(
+      buffer.includes(
+        Buffer.concat([
+          Buffer.from([
+            0x1d,
+            0x28,
+            0x6b,
+            len & 0xff,
+            len >> 8,
+            0x31,
+            0x50,
+            0x30,
+          ]),
+          Buffer.from(verifactu.url),
+        ]),
+      ),
+    ).toBe(true);
+    expect(
+      buffer.includes(
+        Buffer.from([0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]),
+      ),
+    ).toBe(true);
+    expect(text).toContain('Factura simplificada T1-000001');
+    expect(text).toContain('QR tributario:');
+    expect(text).toContain('VERI*FACTU');
+  });
+
+  it('prints no QR on a bill handed over before payment', () => {
+    const { buffer } = job({ ...order, isProvisional: true });
+    expect(buffer.includes(Buffer.from([0x1d, 0x28, 0x6b]))).toBe(false);
+    expect(buffer.toString('latin1')).not.toContain('QR tributario');
+  });
+
+  it('prints no QR when the sale has no VERI*FACTU invoice', () => {
+    const { buffer } = buildReceiptEscPosJob({
+      restaurantName: 'Casa Ñandú',
+      currency: 'EUR',
+      branch,
+      order,
+      profile: resolveProfile({ paperWidthMm: 80 }),
+      ...fmt,
+    });
+    expect(buffer.includes(Buffer.from([0x1d, 0x28, 0x6b]))).toBe(false);
+  });
+});
+
 describe('test slip', () => {
   it('prints a column ruler and the code page sample', () => {
     const { text } = readJob(
