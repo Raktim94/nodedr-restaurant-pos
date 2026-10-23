@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nodedr-orderrestro-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nodedr
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing POSTGRES_PASSWORD in /etc/nodedr-orderrestro/nodedr-orderrestro.env}
+      POSTGRES_DB: nodedr_restaurant
+    expose:
+      - "5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nodedr"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  backend:
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:@VERSION@
+    container_name: nodedr-orderrestro-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://nodedr:${POSTGRES_PASSWORD}@postgres:5432/nodedr_restaurant"
+      JWT_EXPIRES_IN: "12h"
+      PORT: "4000"
+      CORS_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:1995}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      UPLOADS_DIR: "/data/uploads"
+      VERIFACTU_PRODUCER_ID: "${VERIFACTU_PRODUCER_ID:-}"
+      VERIFACTU_PRODUCER_NAME: "${VERIFACTU_PRODUCER_NAME:-}"
+      VERIFACTU_PRODUCER_COUNTRY: "${VERIFACTU_PRODUCER_COUNTRY:-}"
+      VERIFACTU_SYSTEM_ID: "${VERIFACTU_SYSTEM_ID:-}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "4000"
+    volumes:
+      - uploads_data:/data/uploads
+      - state:/data/state
+      - /dev/bus/usb:/dev/bus/usb
+    device_cgroup_rules:
+      - 'c 189:* rmw'
+      - 'c 180:* rmw'
+  web:
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:@VERSION@
+    container_name: nodedr-orderrestro-web
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-1995}:3000"
+    depends_on:
+      - backend
+volumes:
+  pg_data:
+  uploads_data:
+  state:
