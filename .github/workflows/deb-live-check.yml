@@ -43,3 +43,4 @@ jobs:
           sudo apt-get remove -y nodedr-orderrestro
           ! systemctl is-active --quiet nodedr-orderrestro.service
           sudo apt-get purge -y nodedr-orderrestro
+          test -f /etc/nodedr-orderrestro/nodedr-orderrestro.env
