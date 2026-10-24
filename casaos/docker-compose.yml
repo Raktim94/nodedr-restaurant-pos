@@ -181,9 +181,11 @@ x-casaos:
   scheme: http
   port_map: "1995"
   version: "1.8.2"
-  update_at: "2026-10-22"
+  update_at: "2026-10-24"
   release_notes:
     en_US: |-
+      1.8.2: security update: zod 4.6.6 (fixes a memory-exhaustion advisory). No behaviour changes.
+
       1.8.1: VERI*FACTU now works only for branches in Spain: it is hidden and never records for any other country.
 
       1.8.0: adds Spain VERI*FACTU (Settings > VERI*FACTU): every paid sale
