@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.8.1
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.8.2
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -82,7 +82,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.8.1
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.8.2
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -180,7 +180,7 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.8.1"
+  version: "1.8.2"
   update_at: "2026-10-22"
   release_notes:
     en_US: |-
