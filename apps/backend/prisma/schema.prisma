@@ -2266,3 +2266,36 @@ model VerifactuRecord {
   @@index([branchId, status, nextAttemptAt])
   @@map("verifactu_records")
 }
+
+// Two-way server sync (see src/sync). Raw-SQL managed by triggers; modelled
+// here only so `prisma migrate dev` doesn't see drift.
+model SyncState {
+  id          Int       @id @default(1)
+  enabled     Boolean   @default(false)
+  role        String    @default("client")
+  deviceId    String    @default(dbgenerated("md5(((random())::text || (clock_timestamp())::text))"))
+  serverUrl   String?
+  apiKey      String?
+  seeded      Boolean   @default(false)
+  lastPullSeq BigInt    @default(0)
+  lastPushSeq BigInt    @default(0)
+  lastSyncAt  DateTime?
+  lastError   String?
+  conflicts   Json      @default("[]")
+
+  @@map("sync_state")
+}
+
+model SyncChange {
+  seq    BigInt   @id @default(autoincrement())
+  tbl    String
+  pk     Json
+  pkKey  String
+  op     String   @db.Char(1)
+  row    Json?
+  ts     DateTime @db.Timestamptz(3)
+  origin String
+
+  @@index([tbl, pkKey], map: "sync_changes_row_idx")
+  @@map("sync_changes")
+}

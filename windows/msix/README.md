@@ -294,3 +294,13 @@ Per this project's own "don't fake test results" rule:
   which triggers the Store's own certification pipeline (effectively a
   more thorough, hosted WACK run plus policy review) — not something
   exercisable without submitting for real.
+
+## Server sync (embedded installs)
+
+File → **Server sync…** opens Settings → Server Sync. Point it at a central
+OrderRestro server (started with `SYNC_API_KEY=<long random key>`) and this PC
+two-way syncs with it: edits made offline queue up and upload when the server
+is reachable; the newest edit to a row wins. First sync either replaces this
+PC's data with the server's ("use the server's data", for a new PC) or merges
+both. Both sides must run the same app version. The VERI*FACTU invoice chain is
+never synced (it is hash-chained per installation).

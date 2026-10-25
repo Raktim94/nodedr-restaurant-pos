@@ -32,6 +32,7 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { GiftCardsModule } from './modules/gift-cards/gift-cards.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { SyncModule } from './sync/sync.module';
 import { UsersModule } from './modules/users/users.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { AuditModule } from './audit/audit.module';
@@ -74,6 +75,7 @@ import { VerifactuModule } from './modules/verifactu/verifactu.module';
     GiftCardsModule,
     InventoryModule,
     SettingsModule,
+    SyncModule,
     VerifactuModule,
     UsersModule,
     PermissionsModule,

@@ -86,6 +86,16 @@ internal sealed class MainForm : Form
             fileMenu.DropDownItems.Add(new ToolStripSeparator());
         }
 
+        // Two-way sync with a central server lives on the web settings page
+        // (it needs the signed-in owner's session); embedded installs only,
+        // since a thin client already works directly on the server's data.
+        if (_config.IsEmbedded)
+        {
+            var serverSync = new ToolStripMenuItem("Server sync…");
+            serverSync.Click += (_, _) => _webView.CoreWebView2?.Navigate($"{_config.ServerUrl}/settings/sync");
+            fileMenu.DropDownItems.Add(serverSync);
+        }
+
         fileMenu.DropDownItems.Add(new ToolStripSeparator());
         var removeData = new ToolStripMenuItem("Remove All Local Data && Uninstall…");
         removeData.Click += async (_, _) => await RemoveAllDataAndUninstallAsync();
