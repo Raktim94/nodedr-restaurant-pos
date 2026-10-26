@@ -2,7 +2,7 @@
 # Nodedr OrderRestro quickstart — macOS & Linux.
 #
 # Checks whether Docker is installed and running; installs it if not
-# (Docker Desktop via Homebrew on macOS, Docker Engine via the official
+# (Docker Desktop via Homebrew on macOS, installing Homebrew first if needed, Docker Engine via the official
 # get.docker.com script on Linux). Does the same for git (Homebrew on macOS,
 # the system package manager on Linux) if it's missing too. Then clones (or
 # updates) nodedr-restaurant-pos into ./nodedr-restaurant-pos and runs its
@@ -27,24 +27,53 @@ install_docker_linux() {
   sudo systemctl enable --now docker 2>/dev/null || true
 }
 
-install_docker_mac() {
-  if ! command -v brew >/dev/null 2>&1; then
-    echo "Docker Desktop isn't installed and Homebrew isn't either." >&2
-    echo "Install Homebrew first (https://brew.sh) and re-run this command," >&2
-    echo "or install Docker Desktop manually: https://docs.docker.com/desktop/setup/install/mac-install/" >&2
+# Homebrew and Docker Desktop put their binaries outside the minimal PATH a
+# non-login `curl | bash` shell gets (Apple Silicon brew lives in /opt/homebrew),
+# so add the usual locations before checking for either.
+mac_path() {
+  for d in /opt/homebrew/bin /usr/local/bin "$HOME/.docker/bin" /Applications/Docker.app/Contents/Resources/bin; do
+    [ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) PATH="$d:$PATH" ;; esac
+  done
+  export PATH
+}
+
+# Piped installs have the script itself on stdin, so anything interactive
+# (Homebrew's sudo prompt, Docker's installer) must read from the terminal.
+TTY_IN=/dev/null
+[ -r /dev/tty ] && (: </dev/tty) 2>/dev/null && TTY_IN=/dev/tty
+
+install_brew_mac() {
+  mac_path
+  command -v brew >/dev/null 2>&1 && return
+  echo "==> Installing Homebrew (you may be asked for your Mac password; it also installs Apple's command line tools)..."
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" <"$TTY_IN"
+  mac_path
+  command -v brew >/dev/null 2>&1 || {
+    echo "Homebrew install didn't finish. Install it from https://brew.sh and re-run this command." >&2
     exit 1
+  }
+}
+
+install_docker_mac() {
+  mac_path
+  if [ -d /Applications/Docker.app ] || [ -d "$HOME/Applications/Docker.app" ]; then
+    echo "==> Docker Desktop is installed but not running — starting it..."
+  else
+    install_brew_mac
+    echo "==> Installing Docker Desktop via Homebrew..."
+    brew install --cask docker <"$TTY_IN"
+    mac_path
   fi
-  echo "==> Installing Docker Desktop via Homebrew..."
-  brew install --cask docker
-  echo "==> Launching Docker Desktop..."
   open -a Docker
-  echo "==> Waiting for Docker to start — if macOS shows a permission or license prompt, approve it, this is normal on first launch..."
+  echo "==> Waiting for Docker to start — if macOS or Docker shows a permission or license prompt, approve it (first launch only)..."
   for _ in $(seq 1 150); do
+    mac_path
     docker info >/dev/null 2>&1 && return
     sleep 2
   done
 }
 
+[ "$(uname -s)" = "Darwin" ] && mac_path
 echo "==> Checking for Docker..."
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   echo "Docker is already installed and running."
@@ -60,7 +89,7 @@ else
 fi
 
 if ! docker info >/dev/null 2>&1; then
-  if sudo docker info >/dev/null 2>&1; then
+  if [ "$(uname -s)" = "Linux" ] && sudo docker info >/dev/null 2>&1; then
     # Just-added docker-group membership only takes effect in a fresh login
     # shell. Falling back to sudo for this run means the install still
     # completes in one shot instead of forcing a logout/login first.
@@ -96,30 +125,32 @@ install_git_linux() {
 }
 
 install_git_mac() {
-  # Deliberately NOT running bare `git` to check for it — on a stock Mac
-  # with no Xcode Command Line Tools, that alone pops a blocking GUI
-  # installer dialog. `command -v` never invokes the binary, so it can't
-  # trigger that.
-  if command -v brew >/dev/null 2>&1; then
-    echo "==> Installing git via Homebrew..."
-    brew install git
-  else
-    echo "git isn't installed and Homebrew isn't either." >&2
-    echo "Install Homebrew (https://brew.sh) and re-run this command, or run: xcode-select --install" >&2
-    exit 1
-  fi
+  # /usr/bin/git on a stock Mac is a shim that pops a blocking GUI installer
+  # (and fails in a pipe) until Apple's command line tools exist, so never run
+  # it to check. Homebrew's installer sets those tools up and gives a real git.
+  install_brew_mac
+  echo "==> Installing git via Homebrew..."
+  brew install git <"$TTY_IN"
 }
 
-if ! command -v git >/dev/null 2>&1; then
-  case "$(uname -s)" in
-    Darwin) install_git_mac ;;
-    Linux) install_git_linux ;;
-    *)
+case "$(uname -s)" in
+  Darwin)
+    # `xcode-select -p` succeeds only when a real developer dir (CLT/Xcode) exists.
+    if ! xcode-select -p >/dev/null 2>&1 && ! { command -v brew >/dev/null 2>&1 && [ -x "$(brew --prefix 2>/dev/null)/bin/git" ]; }; then
+      install_git_mac
+    fi
+    mac_path
+    ;;
+  Linux)
+    command -v git >/dev/null 2>&1 || install_git_linux
+    ;;
+  *)
+    command -v git >/dev/null 2>&1 || {
       echo "Unsupported OS: $(uname -s). Install git manually: https://git-scm.com/downloads" >&2
       exit 1
-      ;;
-  esac
-fi
+    }
+    ;;
+esac
 
 echo "==> Getting nodedr-restaurant-pos..."
 if [ -d "$REPO_DIR/.git" ]; then
@@ -131,4 +162,4 @@ fi
 
 cd "$REPO_DIR"
 echo "==> Installing and starting Nodedr OrderRestro..."
-$SUDO ./install.sh
+$SUDO ./install.sh <"$TTY_IN"
