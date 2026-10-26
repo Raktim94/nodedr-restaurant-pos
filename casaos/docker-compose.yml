@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.8.2
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.9.0
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -44,6 +44,9 @@ services:
       UPLOADS_DIR: "/data/uploads"
       # Spain VERI*FACTU producer identifier (see docs/verifactu.md). Only needed for Spanish installs.
       VERIFACTU_PRODUCER_ID: ""
+      # Set to a long random key to make this server the sync hub for Windows
+      # PCs (Settings > Server Sync). Empty = sync server off.
+      SYNC_API_KEY: ""
       # In-app "Update now" button (Settings > Updates) -> the updater below.
       UPDATER_URL: "http://nodedr-restaurant-pos-updater:8080"
       UPDATER_TOKEN: "nodedr-restaurant-updater"
@@ -82,7 +85,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.8.2
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.9.0
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -180,10 +183,15 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.8.2"
-  update_at: "2026-10-24"
+  version: "1.9.0"
+  update_at: "2026-10-26"
   release_notes:
     en_US: |-
+      1.9.0: adds two-way server sync for the Windows app (Settings > Server
+      Sync): a PC keeps working offline and syncs with a central server, newest
+      edit wins. Set SYNC_API_KEY on the server to make it the sync hub; it is
+      optional and off by default. Update the server and every PC together.
+
       1.8.2: security update: zod 4.6.6 (fixes a memory-exhaustion advisory). No behaviour changes.
 
       1.8.1: VERI*FACTU now works only for branches in Spain: it is hidden and never records for any other country.

@@ -47,6 +47,7 @@ services:
       VERIFACTU_PRODUCER_NAME: "${VERIFACTU_PRODUCER_NAME:-}"
       VERIFACTU_PRODUCER_COUNTRY: "${VERIFACTU_PRODUCER_COUNTRY:-}"
       VERIFACTU_SYSTEM_ID: "${VERIFACTU_SYSTEM_ID:-}"
+      SYNC_API_KEY: "${SYNC_API_KEY:-}"
       # In-app updates (Settings > Updates): the backend asks the `updater`
       # container below to pull the latest published images. Unset these two
       # and the Update button simply says this install can't update itself.
