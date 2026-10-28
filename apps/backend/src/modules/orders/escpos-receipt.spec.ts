@@ -384,4 +384,9 @@ describe('test slip', () => {
     expect(text).toContain('58 mm - 32 columns - CP858');
     expect(text).toContain('áéíóú ñ ü ¿? ¡! € £');
   });
+
+  it('prints the logo as a GS v 0 raster', () => {
+    const buffer = buildTestSlip(resolveProfile({ paperWidthMm: 58 }));
+    expect(buffer.includes(Buffer.from([0x1d, 0x76, 0x30, 0x00]))).toBe(true);
+  });
 });

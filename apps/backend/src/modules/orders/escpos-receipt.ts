@@ -15,13 +15,14 @@ import {
   TAX_REGIME_PRESETS,
   type TaxMode,
   type TaxRegime,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import {
   CMD,
   EscposWriter,
   resolveProfile,
   type PrinterProfile,
 } from './escpos/encoder';
+import { receiptLogoEscPos } from './escpos/receipt-logo';
 
 export { resolveProfile, type PrinterProfile } from './escpos/encoder';
 
@@ -254,6 +255,7 @@ export function buildReceiptEscPosJob({
       : 'Thank you! Visit again.',
     { align: 'center' },
   );
+  if (!order.isProvisional) w.text('Powered by Restrovia', { align: 'center' });
   return {
     buffer: w.finish({ drawer: openDrawer }),
     unsupportedChars: [...w.unsupported],
@@ -371,7 +373,7 @@ export function buildTestSlip(
   profile: PrinterProfile = resolveProfile(),
 ): Buffer {
   const w = new EscposWriter(profile);
-  w.text('Nodedr OrderRestro', { align: 'center', bold: true, size: 'big' });
+  w.raw(receiptLogoEscPos());
   w.text('Printer test OK', { align: 'center' });
   w.rule();
   const ruler = '1234567890'.repeat(7).slice(0, profile.columns);

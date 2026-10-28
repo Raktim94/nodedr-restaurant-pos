@@ -262,6 +262,12 @@ export class EscposWriter {
     return this;
   }
 
+  /** Appends pre-built ESC/POS bytes (e.g. a raster image) to the job. */
+  raw(bytes: Buffer): this {
+    this.chunks.push(bytes);
+    return this;
+  }
+
   rule(char = '-'): this {
     this.emit(char.repeat(this.profile.columns), {});
     return this;
