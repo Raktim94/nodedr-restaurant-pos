@@ -19,7 +19,7 @@ import {
   type SessionUser,
   type UpdateOrderDto,
   type UpdateOrderItemDto,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { AuditService } from '../../audit/audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
@@ -42,7 +42,7 @@ import {
   settlePayments,
   type Bill,
 } from './settlement';
-import type { TaxMode } from '@nodedr-restaurant/types';
+import type { TaxMode } from '@restrovia/types';
 import { VerifactuService } from '../verifactu/verifactu.service';
 
 const KOT_FORWARD_STATUSES = [

@@ -1,12 +1,12 @@
 # Built from the MONOREPO ROOT context (see docker-compose.yml `context: .`)
-# because this app depends on the workspace package @nodedr-restaurant/types.
+# because this app depends on the workspace package @restrovia/types.
 # Do not try to `docker build` this file with apps/backend as context.
 
 FROM node:22-alpine AS base
 RUN corepack enable
 WORKDIR /repo
 
-# --- deps: install with full workspace visible so pnpm can link @nodedr-restaurant/types ---
+# --- deps: install with full workspace visible so pnpm can link @restrovia/types ---
 # python3/make/g++/linux-headers/eudev-dev/libusb-dev/pkgconfig are for the
 # `usb` package's native addon (direct-USB ESC/POS printing, see
 # apps/backend/src/modules/orders/escpos-usb.ts). It ships a prebuilt
@@ -28,9 +28,9 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS builder
 COPY packages/types packages/types
 COPY apps/backend apps/backend
-RUN pnpm --filter @nodedr-restaurant/types build
-RUN pnpm --filter @nodedr-restaurant/backend exec prisma generate
-RUN pnpm --filter @nodedr-restaurant/backend build
+RUN pnpm --filter @restrovia/types build
+RUN pnpm --filter @restrovia/backend exec prisma generate
+RUN pnpm --filter @restrovia/backend build
 
 # Docker CLI (optional in-container "update & restart" against mounted
 # docker.sock — see src/system/update.service.ts). Pulled from the official

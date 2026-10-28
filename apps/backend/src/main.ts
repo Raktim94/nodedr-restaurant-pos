@@ -123,10 +123,10 @@ async function bootstrap() {
     process.env.ENABLE_SWAGGER === 'true'
   ) {
     const config = new DocumentBuilder()
-      .setTitle('Nodedr OrderRestro API')
-      .setDescription('REST API for the Nodedr OrderRestro management system')
+      .setTitle('Restrovia API')
+      .setDescription('REST API for the Restrovia management system')
       .setVersion('1.0')
-      .addCookieAuth('nodedr_session')
+      .addCookieAuth('restrovia_session')
       .build();
     const document = SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api/docs', app, document);
@@ -135,7 +135,7 @@ async function bootstrap() {
   const port = process.env.PORT ?? 4000;
   await app.listen(port);
   console.log(
-    `Nodedr OrderRestro API listening on :${port} (docs at /api/docs)`,
+    `Restrovia API listening on :${port} (docs at /api/docs)`,
   );
 }
 void bootstrap();

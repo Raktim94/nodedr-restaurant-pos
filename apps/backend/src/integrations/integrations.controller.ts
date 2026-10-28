@@ -13,7 +13,7 @@ import { Throttle } from '@nestjs/throttler';
 import {
   createIntegrationOrderSchema,
   createIntegrationReservationSchema,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { CurrentIntegrationKey } from '../common/decorators/current-integration-key.decorator';
 import { RequireScope } from '../common/decorators/require-scope.decorator';
 import { IntegrationApiKeyGuard } from '../common/guards/integration-api-key.guard';
@@ -22,7 +22,7 @@ import type { IntegrationKeyContext } from './integrations.service';
 import { IntegrationsService } from './integrations.service';
 
 // The public REST API an external website's own backend calls as a
-// back end for OrderRestro — list locations, browse a location's menu,
+// back end for Restrovia — list locations, browse a location's menu,
 // place an order, book a table, check status. Authenticated by
 // Authorization: Bearer <integration api key>, never cookies — see
 // docs/integrations-api.md for the full reference and IntegrationApiKeyGuard

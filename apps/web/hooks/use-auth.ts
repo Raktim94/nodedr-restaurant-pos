@@ -1,6 +1,6 @@
 "use client";
 
-import { permissionSatisfied, type LoginDto, type RegisterDto, type SessionUser } from "@nodedr-restaurant/types";
+import { permissionSatisfied, type LoginDto, type RegisterDto, type SessionUser } from "@restrovia/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 

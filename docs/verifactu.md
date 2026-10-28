@@ -1,6 +1,6 @@
 # Spain VERI\*FACTU
 
-**Status: implemented, not certified.** OrderRestro now keeps the records Spain's anti-fraud rules require and can report them to the tax agency (AEAT). It has **not** been run against the live AEAT portal, and NODEDR INFOTECH PRIVATE LIMITED has **not** issued the *Declaración Responsable* that the law requires from the software producer. Do not tell a customer it is "compliant" until both are done.
+**Status: implemented, not certified.** Restrovia now keeps the records Spain's anti-fraud rules require and can report them to the tax agency (AEAT). It has **not** been run against the live AEAT portal, and NODEDR INFOTECH PRIVATE LIMITED has **not** issued the *Declaración Responsable* that the law requires from the software producer. Do not tell a customer it is "compliant" until both are done.
 
 Background: Real Decreto 1007/2023 and Orden HAC/1177/2024. AEAT's note (updated 13 October 2026) gives 1 January 2027 for corporate-income-tax payers and 1 July 2027 for everyone else; check AEAT for the current position.
 

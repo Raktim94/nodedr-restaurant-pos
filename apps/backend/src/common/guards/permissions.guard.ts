@@ -8,7 +8,7 @@ import { Reflector } from '@nestjs/core';
 import {
   permissionSatisfied,
   type PermissionKey,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import type { AuthenticatedRequest } from '../types/authenticated-request';
 

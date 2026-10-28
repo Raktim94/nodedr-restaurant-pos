@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { PERMISSIONS } from '@nodedr-restaurant/types';
+import { PERMISSIONS } from '@restrovia/types';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Roles this deep are meant to always hold every permission that exists —

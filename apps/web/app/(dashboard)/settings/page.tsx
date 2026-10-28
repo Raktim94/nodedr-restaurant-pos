@@ -9,7 +9,7 @@ import {
   TAX_REGIMES,
   type TaxMode,
   type TaxRegime,
-} from "@nodedr-restaurant/types";
+} from "@restrovia/types";
 import { KioskCard } from "@/components/settings/kiosk-card";
 import { PrinterDiagnosticsCard } from "@/components/settings/printer-diagnostics-card";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
@@ -305,7 +305,7 @@ function GeneralSettingsForm({
                 </button>
               )}
               <p className="text-xs text-muted-foreground">
-                Shows in the app sidebar and login screen instead of the OrderRestro mark.
+                Shows in the app sidebar and login screen instead of the Restrovia mark.
                 Square, at least 256×256px, PNG with a transparent background works best.
               </p>
             </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { kitchenProgress, type PaymentMethodDto } from "@nodedr-restaurant/types";
+import { kitchenProgress, type PaymentMethodDto } from "@restrovia/types";
 import { ArrowLeft, CheckCircle2, ChefHat, Pencil, Printer } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";

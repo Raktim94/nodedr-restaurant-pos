@@ -1,6 +1,6 @@
 "use client";
 
-import type { SessionUser } from "@nodedr-restaurant/types";
+import type { SessionUser } from "@restrovia/types";
 import { LogOut, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";

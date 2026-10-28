@@ -6,7 +6,7 @@ import {
 import type {
   PurchaseOrderDto,
   PurchaseOrderStatus,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { round2 } from '../../common/money';
 

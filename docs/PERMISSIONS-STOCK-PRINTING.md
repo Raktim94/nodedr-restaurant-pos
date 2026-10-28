@@ -82,7 +82,7 @@ Both **Bill** and **KOT** have two paths in the POS:
 - **The printer must be reachable from the backend.** The backend opens the connection, not the
   browser. A server hosted in the cloud cannot reach a USB printer or a private LAN address in the
   restaurant; there, use the browser print buttons, a VPN to the restaurant network, or run
-  OrderRestro on a machine inside it. This is why kitchen printing "did nothing" on remote servers.
+  Restrovia on a machine inside it. This is why kitchen printing "did nothing" on remote servers.
 
 ### Kitchen tickets (KOT)
 - One ticket per kitchen round and station, built from that ticket's own lines: order number, table

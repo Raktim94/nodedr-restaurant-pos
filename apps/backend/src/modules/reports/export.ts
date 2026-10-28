@@ -33,7 +33,7 @@ export async function buildXlsx(
   subtitle: string,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'NodeDR OrderRestro';
+  wb.creator = 'Restrovia';
   const ws = wb.addWorksheet(r.title.slice(0, 31));
   ws.addRow([r.title]).font = { bold: true, size: 14 };
   ws.addRow([subtitle]).font = { color: { argb: 'FF666666' } };

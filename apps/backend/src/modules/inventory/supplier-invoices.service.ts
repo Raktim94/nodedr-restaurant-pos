@@ -6,7 +6,7 @@ import {
 import type {
   SupplierInvoiceDto,
   SupplierPaymentDto,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { round2 } from '../../common/money';
 

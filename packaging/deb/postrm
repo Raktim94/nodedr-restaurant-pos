@@ -2,6 +2,6 @@
 set -e
 systemctl daemon-reload >/dev/null 2>&1 || true
 if [ "$1" = purge ]; then
-  echo "nodedr-orderrestro: your data stays in Docker volumes (nodedr-orderrestro_pg_data, nodedr-orderrestro_uploads_data, nodedr-orderrestro_state) and your settings and generated passwords in /etc/nodedr-orderrestro/nodedr-orderrestro.env, so a later reinstall picks up where you left off. To delete everything for good: sudo docker compose --project-name nodedr-orderrestro down -v ; sudo rm -rf /etc/nodedr-orderrestro" >&2
+  echo "restrovia: your data stays in Docker volumes (restrovia_pg_data, restrovia_uploads_data, restrovia_state) and your settings and generated passwords in /etc/restrovia/restrovia.env, so a later reinstall picks up where you left off. To delete everything for good: sudo docker compose --project-name restrovia down -v ; sudo rm -rf /etc/restrovia" >&2
 fi
 exit 0

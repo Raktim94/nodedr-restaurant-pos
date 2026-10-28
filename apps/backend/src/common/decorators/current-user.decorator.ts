@@ -1,5 +1,5 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import type { SessionUser } from '@nodedr-restaurant/types';
+import type { SessionUser } from '@restrovia/types';
 import type { AuthenticatedRequest } from '../types/authenticated-request';
 
 export const CurrentUser = createParamDecorator(

@@ -1,6 +1,6 @@
 [Unit]
-Description=OrderRestro (Docker Compose)
-Documentation=https://orderrestro.nodedr.com/docs
+Description=Restrovia (Docker Compose)
+Documentation=https://restrovia.shop/docs
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
@@ -9,8 +9,8 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 TimeoutStartSec=900
-ExecStart=/usr/bin/docker compose --project-name nodedr-orderrestro --env-file /etc/nodedr-orderrestro/nodedr-orderrestro.env -f /usr/lib/nodedr-orderrestro/docker-compose.yml up -d --remove-orphans
-ExecStop=/usr/bin/docker compose --project-name nodedr-orderrestro --env-file /etc/nodedr-orderrestro/nodedr-orderrestro.env -f /usr/lib/nodedr-orderrestro/docker-compose.yml down
+ExecStart=/usr/bin/docker compose --project-name restrovia --env-file /etc/restrovia/restrovia.env -f /usr/lib/restrovia/docker-compose.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose --project-name restrovia --env-file /etc/restrovia/restrovia.env -f /usr/lib/restrovia/docker-compose.yml down
 
 [Install]
 WantedBy=multi-user.target

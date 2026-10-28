@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReservationStatusDto } from "@nodedr-restaurant/types";
+import type { ReservationStatusDto } from "@restrovia/types";
 import { Check, X, Users } from "lucide-react";
 import { useState } from "react";
 import { AddReservationDialog } from "@/components/reservations/add-reservation-dialog";

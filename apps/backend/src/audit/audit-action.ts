@@ -9,7 +9,7 @@ import {
   applyDecorators,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { SessionUser } from '@nodedr-restaurant/types';
+import type { SessionUser } from '@restrovia/types';
 import type { Request } from 'express';
 import { Observable, tap } from 'rxjs';
 import { AuditService } from './audit.service';

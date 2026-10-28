@@ -10,7 +10,7 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   notificationListQuerySchema,
   type SessionUser,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { Auth } from '../common/decorators/auth.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { NotificationsService } from './notifications.service';

@@ -24,7 +24,7 @@ interface BranchContextValue {
 
 const BranchContext = createContext<BranchContextValue | null>(null);
 
-const STORAGE_KEY = "nodedr_branch_id";
+const STORAGE_KEY = "restrovia_branch_id";
 
 export function BranchProvider({ children }: { children: React.ReactNode }) {
   const { data: branches, isLoading, isPending, isError, error, refetch, isFetching } = useQuery({

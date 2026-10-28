@@ -12,7 +12,7 @@ import {
   type PinLoginDto,
   type RegisterDto,
   type SessionUser,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { TwoFactorService } from './two-factor.service';

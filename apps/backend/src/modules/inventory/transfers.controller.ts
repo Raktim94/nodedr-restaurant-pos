@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, UsePipes } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import type { SessionUser } from '@nodedr-restaurant/types';
+import type { SessionUser } from '@restrovia/types';
 import { z } from 'zod';
 import { AuditAction } from '../../audit/audit-action';
 import { Auth } from '../../common/decorators/auth.decorator';

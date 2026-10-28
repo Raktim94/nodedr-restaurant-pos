@@ -24,23 +24,23 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Install from the website, as a visitor would
-        run: curl -fsSL https://orderrestro.nodedr.com/install-linux.sh | sudo bash
+        run: curl -fsSL https://restrovia.shop/install-linux.sh | sudo bash
       - name: Wait for the app to answer
         run: |
           for _ in $(seq 1 120); do
             code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:1995/ || true)
             case "$code" in 2*|3*) echo "answered HTTP $code"; exit 0;; esac; sleep 5
           done
-          systemctl status nodedr-orderrestro --no-pager || true; docker ps -a || true
+          systemctl status restrovia --no-pager || true; docker ps -a || true
           echo "no answer (last code $code)" >&2; exit 1
       - name: Installed version is the latest release
         run: |
           latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/Raktim94/nodedr-restaurant-pos/releases/latest | sed -n 's|.*/releases/tag/v\{0,1\}||p')
-          have=$(dpkg-query -W -f='${Version}' nodedr-orderrestro)
+          have=$(dpkg-query -W -f='${Version}' restrovia)
           echo "latest=$latest installed=$have"; [ "$latest" = "$have" ]
       - name: Remove and purge
         run: |
-          sudo apt-get remove -y nodedr-orderrestro
-          ! systemctl is-active --quiet nodedr-orderrestro.service
-          sudo apt-get purge -y nodedr-orderrestro
-          test -f /etc/nodedr-orderrestro/nodedr-orderrestro.env
+          sudo apt-get remove -y restrovia
+          ! systemctl is-active --quiet restrovia.service
+          sudo apt-get purge -y restrovia
+          test -f /etc/restrovia/restrovia.env

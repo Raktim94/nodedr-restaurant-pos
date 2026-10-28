@@ -1,6 +1,6 @@
 "use client";
 
-import type { CreateStaffDto, UpdateStaffDto } from "@nodedr-restaurant/types";
+import type { CreateStaffDto, UpdateStaffDto } from "@restrovia/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 

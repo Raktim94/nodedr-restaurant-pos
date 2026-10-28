@@ -22,7 +22,7 @@ export function MarketingNav() {
         <Link href="/" className="flex items-center gap-2.5">
           <Logo size={30} />
           <span className="text-[15px] font-semibold tracking-tight text-foreground">
-            OrderRestro
+            Restrovia
           </span>
         </Link>
 

@@ -7,7 +7,7 @@ import type {
   KotStatusDto,
   RefundDto,
   UpdateOrderDto,
-} from "@nodedr-restaurant/types";
+} from "@restrovia/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Customer } from "@/hooks/use-customers";
 import { api } from "@/lib/api";

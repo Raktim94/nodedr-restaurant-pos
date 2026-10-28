@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-export const MUTE_STORAGE_KEY = "nodedr_notifications_muted";
-const MUTE_EVENT = "nodedr:notifications-mute-changed";
+export const MUTE_STORAGE_KEY = "restrovia_notifications_muted";
+const MUTE_EVENT = "restrovia:notifications-mute-changed";
 
 function readMuted(): boolean {
   if (typeof window === "undefined") return false;

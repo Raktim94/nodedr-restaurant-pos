@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { DocList, DocPage, DocSection } from "@/components/marketing/doc-page";
 
 export const metadata: Metadata = {
-  title: "API & MCP — Nodedr OrderRestro",
+  title: "API & MCP — Restrovia",
   description:
-    "Connect an AI client via MCP, or use OrderRestro as a backend for your own website: browse the menu, place orders, and book tables through a scoped API key.",
+    "Connect an AI client via MCP, or use Restrovia as a backend for your own website: browse the menu, place orders, and book tables through a scoped API key.",
 };
 
 function Code({ children }: { children: string }) {
@@ -20,7 +20,7 @@ export default function ApiDocsPage() {
     <DocPage title="API &amp; MCP" updated="20 August 2026">
       <DocSection heading="Two ways to connect">
         <p>
-          OrderRestro exposes two separate integrations, each with its own kind of API key, both managed from{" "}
+          Restrovia exposes two separate integrations, each with its own kind of API key, both managed from{" "}
           <strong className="text-foreground">Settings &gt; API Keys</strong> once you&rsquo;re signed in:
         </p>
         <DocList
@@ -34,7 +34,7 @@ export default function ApiDocsPage() {
             </>,
             <>
               <strong className="text-foreground">Integration API</strong> — a plain REST API for your own
-              website&rsquo;s backend to use OrderRestro directly: browse the menu, place orders, and book tables for
+              website&rsquo;s backend to use Restrovia directly: browse the menu, place orders, and book tables for
               a location you choose. Not tied to any staff account — you grant it only the permissions it needs.
             </>,
           ]}
@@ -65,7 +65,7 @@ export default function ApiDocsPage() {
       <DocSection heading="Integration API">
         <p>
           Base URL: <code className="rounded bg-card px-1.5 py-0.5 text-foreground">https://your-domain/api/v1/integrations</code>. This
-          is meant for server-to-server calls — your website&rsquo;s own backend calling OrderRestro, not embedding
+          is meant for server-to-server calls — your website&rsquo;s own backend calling Restrovia, not embedding
           the key in browser JavaScript.
         </p>
         <Code>{`GET  /locations                              (scope: locations:read)

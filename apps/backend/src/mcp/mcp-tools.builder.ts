@@ -9,7 +9,7 @@ import {
   permissionSatisfied,
   type ReservationStatusDto,
   type SessionUser,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { BranchAccessService } from '../common/services/branch-access.service';
 import { OrdersService } from '../modules/orders/orders.service';
@@ -232,7 +232,7 @@ export class McpToolsBuilder {
 
   build(actor: SessionUser): McpServer {
     const server = new McpServer(
-      { name: 'orderrestro', version: '1.0.0' },
+      { name: 'restrovia', version: '1.0.0' },
       { capabilities: { tools: {} } },
     );
     const tools = this.toolDefs(actor);

@@ -8,7 +8,7 @@ import {
 import type {
   CreateStaffApiKeyDto,
   SessionUser,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { PrismaService } from '../prisma/prisma.service';
 
 const TOKEN_PREFIX = 'ordr_staff_';

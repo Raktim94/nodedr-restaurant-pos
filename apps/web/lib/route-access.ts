@@ -3,7 +3,7 @@
 // (The API enforces the same permissions; this keeps the UI from rendering
 // pages that would only show errors.) Pure and dependency-free so it can be
 // unit-tested with `node --test`.
-import { permissionSatisfied } from "@nodedr-restaurant/types";
+import { permissionSatisfied } from "@restrovia/types";
 
 export interface GatedRoute {
   href: string;

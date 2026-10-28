@@ -10,7 +10,7 @@ import {
   UsePipes,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { customerSchema, type SessionUser } from '@nodedr-restaurant/types';
+import { customerSchema, type SessionUser } from '@restrovia/types';
 import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';

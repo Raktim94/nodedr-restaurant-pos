@@ -1,6 +1,6 @@
 "use client";
 
-import { PERMISSIONS } from "@nodedr-restaurant/types";
+import { PERMISSIONS } from "@restrovia/types";
 import { Checkbox } from "@/components/ui/checkbox";
 
 // Computed once at module load — PERMISSIONS is a static const, no need to

@@ -3,7 +3,7 @@
 import type {
   CreateReservationDto,
   ReservationStatusDto,
-} from "@nodedr-restaurant/types";
+} from "@restrovia/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 

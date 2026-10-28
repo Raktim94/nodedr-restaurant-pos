@@ -1,6 +1,6 @@
 # Security audit report — 15 August 2026
 
-Scope: full-repository security audit of Nodedr OrderRestro (auth/sessions,
+Scope: full-repository security audit of Restrovia (auth/sessions,
 RBAC/multi-tenant isolation, API input validation/uploads/CORS/secrets,
 money/POS logic, dependencies) plus Windows/MSIX packaging readiness,
 commissioned as a hardening pass ahead of Microsoft Store submission.

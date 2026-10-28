@@ -1,6 +1,6 @@
 "use client";
 
-import type { IssueGiftCardDto } from "@nodedr-restaurant/types";
+import type { IssueGiftCardDto } from "@restrovia/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
 

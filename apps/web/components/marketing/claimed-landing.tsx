@@ -12,7 +12,7 @@ export function ClaimedLanding() {
     <div className="flex min-h-full flex-col items-center justify-center px-4 py-24 text-center sm:px-6">
       <Logo size={44} />
       <h1 className="mt-6 text-2xl font-semibold tracking-tight text-foreground">
-        Nodedr OrderRestro
+        Restrovia
       </h1>
       <p className="mt-2 max-w-sm text-sm text-muted-foreground">
         This instance is already set up. Sign in to your dashboard, or check the docs.

@@ -235,7 +235,7 @@ with sync_playwright() as pw:
     box.fill("garbage!!")
     box.press("Enter")
     expect(sp.get_by_text("Not a recognised order code")).to_be_visible()
-    box.fill(f"orderrestro:order:{second}\r\n")
+    box.fill(f"restrovia:order:{second}\r\n")
     box.press("Enter")
     expect(sp.get_by_text(second).first).to_be_visible(timeout=8000)
     check("scan input rejects junk and opens a real order from a wedge-style payload", True)

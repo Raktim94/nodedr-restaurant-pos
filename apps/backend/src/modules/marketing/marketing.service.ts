@@ -9,7 +9,7 @@ import type {
   CampaignDto,
   CouponDto,
   PromotionDto,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { localMinuteAndDay } from '../../common/time';
 import { PrismaService } from '../../prisma/prisma.service';

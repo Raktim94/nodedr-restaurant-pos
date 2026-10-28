@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { CreateWaitlistEntryDto } from '@nodedr-restaurant/types';
+import type { CreateWaitlistEntryDto } from '@restrovia/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 

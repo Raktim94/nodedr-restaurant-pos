@@ -4,7 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import {
   publicOrderSchema,
   publicRequestSchema,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PublicMenuService } from './public-menu.service';
 

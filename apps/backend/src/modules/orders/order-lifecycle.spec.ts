@@ -6,7 +6,7 @@ import {
   KOT_TRANSITIONS,
   kitchenProgress,
   type KotStatusDto,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 
 const ALL: KotStatusDto[] = [
   'NEW',

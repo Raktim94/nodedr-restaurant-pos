@@ -1,4 +1,4 @@
-# OrderRestro tutorial
+# Restrovia tutorial
 
 Get from zero to your first UPI-paid order in about ten minutes, then set up staff, stock and accounts. Screenshots use fictional demo data.
 
@@ -103,7 +103,7 @@ The till works on a phone too:
 
 ## 5. Get paid with UPI
 
-OrderRestro builds a standard UPI payment link for the **exact amount due**. There is nothing to type in the customer's app, and no payment-gateway fees.
+Restrovia builds a standard UPI payment link for the **exact amount due**. There is nothing to type in the customer's app, and no payment-gateway fees.
 
 ### Set up
 
@@ -240,7 +240,7 @@ Reports go out at 06:00 branch time: daily covers yesterday, weekly goes on Mond
 | **Settings → Audit log** | Who did what, and when. |
 | **Settings → Backup** | Schedule and restore backups. Test a restore before you need one. |
 | **Settings → Security** | Two-factor sign-in and recovery codes. |
-| **Settings → API keys, Webhooks** | Let other systems talk to OrderRestro. |
+| **Settings → API keys, Webhooks** | Let other systems talk to Restrovia. |
 | **Settings → Updates** | Check for a new version. |
 
 <table>
@@ -270,7 +270,7 @@ Reports go out at 06:00 branch time: daily covers yesterday, weekly goes on Mond
 
 ## 12. Connect other systems
 
-OrderRestro has a REST API (`/api/v1`, docs at `/api/docs`), API keys, webhooks and an MCP server. See [docs/integrations-api.md](docs/integrations-api.md).
+Restrovia has a REST API (`/api/v1`, docs at `/api/docs`), API keys, webhooks and an MCP server. See [docs/integrations-api.md](docs/integrations-api.md).
 
 ## Troubleshooting
 
@@ -291,4 +291,4 @@ Questions or bugs: [open an issue](https://github.com/Raktim94/nodedr-restaurant
 
 ---
 
-<sub>OrderRestro is developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/) · [nodedr.com](https://www.nodedr.com/)</sub>
+<sub>Restrovia is developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/) · [nodedr.com](https://www.nodedr.com/)</sub>

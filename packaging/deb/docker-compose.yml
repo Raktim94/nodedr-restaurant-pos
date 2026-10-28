@@ -1,11 +1,11 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: nodedr-orderrestro-postgres
+    container_name: restrovia-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: nodedr
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing POSTGRES_PASSWORD in /etc/nodedr-orderrestro/nodedr-orderrestro.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing POSTGRES_PASSWORD in /etc/restrovia/restrovia.env}
       POSTGRES_DB: nodedr_restaurant
     expose:
       - "5432"
@@ -18,7 +18,7 @@ services:
       retries: 10
   backend:
     image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:@VERSION@
-    container_name: nodedr-orderrestro-backend
+    container_name: restrovia-backend
     restart: unless-stopped
     environment:
       DATABASE_URL: "postgresql://nodedr:${POSTGRES_PASSWORD}@postgres:5432/nodedr_restaurant"
@@ -45,7 +45,7 @@ services:
       - 'c 180:* rmw'
   web:
     image: ghcr.io/raktim94/nodedr-restaurant-pos-web:@VERSION@
-    container_name: nodedr-orderrestro-web
+    container_name: restrovia-web
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-1995}:3000"

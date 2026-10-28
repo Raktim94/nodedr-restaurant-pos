@@ -4,7 +4,7 @@ import {
   DEFAULT_ROLE_PERMISSIONS,
   STAFF_ROLES,
   type StaffRole,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { DashboardController } from '../../modules/dashboard/dashboard.controller';
 import { MenuController } from '../../modules/menu/menu.controller';
 import { TablesController } from '../../modules/tables/tables.controller';

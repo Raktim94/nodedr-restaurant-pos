@@ -1,11 +1,11 @@
 #!/bin/sh
 set -e
-ENVF=/etc/nodedr-orderrestro/nodedr-orderrestro.env
+ENVF=/etc/restrovia/restrovia.env
 if [ "$1" = configure ]; then
   # First install: create the settings file from the shipped example. It is never overwritten or removed by apt.
   if [ ! -f "$ENVF" ]; then
-    install -d -m 0755 /etc/nodedr-orderrestro
-    install -m 0600 /usr/share/nodedr-orderrestro/nodedr-orderrestro.env.example "$ENVF"
+    install -d -m 0755 /etc/restrovia
+    install -m 0600 /usr/share/restrovia/restrovia.env.example "$ENVF"
   fi
   # Replace every @SECRET@ with a fresh random value (only a new file has any).
   if grep -q '@SECRET@' "$ENVF" 2>/dev/null; then
@@ -20,12 +20,12 @@ if [ "$1" = configure ]; then
   fi
   chmod 0600 "$ENVF"
   systemctl daemon-reload >/dev/null 2>&1 || true
-  systemctl enable nodedr-orderrestro.service >/dev/null 2>&1 || true
+  systemctl enable restrovia.service >/dev/null 2>&1 || true
   if [ -d /run/systemd/system ]; then
     # Starting pulls the images; do not fail the install if Docker is not ready.
-    systemctl restart nodedr-orderrestro.service >/dev/null 2>&1 || \
-      echo "nodedr-orderrestro: could not start yet; check Docker, then run: sudo systemctl start nodedr-orderrestro" >&2
+    systemctl restart restrovia.service >/dev/null 2>&1 || \
+      echo "restrovia: could not start yet; check Docker, then run: sudo systemctl start restrovia" >&2
   fi
-  echo "OrderRestro is installed. Open http://localhost:1995 (first start pulls the images and can take a few minutes)."
+  echo "Restrovia is installed. Open http://localhost:1995 (first start pulls the images and can take a few minutes)."
 fi
 exit 0

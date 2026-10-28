@@ -58,7 +58,7 @@ services:
       # these). Uncomment for a headless/CasaOS-style deployment that
       # configures backups purely from env vars instead.
       # S3_BACKUP_ENDPOINT: "https://s3.example.com"
-      # S3_BACKUP_BUCKET: "orderrestro-backups"
+      # S3_BACKUP_BUCKET: "restrovia-backups"
       # S3_BACKUP_ACCESS_KEY_ID: ""
       # S3_BACKUP_SECRET_ACCESS_KEY: ""
       # S3_BACKUP_REGION: "auto"

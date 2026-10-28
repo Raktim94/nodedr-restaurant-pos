@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MoreHorizontal } from "lucide-react";
-import type { SessionUser } from "@nodedr-restaurant/types";
+import type { SessionUser } from "@restrovia/types";
 import { hasPermission } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/context";

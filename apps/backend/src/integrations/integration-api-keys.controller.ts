@@ -11,7 +11,7 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   createIntegrationApiKeySchema,
   type SessionUser,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { Auth } from '../common/decorators/auth.decorator';
 import { AuditAction } from '../audit/audit-action';
 import { CurrentUser } from '../common/decorators/current-user.decorator';

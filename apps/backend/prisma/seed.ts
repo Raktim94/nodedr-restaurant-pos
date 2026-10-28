@@ -4,7 +4,7 @@ import {
   DEFAULT_ROLE_PERMISSIONS,
   PERMISSIONS,
   STAFF_ROLES,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 
 // Deliberately not imported from src/modules/orders/pricing — the runtime
 // image only ships apps/backend/dist + prisma (see ARCHITECTURE.md /

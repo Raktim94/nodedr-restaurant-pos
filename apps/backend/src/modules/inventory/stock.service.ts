@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Prisma, StockMovementType } from '@prisma/client';
-import type { StockAdjustmentDto } from '@nodedr-restaurant/types';
+import type { StockAdjustmentDto } from '@restrovia/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { round3 } from '../../common/money';
 

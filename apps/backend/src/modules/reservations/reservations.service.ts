@@ -7,7 +7,7 @@ import {
 import type {
   CreateReservationDto,
   ReservationStatusDto,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';

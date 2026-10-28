@@ -1,5 +1,5 @@
 # Built from the MONOREPO ROOT context (see docker-compose.yml `context: .`)
-# because this app depends on the workspace package @nodedr-restaurant/types.
+# because this app depends on the workspace package @restrovia/types.
 
 FROM node:22-alpine AS base
 RUN corepack enable
@@ -29,7 +29,7 @@ ARG BACKEND_URL=http://backend:4000
 ENV BACKEND_URL=${BACKEND_URL}
 COPY packages/types packages/types
 COPY apps/web apps/web
-RUN pnpm --filter @nodedr-restaurant/types build
+RUN pnpm --filter @restrovia/types build
 RUN pnpm --filter web build
 
 # --- runtime ---

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { resolveTaxLabel, type KioskOrderDto } from '@nodedr-restaurant/types';
+import { resolveTaxLabel, type KioskOrderDto } from '@restrovia/types';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';

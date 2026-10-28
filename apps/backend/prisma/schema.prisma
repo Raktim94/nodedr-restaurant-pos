@@ -1,4 +1,4 @@
-// Nodedr OrderRestro — Phase 0/1 core schema.
+// Restrovia — Phase 0/1 core schema.
 // See ARCHITECTURE.md for why PostgreSQL is the primary target and how
 // multi-branch/single-location both map onto the same schema (a branch is
 // just a Branch row, not a different deployment mode).
@@ -45,7 +45,7 @@ model Restaurant {
   name      String
   legalName String?
   // The restaurant's own branding, shown in the app shell (sidebar header,
-  // login screen) in place of the Nodedr OrderRestro product mark — this is
+  // login screen) in place of the Restrovia product mark — this is
   // white-label self-hosted software, so the operator's brand should lead;
   // the product name stays as a small credit line instead (see BrandFooter).
   logoUrl   String?

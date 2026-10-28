@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { INTEGRATION_SCOPES, type IntegrationScope } from "@nodedr-restaurant/types";
+import { INTEGRATION_SCOPES, type IntegrationScope } from "@restrovia/types";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";

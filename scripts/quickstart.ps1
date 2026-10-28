@@ -1,4 +1,4 @@
-# Nodedr OrderRestro quickstart — Windows (PowerShell).
+# Restrovia quickstart — Windows (PowerShell).
 #
 # Never installs Docker Desktop. The Docker CLI and Docker Desktop are two
 # different things: the CLI alone can't run a container without a Docker
@@ -6,7 +6,7 @@
 # WSL2 — Windows' own free, built-in Linux subsystem — to run a real,
 # open-source Docker Engine + Docker CLI (installed the exact same way this
 # project's Linux quickstart.sh already installs it), then runs that same
-# quickstart.sh inside WSL2 to install and start OrderRestro. It also
+# quickstart.sh inside WSL2 to install and start Restrovia. It also
 # installs the native Windows Docker CLI (winget: Docker.DockerCLI) so
 # `docker` exists as a plain PowerShell command too, alongside the one
 # running inside WSL2.
@@ -81,14 +81,14 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         winget install -e --id Docker.DockerCLI --accept-source-agreements --accept-package-agreements
         Update-SessionPath
     } else {
-        Write-Host "winget isn't available, so the native Windows 'docker' command will be skipped — OrderRestro will still install and run fully inside WSL2." -ForegroundColor Yellow
+        Write-Host "winget isn't available, so the native Windows 'docker' command will be skipped — Restrovia will still install and run fully inside WSL2." -ForegroundColor Yellow
     }
 }
 
-Write-Host "==> Installing and starting Nodedr OrderRestro inside WSL2 (Docker Engine and git are installed automatically in there if needed)..."
+Write-Host "==> Installing and starting Restrovia inside WSL2 (Docker Engine and git are installed automatically in there if needed)..."
 wsl.exe -d $distroName -u root -- bash -lc "curl -fsSL $linuxQuickstartUrl | bash"
 
 Write-Host ""
-Write-Host "Nodedr OrderRestro is up and running." -ForegroundColor Green
+Write-Host "Restrovia is up and running." -ForegroundColor Green
 Write-Host "Open the URL shown above in your Windows browser — WSL2 forwards it to localhost automatically." -ForegroundColor Green
 Write-Host "To manage it later: open PowerShell and run: wsl -u root -- bash -lc `"cd ~/$repoDir && docker compose logs`"" -ForegroundColor Green

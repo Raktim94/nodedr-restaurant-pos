@@ -10,7 +10,7 @@ test("round-trips the order QR payload the kiosk ticket prints", () => {
 });
 
 test("tolerates the CR/LF and whitespace a keyboard-wedge scanner appends", () => {
-  assert.deepEqual(normalizeScan("  orderrestro:order:20261017-0042\r\n"), {
+  assert.deepEqual(normalizeScan("  restrovia:order:20261017-0042\r\n"), {
     kind: "order",
     orderNumber: "20261017-0042",
   });
@@ -36,7 +36,7 @@ test("rejects empty, oversized and unknown payloads instead of guessing", () => 
     kind: "invalid",
     reason: "unrecognized",
   });
-  assert.deepEqual(normalizeScan("orderrestro:order:<script>"), {
+  assert.deepEqual(normalizeScan("restrovia:order:<script>"), {
     kind: "invalid",
     reason: "unrecognized",
   });

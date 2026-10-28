@@ -6,7 +6,7 @@ import {
 import type {
   CreateIntegrationOrderDto,
   CreateIntegrationReservationDto,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeliveryService } from '../modules/delivery/delivery.service';
 import { OrdersService } from '../modules/orders/orders.service';

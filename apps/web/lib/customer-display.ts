@@ -14,7 +14,7 @@ export type DisplayState =
   | { kind: "upi"; total: number; uri: string; payee: string }
   | { kind: "paid"; total: number; method?: string };
 
-const CHANNEL = "orderrestro-customer-display";
+const CHANNEL = "restrovia-customer-display";
 
 export function publishDisplay(state: DisplayState) {
   if (typeof BroadcastChannel === "undefined") return;

@@ -7,7 +7,7 @@ import type {
   MenuCategoryDto,
   MenuItemDto,
   ModifierGroupDto,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { AuditService } from '../../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
 

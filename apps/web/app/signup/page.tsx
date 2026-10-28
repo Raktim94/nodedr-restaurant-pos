@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { registerSchema, type RegisterDto } from "@nodedr-restaurant/types";
+import { registerSchema, type RegisterDto } from "@restrovia/types";
 import { motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -51,7 +51,7 @@ export default function SignupPage() {
             <Logo size={44} />
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Nodedr OrderRestro
+            Restrovia
           </h1>
           <p className="text-sm text-muted-foreground">Set up your restaurant</p>
         </div>

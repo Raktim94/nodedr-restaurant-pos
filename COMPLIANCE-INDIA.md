@@ -4,24 +4,24 @@ Last updated 15 August 2026. Also published as a live page at `/docs/compliance-
 
 ## This is not legal advice
 
-This document explains how OrderRestro is built with reference to Indian law, so a restaurant operator deploying it can have an informed conversation with their own advisor — it is not a legal opinion, a certification, or a substitute for review by a qualified lawyer or chartered accountant. Laws referenced here (the DPDP Act 2023, IT Rules, CGST Rules, and CCPA guidelines) are current as of this document's last-updated date and may have changed since.
+This document explains how Restrovia is built with reference to Indian law, so a restaurant operator deploying it can have an informed conversation with their own advisor — it is not a legal opinion, a certification, or a substitute for review by a qualified lawyer or chartered accountant. Laws referenced here (the DPDP Act 2023, IT Rules, CGST Rules, and CCPA guidelines) are current as of this document's last-updated date and may have changed since.
 
 ## Who is the "data fiduciary"?
 
-OrderRestro is self-hosted software, not a cloud service Nodedr Infotech operates on your behalf. When a restaurant deploys OrderRestro on its own server, **that restaurant is the Data Fiduciary** under the Digital Personal Data Protection Act, 2023 (DPDP Act) for the customer and staff personal data it collects through the app — the same way a restaurant using a paper register or a locally-run spreadsheet would be. Nodedr Infotech does not receive, store, or process that data on its own infrastructure in a self-hosted deployment.
+Restrovia is self-hosted software, not a cloud service Nodedr Infotech operates on your behalf. When a restaurant deploys Restrovia on its own server, **that restaurant is the Data Fiduciary** under the Digital Personal Data Protection Act, 2023 (DPDP Act) for the customer and staff personal data it collects through the app — the same way a restaurant using a paper register or a locally-run spreadsheet would be. Nodedr Infotech does not receive, store, or process that data on its own infrastructure in a self-hosted deployment.
 
 This has a practical upside: because the entire stack (Postgres, API, and web app) runs on hardware the restaurant controls, data residency and cross-border transfer questions under the DPDP Act are largely avoided by construction — the data simply never leaves the deploying operator's own server unless they choose to move it.
 
 ## DPDP Act, 2023 — what the software supports
 
-The DPDP Act gives individuals ("Data Principals") rights to access, correct, and erase their personal data, and requires Data Fiduciaries to collect only what's needed for a stated purpose, retain it no longer than necessary, and provide a grievance-redressal channel. OrderRestro's data model and controls that a deploying restaurant can use to meet these:
+The DPDP Act gives individuals ("Data Principals") rights to access, correct, and erase their personal data, and requires Data Fiduciaries to collect only what's needed for a stated purpose, retain it no longer than necessary, and provide a grievance-redressal channel. Restrovia's data model and controls that a deploying restaurant can use to meet these:
 
 - Customer records (name, phone, order/visit history, loyalty points) are editable and deletable by any staff member with the `customers.manage` permission — supporting correction and erasure requests.
 - Only the data fields actually used by POS/CRM/loyalty features are collected — no speculative profile fields.
 - Role-based access control restricts who on staff can view customer contact details and order history, supporting a purpose-limitation and least-privilege posture.
-- Every table/order/session is scoped to the restaurant that created it — verified during a security audit that one restaurant's staff cannot query another restaurant's customer data, relevant if you run OrderRestro for multiple outlets on shared infrastructure.
+- Every table/order/session is scoped to the restaurant that created it — verified during a security audit that one restaurant's staff cannot query another restaurant's customer data, relevant if you run Restrovia for multiple outlets on shared infrastructure.
 
-What OrderRestro does *not* provide out of the box: a built-in consent-capture flow, an automated data-retention/deletion schedule, or a hosted grievance-officer contact form — these are organizational obligations the deploying restaurant (as Data Fiduciary) needs to put in place itself (e.g. a printed/posted privacy notice, a designated grievance contact, and a manual or scripted retention policy for old customer records).
+What Restrovia does *not* provide out of the box: a built-in consent-capture flow, an automated data-retention/deletion schedule, or a hosted grievance-officer contact form — these are organizational obligations the deploying restaurant (as Data Fiduciary) needs to put in place itself (e.g. a printed/posted privacy notice, a designated grievance contact, and a manual or scripted retention policy for old customer records).
 
 ## IT Act, 2000 & reasonable security practices
 
@@ -39,7 +39,7 @@ Transport encryption (HTTPS/TLS) for any deployment reachable beyond a trusted L
 
 ## GST invoicing (CGST Rules, Rule 46)
 
-Receipts generated by OrderRestro display the branch's GSTIN (when configured in Settings), an itemized CGST/SGST breakup, and a per-order invoice/order number. Whether your specific invoice numbering and layout fully satisfies Rule 46 of the CGST Rules, 2017 for your registration and turnover bracket (e.g. sequential numbering per financial year, HSN/SAC code requirements at your turnover level) is something to confirm with your chartered accountant before relying on OrderRestro receipts as your sole tax-invoice record — this software generates a receipt in the right shape, it does not itself certify GST compliance for your specific registration.
+Receipts generated by Restrovia display the branch's GSTIN (when configured in Settings), an itemized CGST/SGST breakup, and a per-order invoice/order number. Whether your specific invoice numbering and layout fully satisfies Rule 46 of the CGST Rules, 2017 for your registration and turnover bracket (e.g. sequential numbering per financial year, HSN/SAC code requirements at your turnover level) is something to confirm with your chartered accountant before relying on Restrovia receipts as your sole tax-invoice record — this software generates a receipt in the right shape, it does not itself certify GST compliance for your specific registration.
 
 ## Honest UI, on purpose (CCPA dark-patterns guidelines, 2023)
 

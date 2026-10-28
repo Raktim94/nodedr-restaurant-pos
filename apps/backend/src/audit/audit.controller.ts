@@ -3,7 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   auditLogListQuerySchema,
   type SessionUser,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { Auth } from '../common/decorators/auth.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuditService } from './audit.service';

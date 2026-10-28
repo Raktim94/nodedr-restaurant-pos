@@ -1,6 +1,6 @@
 import { applyDecorators, UseGuards } from '@nestjs/common';
 import { ApiCookieAuth } from '@nestjs/swagger';
-import type { PermissionKey } from '@nodedr-restaurant/types';
+import type { PermissionKey } from '@restrovia/types';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermission } from './permissions.decorator';

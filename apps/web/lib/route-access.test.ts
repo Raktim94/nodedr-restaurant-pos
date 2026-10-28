@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_ROLE_PERMISSIONS } from "@nodedr-restaurant/types";
+import { DEFAULT_ROLE_PERMISSIONS } from "@restrovia/types";
 import { canOpen, firstAllowedHref, requiredPermissionFor } from "./route-access.ts";
 
 const routes = [

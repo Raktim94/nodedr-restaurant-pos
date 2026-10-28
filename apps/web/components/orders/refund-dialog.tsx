@@ -1,7 +1,7 @@
 "use client";
 
 import { PaymentMethodButtons } from "@/components/pos/payment-method-buttons";
-import type { PaymentMethodDto } from "@nodedr-restaurant/types";
+import type { PaymentMethodDto } from "@restrovia/types";
 import { RotateCcw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";

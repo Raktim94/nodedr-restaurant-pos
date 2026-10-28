@@ -141,19 +141,19 @@ try {
     & pnpm install --frozen-lockfile
     if ($LASTEXITCODE -ne 0) { throw "pnpm install failed with exit code $LASTEXITCODE" }
 
-    Write-Host "-- Building @nodedr-restaurant/types" -ForegroundColor Yellow
-    & pnpm --filter '@nodedr-restaurant/types' build
+    Write-Host "-- Building @restrovia/types" -ForegroundColor Yellow
+    & pnpm --filter '@restrovia/types' build
     if ($LASTEXITCODE -ne 0) { throw "types build failed with exit code $LASTEXITCODE" }
 
     # Runs ON windows-latest, so Prisma's "native" binaryTarget (no
     # override in schema.prisma) correctly resolves to the Windows query
     # engine — no schema change needed, just this execution order.
     Write-Host "-- prisma generate (Windows engine)" -ForegroundColor Yellow
-    & pnpm --filter '@nodedr-restaurant/backend' exec prisma generate
+    & pnpm --filter '@restrovia/backend' exec prisma generate
     if ($LASTEXITCODE -ne 0) { throw "prisma generate failed with exit code $LASTEXITCODE" }
 
     Write-Host "-- Building backend" -ForegroundColor Yellow
-    & pnpm --filter '@nodedr-restaurant/backend' build
+    & pnpm --filter '@restrovia/backend' build
     if ($LASTEXITCODE -ne 0) { throw "backend build failed with exit code $LASTEXITCODE" }
 
     Write-Host "-- Building web (standalone output)" -ForegroundColor Yellow
@@ -220,7 +220,7 @@ try {
     # correctly) — sidesteps the whole class of bug rather than special-
     # casing prisma, and leaves .pnpm as a ~100KB empty vestige instead of
     # the full virtual store.
-    & pnpm --filter '@nodedr-restaurant/backend' deploy --prod --legacy --config.node-linker=hoisted $backendDeployTemp
+    & pnpm --filter '@restrovia/backend' deploy --prod --legacy --config.node-linker=hoisted $backendDeployTemp
     if ($LASTEXITCODE -ne 0) { throw "pnpm deploy failed with exit code $LASTEXITCODE" }
 }
 finally {
@@ -413,7 +413,7 @@ if (-not (Test-Path (Join-Path $postgresStage 'bin\pg_ctl.exe'))) {
 # --- 6. Strip any stray .env-shaped files that leaked in ------------------
 # pnpm's virtual store links each workspace package's node_modules entry
 # back to its real source directory (that's how e.g. `require
-# ('@nodedr-restaurant/types')` resolves at runtime) — dereferencing those
+# ('@restrovia/types')` resolves at runtime) — dereferencing those
 # via robocopy above pulls in whatever else lives in that source directory
 # too, including apps/backend/.env.example (a template with no real
 # secrets, but still not something that belongs in a shipped package).

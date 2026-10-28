@@ -24,7 +24,7 @@
 // downstream consumer (OrderItem.lineTotal, receipts, refunds, KOTs) keeps
 // working exactly as it did before this file existed.
 
-import type { TaxMode } from '@nodedr-restaurant/types';
+import type { TaxMode } from '@restrovia/types';
 
 export function toEffectiveInclusiveUnitPrice(
   rawUnitPrice: number,

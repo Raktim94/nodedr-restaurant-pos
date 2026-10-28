@@ -1,5 +1,5 @@
 import { SetMetadata } from '@nestjs/common';
-import type { IntegrationScope } from '@nodedr-restaurant/types';
+import type { IntegrationScope } from '@restrovia/types';
 
 export const INTEGRATION_SCOPES_KEY = 'requiredIntegrationScopes';
 

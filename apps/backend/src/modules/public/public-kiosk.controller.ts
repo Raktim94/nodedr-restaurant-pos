@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, UsePipes } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { kioskOrderSchema, type KioskOrderDto } from '@nodedr-restaurant/types';
+import { kioskOrderSchema, type KioskOrderDto } from '@restrovia/types';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PublicKioskService } from './public-kiosk.service';
 

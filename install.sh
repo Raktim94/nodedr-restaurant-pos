@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-click installer for Nodedr OrderRestro (nodedr-restaurant-pos).
+# One-click installer for Restrovia (nodedr-restaurant-pos).
 #
 # Run this from the repo root after cloning:
 #   ./install.sh
@@ -77,7 +77,7 @@ EOF
 fi
 
 # --- 3. Build the images and start the stack --------------------------------
-echo "Building Nodedr OrderRestro images and starting the stack (this can take a few minutes on first run)..."
+echo "Building Restrovia images and starting the stack (this can take a few minutes on first run)..."
 docker compose up -d --build
 
 # --- 4. Wait for the app to report healthy ----------------------------------
@@ -112,7 +112,7 @@ fi
 
 # --- 6. Done -----------------------------------------------------------------
 echo ""
-echo "Nodedr OrderRestro is up and running."
+echo "Restrovia is up and running."
 echo "Open http://localhost:${HOST_PORT}"
 if [ "$load_demo" = true ]; then
   echo "Sign in with the demo account: owner@demo.local / Password123!"

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { CreateRoleDto, UpdateRoleDto } from '@nodedr-restaurant/types';
+import type { CreateRoleDto, UpdateRoleDto } from '@restrovia/types';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 

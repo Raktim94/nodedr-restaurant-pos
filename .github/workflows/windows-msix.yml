@@ -1,6 +1,6 @@
 name: Windows MSIX build
 
-# Real build/package/install verification for the OrderRestro Windows
+# Real build/package/install verification for the Restrovia Windows
 # client, run on an actual windows-latest runner since no Windows machine
 # is available in local development. This is the authoritative PASS/FAIL
 # signal for "does the MSIX build and install" — see windows/msix/README.md
@@ -90,7 +90,7 @@ jobs:
       - name: Simulate existing user config (pre-upgrade)
         shell: pwsh
         run: |
-          $configDir = Join-Path $env:LOCALAPPDATA 'OrderRestro'
+          $configDir = Join-Path $env:LOCALAPPDATA 'Restrovia'
           New-Item -ItemType Directory -Force -Path $configDir | Out-Null
           '{"ServerUrl":"http://192.168.1.50:1995"}' | Set-Content (Join-Path $configDir 'config.json')
 
@@ -139,7 +139,7 @@ jobs:
           if ($pkg.Version.ToString() -ne $manifest.Package.Identity.Version) {
             throw "Expected version $($manifest.Package.Identity.Version) after upgrade, got $($pkg.Version)"
           }
-          $configPath = Join-Path $env:LOCALAPPDATA 'OrderRestro\config.json'
+          $configPath = Join-Path $env:LOCALAPPDATA 'Restrovia\config.json'
           if (-not (Test-Path $configPath)) { throw "Pre-upgrade config.json did not survive the upgrade" }
           $config = Get-Content $configPath -Raw | ConvertFrom-Json
           if ($config.ServerUrl -ne 'http://192.168.1.50:1995') {
@@ -203,7 +203,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: OrderRestro-wack-report-${{ github.sha }}
+          name: Restrovia-wack-report-${{ github.sha }}
           path: windows/msix/out/wack-report.xml
           if-no-files-found: warn
 
@@ -220,7 +220,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: OrderRestro-msix-${{ github.sha }}
+          name: Restrovia-msix-${{ github.sha }}
           path: windows/msix/out/OrderRestro.msix
           if-no-files-found: warn
 
@@ -253,7 +253,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: windows/msix/out/download-cache
-          key: ${{ runner.os }}-orderrestro-server-downloads-${{ hashFiles('windows/msix/stage-server-assets.ps1') }}
+          key: ${{ runner.os }}-restrovia-server-downloads-${{ hashFiles('windows/msix/stage-server-assets.ps1') }}
 
       - name: Add Windows SDK tools (makeappx, signtool) to PATH
         shell: pwsh
@@ -302,7 +302,7 @@ jobs:
           # Pre-seed config.json with Mode=embedded so InitializeAsync skips
           # FirstRunChoiceForm (a modal dialog — nothing in this job can
           # click through it) and goes straight into ServerSupervisor.
-          $configDir = Join-Path $env:LOCALAPPDATA 'OrderRestro'
+          $configDir = Join-Path $env:LOCALAPPDATA 'Restrovia'
           New-Item -ItemType Directory -Force -Path $configDir | Out-Null
           '{"Mode":"embedded","ServerUrl":"http://localhost:1995"}' | Set-Content (Join-Path $configDir 'config.json')
 
@@ -395,10 +395,10 @@ jobs:
           [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
           $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
           $exePath = Join-Path $pkg.InstallLocation 'OrderRestro.exe'
-          $configDir = Join-Path $env:LOCALAPPDATA 'OrderRestro'
+          $configDir = Join-Path $env:LOCALAPPDATA 'Restrovia'
           $supervisorErrorLog = Join-Path $configDir 'server\logs\supervisor-error.log'
 
-          $firstProc = Get-Process -Name 'OrderRestro' -ErrorAction SilentlyContinue | Select-Object -First 1
+          $firstProc = Get-Process -Name 'Restrovia' -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $firstProc) { throw "Test setup invalid: the first instance from the previous step isn't running" }
           $firstPid = $firstProc.Id
 
@@ -445,11 +445,11 @@ jobs:
           [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
           $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
           $exePath = Join-Path $pkg.InstallLocation 'OrderRestro.exe'
-          $configDir = Join-Path $env:LOCALAPPDATA 'OrderRestro'
+          $configDir = Join-Path $env:LOCALAPPDATA 'Restrovia'
           $supervisorErrorLog = Join-Path $configDir 'server\logs\supervisor-error.log'
 
           Write-Host "Force-killing OrderRestro.exe (simulating Task Manager / a crash)..." -ForegroundColor Cyan
-          Get-Process -Name 'OrderRestro' -ErrorAction SilentlyContinue | Stop-Process -Force
+          Get-Process -Name 'Restrovia' -ErrorAction SilentlyContinue | Stop-Process -Force
           Start-Sleep -Seconds 2
 
           $pgRunning = $false
@@ -464,7 +464,7 @@ jobs:
 
           if (Test-Path $supervisorErrorLog) { Remove-Item $supervisorErrorLog -Force }
 
-          Write-Host "Relaunching OrderRestro against the orphaned Postgres..." -ForegroundColor Cyan
+          Write-Host "Relaunching Restrovia against the orphaned Postgres..." -ForegroundColor Cyan
           Start-Process -FilePath $exePath
 
           function Wait-Health($url, $timeoutSec) {
@@ -488,7 +488,7 @@ jobs:
           if (-not $recovered) {
               Write-Host "---- startup.log ----" -ForegroundColor Yellow
               Get-Content (Join-Path $configDir 'server\logs\startup.log') -ErrorAction SilentlyContinue | Select-Object -Last 40
-              throw "OrderRestro did not recover after a forced kill left Postgres orphaned"
+              throw "Restrovia did not recover after a forced kill left Postgres orphaned"
           }
           Write-Host "Recovered cleanly: relaunch reused the orphaned Postgres instance." -ForegroundColor Green
 
@@ -502,13 +502,13 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          Get-Process -Name 'OrderRestro' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Process -Name 'Restrovia' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           # pg_ctl runs from the writable runtime copy, not the MSIX
           # install location (see ServerPaths.RuntimeServerDir / the
           # "Access is denied" comment on EnsureRuntimeCopyAsync) — use
           # that same copy here too, not $pkg.InstallLocation.
-          $pgCtl = Join-Path $env:LOCALAPPDATA 'OrderRestro\server\server-runtime\postgres\bin\pg_ctl.exe'
-          $pgData = Join-Path $env:LOCALAPPDATA 'OrderRestro\server\pgdata'
+          $pgCtl = Join-Path $env:LOCALAPPDATA 'Restrovia\server\server-runtime\postgres\bin\pg_ctl.exe'
+          $pgData = Join-Path $env:LOCALAPPDATA 'Restrovia\server\pgdata'
           if ((Test-Path $pgCtl) -and (Test-Path $pgData)) {
               & $pgCtl stop -D $pgData -m immediate -w 2>&1 | Out-Null
           }
@@ -526,6 +526,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: OrderRestro-embedded-server-msix-${{ github.sha }}
+          name: Restrovia-embedded-server-msix-${{ github.sha }}
           path: windows/msix/out/OrderRestro.msix
           if-no-files-found: warn

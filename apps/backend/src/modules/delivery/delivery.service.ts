@@ -7,7 +7,7 @@ import type {
   DeliveryStatusDto,
   DeliveryZoneDto,
   DeliveryZoneUpdateDto,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { WebhooksService } from '../webhooks/webhooks.service';

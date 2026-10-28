@@ -121,7 +121,7 @@ export class RealtimeGateway
       const idx = part.indexOf('=');
       if (idx === -1) continue;
       const name = part.slice(0, idx).trim();
-      if (name === 'nodedr_session') {
+      if (name === 'restrovia_session') {
         return decodeURIComponent(part.slice(idx + 1).trim());
       }
     }

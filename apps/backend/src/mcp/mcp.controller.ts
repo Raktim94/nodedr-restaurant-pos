@@ -14,7 +14,7 @@ import type { AuthenticatedRequest } from '../common/types/authenticated-request
 import { McpToolsBuilder } from './mcp-tools.builder';
 
 // Reachable at /api/v1/mcp. Point an MCP client (Claude Desktop, etc.) at
-// https://<your-orderrestro-domain>/api/v1/mcp with an
+// https://<your-restrovia-domain>/api/v1/mcp with an
 // Authorization: Bearer <staff api key> header — see
 // docs/integrations-api.md's "MCP server" section, and Settings > API Keys
 // & MCP to generate a key.

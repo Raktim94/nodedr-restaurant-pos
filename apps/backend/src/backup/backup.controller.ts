@@ -16,7 +16,7 @@ import {
   restoreBackupSchema,
   setBackupConfigSchema,
   type SessionUser,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { Auth } from '../common/decorators/auth.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
@@ -90,7 +90,7 @@ export class BackupController {
     const { workDir, dbDumpPath, uploadsArchivePath } =
       await this.backupService.prepareLocalExport(user);
 
-    const filename = `orderrestro-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+    const filename = `restrovia-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 

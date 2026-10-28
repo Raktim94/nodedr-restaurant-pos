@@ -7,7 +7,7 @@ import type {
   DocumentDto,
   EquipmentDto,
   ServiceLogDto,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { addDaysToDate, localDate } from '../../common/time';
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { PrismaService } from '../../prisma/prisma.service';

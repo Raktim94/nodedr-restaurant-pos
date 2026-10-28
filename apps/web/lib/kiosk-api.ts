@@ -3,7 +3,7 @@
 // "the server said no", and needs a hard timeout so a stalled network can't
 // leave a customer staring at a spinner forever.
 
-import type { KioskServiceType } from "@nodedr-restaurant/types";
+import type { KioskServiceType } from "@restrovia/types";
 
 export interface KioskModifier {
   id: string;

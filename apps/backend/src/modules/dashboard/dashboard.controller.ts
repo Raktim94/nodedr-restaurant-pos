@@ -1,6 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import type { SessionUser } from '@nodedr-restaurant/types';
+import type { SessionUser } from '@restrovia/types';
 import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { BranchAccessService } from '../../common/services/branch-access.service';

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import type { IngredientUnit } from "@nodedr-restaurant/types";
+import type { IngredientUnit } from "@restrovia/types";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

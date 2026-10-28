@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import type { IssueGiftCardDto } from '@nodedr-restaurant/types';
+import type { IssueGiftCardDto } from '@restrovia/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { round2 } from '../orders/pricing';
 

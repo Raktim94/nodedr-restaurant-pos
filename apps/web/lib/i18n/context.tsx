@@ -18,7 +18,7 @@ import es from "./dictionaries/es.json";
 import fr from "./dictionaries/fr.json";
 
 const DICTIONARIES: Record<Locale, Record<string, string>> = { en, es, fr };
-const STORAGE_KEY = "nodedr-locale";
+const STORAGE_KEY = "restrovia-locale";
 
 function detectBrowserLocale(): Locale {
   if (typeof navigator === "undefined") return DEFAULT_LOCALE;

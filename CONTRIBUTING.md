@@ -1,4 +1,4 @@
-# Contributing to Nodedr OrderRestro
+# Contributing to Restrovia
 
 First off — thank you for considering a contribution. This is a young,
 fast-moving project (Phases 0-3 of a 20-module scope are done; see
@@ -90,7 +90,7 @@ they are not published directly to the host.
 pnpm install
 docker compose up -d postgres                               # just the DB
 cp apps/backend/.env.example apps/backend/.env               # point DATABASE_URL at your Postgres
-pnpm --filter @nodedr-restaurant/types build
+pnpm --filter @restrovia/types build
 cd apps/backend && npx prisma migrate dev && npx ts-node prisma/seed.ts && cd ../..
 pnpm dev   # runs backend (:4001) and web (:1995) together via Turborepo
 ```

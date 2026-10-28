@@ -9,7 +9,7 @@ import type {
   SupplierDto,
   RecipeLineDto,
   MenuItemTrackingDto,
-} from '@nodedr-restaurant/types';
+} from '@restrovia/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { round2 } from '../../common/money';
 import { StockService } from './stock.service';

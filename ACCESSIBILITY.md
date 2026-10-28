@@ -4,7 +4,7 @@ Last updated 15 August 2026. Also published as a live page at `/docs/accessibili
 
 ## Our target
 
-Nodedr OrderRestro targets **WCAG 2.1 Level AA** across the marketing site and the product application (POS, dashboard, kitchen display, settings). This is the standard referenced by India's Rights of Persons with Disabilities Act, 2016 and its associated accessibility rules, and is the de facto baseline for software sold or deployed in India today.
+Restrovia targets **WCAG 2.1 Level AA** across the marketing site and the product application (POS, dashboard, kitchen display, settings). This is the standard referenced by India's Rights of Persons with Disabilities Act, 2016 and its associated accessibility rules, and is the de facto baseline for software sold or deployed in India today.
 
 This statement is a good-faith, current snapshot — not a certification. We have not engaged a third-party auditor or obtained formal WCAG-AA certification for this product.
 
