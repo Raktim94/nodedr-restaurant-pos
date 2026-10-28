@@ -5,7 +5,7 @@ import { downloadHref } from "@/lib/downloads";
 
 export const metadata: Metadata = {
   title: "Documentation — Restrovia",
-  description: "API & MCP, accessibility, and India compliance docs for a self-hosted Restrovia instance.",
+  description: "API & MCP, accessibility, and India compliance docs for Restrovia.",
 };
 
 const docs = [

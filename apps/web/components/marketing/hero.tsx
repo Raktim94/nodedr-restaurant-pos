@@ -26,7 +26,7 @@ export function Hero() {
           className="mb-6 inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground"
         >
           <span className="size-1.5 rounded-full bg-success" />
-          Open source · AGPL-3.0 · self-hosted
+          Cloud restaurant management · offline-ready
         </motion.div>
 
         <h1 className="flex flex-wrap justify-center gap-x-3 text-4xl font-semibold tracking-tight text-foreground sm:text-6xl">
@@ -50,9 +50,9 @@ export function Hero() {
           className="mt-6 max-w-2xl text-balance text-lg text-muted-foreground sm:text-xl"
         >
           POS, kitchen display, tables, reservations, inventory, and CRM — one
-          self-hosted stack that runs on your own LAN. No subscription, no
-          forced cloud dependency, no vendor lock-in. Your orders, your
-          customers&rsquo; data, your server.
+          platform for your whole restaurant. Keep taking orders and
+          printing bills even when the internet drops. Your orders, your
+          customers&rsquo; data, one login.
         </motion.p>
 
         <motion.div

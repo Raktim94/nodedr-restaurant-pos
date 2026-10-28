@@ -40,8 +40,8 @@ export function MarketingFooter() {
               <span className="text-sm font-semibold text-foreground">Restrovia</span>
             </Link>
             <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-              Offline-first restaurant management, self-hosted on your own
-              server. Built by Nodedr Infotech Private Limited.
+              Offline-first restaurant management in the cloud. Based on open-source
+              software by Nodedr Infotech Private Limited.
             </p>
           </div>
 

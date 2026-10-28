@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function ComplianceIndiaPage() {
   return (
-    <DocPage title="India compliance notes" updated="15 August 2026">
+    <DocPage title="India compliance notes" updated="28 October 2026">
       <DocSection heading="This is not legal advice">
         <p>
           This page explains how Restrovia is built with reference to
@@ -24,17 +24,20 @@ export default function ComplianceIndiaPage() {
 
       <DocSection heading="Who is the &ldquo;data fiduciary&rdquo;?">
         <p>
-          Restrovia is self-hosted software, not a cloud service Nodedr
-          Infotech operates on your behalf. When a restaurant deploys
-          Restrovia on its own server, <strong className="text-foreground">
-          that restaurant is the Data Fiduciary</strong> under the Digital
-          Personal Data Protection Act, 2023 (DPDP Act) for the customer and
-          staff personal data it collects through the app — the same way a
-          restaurant using a paper register or a locally-run spreadsheet
-          would be. Nodedr Infotech does not receive, store, or process that
-          data on its own infrastructure in a self-hosted deployment.
+          Restrovia is a hosted service: we run the servers and database on
+          your behalf. The restaurant that signs up is the{" "}
+          <strong className="text-foreground">Data Fiduciary</strong> under
+          the Digital Personal Data Protection Act, 2023 (DPDP Act) for the
+          customer and staff personal data it collects through the app, and
+          Restrovia processes that data only to provide the service, as a
+          data processor acting on the restaurant&rsquo;s instructions.
         </p>
-        <p>This has a practical upside: because the entire stack (Postgres, API, and web app) runs on hardware the restaurant controls, data residency and cross-border transfer questions under the DPDP Act are largely avoided by construction — the data simply never leaves the deploying operator&rsquo;s own server unless they choose to move it.</p>
+        <p>
+          Where the data is hosted, which sub-processors are used and how
+          cross-border transfers are handled are set out in the Restrovia
+          service agreement and privacy policy. Please read those before
+          you start collecting customer data.
+        </p>
       </DocSection>
 
       <DocSection heading="DPDP Act, 2023 — what the software supports">
@@ -51,15 +54,14 @@ export default function ComplianceIndiaPage() {
             "Customer records (name, phone, order/visit history, loyalty points) are editable and deletable by any staff member with the customers.manage permission — supporting correction and erasure requests.",
             "Only the data fields actually used by POS/CRM/loyalty features are collected — no speculative profile fields.",
             "Role-based access control restricts who on staff can view customer contact details and order history, supporting a purpose-limitation and least-privilege posture.",
-            "Every table/order/session is scoped to the restaurant that created it — verified during a security audit that one restaurant's staff cannot query another restaurant's customer data, relevant if you run Restrovia for multiple outlets on shared infrastructure.",
+            "Every table/order/session is scoped to the restaurant that created it — verified during a security audit that one restaurant's staff cannot query another restaurant's customer data, which is what keeps each restaurant&rsquo;s data separate on Restrovia&rsquo;s shared infrastructure.",
           ]}
         />
         <p>
           What Restrovia does <em>not</em> provide out of the box: a
           built-in consent-capture flow, an automated data-retention/deletion
-          schedule, or a hosted grievance-officer contact form — these are
-          organizational obligations the deploying restaurant (as Data
-          Fiduciary) needs to put in place itself (e.g. a printed/posted
+          schedule, or a grievance-officer contact form for your own customers — these are
+          organizational obligations the restaurant (as Data Fiduciary) needs to put in place itself (e.g. a printed/posted
           privacy notice, a designated grievance contact, and a manual or
           scripted retention policy for old customer records).
         </p>
@@ -86,12 +88,10 @@ export default function ComplianceIndiaPage() {
           ]}
         />
         <p>
-          Transport encryption (HTTPS/TLS) for any deployment reachable
-          beyond a trusted LAN is the deploying operator&rsquo;s
-          responsibility — typically via a reverse proxy (Caddy, nginx, or a
-          tunnel provider) in front of the app. A LAN-only deployment behind
-          a restaurant&rsquo;s own router is not directly exposed to the
-          public internet by default.
+          Restrovia is served over HTTPS. Devices on your own premises, such
+          as printers and kitchen displays, connect through your
+          restaurant&rsquo;s network, so keeping that network secured is your
+          responsibility.
         </p>
       </DocSection>
 
@@ -111,28 +111,15 @@ export default function ComplianceIndiaPage() {
         </p>
       </DocSection>
 
-      <DocSection heading="Honest UI, on purpose (CCPA dark-patterns guidelines, 2023)">
-        <p>
-          The Central Consumer Protection Authority&rsquo;s 2023 guidelines
-          on misleading advertisements and dark patterns explicitly name
-          fabricated urgency, fake activity counters, and false social
-          proof as prohibited practices. This site&rsquo;s download counter
-          is a real, server-side count of actual link click-throughs,
-          starting from zero — never pre-seeded with an invented number. If
-          you build on this codebase, we&rsquo;d ask you to keep that
-          practice rather than quietly seed it later.
-        </p>
-      </DocSection>
-
       <DocSection heading="Questions">
         <p>
-          For questions about this software&rsquo;s architecture or
-          security posture, open an issue on{" "}
+          For questions about Restrovia&rsquo;s architecture or security
+          posture, please{" "}
           <a
-            href="https://github.com/Raktim94/nodedr-restaurant-pos/issues"
+            href="https://restrovia.shop/contact"
             className="text-primary underline underline-offset-4"
           >
-            GitHub
+            contact us
           </a>
           . For questions about your own restaurant&rsquo;s legal
           obligations as a Data Fiduciary or GST-registered business, please

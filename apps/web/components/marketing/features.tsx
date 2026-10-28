@@ -56,9 +56,9 @@ const features = [
   },
   {
     icon: GitBranch,
-    title: "Open source, no lock-in",
+    title: "Works offline, syncs when back",
     description:
-      "AGPL-3.0 licensed. Self-host on Docker, CasaOS/ZimaOS, or a Windows client — your data never has to leave your building.",
+      "Orders, billing, kitchen tickets and printing keep working through an internet outage, and catch up automatically once you are back online.",
   },
   {
     icon: Plug,
