@@ -4,6 +4,10 @@ import { PassportStrategy } from '@nestjs/passport';
 import type { SessionUser } from '@nodedr-restaurant/types';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  effectivePermissions,
+  permissionInclude,
+} from './effective-permissions';
 
 interface JwtPayload {
   sub: string;
@@ -31,9 +35,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: JwtPayload): Promise<SessionUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      include: {
-        role: { include: { permissions: { include: { permission: true } } } },
-      },
+      include: permissionInclude,
     });
 
     if (!user || !user.isActive) {
@@ -46,7 +48,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       name: user.name,
       roleId: user.roleId,
       roleName: user.role.name,
-      permissions: user.role.permissions.map((rp) => rp.permission.key),
+      permissions: effectivePermissions(user),
     };
   }
 }

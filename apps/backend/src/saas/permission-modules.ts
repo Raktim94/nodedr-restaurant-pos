@@ -1,6 +1,7 @@
 import { ModuleKey } from '@prisma/client';
 
 const PREFIX_MODULES: Record<string, ModuleKey> = {
+  ai: ModuleKey.AI,
   accounting: ModuleKey.ACCOUNTING,
   attendance: ModuleKey.HR,
   backup: ModuleKey.OPERATIONS,

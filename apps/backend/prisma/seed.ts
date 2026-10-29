@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { ModuleKey, PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import {
   DEFAULT_ROLE_PERMISSIONS,
@@ -29,6 +29,55 @@ function priceLine(
 const prisma = new PrismaClient();
 
 async function main() {
+  console.log('Seeding SaaS plans...');
+  const plans = [
+    {
+      code: 'BASIC',
+      name: 'Basic',
+      monthlyPrice: 1499,
+      annualPrice: 14990,
+      maxUsers: 10,
+      maxBranches: 1,
+      modules: [ModuleKey.POS, ModuleKey.KDS, ModuleKey.MENU, ModuleKey.TABLES],
+    },
+    {
+      code: 'PRO',
+      name: 'Pro',
+      monthlyPrice: 3499,
+      annualPrice: 34990,
+      maxUsers: 40,
+      maxBranches: 5,
+      modules: Object.values(ModuleKey).filter((key) => key !== ModuleKey.AI),
+    },
+    {
+      code: 'MAX',
+      name: 'Max',
+      monthlyPrice: 6999,
+      annualPrice: 69990,
+      maxUsers: null,
+      maxBranches: null,
+      modules: Object.values(ModuleKey),
+    },
+  ];
+  for (const plan of plans) {
+    const { modules, ...planData } = plan;
+    const saved = await prisma.subscriptionPlan.upsert({
+      where: { code: plan.code },
+      update: {
+        name: plan.name,
+        monthlyPrice: plan.monthlyPrice,
+        annualPrice: plan.annualPrice,
+        maxUsers: plan.maxUsers,
+        maxBranches: plan.maxBranches,
+      },
+      create: planData,
+    });
+    await prisma.planModule.deleteMany({ where: { planId: saved.id } });
+    await prisma.planModule.createMany({
+      data: modules.map((moduleKey) => ({ planId: saved.id, moduleKey })),
+    });
+  }
+
   console.log('Seeding permissions...');
   for (const permission of PERMISSIONS) {
     await prisma.permission.upsert({

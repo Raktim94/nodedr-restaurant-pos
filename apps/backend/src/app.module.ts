@@ -44,6 +44,7 @@ import { McpModule } from './mcp/mcp.module';
 import { SystemModule } from './system/system.module';
 import { VerifactuModule } from './modules/verifactu/verifactu.module';
 import { SaasModule } from './saas/saas.module';
+import { AiModule } from './modules/ai/ai.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { SaasModule } from './saas/saas.module';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     PrismaModule,
     SaasModule,
+    AiModule,
     RealtimeModule,
     AuthModule,
     MenuModule,

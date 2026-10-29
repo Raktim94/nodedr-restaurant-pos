@@ -21,7 +21,11 @@ export class EntitlementsGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     if (!request.user) return true;
 
-    const modules = new Set((required ?? []).map(moduleForPermission).filter(Boolean));
+    await this.entitlements.assertTenantActive(request.user.restaurantId);
+
+    const modules = new Set(
+      (required ?? []).map(moduleForPermission).filter(Boolean),
+    );
     for (const moduleKey of modules) {
       await this.entitlements.assertModuleEnabled(
         request.user.restaurantId,
