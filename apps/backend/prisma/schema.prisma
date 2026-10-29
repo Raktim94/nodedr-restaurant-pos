@@ -12,6 +12,52 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELLED
+  EXPIRED
+}
+
+enum ModuleKey {
+  POS
+  KDS
+  MENU
+  TABLES
+  INVENTORY
+  PURCHASING
+  ACCOUNTING
+  HR
+  DELIVERY
+  CRM
+  MARKETING
+  REPORTS
+  OPERATIONS
+  AI
+}
+
+enum UsagePeriod {
+  DAILY
+  MONTHLY
+}
+
+enum PlatformRole {
+  SUPER_ADMIN
+  SUPPORT
+  BILLING
+  AUDITOR
+}
+
 // ---------------------------------------------------------------------------
 // Tenancy / Branch
 // ---------------------------------------------------------------------------
@@ -41,16 +87,20 @@ enum TaxMode {
 }
 
 model Restaurant {
-  id        String  @id @default(cuid())
-  name      String
-  legalName String?
+  id               String       @id @default(cuid())
+  name             String
+  legalName        String?
   // The restaurant's own branding, shown in the app shell (sidebar header,
   // login screen) in place of the Nodedr OrderRestro product mark — this is
   // white-label self-hosted software, so the operator's brand should lead;
   // the product name stays as a small credit line instead (see BrandFooter).
-  logoUrl   String?
-  currency  String  @default("INR")
-  timezone  String  @default("Asia/Kolkata")
+  logoUrl          String?
+  currency         String       @default("INR")
+  timezone         String       @default("Asia/Kolkata")
+  status           TenantStatus @default(TRIAL)
+  trialEndsAt      DateTime?
+  suspendedAt      DateTime?
+  suspensionReason String?
 
   // UPI payee for the dynamic QR shown at checkout and on the customer
   // display (NPCI deep link, see apps/web/lib/upi.ts). Optional: when unset
@@ -73,6 +123,13 @@ model Restaurant {
   users              User[]
   integrationApiKeys IntegrationApiKey[]
   webhookEndpoints   WebhookEndpoint[]
+  subscriptions      Subscription[]
+  tenantModules      TenantModule[]
+  departments        Department[]
+  usageCounters      UsageCounter[]
+  apiQuotas          ApiQuota[]
+  aiUsageLogs        AiUsageLog[]
+  featureFlags       FeatureFlag[]
 
   @@map("restaurants")
 }
@@ -174,6 +231,7 @@ model Branch {
   supplierPayments   SupplierPayment[]
   notifications      Notification[]
   integrationApiKeys IntegrationApiKey[]
+  departments        Department[]
 
   @@index([restaurantId])
   @@map("branches")
@@ -195,25 +253,30 @@ model Permission {
   label    String
   category String // grouping for the settings UI, e.g. "Orders", "Inventory"
 
-  roles RolePermission[]
+  roles         RolePermission[]
+  userOverrides UserPermissionOverride[]
 
   @@map("permissions")
 }
 
 model Role {
-  id           String     @id @default(cuid())
+  id           String      @id @default(cuid())
   restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   name      String
   label     String
   isSystem  Boolean  @default(true) // seeded default role vs. custom role
   createdAt DateTime @default(now())
 
-  permissions RolePermission[]
-  users       User[]
+  permissions         RolePermission[]
+  users               User[]
+  permissionOverrides UserPermissionOverride[]
 
   @@unique([restaurantId, name])
+  @@index([departmentId])
   @@map("roles")
 }
 
@@ -249,12 +312,15 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branches      UserBranch[]
-  waiterTables  Table[]        @relation("TableWaiter")
-  ordersCreated Order[]        @relation("OrderCreatedBy")
-  auditLogs     AuditLog[]
-  refundsIssued Refund[]
-  notifications Notification[] @relation("NotificationRecipient")
+  branches            UserBranch[]
+  waiterTables        Table[]                  @relation("TableWaiter")
+  ordersCreated       Order[]                  @relation("OrderCreatedBy")
+  auditLogs           AuditLog[]
+  refundsIssued       Refund[]
+  notifications       Notification[]           @relation("NotificationRecipient")
+  departments         UserDepartment[]
+  permissionOverrides UserPermissionOverride[]
+  aiUsageLogs         AiUsageLog[]
 
   purchaseOrdersCreated PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
   goodsReceiptsReceived GoodsReceipt[]  @relation("GoodsReceiptReceivedBy")
@@ -347,6 +413,210 @@ model UserBranch {
 
   @@id([userId, branchId])
   @@map("user_branches")
+}
+
+// ---------------------------------------------------------------------------
+// SaaS plans, module entitlements and department-scoped access
+// ---------------------------------------------------------------------------
+
+model SubscriptionPlan {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  description  String?
+  currency     String   @default("INR")
+  monthlyPrice Decimal  @default(0) @db.Decimal(12, 2)
+  annualPrice  Decimal  @default(0) @db.Decimal(12, 2)
+  maxUsers     Int?
+  maxBranches  Int?
+  maxStorageMb Int?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  modules       PlanModule[]
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+model PlatformUser {
+  id               String       @id @default(cuid())
+  name             String
+  email            String       @unique
+  passwordHash     String
+  role             PlatformRole @default(SUPPORT)
+  isActive         Boolean      @default(true)
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean      @default(false)
+  lastLoginAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@map("platform_users")
+}
+
+model PlanModule {
+  planId    String
+  plan      SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  moduleKey ModuleKey
+  enabled   Boolean          @default(true)
+  limits    Json?
+
+  @@id([planId, moduleKey])
+  @@map("plan_modules")
+}
+
+model Subscription {
+  id                     String             @id @default(cuid())
+  restaurantId           String
+  restaurant             Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  planId                 String
+  plan                   SubscriptionPlan   @relation(fields: [planId], references: [id])
+  status                 SubscriptionStatus @default(TRIALING)
+  startsAt               DateTime           @default(now())
+  trialEndsAt            DateTime?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelledAt            DateTime?
+  externalCustomerId     String?
+  externalSubscriptionId String?            @unique
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@index([restaurantId, status])
+  @@map("subscriptions")
+}
+
+model TenantModule {
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  moduleKey    ModuleKey
+  enabled      Boolean    @default(true)
+  source       String     @default("PLAN")
+  limits       Json?
+  expiresAt    DateTime?
+  updatedAt    DateTime   @updatedAt
+
+  @@id([restaurantId, moduleKey])
+  @@map("tenant_modules")
+}
+
+model FeatureFlag {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  key          String
+  enabled      Boolean    @default(false)
+  config       Json?
+  expiresAt    DateTime?
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([restaurantId, key])
+  @@map("feature_flags")
+}
+
+model Department {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  branchId     String?
+  branch       Branch?    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  name         String
+  code         String
+  moduleKey    ModuleKey?
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  roles Role[]
+  users UserDepartment[]
+
+  @@unique([restaurantId, code])
+  @@index([branchId])
+  @@map("departments")
+}
+
+model UserDepartment {
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  isAdmin      Boolean    @default(false)
+  validFrom    DateTime   @default(now())
+  validUntil   DateTime?
+
+  @@id([userId, departmentId])
+  @@map("user_departments")
+}
+
+model UserPermissionOverride {
+  id           String     @id @default(cuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId       String?
+  role         Role?      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  allowed      Boolean
+  validFrom    DateTime   @default(now())
+  validUntil   DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@unique([userId, permissionId])
+  @@index([roleId])
+  @@map("user_permission_overrides")
+}
+
+model UsageCounter {
+  id           String      @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  metric       String
+  period       UsagePeriod
+  periodStart  DateTime
+  value        BigInt      @default(0)
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([restaurantId, metric, period, periodStart])
+  @@map("usage_counters")
+}
+
+model ApiQuota {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  provider     String
+  dailyLimit   Int?
+  monthlyLimit Int?
+  tokenLimit   BigInt?
+  hardStop     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([restaurantId, provider])
+  @@map("api_quotas")
+}
+
+model AiUsageLog {
+  id            String     @id @default(cuid())
+  restaurantId  String
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  provider      String
+  model         String
+  feature       String
+  requestId     String?    @unique
+  inputTokens   Int        @default(0)
+  outputTokens  Int        @default(0)
+  estimatedCost Decimal    @default(0) @db.Decimal(14, 6)
+  status        String
+  errorCode     String?
+  createdAt     DateTime   @default(now())
+
+  @@index([restaurantId, createdAt])
+  @@map("ai_usage_logs")
 }
 
 model AuditLog {

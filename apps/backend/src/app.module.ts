@@ -43,6 +43,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
 import { McpModule } from './mcp/mcp.module';
 import { SystemModule } from './system/system.module';
 import { VerifactuModule } from './modules/verifactu/verifactu.module';
+import { SaasModule } from './saas/saas.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { VerifactuModule } from './modules/verifactu/verifactu.module';
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     PrismaModule,
+    SaasModule,
     RealtimeModule,
     AuthModule,
     MenuModule,
