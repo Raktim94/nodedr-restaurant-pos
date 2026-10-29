@@ -410,6 +410,43 @@ if (-not (Test-Path (Join-Path $postgresStage 'bin\pg_ctl.exe'))) {
     throw "Postgres staging looks wrong — bin\pg_ctl.exe not found under $postgresStage"
 }
 
+# Bundle the Visual C++ runtime next to postgres.exe (app-local deployment,
+# explicitly permitted by Microsoft for these redistributable DLLs). This
+# Postgres is an MSVC build that imports vcruntime140.dll; a clean customer
+# PC without the VC++ Redistributable has no copy, so initdb/pg_ctl die with
+# STATUS_DLL_NOT_FOUND (0xC0000135) and no log output — the "couldn't start
+# its local database" failure. The CI runner always has the redistributable
+# installed, which is why CI never caught it.
+Write-Host "-- Bundling Visual C++ runtime DLLs next to Postgres" -ForegroundColor Yellow
+$crtNames = 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll', 'concrt140.dll'
+$crtDirs = @()
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+if (Test-Path $vswhere) {
+    $vsPath = & $vswhere -latest -products * -property installationPath
+    if ($vsPath) {
+        $crtDirs += Get-ChildItem (Join-Path $vsPath 'VC\Redist\MSVC') -Recurse -Directory -Filter 'Microsoft.VC*.CRT' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\' -and $_.FullName -notmatch 'onecore|debug' } |
+            Sort-Object FullName -Descending | ForEach-Object { $_.FullName }
+    }
+}
+$crtDirs += (Join-Path $env:SystemRoot 'System32')
+$pgBin = Join-Path $postgresStage 'bin'
+foreach ($name in $crtNames) {
+    foreach ($dir in $crtDirs) {
+        $src = Join-Path $dir $name
+        if (Test-Path $src) {
+            Copy-Item $src (Join-Path $pgBin $name) -Force
+            Write-Host "   $name <- $dir" -ForegroundColor DarkGray
+            break
+        }
+    }
+}
+foreach ($required in 'vcruntime140.dll', 'msvcp140.dll') {
+    if (-not (Test-Path (Join-Path $pgBin $required))) {
+        throw "Could not find $required to bundle with Postgres (searched: $($crtDirs -join '; '))"
+    }
+}
+
 # --- 6. Strip any stray .env-shaped files that leaked in ------------------
 # pnpm's virtual store links each workspace package's node_modules entry
 # back to its real source directory (that's how e.g. `require

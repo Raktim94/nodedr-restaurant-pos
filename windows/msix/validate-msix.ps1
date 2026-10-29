@@ -214,6 +214,8 @@ try {
                 'postgres\bin\pg_ctl.exe',
                 'postgres\bin\initdb.exe',
                 'postgres\bin\postgres.exe',
+                'postgres\bin\vcruntime140.dll',
+                'postgres\bin\msvcp140.dll',
                 'node\node.exe',
                 'backend\dist\src\main.js',
                 'backend\node_modules\prisma\build\index.js',
@@ -222,6 +224,32 @@ try {
             foreach ($rel in $required) {
                 if (-not (Test-Path (Join-Path $serverDir $rel))) {
                     throw "Missing embedded server asset: server\$rel — stage-server-assets.ps1 likely failed silently or its output layout changed without this check being updated"
+                }
+            }
+        }
+
+        Test-Check "Postgres binaries ship every non-Windows DLL they import (no VC++ Redistributable needed)" {
+            # CI runners always have the VC++ redistributable installed, so a
+            # real launch can't catch this; check the import table instead.
+            $pgBin = Join-Path $tempDir 'server\postgres\bin'
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+            $dumpbin = $null
+            if (Test-Path $vswhere) {
+                $vs = & $vswhere -latest -products * -property installationPath
+                if ($vs) {
+                    $dumpbin = Get-ChildItem (Join-Path $vs 'VC\Tools\MSVC') -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+                        Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+                }
+            }
+            if (-not $dumpbin) { Write-Host "   (dumpbin not found - skipping import check; file-presence check above still ran)" -ForegroundColor Yellow; return }
+            foreach ($exe in 'postgres.exe', 'pg_ctl.exe', 'initdb.exe') {
+                $deps = & $dumpbin.FullName /nologo /dependents (Join-Path $pgBin $exe) |
+                    Where-Object { $_ -match '^\s+\S+\.dll\s*$' } | ForEach-Object { $_.Trim() }
+                foreach ($dll in $deps) {
+                    $isSystem = ($dll -match '^(api-ms-win-|ext-ms-win-)') -or (Test-Path (Join-Path $env:SystemRoot "System32\$dll")) -and ($dll -notmatch '^(vcruntime|msvcp|concrt|vcomp)')
+                    if (-not $isSystem -and -not (Test-Path (Join-Path $pgBin $dll))) {
+                        throw "$exe imports $dll but it is not bundled in postgres\bin - customer PCs without the VC++ Redistributable will fail to start the database"
+                    }
                 }
             }
         }

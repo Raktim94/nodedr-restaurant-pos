@@ -194,7 +194,7 @@ internal sealed class ServerSupervisor : IDisposable
                 env: null,
                 "initdb",
                 ct);
-            if (exit != 0) throw new InvalidOperationException($"initdb failed with exit code {exit} — see {ServerPaths.ServerLogDir}");
+            if (exit != 0) throw new InvalidOperationException($"initdb failed: {DescribeExitCode(exit)} — see {ServerPaths.ServerLogDir}");
         }
         finally
         {
@@ -318,9 +318,21 @@ internal sealed class ServerSupervisor : IDisposable
         LogStartup($"pg_ctl start exit code: {exit}");
         if (exit != 0)
         {
-            throw new InvalidOperationException(DiagnosePostgresFailure(logPath));
+            throw new InvalidOperationException($"pg_ctl start failed: {DescribeExitCode(exit)}\n\n{DiagnosePostgresFailure(logPath)}");
         }
     }
+
+    // Windows loader failures kill a process before it can log anything, so
+    // an empty postgres.log plus one of these exit codes is the signature of
+    // a missing/blocked DLL rather than a database problem.
+    private static string DescribeExitCode(int exit) => unchecked((uint)exit) switch
+    {
+        0xC0000135 => $"exit code {exit} (a required DLL was not found — the Visual C++ runtime is missing or blocked)",
+        0xC000007B => $"exit code {exit} (a DLL could not be loaded — 32/64-bit mismatch or corrupted runtime)",
+        0xC0000142 => $"exit code {exit} (a DLL failed to initialize)",
+        0xC0000409 or 0xC0000005 => $"exit code {exit} (the program crashed on startup)",
+        _ => $"exit code {exit}",
+    };
 
     /// <summary>
     /// Best-effort classification of the most common real pg_ctl start
