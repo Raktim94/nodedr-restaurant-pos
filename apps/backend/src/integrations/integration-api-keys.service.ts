@@ -56,6 +56,7 @@ export class IntegrationApiKeysService {
         branchId: dto.branchId ?? null,
         name: dto.name,
         scopes: dto.scopes,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
         tokenHash: hash,
         lastFour,
         createdById: actor.id,
@@ -71,6 +72,7 @@ export class IntegrationApiKeysService {
       lastFour: key.lastFour,
       branchId: key.branchId,
       scopes: key.scopes,
+      expiresAt: key.expiresAt,
       createdAt: key.createdAt,
     };
   }
@@ -87,6 +89,7 @@ export class IntegrationApiKeysService {
       lastFour: key.lastFour,
       branch: key.branch,
       scopes: key.scopes,
+      expiresAt: key.expiresAt,
       createdAt: key.createdAt,
       lastUsedAt: key.lastUsedAt,
       revokedAt: key.revokedAt,
@@ -105,5 +108,52 @@ export class IntegrationApiKeysService {
       });
     }
     return { ok: true };
+  }
+
+  /**
+   * Replaces a key with a fresh secret carrying the same name, scopes and
+   * location. Orders the old key placed move to the new one (so status polling
+   * and customer lookups keep working) and the old key is revoked in the same
+   * transaction. Returns the new token once.
+   */
+  async rotate(actor: SessionUser, id: string) {
+    const old = await this.prisma.integrationApiKey.findFirst({
+      where: { id, restaurantId: actor.restaurantId, revokedAt: null },
+    });
+    if (!old) throw new NotFoundException('API key not found');
+    const { raw, hash, lastFour } = this.generateToken();
+    const created = await this.prisma.$transaction(async (tx) => {
+      const next = await tx.integrationApiKey.create({
+        data: {
+          restaurantId: old.restaurantId,
+          branchId: old.branchId,
+          name: old.name,
+          scopes: old.scopes,
+          expiresAt: old.expiresAt,
+          tokenHash: hash,
+          lastFour,
+          createdById: actor.id,
+        },
+      });
+      await tx.order.updateMany({
+        where: { integrationKeyId: old.id },
+        data: { integrationKeyId: next.id },
+      });
+      await tx.integrationApiKey.update({
+        where: { id: old.id },
+        data: { revokedAt: new Date() },
+      });
+      return next;
+    });
+    return {
+      id: created.id,
+      name: created.name,
+      token: raw,
+      lastFour: created.lastFour,
+      branchId: created.branchId,
+      scopes: created.scopes,
+      expiresAt: created.expiresAt,
+      createdAt: created.createdAt,
+    };
   }
 }

@@ -1,19 +1,30 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Post,
   Query,
   UseGuards,
   UsePipes,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiHeader,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import {
   createIntegrationOrderSchema,
   createIntegrationReservationSchema,
+  integrationIdempotencyKeySchema,
 } from '@nodedr-restaurant/types';
+import { z } from 'zod';
 import { CurrentIntegrationKey } from '../common/decorators/current-integration-key.decorator';
 import { RequireScope } from '../common/decorators/require-scope.decorator';
 import { IntegrationApiKeyGuard } from '../common/guards/integration-api-key.guard';
@@ -30,17 +41,22 @@ import { IntegrationsService } from './integrations.service';
 // is meant for server-to-server calls (the partner site's own backend),
 // not embedding the raw key in browser JS.
 @ApiTags('integrations')
+@ApiBearerAuth('integration-key')
 @UseGuards(IntegrationApiKeyGuard)
 @Controller('v1/integrations')
 export class IntegrationsController {
   constructor(private readonly integrations: IntegrationsService) {}
 
+  @ApiOperation({ summary: 'List the locations this key can use' })
   @RequireScope('locations:read')
   @Get('locations')
   listLocations(@CurrentIntegrationKey() key: IntegrationKeyContext) {
     return this.integrations.listLocations(key);
   }
 
+  @ApiOperation({
+    summary: 'Public menu with modifier groups and availability window',
+  })
   @RequireScope('menu:read')
   @Get('locations/:branchId/menu')
   getMenu(
@@ -60,6 +76,17 @@ export class IntegrationsController {
     return this.integrations.deliveryQuote(key, branchId, pincode ?? '');
   }
 
+  @ApiOperation({
+    summary: 'Place a takeaway or delivery order',
+    description:
+      'Prices, tax and the delivery fee are calculated by the server; any amounts sent are ignored. Send an Idempotency-Key so a retry returns the original order instead of creating a second one.',
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description: '8-64 characters of A-Z a-z 0-9 _ -',
+  })
+  @ApiBody({ schema: z.toJSONSchema(createIntegrationOrderSchema) as never })
   @RequireScope('orders:write')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Post('locations/:branchId/orders')
@@ -68,18 +95,45 @@ export class IntegrationsController {
     @CurrentIntegrationKey() key: IntegrationKeyContext,
     @Param('branchId') branchId: string,
     @Body() body: unknown,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.integrations.createOrder(key, branchId, body as never);
+    if (idempotencyKey !== undefined) {
+      const parsed = integrationIdempotencyKeySchema.safeParse(idempotencyKey);
+      if (!parsed.success) {
+        throw new BadRequestException(parsed.error.issues[0].message);
+      }
+    }
+    return this.integrations.createOrder(
+      key,
+      branchId,
+      body as never,
+      idempotencyKey,
+    );
   }
 
+  @ApiOperation({
+    summary: 'Status, items and totals of an order this key placed',
+    description:
+      'Add ?include=customer to also receive the customer name, mobile number, email and delivery address. That needs the orders:read_customer scope; without it the request is rejected with 403.',
+  })
+  @ApiQuery({ name: 'include', required: false, enum: ['customer'] })
   @RequireScope('orders:read')
   @Get('locations/:branchId/orders/:orderId')
   getOrder(
     @CurrentIntegrationKey() key: IntegrationKeyContext,
     @Param('branchId') branchId: string,
     @Param('orderId') orderId: string,
+    @Query('include') include?: string,
   ) {
-    return this.integrations.getOrder(key, branchId, orderId);
+    if (include !== undefined && include !== 'customer') {
+      throw new BadRequestException('include must be "customer"');
+    }
+    return this.integrations.getOrder(
+      key,
+      branchId,
+      orderId,
+      include === 'customer',
+    );
   }
 
   @RequireScope('reservations:write')

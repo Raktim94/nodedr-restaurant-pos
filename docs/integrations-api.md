@@ -111,9 +111,17 @@ optionally scope it to one location ("selected location"), and tick the
 exact permissions ("scopes") it needs.
 
 **This is meant for server-to-server calls** — your website's own backend
-calling OrderRestro, not embedding the raw key in browser JavaScript. The
-key is a reusable credential, not a per-resource token, so treat it like any
-other API secret.
+calling OrderRestro. Keep the key in the backend's environment (for Next.js:
+a server-only variable *without* the `NEXT_PUBLIC_` prefix, used only in Route
+Handlers / Server Actions). Never put it in browser JavaScript, a static
+bundle or source control. The key is a reusable credential, not a per-resource
+token, so treat it like any other API secret. Give it only the scopes it
+needs: for a typical website `locations:read`, `menu:read`, `orders:write`,
+`orders:read` and, only if the site must show or forward the customer's mobile
+and address, `orders:read_customer`.
+
+To expose the API on the internet, and a complete Next.js example, see
+[website-integration.md](website-integration.md).
 
 Base URL: `https://<your-orderrestro-domain>/api/v1/integrations`
 
@@ -138,7 +146,10 @@ curl -H "Authorization: Bearer ordr_ext_..." \
 
 ### `GET /locations/:branchId/menu`
 
-Scope: `menu:read`. Returns categories and active items for that location.
+Scope: `menu:read`. Categories and active items that the owner has switched
+on under "Show on website", with each item's modifier groups (the
+`modifierIds` you may send when ordering) and its optional ordering window
+(`availableFrom` / `availableTo`, `"HH:mm"`). Contains no customer data.
 
 ```json
 {
@@ -148,7 +159,15 @@ Scope: `menu:read`. Returns categories and active items for that location.
     {
       "id": "...", "name": "Starters",
       "items": [
-        { "id": "...", "name": "Spring Rolls", "price": "199", "isVeg": true, "spiceLevel": "NONE", "allergens": [] }
+        {
+          "id": "...", "name": "Spring Rolls", "price": "199", "taxRatePercent": "5",
+          "isVeg": true, "spiceLevel": "NONE", "allergens": [],
+          "availableFrom": null, "availableTo": null,
+          "modifierGroups": [
+            { "id": "...", "name": "Dip", "minSelect": 0, "maxSelect": 1, "isRequired": false,
+              "modifiers": [{ "id": "...", "name": "Sweet chilli", "priceAdjustment": "20", "isDefault": false }] }
+          ]
+        }
       ]
     }
   ]
@@ -157,30 +176,90 @@ Scope: `menu:read`. Returns categories and active items for that location.
 
 ### `POST /locations/:branchId/orders`
 
-Scope: `orders:write`. Creates a takeaway/delivery order.
+Scope: `orders:write`. Creates a takeaway or delivery order.
 
 ```bash
-curl -X POST https://your-domain/api/v1/integrations/locations/<branchId>/orders \
-  -H "Authorization: Bearer ordr_ext_..." \
+curl -X POST https://api.example.com/api/v1/integrations/locations/<branchId>/orders \
+  -H "Authorization: Bearer $ORDERRESTRO_API_KEY" \
+  -H "Idempotency-Key: 2f1a9a52-6c1c-4a39-9b0e-3f9e0f4c6d11" \
   -H "Content-Type: application/json" \
   -d '{
-    "type": "TAKEAWAY",
+    "type": "DELIVERY",
     "customerName": "Jane Doe",
-    "customerPhone": "+15550100",
-    "items": [{ "menuItemId": "...", "quantity": 2 }]
+    "customerPhone": "+91 98765 43210",
+    "customerEmail": "jane@example.com",
+    "delivery": { "address": "12 MG Road, Flat 4B", "pincode": "700001" },
+    "scheduledFor": "2026-11-01T13:30:00Z",
+    "notes": "Ring the bell twice",
+    "items": [{ "menuItemId": "...", "quantity": 2, "modifierIds": [], "kitchenNote": "no onion" }]
   }'
 ```
 
-`type` is `TAKEAWAY` (default) or `DELIVERY`. `items[].modifierIds` and
-`items[].kitchenNote` are optional. Repeat orders from the same phone
-number are attached to the same lightweight customer profile
-automatically. Returns the full created order (same shape the POS uses),
-including its generated KOT.
+| Field | Rules |
+|---|---|
+| `type` | `TAKEAWAY` (default) or `DELIVERY` |
+| `customerName` | required, 1-80 chars |
+| `customerPhone` | required, digits with optional `+`, spaces, `()`, `-` (6-20 chars) |
+| `customerEmail` | optional, valid email |
+| `delivery` | **required for `DELIVERY`**: `address` (5-300), `pincode` (3-12), optional `phone` (defaults to `customerPhone`) |
+| `scheduledFor` | optional requested time, ISO 8601, at least 10 minutes ahead |
+| `notes` | optional, up to 500 chars |
+| `items` | 1-50 lines; `quantity` 1-99; up to 20 `modifierIds`; `kitchenNote` up to 200 |
+
+**Totals are always computed by the server** from the current menu, modifier
+prices, tax settings and the location's delivery zone. Any price, total, fee
+or discount field in the request is ignored. If the location has delivery
+zones, the pincode must fall inside one and the order must reach its minimum.
+Orders arrive as "pending acceptance" unless the location auto-confirms.
+
+**Idempotency.** Send an `Idempotency-Key` (8-64 characters of
+`A-Z a-z 0-9 _ -`, a UUID is ideal) generated once per checkout attempt. A
+retry with the same key, from the same API key, returns the original order
+and creates nothing, including when two retries arrive at the same time. The
+same key with a *different* body is refused with `422`, so generate a fresh
+key per order. Without the header,
+retries create duplicates.
+
+The response is the order in the shape below (without customer details):
+
+```json
+{
+  "id": "...", "orderNumber": "20261030-0007", "type": "DELIVERY",
+  "status": "OPEN", "acceptance": "PENDING", "kitchenStatus": [],
+  "createdAt": "...", "scheduledFor": null, "notes": null,
+  "items": [{ "name": "Margherita", "quantity": 2, "unitPrice": 200, "lineTotal": 400,
+              "kitchenNote": null, "modifiers": [] }],
+  "totals": { "subtotal": 400, "tax": 19.05, "discount": 0, "deliveryFee": 40, "total": 440, "paid": 0 },
+  "fulfillment": { "deliveryStatus": "UNASSIGNED", "etaAt": "...", "deliveredAt": null }
+}
+```
+
+`fulfillment` is `null` for takeaway. `acceptance` is `PENDING`, `ACCEPTED` or
+`REJECTED`; `status` is `OPEN`, `BILLED`, `PAID` or `CANCELLED`;
+`deliveryStatus` is `UNASSIGNED`, `ASSIGNED`, `PICKED_UP`, `DELIVERED` or
+`FAILED`. Prices are tax-inclusive (see ARCHITECTURE.md).
 
 ### `GET /locations/:branchId/orders/:orderId`
 
-Scope: `orders:read`. Returns full order detail (items, KOT status,
-payments) — poll this to track an order's progress.
+Scope: `orders:read`. Same shape as above, for polling an order's progress.
+**An integration key can only read orders that key itself placed**; any other
+order (staff, QR, kiosk, another key, another location) is a `404`.
+
+Add **`?include=customer`** to also receive the details needed to fulfil it.
+This needs the separate **`orders:read_customer`** scope; asking without it is
+`403`. Without `include`, no personal data is ever returned.
+
+```json
+{
+  "...": "everything above, plus:",
+  "customer": { "name": "Jane Doe", "phone": "+91 98765 43210", "email": "jane@example.com" },
+  "delivery": { "address": "12 MG Road, Flat 4B", "pincode": "700001", "phone": "+91 98765 43210" }
+}
+```
+
+`delivery` is `null` for takeaway. Loyalty balances, wallet, allergy notes,
+staff ids, tables and driver details are never part of an integration
+response.
 
 ### `POST /locations/:branchId/reservations`
 
@@ -216,13 +295,19 @@ Scope: `reservations:read`. Returns the reservation's current status
 
 Standard HTTP status codes: `401` missing/invalid/revoked key, `403`
 missing scope or wrong location, `404` location/order/reservation not
-found, `400` invalid request body. Error bodies are
+found (also: an order this key did not place), `400` invalid request body
+(`message: "Validation failed"` with an `issues` array), `409` conflict,
+`413` body over 100 KB, `422` idempotency key reused with a different request, `429` rate limited (see `Retry-After`). Error bodies are
 `{ "message": "...", "error": "...", "statusCode": ... }`.
 
 ### Rate limits
 
-Order and reservation creation are throttled to 60 requests/minute per
-caller, on top of the app-wide 300 requests/minute default.
+Each integration key is limited to **30 write requests/minute** (placing
+orders and bookings) and **300 read requests/minute**, counted per key, so
+they do not depend on client IPs behind a proxy or tunnel. Tune with
+`INTEGRATION_WRITE_LIMIT_PER_MIN` / `INTEGRATION_READ_LIMIT_PER_MIN` on the
+backend. The app-wide 300 requests/minute per-IP limit still applies on top.
+JSON bodies are capped at 100 KB (`BODY_LIMIT`). A `429` carries `Retry-After`.
 
 ---
 
@@ -242,10 +327,10 @@ website can show the price before the guest orders:
 `POST /locations/:branchId/orders` also accepts:
 
 - `delivery` — `{ "address": "...", "pincode": "...", "phone": "..." }`.
-  Required for `type: "DELIVERY"` once the location has delivery zones. The
-  pincode must be inside a zone and the order must reach its minimum; the
-  zone's fee is added at payment. A location with no zones configured keeps
-  the older behaviour (no fee, no zone check).
+  Always required for `type: "DELIVERY"`, and always stored on the order. If
+  the location has delivery zones, the pincode must be inside one and the
+  order must reach its minimum; the zone's fee is added at payment and shown in
+  `totals.deliveryFee`. A location with no zones has no fee or zone check.
 - `scheduledFor` — ISO time at least 10 minutes ahead. The kitchen ticket is
   released about 25 minutes before it (click & collect / pre-orders).
 
@@ -309,5 +394,16 @@ used.
   immediately if you suspect it leaked, same as a password.
 - Every key is shown in full exactly once, at creation. Only a masked last
   four characters are ever stored or displayed again.
+- Keys can carry an optional expiry (`expiresAt`) and can be rotated from
+  Settings > API Keys or `POST /api/v1/integration-api-keys/:id/rotate`.
 - Revoking a key takes effect immediately — the next request with that key
   gets `401`.
+- Customer phone/email/address are readable only with the dedicated
+  `orders:read_customer` scope, only on orders the same key placed, and only
+  when explicitly requested. Menu, location and public QR/kiosk responses
+  never contain customer data.
+- Limitations: the key is a bearer secret (anyone holding it has its scopes);
+  orders are bound to the key that placed them (rotating a key moves them to
+  the new one; creating a separate key does not); rate limiting is in memory and resets on
+  restart. The `order.created` webhook payload still includes the delivery
+  address and phone, delivered only to endpoints an admin configured and signed.

@@ -71,7 +71,9 @@ export default function ApiDocsPage() {
         <Code>{`GET  /locations                              (scope: locations:read)
 GET  /locations/:branchId/menu               (scope: menu:read)
 POST /locations/:branchId/orders             (scope: orders:write)
-GET  /locations/:branchId/orders/:id         (scope: orders:read)
+GET  /locations/:branchId/orders/:id         (scope: orders:read; add ?include=customer for
+                                              the customer's mobile + delivery address, which
+                                              needs orders:read_customer)
 POST /locations/:branchId/reservations       (scope: reservations:write)
 GET  /locations/:branchId/reservations/:id   (scope: reservations:read)`}</Code>
         <p>Placing an order:</p>
@@ -84,6 +86,11 @@ GET  /locations/:branchId/reservations/:id   (scope: reservations:read)`}</Code>
     "customerPhone": "+15550100",
     "items": [{ "menuItemId": "...", "quantity": 2 }]
   }'`}</Code>
+        <p>
+          Send an <code className="rounded bg-card px-1.5 py-0.5 text-foreground">Idempotency-Key</code> header so a retry
+          returns the original order. Delivery orders also need a <code className="rounded bg-card px-1.5 py-0.5 text-foreground">delivery</code>{" "}
+          object (address, pincode). Totals are always calculated by the server.
+        </p>
         <p>Booking a table:</p>
         <Code>{`curl -X POST https://your-domain/api/v1/integrations/locations/<branchId>/reservations \\
   -H "Authorization: Bearer ordr_ext_..." \\
