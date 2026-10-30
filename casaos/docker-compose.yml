@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.9.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.10.0
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -85,7 +85,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.9.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.10.0
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -183,10 +183,18 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.9.0"
-  update_at: "2026-10-26"
+  version: "1.10.0"
+  update_at: "2026-10-30"
   release_notes:
     en_US: |-
+      1.10.0: connect your own website to OrderRestro. The Integration API now
+      returns the customer's mobile number and delivery address to the website's
+      backend (new "View order customer & delivery details" key permission), places
+      delivery orders with address and email, retries safely (Idempotency-Key), and
+      limits each key's requests. API keys can expire and be rotated from Settings >
+      API Keys. A Cloudflare Tunnel guide is in docs/website-integration.md. A
+      database change is applied automatically on update.
+
       1.9.0: adds two-way server sync for the Windows app (Settings > Server
       Sync): a PC keeps working offline and syncs with a central server, newest
       edit wins. Set SYNC_API_KEY on the server to make it the sync hub; it is
