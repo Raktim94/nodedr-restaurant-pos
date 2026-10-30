@@ -332,7 +332,11 @@ model IntegrationApiKey {
 
   lastUsedAt DateTime?
   revokedAt  DateTime?
+  // Optional hard expiry; an expired key is refused like a revoked one.
+  expiresAt  DateTime?
   createdAt  DateTime  @default(now())
+
+  orders Order[]
 
   @@index([restaurantId])
   @@index([branchId])
@@ -1339,6 +1343,14 @@ model Order {
   // key and gets the original order back instead of creating a second one.
   clientRequestId String?
 
+  // The Integration API key that placed this order (null for staff/QR/kiosk
+  // orders). Integration reads are limited to orders their own key placed.
+  integrationKeyId String?
+  // Fingerprint of the request body that created this order, so reusing an
+  // Idempotency-Key with a different body is refused instead of replayed.
+  clientRequestHash String?
+  integrationKey   IntegrationApiKey? @relation(fields: [integrationKeyId], references: [id], onDelete: SetNull)
+
   // Delivery (Phase 5). deliveryFee is added on top of the item total at
   // checkout; the zone's fee is snapshotted so later zone edits never
   // rewrite history.
@@ -1374,6 +1386,7 @@ model Order {
   @@unique([branchId, clientRequestId])
   @@index([branchId, status])
   @@index([branchId, deliveryStatus])
+  @@index([integrationKeyId])
   @@map("orders")
 }
 

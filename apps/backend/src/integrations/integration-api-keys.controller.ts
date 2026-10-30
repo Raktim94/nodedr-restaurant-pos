@@ -38,6 +38,13 @@ export class IntegrationApiKeysController {
   }
 
   @Auth('settings.manage')
+  @AuditAction('api_key.integration_rotated', 'IntegrationApiKey')
+  @Post(':id/rotate')
+  rotate(@CurrentUser() user: SessionUser, @Param('id') id: string) {
+    return this.integrationApiKeys.rotate(user, id);
+  }
+
+  @Auth('settings.manage')
   @AuditAction('api_key.integration_revoked', 'IntegrationApiKey')
   @Delete(':id')
   revoke(@CurrentUser() user: SessionUser, @Param('id') id: string) {

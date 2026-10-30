@@ -2,14 +2,17 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { createHash } from 'node:crypto';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { INTEGRATION_SCOPES_KEY } from '../decorators/require-scope.decorator';
+import { envLimit, KeyRateLimiter } from './key-rate-limiter';
 
 // Authenticates every route on IntegrationsController — the public REST API
 // external websites use as a backend (see docs/integrations-api.md). A
@@ -19,6 +22,11 @@ import { INTEGRATION_SCOPES_KEY } from '../decorators/require-scope.decorator';
 // what it was issued for, never anything a staff login could.
 @Injectable()
 export class IntegrationApiKeyGuard implements CanActivate {
+  // Per key, separately for writes (placing orders/bookings) and reads.
+  private readonly limiter = new KeyRateLimiter();
+  private readonly writeLimit = envLimit('INTEGRATION_WRITE_LIMIT_PER_MIN', 30);
+  private readonly readLimit = envLimit('INTEGRATION_READ_LIMIT_PER_MIN', 300);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly reflector: Reflector,
@@ -41,8 +49,12 @@ export class IntegrationApiKeyGuard implements CanActivate {
     const key = await this.prisma.integrationApiKey.findUnique({
       where: { tokenHash },
     });
-    if (!key || key.revokedAt) {
-      throw new UnauthorizedException('Invalid or revoked API key');
+    if (
+      !key ||
+      key.revokedAt ||
+      (key.expiresAt && key.expiresAt.getTime() <= Date.now())
+    ) {
+      throw new UnauthorizedException('Invalid, expired or revoked API key');
     }
 
     const required = this.reflector.getAllAndOverride<string[]>(
@@ -56,6 +68,22 @@ export class IntegrationApiKeyGuard implements CanActivate {
           `This API key is missing required scope(s): ${missing.join(', ')}`,
         );
       }
+    }
+
+    const isWrite = request.method !== 'GET';
+    const retryAfter = this.limiter.hit(
+      `${key.id}:${isWrite ? 'w' : 'r'}`,
+      isWrite ? this.writeLimit : this.readLimit,
+    );
+    if (retryAfter > 0) {
+      context
+        .switchToHttp()
+        .getResponse<Response>()
+        .setHeader('Retry-After', String(retryAfter));
+      throw new HttpException(
+        'Too many requests for this API key — slow down and retry later',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     request.integrationKey = {

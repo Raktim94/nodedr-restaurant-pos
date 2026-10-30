@@ -26,6 +26,7 @@ export interface IntegrationApiKey {
   createdAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
+  expiresAt?: string | null;
 }
 
 export interface IntegrationApiKeyCreated extends Omit<IntegrationApiKey, "branch"> {
@@ -76,6 +77,14 @@ export function useRevokeIntegrationApiKey() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.delete<{ ok: true }>(`/integration-api-keys/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integration-api-keys"] }),
+  });
+}
+
+export function useRotateIntegrationApiKey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<IntegrationApiKeyCreated>(`/integration-api-keys/${id}/rotate`, {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["integration-api-keys"] }),
   });
 }

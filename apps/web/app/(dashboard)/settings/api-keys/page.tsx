@@ -15,6 +15,7 @@ import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import {
   useIntegrationApiKeys,
   useRevokeIntegrationApiKey,
+  useRotateIntegrationApiKey,
   useRevokeStaffApiKey,
   useStaffApiKeys,
   type IntegrationApiKey,
@@ -136,8 +137,17 @@ function StaffApiKeysCard() {
 function IntegrationApiKeysCard() {
   const { data: keys, isLoading } = useIntegrationApiKeys();
   const revokeKey = useRevokeIntegrationApiKey();
+  const rotateKey = useRotateIntegrationApiKey();
   const [showCreate, setShowCreate] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
+
+  const onRotate = (key: IntegrationApiKey) => {
+    if (!confirm(`Rotate "${key.name}"? A new key replaces it; update your website with it, as the old one stops working immediately.`)) return;
+    rotateKey.mutate(key.id, {
+      onSuccess: (created) => setNewToken(created.token),
+      onError: (err) => toast.error(err instanceof ApiError ? err.message : "Could not rotate key"),
+    });
+  };
 
   const onRevoke = (key: IntegrationApiKey) => {
     if (!confirm(`Revoke "${key.name}"? Any external website using this key stops working immediately.`)) return;
@@ -194,9 +204,14 @@ function IntegrationApiKeysCard() {
                   {key.revokedAt ? (
                     <Badge variant="outline">Revoked</Badge>
                   ) : (
-                    <Button size="sm" variant="destructive" onClick={() => onRevoke(key)}>
-                      Revoke
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="outline" onClick={() => onRotate(key)}>
+                        Rotate
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => onRevoke(key)}>
+                        Revoke
+                      </Button>
+                    </div>
                   )}
                 </TableCell>
               </TableRow>

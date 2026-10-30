@@ -165,6 +165,8 @@ export class OrdersService {
       channel?: 'STAFF' | 'ONLINE';
       requireAcceptance?: boolean;
       clientRequestId?: string;
+      integrationKeyId?: string;
+      clientRequestHash?: string;
     } = {},
   ) {
     const channel = options.channel ?? 'STAFF';
@@ -325,6 +327,8 @@ export class OrdersService {
           guestName: dto.guestName,
           notes: dto.notes,
           clientRequestId: options.clientRequestId,
+          integrationKeyId: options.integrationKeyId,
+          clientRequestHash: options.clientRequestHash,
           createdById: userId,
           subtotal: totals.subtotal,
           taxAmount: totals.taxAmount,

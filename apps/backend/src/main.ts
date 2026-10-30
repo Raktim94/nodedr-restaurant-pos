@@ -105,9 +105,33 @@ async function bootstrap() {
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     }),
   );
+  // Forwarded headers (X-Forwarded-For/-Proto) are ignored unless the operator
+  // says how many proxy hops sit in front of this process. A number only —
+  // never `true`, which would let any client spoof its address.
+  const trustProxy = process.env.TRUST_PROXY;
+  if (trustProxy !== undefined && trustProxy !== '') {
+    const hops = Number(trustProxy);
+    if (!Number.isInteger(hops) || hops < 0 || hops > 5) {
+      console.error(
+        'Refusing to start: TRUST_PROXY must be a whole number of proxy hops (0-5), not "true" or an address list.',
+      );
+      process.exit(1);
+    }
+    app.set('trust proxy', hops);
+  }
+  // Same 100kb as Express's default, stated so it is a decision, not an accident.
+  app.useBodyParser('json', { limit: process.env.BODY_LIMIT ?? '100kb' });
   app.use(cookieParser());
+  // Browsers only ever talk to the web container (same origin, /api is proxied),
+  // and a website's backend calls the Integration API server-to-server, so the
+  // only origin that needs CORS is the dashboard itself. Several can be listed,
+  // comma-separated; never "*" (credentials are on).
+  const corsOrigins = (process.env.CORS_ORIGIN ?? 'http://localhost:1995')
+    .split(',')
+    .map((o) => o.trim())
+    .filter((o) => o && o !== '*');
   app.enableCors({
-    origin: process.env.CORS_ORIGIN ?? 'http://localhost:1995',
+    origin: corsOrigins,
     credentials: true,
   });
   app.setGlobalPrefix('api');
@@ -127,6 +151,7 @@ async function bootstrap() {
       .setDescription('REST API for the Nodedr OrderRestro management system')
       .setVersion('1.0')
       .addCookieAuth('nodedr_session')
+      .addBearerAuth({ type: 'http', scheme: 'bearer' }, 'integration-key')
       .build();
     const document = SwaggerModule.createDocument(app, config);
     SwaggerModule.setup('api/docs', app, document);

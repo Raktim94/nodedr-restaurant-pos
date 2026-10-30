@@ -40,6 +40,12 @@ services:
       PORT: "4000"
       CORS_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:1995}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      # Number of trusted proxy hops in front of the backend (empty = ignore
+      # X-Forwarded-*). See docs/website-integration.md before setting it.
+      TRUST_PROXY: "${TRUST_PROXY:-}"
+      # Integration API (website) limits per API key, per minute.
+      INTEGRATION_WRITE_LIMIT_PER_MIN: "${INTEGRATION_WRITE_LIMIT_PER_MIN:-30}"
+      INTEGRATION_READ_LIMIT_PER_MIN: "${INTEGRATION_READ_LIMIT_PER_MIN:-300}"
       UPLOADS_DIR: "/data/uploads"
       # Spain VERI*FACTU (Settings > VERI*FACTU). The producer identifier is a legal fact only the software
       # producer can supply; leave it unset and the branch reports exactly what is missing. See docs/verifactu.md.
