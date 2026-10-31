@@ -16,6 +16,25 @@ import {
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { TwoFactorService } from './two-factor.service';
+import {
+  effectivePermissions,
+  permissionInclude,
+  type PermissionSource,
+} from './effective-permissions';
+import { ModuleKey } from '@prisma/client';
+
+const DEFAULT_DEPARTMENTS = [
+  ['POS', 'POS / Cashier', ModuleKey.POS],
+  ['KITCHEN', 'Kitchen / KDS', ModuleKey.KDS],
+  ['INVENTORY', 'Inventory', ModuleKey.INVENTORY],
+  ['PURCHASE', 'Purchase', ModuleKey.PURCHASING],
+  ['ACCOUNTS', 'Accounts', ModuleKey.ACCOUNTING],
+  ['HR', 'HR / Payroll', ModuleKey.HR],
+  ['DELIVERY', 'Delivery', ModuleKey.DELIVERY],
+  ['MARKETING', 'Marketing / CRM', ModuleKey.MARKETING],
+  ['OPERATIONS', 'Branch Operations', ModuleKey.OPERATIONS],
+  ['MANAGEMENT', 'Management', ModuleKey.REPORTS],
+] as const;
 
 @Injectable()
 export class AuthService {
@@ -31,6 +50,7 @@ export class AuthService {
     name: string;
     roleId: string;
     role: { name: string; permissions: { permission: { key: string } }[] };
+    permissionOverrides?: PermissionSource['permissionOverrides'];
   }): SessionUser {
     return {
       id: user.id,
@@ -38,16 +58,14 @@ export class AuthService {
       name: user.name,
       roleId: user.roleId,
       roleName: user.role.name,
-      permissions: user.role.permissions.map((rp) => rp.permission.key),
+      permissions: effectivePermissions(user),
     };
   }
 
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findFirst({
       where: { email: dto.email, isActive: true },
-      include: {
-        role: { include: { permissions: { include: { permission: true } } } },
-      },
+      include: permissionInclude,
     });
 
     if (!user) {
@@ -91,14 +109,42 @@ export class AuthService {
     const permissionByKey = new Map(allPermissions.map((p) => [p.key, p]));
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
+    const basicPlan = await this.prisma.subscriptionPlan.findUnique({
+      where: { code: 'BASIC' },
+      select: { id: true },
+    });
 
     const owner = await this.prisma.$transaction(async (tx) => {
       const restaurant = await tx.restaurant.create({
-        data: { name: dto.restaurantName },
+        data: {
+          name: dto.restaurantName,
+          trialEndsAt: new Date(Date.now() + 14 * 86_400_000),
+        },
       });
       const branch = await tx.branch.create({
         data: { restaurantId: restaurant.id, name: dto.branchName },
       });
+
+      await tx.department.createMany({
+        data: DEFAULT_DEPARTMENTS.map(([code, name, moduleKey]) => ({
+          restaurantId: restaurant.id,
+          branchId: branch.id,
+          code,
+          name,
+          moduleKey,
+        })),
+      });
+
+      if (basicPlan) {
+        await tx.subscription.create({
+          data: {
+            restaurantId: restaurant.id,
+            planId: basicPlan.id,
+            status: 'TRIALING',
+            trialEndsAt: restaurant.trialEndsAt,
+          },
+        });
+      }
 
       let ownerRoleId = '';
       for (const roleName of STAFF_ROLES) {
@@ -131,9 +177,7 @@ export class AuthService {
           email: dto.email,
           passwordHash,
         },
-        include: {
-          role: { include: { permissions: { include: { permission: true } } } },
-        },
+        include: permissionInclude,
       });
 
       await tx.userBranch.create({
@@ -156,9 +200,7 @@ export class AuthService {
   async pinLogin(dto: PinLoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { id: dto.userId },
-      include: {
-        role: { include: { permissions: { include: { permission: true } } } },
-      },
+      include: permissionInclude,
     });
 
     if (!user || !user.isActive || !user.pinHash) {

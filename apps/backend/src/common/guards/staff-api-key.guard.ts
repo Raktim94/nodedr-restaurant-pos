@@ -8,6 +8,10 @@ import { createHash } from 'node:crypto';
 import type { SessionUser } from '@nodedr-restaurant/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedRequest } from '../types/authenticated-request';
+import {
+  effectivePermissions,
+  permissionInclude,
+} from '../../auth/effective-permissions';
 
 // Authenticates the MCP server (src/mcp/) via a personal access token
 // (StaffApiKey) instead of the cookie-based Passport JWT session — an AI
@@ -41,11 +45,7 @@ export class StaffApiKeyGuard implements CanActivate {
       where: { tokenHash },
       include: {
         user: {
-          include: {
-            role: {
-              include: { permissions: { include: { permission: true } } },
-            },
-          },
+          include: permissionInclude,
         },
       },
     });
@@ -63,7 +63,7 @@ export class StaffApiKeyGuard implements CanActivate {
       name: key.user.name,
       roleId: key.user.roleId,
       roleName: key.user.role.name,
-      permissions: key.user.role.permissions.map((rp) => rp.permission.key),
+      permissions: effectivePermissions(key.user),
     };
     request.user = sessionUser;
 
