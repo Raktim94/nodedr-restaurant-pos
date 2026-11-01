@@ -31,6 +31,8 @@ export interface IntegrationProviderInfo {
   capabilities: Record<string, boolean>;
   accountIdLabel: string | null;
   requirements: string | null;
+  /** Path of the signed inbound webhook for this restaurant, when the provider receives orders. */
+  webhookPath: string | null;
   credentialFields: { key: string; label: string; secret: boolean; required: boolean; help?: string }[];
   connection: IntegrationConnection | null;
 }

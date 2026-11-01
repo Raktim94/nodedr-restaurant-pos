@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, CircleDashed, KeyRound, Link2, PauseCircle, ShieldAlert, Webhook } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleDashed, Copy, KeyRound, Link2, PauseCircle, ShieldAlert, Webhook } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
@@ -44,6 +44,64 @@ function StatusBadge({ status }: { status: IntegrationStatus }) {
   );
 }
 
+const SAMPLE_PAYLOAD = `{
+  "event": "order.created",
+  "orderId": "ZOM-10231",
+  "paymentMode": "PREPAID",
+  "customer": { "name": "Asha", "phone": "9876500011" },
+  "delivery": { "address": "12 MG Road", "pincode": "560001" },
+  "items": [{ "name": "Paneer Tikka", "quantity": 2 }]
+}`;
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      aria-label={`Copy ${label}`}
+      onClick={() => {
+        void navigator.clipboard?.writeText(text).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 1500);
+        });
+      }}
+    >
+      <Copy className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+      {done ? "Copied" : "Copy"}
+    </Button>
+  );
+}
+
+function WebhookDetails({ p }: { p: IntegrationProviderInfo }) {
+  if (!p.webhookPath) return null;
+  const url = `${typeof window === "undefined" ? "" : window.location.origin}${p.webhookPath}`;
+  return (
+    <details className="rounded-lg border border-border bg-secondary/40 p-3 text-xs">
+      <summary className="cursor-pointer font-medium text-foreground">Webhook setup</summary>
+      <div className="mt-2 flex flex-col gap-2 text-muted-foreground">
+        <p>
+          Give your aggregator (UrbanPiper, Petpooja, Dotpe…) or {p.name} merchant webhook this URL. The server must be
+          reachable from the internet (a Cloudflare Tunnel works).
+        </p>
+        <div className="flex items-center gap-2">
+          <code className="min-w-0 flex-1 break-all rounded bg-background px-2 py-1 text-foreground">{url}</code>
+          <CopyButton text={url} label="webhook URL" />
+        </div>
+        <p>
+          Send <code>POST</code> JSON with headers <code>X-OrderRestro-Timestamp</code> (unix seconds) and{" "}
+          <code>X-OrderRestro-Signature: sha256=HMAC_SHA256(secret, timestamp + &quot;.&quot; + body)</code>. Items are matched by
+          menu item name or id; prices always come from your menu. Send <code>{`{"event":"ping"}`}</code> to test —
+          this card turns Connected only when a correctly signed event arrives.
+        </p>
+        <pre className="overflow-x-auto rounded bg-background p-2 text-foreground">{SAMPLE_PAYLOAD}</pre>
+        <p>Orders arrive as online orders waiting for acceptance. Cancel with <code>order.cancelled</code>. Full reference: docs/INTEGRATIONS.md.</p>
+      </div>
+    </details>
+  );
+}
+
 function ProviderCard({ p, onConfigure }: { p: IntegrationProviderInfo; onConfigure: () => void }) {
   const { test, setEnabled, disconnect } = useIntegrationActions();
   const { note, clear, toast } = useNoteToast();
@@ -51,7 +109,7 @@ function ProviderCard({ p, onConfigure }: { p: IntegrationProviderInfo; onConfig
   const logs = useIntegrationLogs(showLog ? p.key : null);
   const c = p.connection;
   const fail = (e: unknown) => toast.error(e instanceof ApiError ? e.message : "Something went wrong");
-  const unsupported = Object.entries(p.capabilities).filter(([, v]) => !v).length === Object.keys(p.capabilities).length;
+  const unsupported = !p.capabilities.receiveOrders && !p.capabilities.webhooks;
 
   return (
     <Card className="flex flex-col gap-3 p-5">
@@ -83,6 +141,8 @@ function ProviderCard({ p, onConfigure }: { p: IntegrationProviderInfo; onConfig
         </p>
       )}
 
+      <WebhookDetails p={p} />
+
       {c && (
         <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
           <div className="flex gap-1.5"><dt className="text-muted-foreground">{p.accountIdLabel ?? "Account"}:</dt><dd className="min-w-0 break-words text-foreground">{c.externalAccountId ?? "—"}</dd></div>
@@ -111,7 +171,7 @@ function ProviderCard({ p, onConfigure }: { p: IntegrationProviderInfo; onConfig
                 })
               }
             >
-              {test.isPending ? "Testing…" : "Test connection"}
+              {test.isPending ? "Checking…" : p.webhookPath ? "Check status" : "Test connection"}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setShowLog((v) => !v)} aria-expanded={showLog}>
               Activity
@@ -171,7 +231,7 @@ function ConfigureDialog({ p, onClose }: { p: IntegrationProviderInfo; onClose: 
         </DialogHeader>
         <p className="text-xs text-muted-foreground">
           Use the credentials {p.name} issued to <span className="font-medium text-foreground">your</span> restaurant.
-          They are stored encrypted and are never shown again.
+          They are stored encrypted and are never shown again, so copy a generated secret into your aggregator now.
         </p>
         <form onSubmit={submit} className="flex flex-col gap-3" autoComplete="off">
           {p.accountIdLabel && (
@@ -188,9 +248,28 @@ function ConfigureDialog({ p, onClose }: { p: IntegrationProviderInfo; onClose: 
                   {f.label}
                   {f.required ? "" : " (optional)"}
                 </Label>
+                {f.help && <p className="text-xs text-muted-foreground">{f.help}</p>}
+                {f.key === "webhookSecret" && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const b = new Uint8Array(24);
+                        crypto.getRandomValues(b);
+                        const v = Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+                        setValues({ ...values, [f.key]: v });
+                      }}
+                    >
+                      Generate secret
+                    </Button>
+                    {values[f.key] && <CopyButton text={values[f.key]} label="secret" />}
+                  </div>
+                )}
                 <Input
                   id={`hub-${f.key}`}
-                  type={f.secret ? "password" : "text"}
+                  type={f.secret && f.key !== "webhookSecret" ? "password" : "text"}
                   autoComplete="off"
                   maxLength={500}
                   placeholder={isSet ? "Saved — leave blank to keep" : ""}
@@ -243,6 +322,9 @@ export default function IntegrationsPage() {
 
       <section aria-labelledby="int-delivery" className="flex flex-col gap-3">
         <h2 id="int-delivery" className="text-[20px] font-medium text-foreground">Food delivery platforms</h2>
+        {delivery.find((p) => p.webhookPath)?.requirements && (
+          <p className="text-sm text-muted-foreground">{delivery.find((p) => p.webhookPath)?.requirements}</p>
+        )}
         {isLoading ? (
           <Skeleton className="h-40 rounded-2xl" />
         ) : isError ? (

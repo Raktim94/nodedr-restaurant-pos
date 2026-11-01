@@ -112,14 +112,19 @@ run('Integrations hub (e2e)', () => {
     expect(z.category).toBe('FOOD_DELIVERY');
     expect(z.connection).toBeNull();
     expect(z.capabilities).toMatchObject({
-      receiveOrders: false,
+      receiveOrders: true,
+      webhooks: true,
       updateOrderStatus: false,
     });
-    expect(z.credentialFields.map((f: any) => f.key)).toContain('apiKey');
+    expect(z.credentialFields.map((f: any) => f.key)).toContain(
+      'webhookSecret',
+    );
     const keys = ((await owner.get(H).expect(200)).body as any[]).map(
       (p) => p.key,
     );
-    expect(keys).toEqual(expect.arrayContaining(['zomato', 'swiggy']));
+    expect(keys).toEqual(
+      expect.arrayContaining(['zomato', 'swiggy', 'aggregator']),
+    );
   });
 
   it('validates what is saved', async () => {
@@ -135,11 +140,14 @@ run('Integrations hub (e2e)', () => {
   it('saves credentials encrypted and never echoes them back', async () => {
     const res = await owner
       .put(`${H}/zomato`)
-      .send({ externalAccountId: 'MERCH-42', credentials: { apiKey: SECRET } })
+      .send({
+        externalAccountId: 'MERCH-42',
+        credentials: { webhookSecret: SECRET },
+      })
       .expect(200);
     expect(JSON.stringify(res.body)).not.toContain(SECRET);
     expect(res.body.status).toBe('PENDING_CONFIGURATION');
-    expect(res.body.credentialsSet).toEqual({ apiKey: true });
+    expect(res.body.credentialsSet).toEqual({ webhookSecret: true });
     expect(res.body.externalAccountId).toBe('MERCH-42');
 
     // Not in any later read either.
@@ -160,7 +168,7 @@ run('Integrations hub (e2e)', () => {
     const res = await owner.post(`${H}/zomato/test`).expect(201);
     expect(res.body.ok).toBe(false);
     expect(res.body.connection.status).toBe('PENDING_CONFIGURATION');
-    expect(res.body.message).toMatch(/not active|no verified connection/i);
+    expect(res.body.message).toMatch(/waiting for the first signed delivery/i);
     expect(res.body.connection.lastError).toBeTruthy();
     expect(res.body.connection.lastSuccessAt).toBeNull();
     expect(res.body.connection.lastSyncAt).toBeTruthy();
@@ -174,7 +182,7 @@ run('Integrations hub (e2e)', () => {
       .expect(200);
     const z = await zomato();
     expect(z.connection.externalAccountId).toBe('MERCH-43');
-    expect(z.connection.credentialsSet).toEqual({ apiKey: true });
+    expect(z.connection.credentialsSet).toEqual({ webhookSecret: true });
     // Still decryptable: a test reaches the adapter instead of failing to read.
     const t = await owner.post(`${H}/zomato/test`).expect(201);
     expect(t.body.connection.status).toBe('PENDING_CONFIGURATION');
@@ -228,7 +236,7 @@ run('Integrations hub (e2e)', () => {
       .put(`${H}/zomato`)
       .send({
         externalAccountId: 'THEIRS',
-        credentials: { apiKey: 'their-own-key' },
+        credentials: { webhookSecret: 'their-own-key-0123456789' },
       })
       .expect(200);
     expect((await zomato()).connection.externalAccountId).toBe('MERCH-43');

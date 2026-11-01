@@ -13,15 +13,43 @@ on its own installation, encrypted.
 | Encrypted credential storage (AES-256-GCM, bound to restaurant + provider) | Working, tested |
 | Outgoing webhooks (HMAC-signed, retries, delivery history) | Working (Settings → Webhooks) |
 | Incoming orders / API access (scoped, expiring, rotatable keys) | Working (Settings → API Keys; `/api/v1/integrations/*`) |
-| **Zomato, Swiggy** | **Credentials can be saved. Order sync is not active.** |
+| **Zomato, Swiggy, other aggregators** | **Working: signed inbound webhook** (see below) |
 
-Zomato and Swiggy only integrate with restaurants through partner programmes.
-The adapters for them (`providers/partner-api.provider.ts`) have **no verified
-client for either order API**, so they cannot receive orders, change an
-order's status, or confirm the credentials work. `testConnection` therefore
-never reports *Connected*; it reports *Pending configuration* and says why.
-Do not change that until an adapter has been exercised against the platform's
-sandbox with real, authorised credentials.
+## Zomato, Swiggy and aggregators
+
+Zomato and Swiggy have no public order API: restaurants receive their orders
+through the platform's merchant webhook or an aggregator / channel manager
+(UrbanPiper, Petpooja, Dotpe and similar) that the restaurant has an account
+with. OrderRestro therefore exposes one signed endpoint per restaurant and
+provider (`zomato`, `swiggy`, `aggregator`); Settings -> Integrations shows the
+exact URL and a secret generator.
+
+    POST /api/v1/integration-hub/webhook/<restaurantId>/<provider>
+    X-OrderRestro-Timestamp: <unix seconds>
+    X-OrderRestro-Signature: sha256=<hex HMAC-SHA256(secret, timestamp + "." + rawBody)>
+
+Events (JSON body):
+
+| `event` | Effect |
+|---|---|
+| `ping` | Proves the secret works; marks the card **Connected**. |
+| `order.created` | Creates an ONLINE order awaiting acceptance (`externalSource` = provider, `externalOrderId` = `orderId`). `customer{name,phone,email?,ref?}`, `delivery{address,pincode?}` (required for `type: DELIVERY`, the default), `items[{name or menuItemId, quantity, kitchenNote?}]`, optional `branchId` (required when the restaurant has several branches), `notes`, `paymentMode` (`PREPAID` / `COD`, written into the order note). |
+| `order.cancelled` | Declines the order if it is still waiting for acceptance; if staff already accepted it, an activity-log warning asks a person to decide. |
+
+Guarantees: the signature covers the exact bytes received and is compared in
+constant time; deliveries more than 5 minutes off are refused (replay bound); a
+repeated `orderId` returns the existing order instead of a second one; every
+refusal is a plain 401 so the endpoint reveals nothing about which restaurants
+exist. Prices, tax and fees are **never** read from the payload - they are
+recomputed from your live menu. An unknown dish refuses the whole order (422,
+visible in the activity log) rather than silently dropping a line. Items in a
+category hidden from the website are refused too.
+
+The card turns **Connected** only after a correctly signed delivery really
+arrived; saving the secret or pressing *Check status* never does. Not built:
+sending accept / reject / ready back to the platform (that needs each
+platform's outbound API and sandbox), so staff still confirm status inside the
+platform or the aggregator.
 
 ## Statuses
 

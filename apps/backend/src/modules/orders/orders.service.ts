@@ -168,6 +168,9 @@ export class OrdersService {
       clientRequestId?: string;
       integrationKeyId?: string;
       clientRequestHash?: string;
+      externalSource?: string;
+      externalOrderId?: string;
+      externalCustomerRef?: string;
     } = {},
   ) {
     const channel = options.channel ?? 'STAFF';
@@ -330,6 +333,9 @@ export class OrdersService {
           clientRequestId: options.clientRequestId,
           integrationKeyId: options.integrationKeyId,
           clientRequestHash: options.clientRequestHash,
+          externalSource: options.externalSource,
+          externalOrderId: options.externalOrderId,
+          externalCustomerRef: options.externalCustomerRef,
           createdById: userId,
           subtotal: totals.subtotal,
           taxAmount: totals.taxAmount,

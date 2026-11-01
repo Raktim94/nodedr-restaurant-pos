@@ -61,6 +61,9 @@ export class IntegrationHubService {
       description: p.description,
       capabilities: p.capabilities,
       accountIdLabel: p.accountIdLabel ?? null,
+      webhookPath: p.capabilities.webhooks
+        ? `/api/v1/integration-hub/webhook/${restaurantId}/${p.key}`
+        : null,
       requirements: p.requirements ?? null,
       credentialFields: p.credentialFields,
       connection: this.view(byProvider.get(p.key) ?? null),
@@ -122,6 +125,11 @@ export class IntegrationHubService {
       if (v.trim() === '') delete merged[k];
       else merged[k] = v.trim();
     }
+    if (merged.webhookSecret && merged.webhookSecret.length < 16) {
+      throw new BadRequestException(
+        'The webhook signing secret must be at least 16 characters',
+      );
+    }
     const missing = provider.credentialFields
       .filter((f) => f.required && !merged[f.key])
       .map((f) => f.label);
@@ -130,7 +138,7 @@ export class IntegrationHubService {
     }
     const accountId =
       input.externalAccountId?.trim() || existing?.externalAccountId || null;
-    if (provider.accountIdLabel && !accountId) {
+    if (provider.accountIdLabel && !provider.accountIdOptional && !accountId) {
       throw new BadRequestException(`Enter the ${provider.accountIdLabel}`);
     }
 

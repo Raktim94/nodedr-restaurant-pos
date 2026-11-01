@@ -59,6 +59,8 @@ export interface IntegrationProvider {
   readonly credentialFields: CredentialField[];
   /** Label for the account id on the other platform, e.g. "Merchant ID". */
   readonly accountIdLabel?: string;
+  /** When true the account id may be left blank. */
+  readonly accountIdOptional?: boolean;
   /** Honest note about what must exist outside OrderRestro before this works. */
   readonly requirements?: string;
 

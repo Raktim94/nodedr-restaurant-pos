@@ -95,7 +95,9 @@ function resolveJwtSecret(): string {
 
 async function bootstrap() {
   process.env.JWT_SECRET = resolveJwtSecret();
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true, // signed aggregator webhooks are verified against the exact bytes received
+  });
 
   app.use(
     helmet({
