@@ -301,7 +301,10 @@ describe('billing scenarios from the field (350 / 300 / 400, 500 less 50)', () =
   });
 
   it('second part-payment settles only what is left', () => {
-    const s = settlePayments({ balance: 50, payments: [{ method: 'UPI', amount: 50 }] });
+    const s = settlePayments({
+      balance: 50,
+      payments: [{ method: 'UPI', amount: 50 }],
+    });
     expect(s.fullyPaid).toBe(true);
   });
 
@@ -354,20 +357,28 @@ describe('assertManualDiscountAllowed', () => {
 
   it('default cap of 100 changes nothing', () => {
     expect(() =>
-      assertManualDiscountAllowed({ ...base, maxPercent: 100, discountPercent: 100 }),
+      assertManualDiscountAllowed({
+        ...base,
+        maxPercent: 100,
+        discountPercent: 100,
+      }),
     ).not.toThrow();
   });
 
   it('requires a reason only when configured and a discount is given', () => {
     const req = { ...base, maxPercent: 100, requireReason: true };
-    expect(() => assertManualDiscountAllowed({ ...req, discountPercent: 5 })).toThrow(
-      /reason/,
-    );
+    expect(() =>
+      assertManualDiscountAllowed({ ...req, discountPercent: 5 }),
+    ).toThrow(/reason/);
     expect(() =>
       assertManualDiscountAllowed({ ...req, discountPercent: 5, reason: '  ' }),
     ).toThrow(/reason/);
     expect(() =>
-      assertManualDiscountAllowed({ ...req, discountPercent: 5, reason: 'Regular guest' }),
+      assertManualDiscountAllowed({
+        ...req,
+        discountPercent: 5,
+        reason: 'Regular guest',
+      }),
     ).not.toThrow();
     expect(() => assertManualDiscountAllowed({ ...req })).not.toThrow();
   });
