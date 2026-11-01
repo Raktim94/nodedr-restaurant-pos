@@ -211,7 +211,7 @@ export default function MenuPage() {
                   <div className="flex items-start gap-3">
                     {item.imageUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element -- uploaded asset served from the backend, not a Next-optimizable remote source
-                      <img src={item.imageUrl} alt="" className="h-12 w-12 shrink-0 rounded-md object-cover" />
+                      <img src={item.imageUrl} alt="" width={48} height={48} loading="lazy" decoding="async" className="h-12 w-12 shrink-0 rounded-md bg-secondary object-cover" />
                     ) : (
                       <div className="h-12 w-12 shrink-0 rounded-md bg-secondary" />
                     )}
@@ -278,13 +278,19 @@ export default function MenuPage() {
                           <img
                             src={item.imageUrl}
                             alt=""
-                            className="h-9 w-9 shrink-0 rounded-md object-cover"
+                            width={36}
+                            height={36}
+                            loading="lazy"
+                            decoding="async"
+                            className="h-9 w-9 shrink-0 rounded-md bg-secondary object-cover"
                           />
                         ) : (
                           <div className="h-9 w-9 shrink-0 rounded-md bg-secondary" />
                         )}
                         {item.isVeg && <Leaf className="h-3.5 w-3.5 shrink-0 text-success" />}
-                        {item.name}
+                        <span className="min-w-0 max-w-[28ch] [overflow-wrap:anywhere]" title={item.name}>
+                          {item.name}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{item.category.name}</TableCell>

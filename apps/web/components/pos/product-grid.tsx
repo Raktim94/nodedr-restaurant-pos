@@ -65,7 +65,9 @@ export function ProductGrid({
                     : "font-medium text-foreground hover:bg-secondary",
                 )}
               >
-                <span className="min-w-0 break-words leading-tight">{c.name}</span>
+                <span className="min-w-0 [overflow-wrap:anywhere] leading-tight" title={c.name}>
+                  {c.name}
+                </span>
                 {c.count !== undefined && (
                   <span className={cn("shrink-0 text-xs tabular-nums", active ? "opacity-80" : "text-muted-foreground")}>
                     {c.count}
@@ -86,13 +88,17 @@ export function ProductGrid({
         {filtered?.map((item) => (
           <button
             key={item.id}
+            type="button"
+            title={item.name}
             onClick={() => onSelect(item)}
-            className="flex min-h-24 flex-col items-start gap-2 rounded-2xl border border-border bg-card p-3 text-left sm:p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.97] active:translate-y-0 lg:min-h-32 lg:justify-between lg:p-4 lg:hover:border-primary/50"
+            className="flex min-h-24 min-w-0 flex-col items-start gap-2 rounded-2xl border border-border bg-card p-3 text-left sm:p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.97] active:translate-y-0 lg:min-h-32 lg:justify-between lg:p-4 lg:hover:border-primary/50"
           >
             <span
               className={`h-2.5 w-2.5 rounded-full ${item.isVeg ? "bg-success" : "bg-destructive"}`}
             />
-            <span className="text-sm font-medium leading-tight text-foreground lg:text-[15px]">{item.name}</span>
+            <span className="line-clamp-3 w-full min-w-0 [overflow-wrap:anywhere] text-sm font-medium leading-tight text-foreground lg:text-[15px]">
+              {item.name}
+            </span>
             <span className="flex w-full items-baseline justify-between gap-2">
               <span className="text-sm font-semibold tabular-nums text-foreground lg:text-base">
                 {formatCurrency(item.price)}
