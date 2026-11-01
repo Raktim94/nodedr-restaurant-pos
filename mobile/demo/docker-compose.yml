@@ -1,0 +1,48 @@
+# Public demo for App Store / Play review. Sample data only, reset every night.
+# Deliberately small and sealed off: its own network, a database that is never
+# published, memory limits, and ports bound to 127.0.0.1 (reach it through a tunnel).
+# See README.md. Needs .env with DEMO_DB_PASSWORD, DEMO_JWT_SECRET, DEMO_ORIGIN, APP_VERSION.
+name: orderrestro-demo
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: ${DEMO_DB_PASSWORD:?set in .env}
+      POSTGRES_DB: demo
+    volumes: [demo_pg:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U demo"], interval: 5s, timeout: 5s, retries: 12 }
+    mem_limit: 256m
+    networks: [demo]
+
+  backend:
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:${APP_VERSION:?set in .env}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://demo:${DEMO_DB_PASSWORD}@db:5432/demo"
+      JWT_SECRET: ${DEMO_JWT_SECRET:?set in .env}
+      JWT_EXPIRES_IN: "12h"
+      PORT: "4000"
+      CORS_ORIGIN: "${DEMO_ORIGIN:-http://localhost:19951}"
+      COOKIE_SECURE: "${DEMO_COOKIE_SECURE:-true}"
+      TRUST_PROXY: "1"
+      UPLOADS_DIR: "/data/uploads"
+    depends_on: { db: { condition: service_healthy } }
+    mem_limit: 512m
+    networks: [demo]
+
+  web:
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:${APP_VERSION}
+    restart: unless-stopped
+    ports: ["127.0.0.1:19951:3000"]
+    depends_on: [backend]
+    mem_limit: 384m
+    networks: [demo]
+
+volumes:
+  demo_pg:
+
+networks:
+  demo:
