@@ -1,5 +1,5 @@
 {
-  "name": "Nodedr OrderRestro",
+  "name": "OrderRestro",
   "short_name": "OrderRestro",
   "description": "Offline-first restaurant management system — POS, tables, kitchen display, menu, inventory.",
   "start_url": "/",
