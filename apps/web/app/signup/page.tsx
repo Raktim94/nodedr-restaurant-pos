@@ -6,7 +6,7 @@ import { motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { toast } from "sonner";
+import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import { Logo } from "@/components/layout/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import { ApiError } from "@/lib/api";
 export default function SignupPage() {
   const router = useRouter();
   const register = useRegister();
+  const { note, clear, toast } = useNoteToast();
   const prefersReducedMotion = useReducedMotion();
   const {
     register: field,
@@ -122,6 +123,7 @@ export default function SignupPage() {
             )}
           </div>
 
+          <StatusNote note={note} onClear={clear} />
           <Button type="submit" className="mt-2 h-11" disabled={register.isPending}>
             {register.isPending ? "Creating your account…" : "Create account"}
           </Button>

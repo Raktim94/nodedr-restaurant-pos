@@ -14,6 +14,8 @@ import { PrismaService } from './../src/prisma/prisma.service';
 const run = process.env.ADDRESSES_E2E ? describe : describe.skip;
 const BRANCH = 'demo-branch';
 const q = `?branchId=${BRANCH}`;
+// These suites create a second restaurant, which needs sign-up opened (it is closed by default).
+process.env.ALLOW_PUBLIC_SIGNUP = 'true';
 const tag = randomUUID().slice(0, 6);
 
 run('Customer addresses (e2e)', () => {

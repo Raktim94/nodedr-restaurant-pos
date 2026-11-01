@@ -4,7 +4,7 @@ Status: **Verified** = run and observed · **Tested** = automated tests pass ·
 **Implemented** = code written, not run end to end · **Existing** = predates this
 checklist, inspected by reading code only · **Open** = not done · **Blocked** = needs access.
 
-Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 99 e2e tests (11 suites) pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
+Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 113 e2e tests (13 suites) pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -17,6 +17,10 @@ Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass,
 | Edit paid bill via adjustment entries | Open | Today: refund only |
 | Per-item discounts | Open | |
 | Multiple customer addresses | Verified | Model + migration (applied on Postgres 16, old address carried over), API, 6 e2e tests incl. tenant isolation, UI add/edit/default/delete and POS phone-based picker driven in a real browser |
+| **Security: open sign-up on a configured server** | Fixed + verified | `POST /auth/register` let any stranger create an OWNER (instance-wide backup/update/sync perms). Now closed after first run; `ALLOW_PUBLIC_SIGNUP=true` opts in. 4 e2e tests + proven on a fresh DB (1st owner 201, stranger 403) |
+| Security: cross-tenant sweep of every GET route | Verified | 134 GET routes replayed as a foreign-restaurant user (80 branch-scoped, 19 id-templated): no data leaks. Instance-level endpoints (backup/sync/update) are only reachable by perm holders - see sign-up fix |
+| Security: dependencies | Improved | `pnpm audit --prod` 19 findings (7 high) -> 3 moderate (transitive glob/minimatch via archiver, @hono via MCP SDK). node-forge ->1.4.2; shadcn CLI moved to devDependencies |
+| Security: web response headers | Fixed + verified | nosniff, X-Frame-Options, Referrer-Policy, Permissions-Policy, COOP, HSTS; X-Powered-By removed. CSP for web pages still open (needs nonce middleware) |
 | Webhooks (HMAC, SSRF guard), API keys/scopes | Existing | Retry/backoff, replay protection, delivery history not re-audited |
 | Zomato / Swiggy adapters | Open + Blocked | Needs partner API access and merchant credentials; none exist in this repo |
 | Order lifecycle NEW..COMPLETED, PREPARING/READY | Open | Status enum is OPEN/BILLED/PAID/CANCELLED plus acceptance gate; KDS tracks kitchen state separately |

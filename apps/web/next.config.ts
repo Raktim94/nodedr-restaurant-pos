@@ -8,8 +8,25 @@ import type { NextConfig } from "next";
 // from a build ARG, not a runtime env var (see nodedr-pos memory).
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:4001";
 
+// Baseline response headers for every page. A Content-Security-Policy is
+// intentionally NOT set here: a strict script-src without a per-request nonce
+// silently stops Next.js hydrating in production, so CSP needs a nonce
+// middleware of its own. camera=(self) is kept for the order-ticket QR scanner.
+const SECURITY_HEADERS = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=()" },
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+];
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  poweredByHeader: false,
+  async headers() {
+    return [{ source: "/:path*", headers: SECURITY_HEADERS }];
+  },
   // socket.io's endpoint is literally "/socket.io/" — the backend 404s on the
   // slash-less form, so Next must not redirect it.
   skipTrailingSlashRedirect: true,

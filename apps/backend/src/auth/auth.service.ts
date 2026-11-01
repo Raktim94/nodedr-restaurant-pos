@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   BadRequestException,
   Injectable,
   UnauthorizedException,
@@ -69,6 +70,18 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
+    // Sign-up is first-run setup. Once the server has a restaurant, anyone on
+    // the network creating another would get an OWNER role - which carries the
+    // instance-wide backup, update and sync permissions - so it stays closed
+    // unless the host opts in (ALLOW_PUBLIC_SIGNUP=true) to run several tenants.
+    if (
+      process.env.ALLOW_PUBLIC_SIGNUP !== 'true' &&
+      (await this.hasAnyRestaurant())
+    ) {
+      throw new ForbiddenException(
+        'Sign-up is closed on this server. Ask the restaurant owner to create your account.',
+      );
+    }
     const existing = await this.prisma.user.findFirst({
       where: { email: dto.email },
     });
