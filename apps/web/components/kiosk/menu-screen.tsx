@@ -1,5 +1,6 @@
 "use client";
 
+import { UploadImage } from "@/components/ui/upload-image";
 import { Plus, Search, ShoppingBag, X } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
@@ -153,8 +154,7 @@ export function MenuScreen({
                   return (
                     <li key={item.id} className="flex flex-col overflow-hidden rounded-2xl border-2 border-border bg-card">
                       {item.imageUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="h-32 w-full object-cover" />
+                        <UploadImage src={item.imageUrl} width={320} height={128} sizes="(max-width: 768px) 50vw, 320px" className="h-32 w-full object-cover" />
                       )}
                       <div className="flex flex-1 flex-col gap-1 p-4">
                         <h3 className="text-[1.3rem] font-bold leading-tight">{item.name}</h3>

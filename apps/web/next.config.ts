@@ -23,6 +23,22 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  images: {
+    // The backend's upload folder (proxied through /api) plus the app's own
+    // static images. Deliberately not "/**": that would let the optimizer fetch
+    // internal API routes. Nothing external is allowed.
+    localPatterns: [
+      { pathname: "/api/uploads/**" },
+      { pathname: "/logo.png" },
+      { pathname: "/brand-lockup.png" },
+      { pathname: "/screenshots/**" },
+      { pathname: "/icons/**" },
+    ],
+    // WebP only: AVIF is smaller but slow to encode on a small restaurant PC.
+    formats: ["image/webp"],
+    // Uploaded files have random names and are never overwritten.
+    minimumCacheTTL: 60 * 60 * 24 * 365,
+  },
   poweredByHeader: false,
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];

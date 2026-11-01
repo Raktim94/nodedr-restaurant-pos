@@ -9,6 +9,7 @@ import { ComboComponentsDialog } from "@/components/menu/combo-components-dialog
 import { EditCategoryDialog } from "@/components/menu/edit-category-dialog";
 import { EditItemDialog } from "@/components/menu/edit-item-dialog";
 import { Badge } from "@/components/ui/badge";
+import { UploadImage } from "@/components/ui/upload-image";
 import { Button } from "@/components/ui/button";
 import { ResponsiveTabs } from "@/components/ui/nav-picker";
 import { Card } from "@/components/ui/card";
@@ -210,8 +211,7 @@ export default function MenuPage() {
                 <li key={item.id} className="flex flex-col gap-2 py-3 first:pt-0">
                   <div className="flex items-start gap-3">
                     {item.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- uploaded asset served from the backend, not a Next-optimizable remote source
-                      <img src={item.imageUrl} alt="" width={48} height={48} loading="lazy" decoding="async" className="h-12 w-12 shrink-0 rounded-md bg-secondary object-cover" />
+                      <UploadImage src={item.imageUrl} width={48} height={48} className="h-12 w-12 shrink-0 rounded-md bg-secondary object-cover" />
                     ) : (
                       <div className="h-12 w-12 shrink-0 rounded-md bg-secondary" />
                     )}
@@ -274,16 +274,7 @@ export default function MenuPage() {
                     <TableCell className="font-medium text-foreground">
                       <div className="flex items-center gap-3">
                         {item.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- uploaded asset served from the backend, not a Next-optimizable remote source
-                          <img
-                            src={item.imageUrl}
-                            alt=""
-                            width={36}
-                            height={36}
-                            loading="lazy"
-                            decoding="async"
-                            className="h-9 w-9 shrink-0 rounded-md bg-secondary object-cover"
-                          />
+                          <UploadImage src={item.imageUrl} width={36} height={36} className="h-9 w-9 shrink-0 rounded-md bg-secondary object-cover" />
                         ) : (
                           <div className="h-9 w-9 shrink-0 rounded-md bg-secondary" />
                         )}

@@ -12,6 +12,7 @@ Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass,
 | Discount cap + reason + cash (₹) discount with presets at checkout | Verified | Unit + e2e + browser as a cashier: over-cap ₹100 on ₹220 blocked with message; ₹10 preset paid, DB shows FIXED 10, reason stored. Migrations applied on a scratch Postgres 16, not on any live install |
 | AGPL notices (NOTICE, COPYRIGHT, TRADEMARK_POLICY, SECURITY) | Implemented | Ownership and trademark registration unverified; 3 deps lack a licence field |
 | AGPL s13 source link in Settings | Implemented | Not seen in a browser |
+| Product image delivery: optimized WebP thumbnails, 1-year cache, restricted to upload + app static paths | Verified (menu page); kiosk cards not browser-tested | Realistic 660 KB photo served as 760 B (48px) / 1.9 KB (96px) / 7.5 KB (384px). Regression caught and fixed during verification: configuring `localPatterns` had blocked `/logo.png`; now an explicit allow-list (traversal / API / external URLs return 400). Uploads themselves are still stored at full size |
 | Menu grid text overflow, lazy images | Verified | Browser check with a 100-char unbroken name at 360/768/1440px: no page overflow, card inside grid, label clamped |
 | Edit open bill, refunds, cancel with reason | Existing | |
 | Edit paid bill via adjustment entries | Open | Today: refund only |
