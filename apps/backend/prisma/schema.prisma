@@ -80,6 +80,7 @@ model Restaurant {
   users              User[]
   integrationApiKeys IntegrationApiKey[]
   webhookEndpoints   WebhookEndpoint[]
+  integrationConnections IntegrationConnection[]
 
   @@map("restaurants")
 }
@@ -1405,6 +1406,13 @@ model Order {
   // Scheduled / pre-order: the kitchen should not start before this time.
   scheduledFor    DateTime?
 
+  // Orders that arrive from an outside platform (delivery aggregators, other
+  // systems). The pair (source, id) is unique per branch so a platform that
+  // retries or re-sends an order can never create it twice.
+  externalSource      String?
+  externalOrderId     String?
+  externalCustomerRef String?
+
   // Marketing (Phase 7): what discount source was applied at checkout.
   couponCode    String?
   promotionName String?
@@ -1421,6 +1429,7 @@ model Order {
 
   @@unique([branchId, orderNumber])
   @@unique([branchId, clientRequestId])
+  @@unique([branchId, externalSource, externalOrderId])
   @@index([branchId, status])
   @@index([branchId, deliveryStatus])
   @@index([integrationKeyId])
@@ -2360,4 +2369,60 @@ model SyncChange {
 
   @@index([tbl, pkKey], map: "sync_changes_row_idx")
   @@map("sync_changes")
+}
+
+
+// ---------------------------------------------------------------------------
+// Integrations hub: a restaurant's own connections to outside platforms
+// ---------------------------------------------------------------------------
+
+enum IntegrationStatus {
+  NOT_CONNECTED
+  PENDING_CONFIGURATION
+  CONNECTED
+  SYNC_ERROR
+  AUTH_EXPIRED
+  DISABLED
+}
+
+// One row per (restaurant, provider). The credentials belong to the
+// restaurant owner, are stored encrypted (AES-256-GCM, see
+// integration-hub/secret-box.ts) and are never returned by the API.
+model IntegrationConnection {
+  id           String            @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant        @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  provider     String
+  enabled      Boolean           @default(true)
+  status       IntegrationStatus @default(PENDING_CONFIGURATION)
+
+  externalAccountId String? // merchant / outlet id on the other platform
+  credentialsEnc    String?
+  config            Json?
+
+  lastSyncAt    DateTime?
+  lastSuccessAt DateTime?
+  lastError     String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  logs IntegrationLog[]
+
+  @@unique([restaurantId, provider])
+  @@map("integration_connections")
+}
+
+model IntegrationLog {
+  id           String                @id @default(cuid())
+  connectionId String
+  connection   IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  level        String // INFO | WARN | ERROR
+  event        String
+  message      String
+  createdAt    DateTime              @default(now())
+
+  @@index([connectionId, createdAt])
+  @@map("integration_logs")
 }

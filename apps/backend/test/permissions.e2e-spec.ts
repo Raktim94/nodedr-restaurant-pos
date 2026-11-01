@@ -163,10 +163,21 @@ run('Role permissions (e2e)', () => {
   });
 
   it('waiter keeps operational access: create an order and update a table status', async () => {
+    // Use a table of our own: "the first table" may belong to another suite
+    // that left a bill open on it, and a table with an open bill (correctly)
+    // cannot be set to cleaning.
     const floors = (
       await agents.WAITER.get(`/api/v1/tables/floors${q}`).expect(200)
-    ).body as { tables: { id: string }[] }[];
-    const tableId = floors.flatMap((f) => f.tables)[0].id;
+    ).body as { id: string }[];
+    const tableId = (
+      await agents.OWNER.post(`/api/v1/tables${q}`)
+        .send({
+          floorId: floors[0].id,
+          number: `PERM-${Date.now().toString(36)}`,
+          capacity: 2,
+        })
+        .expect(201)
+    ).body.id as string;
     expect(
       await status('WAITER', 'patch', `/tables/${tableId}/status${q}`, {
         status: 'CLEANING',

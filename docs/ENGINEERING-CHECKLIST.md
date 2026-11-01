@@ -4,7 +4,7 @@ Status: **Verified** = run and observed · **Tested** = automated tests pass ·
 **Implemented** = code written, not run end to end · **Existing** = predates this
 checklist, inspected by reading code only · **Open** = not done · **Blocked** = needs access.
 
-Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 119 e2e tests (13 suites) pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
+Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 130 e2e tests (14 suites) pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -22,7 +22,10 @@ Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass,
 | Security: dependencies | Improved | `pnpm audit --prod` 19 findings (7 high) -> 3 moderate (transitive glob/minimatch via archiver, @hono via MCP SDK). node-forge ->1.4.2; shadcn CLI moved to devDependencies |
 | Security: web response headers | Fixed + verified | nosniff, X-Frame-Options, Referrer-Policy, Permissions-Policy, COOP, HSTS; X-Powered-By removed. CSP for web pages still open (needs nonce middleware) |
 | Webhooks (HMAC, SSRF guard), API keys/scopes | Existing | Retry/backoff, replay protection, delivery history not re-audited |
-| Zomato / Swiggy adapters | Open + Blocked | Needs partner API access and merchant credentials; none exist in this repo |
+| Integrations hub (Settings -> Integrations): adapter interface + registry, encrypted credentials, status, enable/disable, test, activity log | Verified | 11 e2e + 6 unit tests, mutation-checked (plaintext storage is caught); browser: secret never in page/log/reopened form, status honest. Docs: docs/INTEGRATIONS.md. Migration 20261101210000 applied on scratch Postgres |
+| Zomato / Swiggy live order sync | **Blocked** | Credentials can be saved; sync cannot be built or tested without partner API access + sandbox. Adapters never report Connected. External-order columns (externalSource/externalOrderId, unique per branch) are in place for idempotent import |
+| Payment gateway / accounting / marketing / messaging connectors | Not implemented | Not listed in the UI |
+| Incoming webhook receiver for platform pushes, menu-item mapping for imported orders | Open | Depends on a real adapter |
 | Order lifecycle NEW..COMPLETED, PREPARING/READY | Open | Status enum is OPEN/BILLED/PAID/CANCELLED plus acceptance gate; KDS tracks kitchen state separately |
 | Dashboard KPI click-through | Verified | 10/10 cards/rows link to the right view in a browser; `/orders?tab=&filter=` deep links work. Chart axis clipping fixed |
 | Dashboard: pending payments, low stock, customers, team, draft payroll cards | Verified | DB-backed, role-gated on the server (cashier gets null for staff/inventory fields; e2e + browser). Deep links to /inventory?filter=low and /team?tab=payroll |
