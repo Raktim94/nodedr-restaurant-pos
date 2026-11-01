@@ -4,7 +4,7 @@ Status: **Verified** = run and observed · **Tested** = automated tests pass ·
 **Implemented** = code written, not run end to end · **Existing** = predates this
 checklist, inspected by reading code only · **Open** = not done · **Blocked** = needs access.
 
-Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 130 e2e tests (14 suites) pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
+Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 139 e2e tests (15 suites) pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -33,7 +33,7 @@ Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass,
 | Cashier 403 on GET /settings (shell brand + checkout UPI QR silently missing) | Fixed + verified | New allow-listed GET /settings/display; cashier now sees the UPI QR in a browser |
 | Payroll: adjustments (allowances, bonus, advance, deductions), PAID state, pay-once guard, salary slip, duplicate-run lock | Verified | 10 e2e tests (incl. concurrent create/pay races, mutation-checked), unit tests for the maths, and a browser run: adjust -> finalize -> pay -> printable slip, DB confirmed. Migration 20261101180000 applied on scratch Postgres |
 | Payroll: statutory deductions (PF/ESI/TDS), overtime, daily wages, attendance corrections log, CSV/PDF export | Open | Amounts are manual adjustments only; rules must be configurable per restaurant, none hardcoded |
-| Attendance module | Open | Still no tests; only exercised indirectly via payroll hours |
+| Attendance: validated clock in/out, race-proof clock-in, audited manager corrections (reason, before/after), blocked inside finalized payroll | Verified (API) | 9 e2e tests; race and payroll-lock tests are mutation-checked (fail without the fix). Correction UI not built yet - API only |
 | **App-wide: `toast.*` renders nothing (Toaster removed in 1.3.0)** | **Open - decision needed** | 65 files still call sonner `toast`, so their success/error messages are invisible. New code uses inline `StatusNote`. Remount an errors-only Toaster, or convert the 65 files |
 | Cash register open/close reconciliation | Open | `Shift` model exists, not audited |
 | Browser verification of every screen | Partial | Dashboard, POS, Orders, Customer detail driven in Chrome via Playwright; the other screens not yet |
