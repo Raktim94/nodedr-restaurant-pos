@@ -2,7 +2,7 @@
 
 | Name | Role | Contact |
 |---|---|---|
-| Raktim Ranjit | Lead Maintainer | mail@raktimranjit.com · [@Raktim94](https://github.com/Raktim94) |
+| Raktim Ranjit | Lead Maintainer | [raktimranjit.com](https://www.raktimranjit.com/) · mail@raktimranjit.com · [@Raktim94](https://github.com/Raktim94) |
 
 ## Copyright
 
