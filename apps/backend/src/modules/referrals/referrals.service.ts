@@ -362,7 +362,6 @@ export class ReferralsService {
       referredPoints: cfg.referredPoints,
       minPurchase: cfg.minPurchase,
       onlineMinOrder: cfg.onlineMinOrder,
-      onlineMinOrder: cfg.onlineMinOrder,
       rewards: steps.map((p) => ({ points: p, discount: round(p * value) })),
       invited,
       rewarded,
