@@ -29,3 +29,6 @@
 -keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 -dontwarn com.getcapacitor.**
+
+# ServerLink.pushReady looks FirebaseApp up by name.
+-keep class com.google.firebase.FirebaseApp { public static java.util.List getApps(android.content.Context); }
