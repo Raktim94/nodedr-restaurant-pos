@@ -1,7 +1,8 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { AddIngredientDialog } from "@/components/inventory/add-ingredient-dialog";
 import { AdjustStockDialog } from "@/components/inventory/adjust-stock-dialog";
 import { InventoryTabs } from "@/components/inventory/inventory-tabs";
@@ -21,14 +22,19 @@ import { useBranch } from "@/hooks/use-branch";
 import { useIngredients, useTrackingStatus } from "@/hooks/use-inventory";
 import { formatCurrency } from "@/lib/format";
 
-export default function InventoryPage() {
+function InventoryView() {
   const { branchId } = useBranch();
   const [search, setSearch] = useState("");
+  // Dashboard deep link: /inventory?filter=low starts on the low-stock view.
+  const params = useSearchParams();
+  const [lowOnly, setLowOnly] = useState(() => params.get("filter") === "low");
   const { data: ingredients, isLoading } = useIngredients(branchId);
   const { data: trackingStatus } = useTrackingStatus(branchId);
 
-  const filtered = ingredients?.filter((i) =>
-    i.name.toLowerCase().includes(search.toLowerCase()),
+  const filtered = ingredients?.filter(
+    (i) =>
+      i.name.toLowerCase().includes(search.toLowerCase()) &&
+      (!lowOnly || Number(i.currentStock) <= Number(i.reorderLevel)),
   );
 
   return (
@@ -60,12 +66,27 @@ export default function InventoryPage() {
         </div>
       )}
 
-      <Input
-        placeholder="Search ingredients…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="max-w-sm"
-      />
+      <div className="flex flex-wrap items-center gap-3">
+        <Input
+          placeholder="Search ingredients…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-sm"
+        />
+        <button
+          type="button"
+          aria-pressed={lowOnly}
+          onClick={() => setLowOnly((v) => !v)}
+          className={
+            "rounded-full border px-3.5 py-1.5 text-sm transition-colors " +
+            (lowOnly
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-border text-muted-foreground hover:bg-secondary")
+          }
+        >
+          Low stock only
+        </button>
+      </div>
 
       <Card className="overflow-hidden p-0">
         {isLoading ? (
@@ -132,5 +153,13 @@ export default function InventoryPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+export default function InventoryPage() {
+  return (
+    <Suspense fallback={<Skeleton className="h-96 rounded-2xl" />}>
+      <InventoryView />
+    </Suspense>
   );
 }

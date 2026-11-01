@@ -130,11 +130,7 @@ export class CustomersService {
     });
   }
 
-  async removeAddress(
-    branchId: string,
-    customerId: string,
-    addressId: string,
-  ) {
+  async removeAddress(branchId: string, customerId: string, addressId: string) {
     await this.assertInBranch(branchId, customerId);
     await this.prisma.$transaction(async (tx) => {
       const existing = await tx.customerAddress.findFirst({

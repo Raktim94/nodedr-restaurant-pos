@@ -36,6 +36,16 @@ export class SettingsController {
     private readonly branchAccess: BranchAccessService,
   ) {}
 
+  @Auth()
+  @Get('display')
+  async getDisplay(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.settingsService.getDisplay(user.restaurantId, branchId);
+  }
+
   @Auth('settings.manage')
   @Get()
   async get(

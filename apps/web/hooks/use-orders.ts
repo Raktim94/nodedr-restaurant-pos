@@ -75,7 +75,7 @@ export interface BillPreview {
 
 export type BillAdjustments = Pick<
   CheckoutDto,
-  "discountPercent" | "tipAmount" | "loyaltyPointsToRedeem" | "couponCode" | "customerId"
+  "discountPercent" | "discountFlat" | "tipAmount" | "loyaltyPointsToRedeem" | "couponCode" | "customerId"
 >;
 
 export function useBillPreview(branchId: string | null, orderId: string, adj: BillAdjustments, enabled = true) {

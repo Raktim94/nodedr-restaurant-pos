@@ -25,10 +25,11 @@ import {
   type CreatedOrder,
 } from "@/hooks/use-orders";
 import { usePrintKot, usePrintOrderUsb, type PrintJobResult } from "@/hooks/use-print";
-import { useSettings } from "@/hooks/use-settings";
+import { useDisplaySettings } from "@/hooks/use-settings";
 import { api, ApiError } from "@/lib/api";
 import { discountSummary, parseMoney, planPayment } from "@/lib/bill";
 import { formatCurrency } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { publishDisplay } from "@/lib/customer-display";
 import { playPaymentReceived } from "@/lib/celebrate";
 import { buildUpiUri } from "@/lib/upi";
@@ -82,7 +83,10 @@ export function CheckoutPanel({
     : orderSnapshot;
   const [method, setMethod] = useState<PaymentMethodDto>("CASH");
   const [amountText, setAmountText] = useState("");
-  const [discountPercent, setDiscountPercent] = useState("0");
+  // The cashier enters either a percentage or a fixed cash amount; the server
+  // prices both the same way (and enforces the cap and the reason rule).
+  const [discountMode, setDiscountMode] = useState<"PERCENT" | "FLAT">("PERCENT");
+  const [discountValue, setDiscountValue] = useState("0");
   const [discountReason, setDiscountReason] = useState("");
   const [tipAmount, setTipAmount] = useState("0");
   const [pointsToRedeem, setPointsToRedeem] = useState("0");
@@ -130,18 +134,20 @@ export function CheckoutPanel({
       },
     );
   const [completed, setCompleted] = useState<CheckoutResult | null>(null);
-  const { data: settings } = useSettings(branchId);
+  const { data: settings } = useDisplaySettings(branchId);
 
   // What the guest has typed in, as numbers. Once a payment has been taken the
   // server locks the figures, so these stop mattering (and are not sent).
   const adjustments = useMemo(
     () => ({
-      discountPercent: Number(discountPercent) || 0,
+      ...(discountMode === "PERCENT"
+        ? { discountPercent: Math.min(Number(discountValue) || 0, 100) }
+        : { discountFlat: Number(discountValue) || 0 }),
       tipAmount: Number(tipAmount) || 0,
       loyaltyPointsToRedeem: Math.max(0, Math.floor(Number(pointsToRedeem) || 0)),
       couponCode: appliedCoupon || undefined,
     }),
-    [discountPercent, tipAmount, pointsToRedeem, appliedCoupon],
+    [discountMode, discountValue, tipAmount, pointsToRedeem, appliedCoupon],
   );
   const settled = useDebounced(adjustments);
   // Once any payment is on the bill the server fixes its figures and refuses
@@ -247,7 +253,7 @@ export function CheckoutPanel({
     const dto = {
       customerId: customer?.id,
       ...(locked ? {} : settled),
-      ...(!locked && Number(discountPercent) > 0 && discountReason.trim()
+      ...(!locked && Number(discountValue) > 0 && discountReason.trim()
         ? { discountReason: discountReason.trim() }
         : {}),
       giftCardCode: giftCardBalance !== null ? giftCardCode : undefined,
@@ -467,21 +473,58 @@ export function CheckoutPanel({
 
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="discount">Discount %</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="discount">Discount</Label>
+            <div role="group" aria-label="Discount type" className="flex overflow-hidden rounded-lg border border-border text-xs">
+              {(["PERCENT", "FLAT"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={discountMode === m}
+                  disabled={locked || !canDiscount}
+                  onClick={() => {
+                    setDiscountMode(m);
+                    setDiscountValue("0");
+                  }}
+                  className={cn(
+                    "min-h-8 px-2.5 font-medium transition-colors disabled:opacity-50",
+                    discountMode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary",
+                  )}
+                >
+                  {m === "PERCENT" ? "%" : "₹ Cash"}
+                </button>
+              ))}
+            </div>
+          </div>
           <Input
             id="discount"
             type="number"
             min="0"
-            max="100"
+            max={discountMode === "PERCENT" ? 100 : undefined}
+            inputMode="decimal"
             className="h-11"
-            value={discountPercent}
+            value={discountValue}
             disabled={locked || !canDiscount}
-            onChange={(e) => setDiscountPercent(e.target.value)}
+            onChange={(e) => setDiscountValue(e.target.value)}
           />
+          {canDiscount && !locked && (
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Discount presets">
+              {(discountMode === "PERCENT" ? [5, 10, 15, 20] : [10, 20, 50, 100]).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setDiscountValue(String(v))}
+                  className="min-h-8 rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-secondary"
+                >
+                  {discountMode === "PERCENT" ? `${v}%` : `₹${v}`}
+                </button>
+              ))}
+            </div>
+          )}
           {!canDiscount && (
             <p className="text-[11px] text-muted-foreground">Your role cannot apply discounts.</p>
           )}
-          {canDiscount && !locked && Number(discountPercent) > 0 && (
+          {canDiscount && !locked && Number(discountValue) > 0 && (
             <Input
               aria-label="Discount reason"
               placeholder="Reason for discount"

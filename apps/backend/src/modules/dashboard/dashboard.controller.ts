@@ -21,7 +21,7 @@ export class DashboardController {
     @Query('branchId') branchId: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.dashboardService.getSummary(branchId);
+    return this.dashboardService.getSummary(branchId, user.permissions);
   }
 
   @Auth('dashboard.sales.view')

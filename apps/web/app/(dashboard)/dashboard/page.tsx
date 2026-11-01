@@ -1,7 +1,7 @@
 "use client";
 
 import { BranchNotice } from "@/components/layout/branch-notice";
-import { ChefHat, ClipboardList, Flame, Globe, ReceiptText, Store, Timer, TrendingUp, Trash2, Wallet } from "lucide-react";
+import { AlertTriangle, ChefHat, ClipboardList, Flame, Globe, HandCoins, ReceiptText, Store, Timer, TrendingUp, Trash2, UserRound, Users, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { QuickActions } from "@/components/dashboard/quick-actions";
@@ -150,6 +150,46 @@ export default function DashboardPage() {
             accent="warning"
             href="/kds"
           />
+        </div>
+      )}
+
+      {data && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <StatCard
+            label="Pending payments"
+            value={
+              data.pendingPayments.count === 0
+                ? "0"
+                : `${data.pendingPayments.count} · ${formatCurrency(data.pendingPayments.balance)}`
+            }
+            icon={HandCoins}
+            accent={data.pendingPayments.count > 0 ? "warning" : undefined}
+            href="/orders?tab=active"
+          />
+          {data.lowStock !== null && (
+            <StatCard
+              label="Low stock"
+              value={String(data.lowStock)}
+              icon={AlertTriangle}
+              accent={data.lowStock > 0 ? "warning" : undefined}
+              href="/inventory?filter=low"
+            />
+          )}
+          {data.customers !== null && (
+            <StatCard label="Customers" value={String(data.customers)} icon={Users} href="/customers" />
+          )}
+          {data.employees !== null && (
+            <StatCard label="Team members" value={String(data.employees)} icon={UserRound} href="/team" />
+          )}
+          {data.draftPayrollRuns !== null && (
+            <StatCard
+              label="Payroll in draft"
+              value={String(data.draftPayrollRuns)}
+              icon={Wallet}
+              accent={data.draftPayrollRuns > 0 ? "warning" : undefined}
+              href="/team?tab=payroll"
+            />
+          )}
         </div>
       )}
 

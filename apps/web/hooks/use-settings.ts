@@ -59,6 +59,31 @@ export function useSettings(branchId: string | null) {
   });
 }
 
+// The slice every signed-in role may read. Used by the app shell, checkout and
+// menu dialogs; the full useSettings (settings.manage only) stays for the
+// Settings screens.
+export type DisplayRestaurant = Pick<
+  RestaurantSettings,
+  | "id" | "name" | "legalName" | "logoUrl" | "currency" | "timezone"
+  | "upiVpa" | "upiPayeeName" | "loyaltyPointValue" | "loyaltyEarnPerCurrency"
+  | "maxManualDiscountPercent" | "requireDiscountReason"
+>;
+export type DisplayBranch = Pick<
+  BranchSettings,
+  "id" | "name" | "address" | "phone" | "gstNumber" | "country" | "taxRegime" | "taxMode" | "taxLabel" | "taxId"
+>;
+
+export function useDisplaySettings(branchId: string | null) {
+  return useQuery({
+    queryKey: ["settings", branchId, "display"],
+    queryFn: () =>
+      api.get<{ restaurant: DisplayRestaurant; branch: DisplayBranch }>(
+        `/settings/display?branchId=${branchId}`,
+      ),
+    enabled: !!branchId,
+  });
+}
+
 export function useUpdateRestaurantSettings(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({

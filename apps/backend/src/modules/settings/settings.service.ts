@@ -19,6 +19,48 @@ export class SettingsService {
     private readonly audit: AuditService,
   ) {}
 
+  // Read-only slice for every signed-in role (shell branding, checkout UPI QR,
+  // tax label, discount rules). Deliberately an allow-list: no kiosk token,
+  // printer connection, integration or sync settings.
+  async getDisplay(restaurantId: string, branchId: string) {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      select: {
+        id: true,
+        name: true,
+        legalName: true,
+        logoUrl: true,
+        currency: true,
+        timezone: true,
+        upiVpa: true,
+        upiPayeeName: true,
+        loyaltyPointValue: true,
+        loyaltyEarnPerCurrency: true,
+        maxManualDiscountPercent: true,
+        requireDiscountReason: true,
+      },
+    });
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, restaurantId },
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        phone: true,
+        gstNumber: true,
+        country: true,
+        taxRegime: true,
+        taxMode: true,
+        taxLabel: true,
+        taxId: true,
+      },
+    });
+    if (!restaurant || !branch) {
+      throw new NotFoundException('Restaurant or branch not found');
+    }
+    return { restaurant, branch };
+  }
+
   async get(restaurantId: string, branchId: string) {
     const restaurant = await this.prisma.restaurant.findUnique({
       where: { id: restaurantId },

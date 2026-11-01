@@ -5,7 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSummary(branchId: string) {
+  async getSummary(branchId: string, permissions: string[] = []) {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -56,6 +56,9 @@ export class DashboardService {
       }),
     ]);
 
+    const has = (p: string) => permissions.includes(p);
+    const attention = await this.attention(branchId, has);
+
     const tableStatusMap = Object.fromEntries(
       tableCounts.map((row) => [row.status, row._count]),
     );
@@ -94,6 +97,63 @@ export class DashboardService {
         ready: kitchenQueueMap.READY ?? 0,
       },
       recentOrders,
+      ...attention,
+    };
+  }
+
+  // Figures that need a person to act. Each one is only computed (and so only
+  // ever returned) for a role allowed to see it; the rest come back null.
+  private async attention(branchId: string, has: (p: string) => boolean) {
+    const [pending, lowStock, customers, employees, draftPayroll] =
+      await Promise.all([
+        // Bills with money taken but not settled: the balance still owed.
+        this.prisma.order.findMany({
+          where: {
+            branchId,
+            status: 'OPEN',
+            payments: { some: {} },
+          },
+          select: { totalAmount: true, payments: { select: { amount: true } } },
+        }),
+        has('inventory.manage')
+          ? this.prisma.ingredient.findMany({
+              where: { branchId },
+              select: { currentStock: true, reorderLevel: true },
+            })
+          : null,
+        has('customers.manage')
+          ? this.prisma.customer.count({ where: { branchId } })
+          : null,
+        has('staff.manage')
+          ? this.prisma.user.count({
+              where: { isActive: true, branches: { some: { branchId } } },
+            })
+          : null,
+        has('staff.manage')
+          ? this.prisma.payrollRun.count({
+              where: { branchId, status: 'DRAFT' },
+            })
+          : null,
+      ]);
+
+    const owed = pending.reduce((sum, o) => {
+      const paid = o.payments.reduce((p, x) => p + Number(x.amount), 0);
+      return sum + Math.max(Number(o.totalAmount) - paid, 0);
+    }, 0);
+    return {
+      pendingPayments: {
+        count: pending.length,
+        balance: Math.round(owed * 100) / 100,
+      },
+      lowStock:
+        lowStock === null
+          ? null
+          : lowStock.filter(
+              (i) => Number(i.currentStock) <= Number(i.reorderLevel),
+            ).length,
+      customers,
+      employees,
+      draftPayrollRuns: draftPayroll,
     };
   }
 

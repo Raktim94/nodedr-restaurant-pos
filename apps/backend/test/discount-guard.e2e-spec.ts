@@ -45,7 +45,10 @@ run('Discount guardrails and payment recording (e2e)', () => {
   const setPolicy = (max: number, requireReason: boolean) =>
     owner
       .patch('/api/v1/settings/restaurant')
-      .send({ maxManualDiscountPercent: max, requireDiscountReason: requireReason })
+      .send({
+        maxManualDiscountPercent: max,
+        requireDiscountReason: requireReason,
+      })
       .expect(200);
 
   beforeAll(async () => {
@@ -76,8 +79,10 @@ run('Discount guardrails and payment recording (e2e)', () => {
       await prisma.branch.findUniqueOrThrow({ where: { id: BRANCH } })
     ).restaurantId;
 
-    const roles = (await owner.get('/api/v1/users/roles').expect(200))
-      .body as { id: string; name: string }[];
+    const roles = (await owner.get('/api/v1/users/roles').expect(200)).body as {
+      id: string;
+      name: string;
+    }[];
     const email = `cashier-${tag}@demo.local`;
     await owner
       .post('/api/v1/users')
@@ -229,8 +234,10 @@ run('Discount guardrails and payment recording (e2e)', () => {
       fullyPaid: true,
     });
     const [p] = await prisma.payment.findMany({ where: { orderId: o.id } });
-    expect([Number(p.amount), Number(p.tendered), Number(p.changeGiven)]).toEqual(
-      [350, 400, 50],
-    );
+    expect([
+      Number(p.amount),
+      Number(p.tendered),
+      Number(p.changeGiven),
+    ]).toEqual([350, 400, 50]);
   });
 });

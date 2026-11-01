@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -307,9 +308,13 @@ function Performance({ branchId }: { branchId: string | null }) {
   );
 }
 
-export default function TeamPage() {
+function TeamView() {
   const { branchId } = useBranch();
-  const [tab, setTab] = useState<Tab>("schedule");
+  const params = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = params.get("tab");
+    return TABS.find((x) => x === t) ?? "schedule";
+  });
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -336,5 +341,13 @@ export default function TeamPage() {
       {tab === "payroll" && <Payroll branchId={branchId} />}
       {tab === "performance" && <Performance branchId={branchId} />}
     </div>
+  );
+}
+
+export default function TeamPage() {
+  return (
+    <Suspense fallback={null}>
+      <TeamView />
+    </Suspense>
   );
 }

@@ -49,7 +49,10 @@ run('Customer addresses (e2e)', () => {
     customerId = (
       await owner
         .post(`/api/v1/customers${q}`)
-        .send({ name: `Addr ${tag}`, phone: `99${Math.floor(Math.random() * 1e8)}` })
+        .send({
+          name: `Addr ${tag}`,
+          phone: `99${Math.floor(Math.random() * 1e8)}`,
+        })
         .expect(201)
     ).body.id;
   });
@@ -62,7 +65,15 @@ run('Customer addresses (e2e)', () => {
   it('the first address becomes the default', async () => {
     const res = await owner
       .post(`${base()}${q}`)
-      .send({ label: 'Home', line1: '12B Rose Apts', street: 'MG Road', city: 'Pune', state: 'MH', pincode: '411001', landmark: 'Opp. Metro' })
+      .send({
+        label: 'Home',
+        line1: '12B Rose Apts',
+        street: 'MG Road',
+        city: 'Pune',
+        state: 'MH',
+        pincode: '411001',
+        landmark: 'Opp. Metro',
+      })
       .expect(201);
     expect(res.body.isDefault).toBe(true);
   });
@@ -71,7 +82,12 @@ run('Customer addresses (e2e)', () => {
     const office = (
       await owner
         .post(`${base()}${q}`)
-        .send({ label: 'Office', line1: '4th Floor, Tech Park', pincode: '411014', instructions: 'Call at gate' })
+        .send({
+          label: 'Office',
+          line1: '4th Floor, Tech Park',
+          pincode: '411014',
+          instructions: 'Call at gate',
+        })
         .expect(201)
     ).body;
     expect(office.isDefault).toBe(false);
@@ -147,8 +163,11 @@ run('Customer addresses (e2e)', () => {
     // Someone else's branch id: access refused.
     await other.get(`${base()}${q}`).expect(403);
     expect(
-      (await prisma.customerAddress.findUniqueOrThrow({ where: { id: mine.id } }))
-        .line1,
+      (
+        await prisma.customerAddress.findUniqueOrThrow({
+          where: { id: mine.id },
+        })
+      ).line1,
     ).not.toBe('hijack');
   });
 });

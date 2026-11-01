@@ -1,0 +1,254 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument -- supertest bodies are untyped by design */
+// Dashboard "needs attention" figures come from the database and are only
+// returned to roles allowed to see them.
+//   DASHBOARD_E2E=1 DATABASE_URL=... JWT_SECRET=x npx jest --config ./test/jest-e2e.json --runInBand dashboard-attention
+import { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { ThrottlerStorage } from '@nestjs/throttler';
+import { randomUUID } from 'crypto';
+import cookieParser from 'cookie-parser';
+import request from 'supertest';
+import { App } from 'supertest/types';
+import { AppModule } from './../src/app.module';
+import { PrismaService } from './../src/prisma/prisma.service';
+
+const run = process.env.DASHBOARD_E2E ? describe : describe.skip;
+const BRANCH = 'demo-branch';
+const q = `?branchId=${BRANCH}`;
+const tag = randomUUID().slice(0, 6);
+
+run('Dashboard attention figures (e2e)', () => {
+  let app: INestApplication<App>;
+  let prisma: PrismaService;
+  let owner: ReturnType<typeof request.agent>;
+  let cashier: ReturnType<typeof request.agent>;
+  let menuItemId: string;
+
+  const summary = async (a: ReturnType<typeof request.agent>) =>
+    (await a.get(`/api/v1/dashboard/summary${q}`).expect(200)).body;
+
+  beforeAll(async () => {
+    const mod = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ThrottlerStorage)
+      .useValue({
+        increment: () =>
+          Promise.resolve({
+            totalHits: 1,
+            timeToExpire: 60,
+            isBlocked: false,
+            timeToBlockExpire: 0,
+          }),
+      })
+      .compile();
+    app = mod.createNestApplication();
+    app.use(cookieParser());
+    app.setGlobalPrefix('api', { exclude: [] });
+    await app.init();
+    prisma = app.get(PrismaService);
+    owner = request.agent(app.getHttpServer());
+    await owner
+      .post('/api/v1/auth/login')
+      .send({ email: 'owner@demo.local', password: 'Password123!' })
+      .expect(201);
+    const roles = (await owner.get('/api/v1/users/roles').expect(200)).body as {
+      id: string;
+      name: string;
+    }[];
+    const email = `dash-cashier-${tag}@demo.local`;
+    await owner
+      .post('/api/v1/users')
+      .send({
+        name: `Cashier ${tag}`,
+        email,
+        password: 'Password123!',
+        roleId: roles.find((r) => r.name === 'CASHIER')!.id,
+        branchIds: [BRANCH],
+      })
+      .expect(201);
+    cashier = request.agent(app.getHttpServer());
+    await cashier
+      .post('/api/v1/auth/login')
+      .send({ email, password: 'Password123!' })
+      .expect(201);
+    const cats = (await owner.get(`/api/v1/menu/categories${q}`).expect(200))
+      .body;
+    menuItemId = (
+      await owner
+        .post(`/api/v1/menu/items${q}`)
+        .send({
+          categoryId: cats[0].id,
+          name: `DashItem-${tag}`,
+          price: 350,
+          taxRatePercent: 0,
+        })
+        .expect(201)
+    ).body.id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('counts a part-paid bill and the balance still owed, then drops it when settled', async () => {
+    const before = await summary(owner);
+    const order = (
+      await owner
+        .post(`/api/v1/orders${q}`)
+        .send({
+          type: 'TAKEAWAY',
+          guestName: 'Pay later',
+          items: [{ menuItemId, quantity: 1, modifierIds: [] }],
+        })
+        .expect(201)
+    ).body;
+    // An unpaid bill is not "pending payment" until money has been taken.
+    expect((await summary(owner)).pendingPayments.count).toBe(
+      before.pendingPayments.count,
+    );
+
+    await owner
+      .post(`/api/v1/orders/${order.id}/checkout${q}`)
+      .send({ allowPartial: true, payments: [{ method: 'CASH', amount: 300 }] })
+      .expect(201);
+    const mid = await summary(owner);
+    expect(mid.pendingPayments.count).toBe(before.pendingPayments.count + 1);
+    expect(mid.pendingPayments.balance).toBeCloseTo(
+      before.pendingPayments.balance + 50,
+      2,
+    );
+
+    await owner
+      .post(`/api/v1/orders/${order.id}/checkout${q}`)
+      .send({ payments: [{ method: 'CASH', amount: 50 }] })
+      .expect(201);
+    const after = await summary(owner);
+    expect(after.pendingPayments.count).toBe(before.pendingPayments.count);
+    expect(after.pendingPayments.balance).toBeCloseTo(
+      before.pendingPayments.balance,
+      2,
+    );
+  });
+
+  it('matches the database for customers, employees and low stock', async () => {
+    const s = await summary(owner);
+    expect(s.customers).toBe(
+      await prisma.customer.count({ where: { branchId: BRANCH } }),
+    );
+    expect(s.employees).toBe(
+      await prisma.user.count({
+        where: { isActive: true, branches: { some: { branchId: BRANCH } } },
+      }),
+    );
+    const ing = await prisma.ingredient.findMany({
+      where: { branchId: BRANCH },
+    });
+    expect(s.lowStock).toBe(
+      ing.filter((i) => Number(i.currentStock) <= Number(i.reorderLevel))
+        .length,
+    );
+    expect(s.draftPayrollRuns).toBe(
+      await prisma.payrollRun.count({
+        where: { branchId: BRANCH, status: 'DRAFT' },
+      }),
+    );
+  });
+
+  it('never returns restricted figures to a role without the permission', async () => {
+    const s = await summary(cashier);
+    expect(typeof s.customers).toBe('number'); // customers.manage
+    expect(s.employees).toBeNull(); // staff.manage
+    expect(s.draftPayrollRuns).toBeNull();
+    expect(s.lowStock).toBeNull(); // inventory.manage
+  });
+});
+
+run('Display settings for every role (e2e)', () => {
+  // Shares the app wiring style of the suite above, in its own module.
+  let app: INestApplication<App>;
+  let cashier: ReturnType<typeof request.agent>;
+  let other: ReturnType<typeof request.agent>;
+  const t = randomUUID().slice(0, 6);
+
+  beforeAll(async () => {
+    const mod = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ThrottlerStorage)
+      .useValue({
+        increment: () =>
+          Promise.resolve({
+            totalHits: 1,
+            timeToExpire: 60,
+            isBlocked: false,
+            timeToBlockExpire: 0,
+          }),
+      })
+      .compile();
+    app = mod.createNestApplication();
+    app.use(cookieParser());
+    app.setGlobalPrefix('api', { exclude: [] });
+    await app.init();
+    const owner = request.agent(app.getHttpServer());
+    await owner
+      .post('/api/v1/auth/login')
+      .send({ email: 'owner@demo.local', password: 'Password123!' })
+      .expect(201);
+    const roles = (await owner.get('/api/v1/users/roles').expect(200)).body as {
+      id: string;
+      name: string;
+    }[];
+    const email = `disp-cashier-${t}@demo.local`;
+    await owner
+      .post('/api/v1/users')
+      .send({
+        name: 'Disp Cashier',
+        email,
+        password: 'Password123!',
+        roleId: roles.find((r) => r.name === 'CASHIER')!.id,
+        branchIds: [BRANCH],
+      })
+      .expect(201);
+    cashier = request.agent(app.getHttpServer());
+    await cashier
+      .post('/api/v1/auth/login')
+      .send({ email, password: 'Password123!' })
+      .expect(201);
+    const otherEmail = `disp-other-${t}@example.com`;
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        ownerName: 'Other',
+        email: otherEmail,
+        password: 'Password123!',
+        restaurantName: `Other ${t}`,
+        branchName: 'Main',
+      })
+      .expect(201);
+    other = request.agent(app.getHttpServer());
+    await other
+      .post('/api/v1/auth/login')
+      .send({ email: otherEmail, password: 'Password123!' })
+      .expect(201);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('a cashier can read the display slice but not the full settings', async () => {
+    const res = await cashier.get(`/api/v1/settings/display${q}`).expect(200);
+    expect(res.body.restaurant.currency).toBeDefined();
+    expect(res.body.restaurant.maxManualDiscountPercent).toBeDefined();
+    expect(res.body.branch.taxMode).toBeDefined();
+    // Nothing sensitive leaks through the allow-list.
+    expect(res.body.branch).not.toHaveProperty('kioskToken');
+    expect(res.body.branch).not.toHaveProperty('printerHost');
+    expect(res.body.restaurant).not.toHaveProperty('integrationApiKeys');
+    await cashier.get(`/api/v1/settings${q}`).expect(403);
+  });
+
+  it("refuses another restaurant's branch and anonymous callers", async () => {
+    await other.get(`/api/v1/settings/display${q}`).expect(403);
+    await request(app.getHttpServer())
+      .get(`/api/v1/settings/display${q}`)
+      .expect(401);
+  });
+});

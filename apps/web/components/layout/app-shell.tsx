@@ -7,7 +7,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { EntityDialogHost } from "@/components/layout/entity-dialog-host";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useBranch } from "@/hooks/use-branch";
-import { useSettings } from "@/hooks/use-settings";
+import { useDisplaySettings } from "@/hooks/use-settings";
 import { BrandFooter } from "./brand-footer";
 import { BranchSwitcher } from "./branch-switcher";
 import { LanguageSwitcher } from "./language-switcher";
@@ -24,7 +24,7 @@ import { UserMenu } from "./user-menu";
 // restaurant sets its own logo/name under Settings.
 function RestaurantBrand() {
   const { branchId } = useBranch();
-  const { data } = useSettings(branchId);
+  const { data } = useDisplaySettings(branchId);
   const restaurant = data?.restaurant;
 
   if (restaurant?.logoUrl) {

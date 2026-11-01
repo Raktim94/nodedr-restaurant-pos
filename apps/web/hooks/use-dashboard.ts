@@ -15,6 +15,13 @@ export interface DashboardSummary {
     outOfService: number;
   };
   kitchenQueue: { new: number; accepted: number; preparing: number; ready: number };
+  /** Bills with money taken and a balance still owed. */
+  pendingPayments: { count: number; balance: number };
+  /** Role-gated on the server: null when the signed-in role may not see it. */
+  lowStock: number | null;
+  customers: number | null;
+  employees: number | null;
+  draftPayrollRuns: number | null;
   recentOrders: {
     id: string;
     orderNumber: string;
