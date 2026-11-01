@@ -304,6 +304,9 @@ run('Dashboard layout preferences (e2e)', () => {
       .post('/api/v1/auth/login')
       .send({ email, password: 'Password123!' })
       .expect(201);
+    // Start from a known layout: the demo owner is shared with other suites
+    // and with anyone who has been clicking around the running app.
+    await owner.put(P).send({}).expect(200);
   });
 
   afterAll(async () => {

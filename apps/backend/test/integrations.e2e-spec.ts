@@ -72,6 +72,21 @@ run('Integration API (e2e)', () => {
   });
 
   afterAll(async () => {
+    // The app caps active keys per restaurant, so a suite that leaves its keys
+    // behind fails on the Nth run against the same database. Revoke ours.
+    const mine = new Set(Object.keys(keys));
+    const list = await owner.get('/api/v1/integration-api-keys');
+    if (list.status === 200) {
+      for (const k of list.body as {
+        id: string;
+        name: string;
+        revokedAt?: string | null;
+      }[]) {
+        if (mine.has(k.name) && !k.revokedAt) {
+          await owner.delete(`/api/v1/integration-api-keys/${k.id}`);
+        }
+      }
+    }
     await app.close();
   });
 
