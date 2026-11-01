@@ -156,6 +156,8 @@ export type BillPreviewDto = z.infer<typeof billPreviewSchema>;
 
 export const checkoutSchema = z.object({
   ...billAdjustmentFields,
+  // Why a manual discount was given; stored on the order.
+  discountReason: z.string().trim().min(1).max(200).optional(),
   customerId: z.string().optional(),
   giftCardCode: z.string().optional(),
   payments: z

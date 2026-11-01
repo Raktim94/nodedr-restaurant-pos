@@ -25,6 +25,8 @@ export const restaurantSettingsSchema = z.object({
   upiPayeeName: z.string().trim().max(60).optional().nullable(),
   loyaltyPointValue: z.coerce.number().min(0).optional(),
   loyaltyEarnPerCurrency: z.coerce.number().int().positive().optional(),
+  maxManualDiscountPercent: z.coerce.number().min(0).max(100).optional(),
+  requireDiscountReason: z.boolean().optional(),
 });
 export type RestaurantSettingsDto = z.infer<typeof restaurantSettingsSchema>;
 

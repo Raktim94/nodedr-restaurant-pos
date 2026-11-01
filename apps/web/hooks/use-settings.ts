@@ -20,6 +20,8 @@ export interface RestaurantSettings {
   upiPayeeName: string | null;
   loyaltyPointValue: string;
   loyaltyEarnPerCurrency: number;
+  maxManualDiscountPercent: string;
+  requireDiscountReason: boolean;
 }
 
 export interface BranchSettings {

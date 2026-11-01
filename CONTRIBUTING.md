@@ -40,7 +40,10 @@ maintainer; project copyright is held jointly by
 [Nodedr Infotech Private Limited](https://www.nodedr.com/) and Raktim
 Ranjit. By submitting a PR, you agree your contribution is licensed under
 the same [AGPL-3.0](./LICENSE) as the rest of the project; you retain
-copyright on your own contribution.
+copyright on your own contribution. Only submit code you wrote or have the
+right to license under the AGPL-3.0, and keep third-party notices intact. The
+names and logos are covered separately by [`TRADEMARK_POLICY.md`](./TRADEMARK_POLICY.md);
+security issues go to [`SECURITY.md`](./SECURITY.md), not public issues.
 
 ## Before you start
 

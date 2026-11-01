@@ -12,6 +12,7 @@ export const PERMISSIONS = [
   { key: "orders.cancel", label: "Cancel Orders", category: "Orders" },
   { key: "orders.accept", label: "Accept / Decline Incoming Orders", category: "Orders" },
   { key: "discounts.apply", label: "Apply Discounts", category: "Orders" },
+  { key: "discounts.unlimited", label: "Discount Above the Cashier Limit", category: "Orders" },
   { key: "refunds.process", label: "Process Refunds", category: "Orders" },
   { key: "orders.delete", label: "Delete Past Transactions (admin password)", category: "Orders" },
   { key: "bills.print", label: "Print Bills", category: "Orders" },
@@ -87,7 +88,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
   ADMINISTRATOR: PERMISSIONS.map((p) => p.key),
   RESTAURANT_MANAGER: [
     "sales.view", "orders.create", "orders.edit", "orders.cancel", "orders.accept",
-    "discounts.apply", "bills.print", "tables.manage", "tables.view", "menu.manage", "menu.view",
+    "discounts.apply", "discounts.unlimited", "bills.print", "tables.manage", "tables.view", "menu.manage", "menu.view",
     "inventory.manage", "reports.access", "kds.manage",
     "reservations.manage", "customers.manage", "refunds.process",
     "attendance.manage", "delivery.manage", "staff.manage", "accounting.manage", "marketing.manage", "operations.manage",

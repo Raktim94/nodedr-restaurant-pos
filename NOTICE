@@ -1,0 +1,33 @@
+Nodedr OrderRestro
+Copyright (C) 2026 Nodedr Infotech Private Limited and Raktim Ranjit
+Licensed under the GNU Affero General Public License v3.0 only (see LICENSE).
+
+Original project: https://github.com/Raktim94/nodedr-restaurant-pos
+Official site:    https://orderrestro.nodedr.com/
+
+NETWORK USE (AGPL-3.0 section 13)
+If you run a modified version of this program as a service that other people
+use over a network, you must offer those users the Corresponding Source of your
+modified version. Unmodified copies satisfy this by pointing at the project
+repository above; the Settings page of the application carries that link.
+Keep it, and point it at your own source if you modify the program.
+
+MODIFIED VERSIONS (AGPL-3.0 section 5(a))
+A modified version must carry prominent notices that you changed the files and
+the date of each change, must keep these copyright notices, and must not be
+presented as the official Nodedr release (see TRADEMARK_POLICY.md).
+
+THIRD-PARTY SOFTWARE
+This product bundles or depends on open-source packages under their own
+licences, which remain with their authors and are preserved in each package's
+own LICENSE file under node_modules and in the shipped container images.
+Licences found in the installed dependency tree (checked 2026-11-01):
+  MIT, Apache-2.0, ISC, BSD-2-Clause, BSD-3-Clause, 0BSD, BlueOak-1.0.0,
+  Unlicense, MIT-0, MPL-2.0, CC-BY-4.0, Python-2.0, and
+  LGPL-3.0-or-later (sharp-libvips, a dynamically loaded native library used
+  by the image library "sharp").
+Dual-licensed packages (jszip: MIT OR GPL-3.0-or-later; node-forge:
+BSD-3-Clause OR GPL-2.0) are used under their permissive option.
+Everything above is compatible with distributing this program under AGPL-3.0.
+Re-run a licence scan before each release; this list is not a substitute for
+it.

@@ -222,3 +222,41 @@ export function settlePayments(args: {
     fullyPaid,
   };
 }
+
+/**
+ * Discount guardrails for a manual (cashier-entered) discount.
+ *
+ * The cap is a share of the bill subtotal, so a flat amount is compared by its
+ * percentage equivalent. Coupons and happy hour are rule-driven, not typed in,
+ * and are not subject to the cap. Throws when the discount is over the cap for
+ * someone without the override, or when a reason is required but missing.
+ */
+export function assertManualDiscountAllowed(args: {
+  subtotal: number;
+  discountPercent?: number;
+  discountFlat?: number;
+  /** Restaurant cap in percent; 100 means no cap. */
+  maxPercent: number;
+  requireReason: boolean;
+  reason?: string;
+  /** discounts.unlimited, or an owner/administrator. */
+  mayExceedCap: boolean;
+}): void {
+  const entry = manualDiscountEntry(
+    args.discountPercent ?? 0,
+    args.discountFlat ?? 0,
+  );
+  if (!entry) return;
+  const percent =
+    entry.type === 'PERCENT'
+      ? entry.value
+      : discountPercentOf(args.subtotal, entry.value);
+  if (!args.mayExceedCap && percent > args.maxPercent) {
+    throw new BadRequestException(
+      `Discounts above ${args.maxPercent}% need a manager - this one is ${percent}%`,
+    );
+  }
+  if (args.requireReason && !args.reason?.trim()) {
+    throw new BadRequestException('Enter a reason for the discount');
+  }
+}

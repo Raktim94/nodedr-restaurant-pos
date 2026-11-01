@@ -37,6 +37,7 @@ import {
 } from './pricing';
 import {
   computeBill,
+  assertManualDiscountAllowed,
   discountPercentOf,
   manualDiscountEntry,
   settlePayments,
@@ -1435,6 +1436,7 @@ export class OrdersService {
     orderId: string,
     userId: string,
     dto: CheckoutDto,
+    mayExceedDiscountCap = false,
   ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
@@ -1490,6 +1492,18 @@ export class OrdersService {
       dto.discountPercent ?? 0,
       dto.discountFlat ?? 0,
     );
+    // Only the first payment fixes the discount; later part-payments reuse it.
+    if (!locked) {
+      assertManualDiscountAllowed({
+        subtotal: bill.subtotal,
+        discountPercent: dto.discountPercent,
+        discountFlat: dto.discountFlat,
+        maxPercent: Number(branch.restaurant.maxManualDiscountPercent),
+        requireReason: branch.restaurant.requireDiscountReason,
+        reason: dto.discountReason,
+        mayExceedCap: mayExceedDiscountCap,
+      });
+    }
 
     let stockSkipped: { menuItemId: string; name: string; reason: string }[] =
       [];
@@ -1601,6 +1615,9 @@ export class OrdersService {
               discountAmount: bill.discountAmount,
               discountType: entry?.type ?? null,
               discountValue: entry?.value ?? null,
+              discountReason: entry
+                ? (dto.discountReason?.trim() ?? null)
+                : null,
               taxAmount: bill.taxAmount,
               couponCode: auto.couponCode ?? null,
               promotionName: auto.promotionName ?? null,

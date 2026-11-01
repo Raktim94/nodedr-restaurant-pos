@@ -168,6 +168,16 @@ function assertMayAdjust(user: SessionUser, adj: BillPreviewDto) {
   }
 }
 
+// Owners and administrators are never capped; other roles need the explicit
+// discounts.unlimited grant (roles saved before it existed do not have it).
+function mayExceedDiscountCap(user: SessionUser): boolean {
+  return (
+    user.roleName === 'OWNER' ||
+    user.roleName === 'ADMINISTRATOR' ||
+    user.permissions.includes('discounts.unlimited')
+  );
+}
+
 @ApiTags('orders')
 @Controller('v1/orders')
 export class OrdersController {
@@ -411,7 +421,13 @@ export class OrdersController {
         'Missing permission to apply a discount at checkout',
       );
     }
-    return this.ordersService.checkout(branchId, id, user.id, dto);
+    return this.ordersService.checkout(
+      branchId,
+      id,
+      user.id,
+      dto,
+      mayExceedDiscountCap(user),
+    );
   }
 
   // The bill / receipt page. For an open order it is the BILL as priced from

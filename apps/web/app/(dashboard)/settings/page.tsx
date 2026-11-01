@@ -182,6 +182,8 @@ function GeneralSettingsForm({
   const [loyaltyEarnPerCurrency, setLoyaltyEarnPerCurrency] = useState(
     String(restaurant.loyaltyEarnPerCurrency),
   );
+  const [maxDiscount, setMaxDiscount] = useState(String(Number(restaurant.maxManualDiscountPercent ?? 100)));
+  const [requireReason, setRequireReason] = useState(!!restaurant.requireDiscountReason);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const uploadLogo = useUploadRestaurantLogo();
 
@@ -213,6 +215,8 @@ function GeneralSettingsForm({
         upiPayeeName: upiPayeeName.trim() || null,
         loyaltyPointValue: Number(loyaltyPointValue) || 0,
         loyaltyEarnPerCurrency: Number(loyaltyEarnPerCurrency) || 1,
+        maxManualDiscountPercent: Math.min(Math.max(Number(maxDiscount) || 0, 0), 100),
+        requireDiscountReason: requireReason,
       },
       {
         onSuccess: () => toast.success("Restaurant details saved"),
@@ -385,6 +389,33 @@ function GeneralSettingsForm({
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-2">
+              <Label htmlFor="r-max-discount">Highest cashier discount (%)</Label>
+              <Input
+                id="r-max-discount"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={maxDiscount}
+                onChange={(e) => setMaxDiscount(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                100 means no limit. Owners, administrators and roles with “Discount Above the Cashier Limit” can go higher.
+              </p>
+            </div>
+            <label className="flex items-start gap-2 text-sm sm:pt-7">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={requireReason}
+                onChange={(e) => setRequireReason(e.target.checked)}
+              />
+              Require a reason for every discount
+            </label>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
               <Label htmlFor="r-upi">UPI id (for QR payments)</Label>
               <Input
                 id="r-upi"
@@ -505,6 +536,20 @@ function GeneralSettingsForm({
           </Button>
         </form>
       </Card>
+
+      <p className="text-xs text-muted-foreground">
+        Nodedr OrderRestro is free software under the GNU AGPL-3.0. The source code of the version
+        you are using is available to every user of this service at{" "}
+        <a
+          className="underline"
+          href="https://github.com/Raktim94/nodedr-restaurant-pos"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          github.com/Raktim94/nodedr-restaurant-pos
+        </a>
+        .
+      </p>
     </div>
   );
 }

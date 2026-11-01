@@ -83,6 +83,7 @@ export function CheckoutPanel({
   const [method, setMethod] = useState<PaymentMethodDto>("CASH");
   const [amountText, setAmountText] = useState("");
   const [discountPercent, setDiscountPercent] = useState("0");
+  const [discountReason, setDiscountReason] = useState("");
   const [tipAmount, setTipAmount] = useState("0");
   const [pointsToRedeem, setPointsToRedeem] = useState("0");
   const [giftCardCode, setGiftCardCode] = useState("");
@@ -246,6 +247,9 @@ export function CheckoutPanel({
     const dto = {
       customerId: customer?.id,
       ...(locked ? {} : settled),
+      ...(!locked && Number(discountPercent) > 0 && discountReason.trim()
+        ? { discountReason: discountReason.trim() }
+        : {}),
       giftCardCode: giftCardBalance !== null ? giftCardCode : undefined,
       payments,
       allowPartial: plan.partial || undefined,
@@ -476,6 +480,16 @@ export function CheckoutPanel({
           />
           {!canDiscount && (
             <p className="text-[11px] text-muted-foreground">Your role cannot apply discounts.</p>
+          )}
+          {canDiscount && !locked && Number(discountPercent) > 0 && (
+            <Input
+              aria-label="Discount reason"
+              placeholder="Reason for discount"
+              maxLength={200}
+              className="h-9 text-sm"
+              value={discountReason}
+              onChange={(e) => setDiscountReason(e.target.value)}
+            />
           )}
         </div>
         <div className="flex flex-col gap-2">

@@ -65,6 +65,13 @@ model Restaurant {
   loyaltyPointValue      Decimal @default(1) @db.Decimal(6, 2)
   loyaltyEarnPerCurrency Int     @default(100)
 
+  // Discount guardrails. A manual discount above maxManualDiscountPercent
+  // (as a share of the bill subtotal) needs the discounts.unlimited
+  // permission or an owner/administrator role. 100 = no cap, which keeps
+  // behaviour unchanged until a restaurant opts in.
+  maxManualDiscountPercent Decimal @default(100) @db.Decimal(5, 2)
+  requireDiscountReason    Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1337,6 +1344,8 @@ model Order {
   // discountAmount so a bill can show both the percentage and the amount.
   discountType  ManualDiscountType?
   discountValue Decimal?            @db.Decimal(12, 2)
+  // Why the cashier gave the manual discount (audit + reports).
+  discountReason String?
 
   // Client-generated idempotency key for public/unauthenticated order
   // submits (kiosk). A retry after a dropped connection carries the same

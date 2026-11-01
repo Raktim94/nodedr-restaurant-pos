@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { priceLine } from './pricing';
 import {
+  assertManualDiscountAllowed,
   computeBill,
   discountPercentOf,
   manualDiscountEntry,
@@ -247,5 +248,127 @@ describe('settlePayments', () => {
       ],
     });
     expect(s.fullyPaid).toBe(true);
+  });
+});
+
+describe('billing scenarios from the field (350 / 300 / 400, 500 less 50)', () => {
+  const bill350 = () => computeBill({ lines: [line(350)] }).totalDue;
+
+  it('exact cash: paid, stored payment is the full 350', () => {
+    const s = settlePayments({
+      balance: bill350(),
+      payments: [{ method: 'CASH', amount: 350 }],
+    });
+    expect(s.fullyPaid).toBe(true);
+    expect(s.payments.map((p) => p.amount)).toEqual([350]);
+    expect(s.balanceAfter).toBe(0);
+  });
+
+  it('short cash: records 300, never 350, leaves 50 due and is not paid', () => {
+    const s = settlePayments({
+      balance: bill350(),
+      payments: [{ method: 'CASH', amount: 300 }],
+      allowPartial: true,
+    });
+    expect(s.fullyPaid).toBe(false);
+    expect(s.paidNow).toBe(300);
+    expect(s.payments.map((p) => p.amount)).toEqual([300]);
+    expect(s.balanceAfter).toBe(50);
+  });
+
+  it('short cash without the partial flag is refused, not silently marked paid', () => {
+    expect(() =>
+      settlePayments({
+        balance: bill350(),
+        payments: [{ method: 'CASH', amount: 300 }],
+      }),
+    ).toThrow(BadRequestException);
+  });
+
+  it('excess cash: stores 350 applied, 400 tendered, 50 change, nothing due', () => {
+    const s = settlePayments({
+      balance: bill350(),
+      payments: [{ method: 'CASH', amount: 350, tendered: 400 }],
+    });
+    expect(s.payments[0]).toMatchObject({
+      amount: 350,
+      tendered: 400,
+      changeGiven: 50,
+    });
+    expect(s.changeDue).toBe(50);
+    expect(s.balanceAfter).toBe(0);
+    expect(s.fullyPaid).toBe(true);
+  });
+
+  it('second part-payment settles only what is left', () => {
+    const s = settlePayments({ balance: 50, payments: [{ method: 'UPI', amount: 50 }] });
+    expect(s.fullyPaid).toBe(true);
+  });
+
+  it('500 with a 50 cash discount is 450 payable', () => {
+    const b = computeBill({ lines: [line(500)], discountFlat: 50 });
+    expect(b.subtotal).toBe(500);
+    expect(b.discountAmount).toBe(50);
+    expect(b.totalDue).toBe(450);
+  });
+});
+
+describe('assertManualDiscountAllowed', () => {
+  const base = {
+    subtotal: 500,
+    maxPercent: 10,
+    requireReason: false,
+    mayExceedCap: false,
+  };
+
+  it('allows a discount at or under the cap', () => {
+    expect(() =>
+      assertManualDiscountAllowed({ ...base, discountPercent: 10 }),
+    ).not.toThrow();
+    expect(() =>
+      assertManualDiscountAllowed({ ...base, discountFlat: 50 }),
+    ).not.toThrow();
+  });
+
+  it('refuses a percentage over the cap', () => {
+    expect(() =>
+      assertManualDiscountAllowed({ ...base, discountPercent: 11 }),
+    ).toThrow(/above 10%/);
+  });
+
+  it('measures a flat discount by its percentage of the subtotal', () => {
+    expect(() =>
+      assertManualDiscountAllowed({ ...base, discountFlat: 51 }),
+    ).toThrow(BadRequestException);
+  });
+
+  it('lets an owner / unlimited grant go past the cap', () => {
+    expect(() =>
+      assertManualDiscountAllowed({
+        ...base,
+        discountPercent: 100,
+        mayExceedCap: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it('default cap of 100 changes nothing', () => {
+    expect(() =>
+      assertManualDiscountAllowed({ ...base, maxPercent: 100, discountPercent: 100 }),
+    ).not.toThrow();
+  });
+
+  it('requires a reason only when configured and a discount is given', () => {
+    const req = { ...base, maxPercent: 100, requireReason: true };
+    expect(() => assertManualDiscountAllowed({ ...req, discountPercent: 5 })).toThrow(
+      /reason/,
+    );
+    expect(() =>
+      assertManualDiscountAllowed({ ...req, discountPercent: 5, reason: '  ' }),
+    ).toThrow(/reason/);
+    expect(() =>
+      assertManualDiscountAllowed({ ...req, discountPercent: 5, reason: 'Regular guest' }),
+    ).not.toThrow();
+    expect(() => assertManualDiscountAllowed({ ...req })).not.toThrow();
   });
 });
