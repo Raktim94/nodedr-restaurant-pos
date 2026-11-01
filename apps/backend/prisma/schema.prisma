@@ -70,6 +70,10 @@ model Restaurant {
   referralEnabled        Boolean @default(false)
   referralSharerPoints   Int     @default(15)
   referralReferredPoints Int     @default(10)
+  // Food value (bill subtotal) the referred customer's first purchase must reach for the rewards to pay.
+  referralMinPurchase    Decimal @default(200) @db.Decimal(10, 2)
+  // Smallest order a website / API customer may place. 0 = no minimum.
+  onlineMinOrderAmount   Decimal @default(0) @db.Decimal(10, 2)
 
   // Discount guardrails. A manual discount above maxManualDiscountPercent
   // (as a share of the bill subtotal) needs the discounts.unlimited

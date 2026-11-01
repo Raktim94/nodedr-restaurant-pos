@@ -77,6 +77,9 @@ function build(opts: { zones?: boolean } = {}) {
   };
 
   const prisma: any = {
+    restaurant: {
+      findUniqueOrThrow: jest.fn(async () => ({ onlineMinOrderAmount: 0 })),
+    },
     branch: {
       findFirst: jest.fn(async ({ where }: any) =>
         where.id === BRANCH && where.restaurantId === 'r1'

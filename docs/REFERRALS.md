@@ -12,6 +12,8 @@ for a discount straight away.
 | Referral rewards | Off | Master switch. Off = no codes are issued, nothing is attributed, nothing is paid. |
 | Points for the customer who shares | 15 | Paid to the original customer. |
 | Points for the new customer | 10 | Paid to the person who was referred. |
+| Minimum food value of the first order | 200 | The referred customer's first paid order must have items worth at least this (before discounts); smaller orders pay nothing and the referral stays pending for a later, bigger order. |
+| Smallest online order accepted | 0 | Website / API orders below this are refused (0 = no minimum). Zomato / Swiggy and table-QR orders are not affected. |
 | 1 point redeems for | 1.00 | Value of a point in the shop's currency. For **100 points = ₹10** enter `0.10`. |
 
 ## Rules (all enforced on the server)

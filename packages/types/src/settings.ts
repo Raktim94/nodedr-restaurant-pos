@@ -28,6 +28,8 @@ export const restaurantSettingsSchema = z.object({
   referralEnabled: z.boolean().optional(),
   referralSharerPoints: z.coerce.number().int().min(0).max(100000).optional(),
   referralReferredPoints: z.coerce.number().int().min(0).max(100000).optional(),
+  referralMinPurchase: z.coerce.number().min(0).max(1000000).optional(),
+  onlineMinOrderAmount: z.coerce.number().min(0).max(1000000).optional(),
   maxManualDiscountPercent: z.coerce.number().min(0).max(100).optional(),
   requireDiscountReason: z.boolean().optional(),
 });

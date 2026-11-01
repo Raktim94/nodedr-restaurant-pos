@@ -49,7 +49,7 @@ run('Referral rewards (e2e)', () => {
         customerName: `Cust ${p.slice(-4)}`,
         customerPhone: p,
         delivery: { address: '12 MG Road, Flat 4B', pincode: '700001' },
-        items: [{ menuItemId: 'demo-item-cola', quantity: 2 }],
+        items: [{ menuItemId: 'demo-item-cola', quantity: 3 }],
         ...over,
       });
   const points = async (p: string) =>
@@ -119,6 +119,8 @@ run('Referral rewards (e2e)', () => {
         referralReferredPoints: original.referralReferredPoints as number,
         loyaltyPointValue: original.loyaltyPointValue as never,
         loyaltyEarnPerCurrency: original.loyaltyEarnPerCurrency as number,
+        referralMinPurchase: original.referralMinPurchase as never,
+        onlineMinOrderAmount: original.onlineMinOrderAmount as never,
       },
     });
     await app.close();
@@ -134,6 +136,8 @@ run('Referral rewards (e2e)', () => {
       referralReferredPoints: 10,
       loyaltyPointValue: 0.1,
       loyaltyEarnPerCurrency: 100000,
+      referralMinPurchase: 200,
+      onlineMinOrderAmount: 0,
     });
     const r = await rewards(phone(1)).expect(201);
     expect(r.body.referralEnabled).toBe(false);
@@ -197,6 +201,7 @@ run('Referral rewards (e2e)', () => {
         branchId: BRANCH,
         customerId: null,
         totalAmount: 100,
+        foodValue: 300,
       }),
     );
     const ref = await prisma.referral.findFirstOrThrow({
@@ -210,6 +215,7 @@ run('Referral rewards (e2e)', () => {
         branchId: BRANCH,
         customerId: ref.referredId,
         totalAmount: 100,
+        foodValue: 300,
       }),
     );
     expect(await points(phone(2))).toBe(10);
@@ -316,6 +322,7 @@ run('Referral rewards (e2e)', () => {
             branchId: BRANCH,
             customerId: ref.referredId,
             totalAmount: 100,
+            foodValue: 300,
           }),
         ),
       ),
@@ -325,6 +332,42 @@ run('Referral rewards (e2e)', () => {
     expect(
       await prisma.pointsLedger.count({ where: { referralId: ref.id } }),
     ).toBe(2);
+  });
+
+  it('a first order under the food-value minimum pays nothing and stays pending; a bigger one pays', async () => {
+    const small = await place(phone(10), {
+      referralCode: code,
+      items: [{ menuItemId: 'demo-item-cola', quantity: 2 }], // 180 < 200
+    }).expect(201);
+    await accept(small.body.id);
+    expect((await payInFull(small.body.id)).status).toBe(201);
+    const ref = await prisma.referral.findFirstOrThrow({
+      where: { referred: { phone: phone(10) } },
+    });
+    expect(ref.status).toBe('PENDING');
+    expect(await points(phone(10))).toBe(0);
+    const before = await points(phone(1));
+    const big = await place(phone(10)).expect(201); // 270 >= 200
+    await accept(big.body.id);
+    expect((await payInFull(big.body.id)).status).toBe(201);
+    expect(await points(phone(10))).toBe(10);
+    expect(await points(phone(1))).toBe(before + 15);
+  });
+
+  it('refuses online orders below the minimum and accepts ones at or above it', async () => {
+    await settings({ onlineMinOrderAmount: 200 });
+    try {
+      const low = await place(phone(11), {
+        items: [{ menuItemId: 'demo-item-cola', quantity: 2 }],
+      }).expect(400);
+      expect(JSON.stringify(low.body)).toMatch(/minimum order/i);
+      expect(
+        await prisma.order.count({ where: { customer: { phone: phone(11) } } }),
+      ).toBe(0);
+      await place(phone(11)).expect(201);
+    } finally {
+      await settings({ onlineMinOrderAmount: 0 });
+    }
   });
 
   it('is private: another restaurant cannot use this code', async () => {

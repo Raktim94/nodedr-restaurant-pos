@@ -206,6 +206,14 @@ export class IntegrationsService {
     // Prices, tax and the delivery fee are all worked out by OrdersService
     // from the live menu and the location's zones; nothing monetary from the
     // caller is read (the schema strips unknown fields).
+    const minOrderAmount = Number(
+      (
+        await this.prisma.restaurant.findUniqueOrThrow({
+          where: { id: ctx.restaurantId },
+          select: { onlineMinOrderAmount: true },
+        })
+      ).onlineMinOrderAmount,
+    );
     for (let attempt = 1; ; attempt++) {
       try {
         const created = await this.orders.createOrder(
@@ -237,6 +245,7 @@ export class IntegrationsService {
             clientRequestId,
             clientRequestHash,
             integrationKeyId: ctx.id,
+            minOrderAmount: minOrderAmount > 0 ? minOrderAmount : undefined,
           },
         );
         const rewards =

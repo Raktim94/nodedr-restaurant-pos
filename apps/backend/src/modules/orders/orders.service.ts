@@ -173,6 +173,8 @@ export class OrdersService {
       externalSource?: string;
       externalOrderId?: string;
       externalCustomerRef?: string;
+      /** Refuse the order when its item total is below this (website / API orders). */
+      minOrderAmount?: number;
     } = {},
   ) {
     const channel = options.channel ?? 'STAFF';
@@ -249,6 +251,11 @@ export class OrdersService {
       ),
     );
     const totals = computeOrderTotals(lineInputs.map((l) => l.priced));
+    if (options.minOrderAmount && totals.subtotal < options.minOrderAmount) {
+      throw new BadRequestException(
+        `Minimum order for online ordering is ₹${options.minOrderAmount}. Your items come to ₹${totals.subtotal}.`,
+      );
+    }
 
     // Delivery: the pincode must fall in one of this branch's active zones
     // and the item total must clear the zone's minimum. The zone's fee/ETA
@@ -1700,6 +1707,7 @@ export class OrdersService {
             branchId,
             customerId: effectiveCustomerId,
             totalAmount: bill.totalDue,
+            foodValue: bill.subtotal,
           });
         }
 

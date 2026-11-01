@@ -30,6 +30,8 @@ export class ReferralsService {
         referralEnabled: true,
         referralSharerPoints: true,
         referralReferredPoints: true,
+        referralMinPurchase: true,
+        onlineMinOrderAmount: true,
         loyaltyPointValue: true,
         currency: true,
       },
@@ -38,6 +40,8 @@ export class ReferralsService {
       enabled: r.referralEnabled,
       sharerPoints: r.referralSharerPoints,
       referredPoints: r.referralReferredPoints,
+      minPurchase: Number(r.referralMinPurchase),
+      onlineMinOrder: Number(r.onlineMinOrderAmount),
       pointValue: Number(r.loyaltyPointValue),
       currency: r.currency,
     };
@@ -186,6 +190,8 @@ export class ReferralsService {
       branchId: string;
       customerId: string | null;
       totalAmount: number;
+      /** Items total before discounts: what the minimum-purchase rule is measured on. */
+      foodValue: number;
     },
   ) {
     if (!order.customerId || !(order.totalAmount > 0)) return;
@@ -202,12 +208,15 @@ export class ReferralsService {
             referralEnabled: true,
             referralSharerPoints: true,
             referralReferredPoints: true,
+            referralMinPurchase: true,
           },
         },
       },
     });
     const r = branch.restaurant;
     if (!r.referralEnabled) return; // stays pending; pays if switched back on
+    // A small first order does not qualify; the referral stays pending for a later, bigger one.
+    if (order.foodValue < Number(r.referralMinPurchase)) return;
 
     const claim = await tx.referral.updateMany({
       where: { id: referral.id, status: 'PENDING' },
@@ -351,6 +360,9 @@ export class ReferralsService {
       balanceValue: round(pts * value),
       sharerPoints: cfg.sharerPoints,
       referredPoints: cfg.referredPoints,
+      minPurchase: cfg.minPurchase,
+      onlineMinOrder: cfg.onlineMinOrder,
+      onlineMinOrder: cfg.onlineMinOrder,
       rewards: steps.map((p) => ({ points: p, discount: round(p * value) })),
       invited,
       rewarded,

@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.12.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.12.1
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -85,7 +85,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.12.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.12.1
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -183,18 +183,20 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.12.0"
+  version: "1.12.1"
   update_at: "2026-11-02"
   release_notes:
     en_US: |-
-      1.12.0: referral rewards. Customers share a dish or their personal link; when
+      1.12.1: referral rewards. Customers share a dish or their personal link; when
       a new customer's first order is paid, the person who shared earns points and
       so does the new customer (Settings > General > Referral rewards: on/off, points
       for each side, and what a point is worth). Customers see their points,
       rewards and referral history, and can redeem points as a discount. Zomato,
       Swiggy and aggregator orders (UrbanPiper, Petpooja and similar) now arrive
       through a signed webhook in Settings > Integrations. A database change is
-      applied automatically on update.
+      applied automatically on update. Referral rewards need the new customer's first
+      order to reach a minimum food value (default 200), and a new setting lets you
+      refuse website orders below a minimum amount.
 
       1.11.0: discount limits with a required reason, cash (rupee) discounts and
       presets at the POS, several saved addresses per customer, a richer

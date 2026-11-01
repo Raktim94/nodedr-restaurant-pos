@@ -186,6 +186,8 @@ function GeneralSettingsForm({
   const [referralEnabled, setReferralEnabled] = useState(!!restaurant.referralEnabled);
   const [referralSharerPoints, setReferralSharerPoints] = useState(String(restaurant.referralSharerPoints ?? 15));
   const [referralReferredPoints, setReferralReferredPoints] = useState(String(restaurant.referralReferredPoints ?? 10));
+  const [referralMinPurchase, setReferralMinPurchase] = useState(String(Number(restaurant.referralMinPurchase ?? 200)));
+  const [onlineMinOrder, setOnlineMinOrder] = useState(String(Number(restaurant.onlineMinOrderAmount ?? 0)));
   const [maxDiscount, setMaxDiscount] = useState(String(Number(restaurant.maxManualDiscountPercent ?? 100)));
   const [requireReason, setRequireReason] = useState(!!restaurant.requireDiscountReason);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -223,6 +225,8 @@ function GeneralSettingsForm({
         referralEnabled,
         referralSharerPoints: Math.max(Math.floor(Number(referralSharerPoints) || 0), 0),
         referralReferredPoints: Math.max(Math.floor(Number(referralReferredPoints) || 0), 0),
+        referralMinPurchase: Math.max(Number(referralMinPurchase) || 0, 0),
+        onlineMinOrderAmount: Math.max(Number(onlineMinOrder) || 0, 0),
         maxManualDiscountPercent: Math.min(Math.max(Number(maxDiscount) || 0, 0), 100),
         requireDiscountReason: requireReason,
       },
@@ -438,6 +442,34 @@ function GeneralSettingsForm({
                 />
               </div>
             </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="r-referral-min">Minimum food value of the first order for rewards ({currency})</Label>
+              <Input
+                id="r-referral-min"
+                type="number"
+                min="0"
+                step="1"
+                disabled={!referralEnabled}
+                value={referralMinPurchase}
+                onChange={(e) => setReferralMinPurchase(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="r-online-min">Smallest online order accepted ({currency}, 0 = no minimum)</Label>
+            <Input
+              id="r-online-min"
+              type="number"
+              min="0"
+              step="1"
+              value={onlineMinOrder}
+              onChange={(e) => setOnlineMinOrder(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Orders from your website or the API below this amount are refused. Marketplace orders (Zomato, Swiggy)
+              and table QR orders are not affected.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
