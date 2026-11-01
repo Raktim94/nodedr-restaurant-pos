@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { sanitizePrefs, type DashboardPrefs } from './dashboard-prefs';
 
 @Injectable()
 export class DashboardService {
@@ -155,6 +157,24 @@ export class DashboardService {
       employees,
       unpaidPayrollRuns: draftPayroll,
     };
+  }
+
+  async getPreferences(userId: string): Promise<DashboardPrefs> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { dashboardPrefs: true },
+    });
+    return sanitizePrefs(user?.dashboardPrefs);
+  }
+
+  async setPreferences(userId: string, raw: unknown): Promise<DashboardPrefs> {
+    // Layout only. Nothing here can change the figures a widget shows.
+    const prefs = sanitizePrefs(raw);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { dashboardPrefs: prefs as unknown as Prisma.InputJsonValue },
+    });
+    return prefs;
   }
 
   async getTrends(branchId: string, days = 14) {

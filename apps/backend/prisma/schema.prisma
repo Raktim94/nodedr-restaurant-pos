@@ -248,6 +248,8 @@ model User {
   passwordHash            String
   pinHash                 String? // quick-switch PIN login on a shared terminal
   isActive                Boolean  @default(true)
+  // Personal dashboard layout (widget order/visibility, reporting window).
+  dashboardPrefs          Json?
   twoFactorSecret         String? // AES-GCM sealed TOTP secret (see auth/totp.ts)
   twoFactorEnabled        Boolean  @default(false)
   twoFactorRecoveryHashes String[] @default([]) // bcrypt hashes of unused one-time recovery codes

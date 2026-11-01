@@ -254,3 +254,131 @@ run('Display settings for every role (e2e)', () => {
       .expect(401);
   });
 });
+
+run('Dashboard layout preferences (e2e)', () => {
+  let app: INestApplication<App>;
+  let owner: ReturnType<typeof request.agent>;
+  let cashier: ReturnType<typeof request.agent>;
+  const t = randomUUID().slice(0, 6);
+  const P = '/api/v1/dashboard/preferences';
+
+  beforeAll(async () => {
+    const mod = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ThrottlerStorage)
+      .useValue({
+        increment: () =>
+          Promise.resolve({
+            totalHits: 1,
+            timeToExpire: 60,
+            isBlocked: false,
+            timeToBlockExpire: 0,
+          }),
+      })
+      .compile();
+    app = mod.createNestApplication();
+    app.use(cookieParser());
+    app.setGlobalPrefix('api', { exclude: [] });
+    await app.init();
+    owner = request.agent(app.getHttpServer());
+    await owner
+      .post('/api/v1/auth/login')
+      .send({ email: 'owner@demo.local', password: 'Password123!' })
+      .expect(201);
+    const roles = (await owner.get('/api/v1/users/roles').expect(200)).body as {
+      id: string;
+      name: string;
+    }[];
+    const email = `pref-cashier-${t}@demo.local`;
+    await owner
+      .post('/api/v1/users')
+      .send({
+        name: 'Pref Cashier',
+        email,
+        password: 'Password123!',
+        roleId: roles.find((r) => r.name === 'CASHIER')!.id,
+        branchIds: [BRANCH],
+      })
+      .expect(201);
+    cashier = request.agent(app.getHttpServer());
+    await cashier
+      .post('/api/v1/auth/login')
+      .send({ email, password: 'Password123!' })
+      .expect(201);
+  });
+
+  afterAll(async () => {
+    // Leave the shared demo owner's layout as we found it.
+    await owner.put(P).send({}).expect(200);
+    await app.close();
+  });
+
+  it('starts at the default layout', async () => {
+    const res = await cashier.get(P).expect(200);
+    expect(res.body).toEqual({
+      topOrder: ['kpis', 'attention', 'charts'],
+      cardOrder: ['tables', 'kitchen', 'recent', 'channels'],
+      hidden: [],
+      trendDays: 14,
+    });
+  });
+
+  it('saves, returns and keeps a custom layout', async () => {
+    const saved = await cashier
+      .put(P)
+      .send({
+        topOrder: ['charts', 'kpis', 'attention'],
+        cardOrder: ['recent', 'tables'],
+        hidden: ['channels'],
+        trendDays: 30,
+      })
+      .expect(200);
+    expect(saved.body.topOrder).toEqual(['charts', 'kpis', 'attention']);
+    expect(saved.body.cardOrder).toEqual([
+      'recent',
+      'tables',
+      'kitchen',
+      'channels',
+    ]);
+    expect(saved.body.hidden).toEqual(['channels']);
+    const again = (await cashier.get(P).expect(200)).body;
+    expect(again).toEqual(saved.body);
+  });
+
+  it("one person's layout never changes another's", async () => {
+    const mine = (await owner.get(P).expect(200)).body;
+    expect(mine.hidden).toEqual([]);
+    expect(mine.trendDays).toBe(14);
+  });
+
+  it('cleans up garbage instead of storing it', async () => {
+    const res = await cashier
+      .put(P)
+      .send({
+        topOrder: ['kpis', '<script>', { a: 1 }, 'kpis'],
+        hidden: ['tables', 'nope'],
+        trendDays: 9999,
+        extra: 'ignored',
+      })
+      .expect(200);
+    expect(res.body.topOrder).toEqual(['kpis', 'attention', 'charts']);
+    expect(res.body.hidden).toEqual(['tables']);
+    expect(res.body.trendDays).toBe(14);
+    expect(res.body).not.toHaveProperty('extra');
+  });
+
+  it('needs a signed-in user', async () => {
+    await request(app.getHttpServer()).get(P).expect(401);
+    await request(app.getHttpServer()).put(P).send({}).expect(401);
+  });
+
+  it('chart windows: only the supported ones, and the data matches', async () => {
+    const ok = await owner
+      .get(`/api/v1/dashboard/trends${q}&days=30`)
+      .expect(200);
+    expect(ok.body.revenue).toHaveLength(30);
+    const def = await owner.get(`/api/v1/dashboard/trends${q}`).expect(200);
+    expect(def.body.revenue).toHaveLength(14);
+    await owner.get(`/api/v1/dashboard/trends${q}&days=1000`).expect(400);
+    await owner.get(`/api/v1/dashboard/trends${q}&days=abc`).expect(400);
+  });
+});

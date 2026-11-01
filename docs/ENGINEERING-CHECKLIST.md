@@ -4,7 +4,7 @@ Status: **Verified** = run and observed · **Tested** = automated tests pass ·
 **Implemented** = code written, not run end to end · **Existing** = predates this
 checklist, inspected by reading code only · **Open** = not done · **Blocked** = needs access.
 
-Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 113 e2e tests (13 suites) pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
+Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 119 e2e tests (13 suites) pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -26,7 +26,7 @@ Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass,
 | Order lifecycle NEW..COMPLETED, PREPARING/READY | Open | Status enum is OPEN/BILLED/PAID/CANCELLED plus acceptance gate; KDS tracks kitchen state separately |
 | Dashboard KPI click-through | Verified | 10/10 cards/rows link to the right view in a browser; `/orders?tab=&filter=` deep links work. Chart axis clipping fixed |
 | Dashboard: pending payments, low stock, customers, team, draft payroll cards | Verified | DB-backed, role-gated on the server (cashier gets null for staff/inventory fields; e2e + browser). Deep links to /inventory?filter=low and /team?tab=payroll |
-| Dashboard widget show/hide/reorder, date ranges, role presets | Open | |
+| Dashboard customisation: show/hide, reorder, chart period (7/14/30/90 days), restore default, saved per user | Verified | Server-side whitelist (unit + 6 e2e); browser: reorder confirmed by on-screen position, persisted across a fresh login, another user unaffected. Not done: role-specific default layouts |
 | Cashier 403 on GET /settings (shell brand + checkout UPI QR silently missing) | Fixed + verified | New allow-listed GET /settings/display; cashier now sees the UPI QR in a browser |
 | Payroll: adjustments (allowances, bonus, advance, deductions), PAID state, pay-once guard, salary slip, duplicate-run lock | Verified | 10 e2e tests (incl. concurrent create/pay races, mutation-checked), unit tests for the maths, and a browser run: adjust -> finalize -> pay -> printable slip, DB confirmed. Migration 20261101180000 applied on scratch Postgres |
 | Payroll: statutory deductions (PF/ESI/TDS), overtime, daily wages, attendance corrections log, CSV/PDF export | Open | Amounts are manual adjustments only; rules must be configurable per restaurant, none hardcoded |

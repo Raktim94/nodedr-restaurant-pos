@@ -1,7 +1,7 @@
 "use client";
 
 import { BranchNotice } from "@/components/layout/branch-notice";
-import { AlertTriangle, ChefHat, ClipboardList, Flame, Globe, HandCoins, ReceiptText, Store, Timer, TrendingUp, Trash2, UserRound, Users, Wallet } from "lucide-react";
+import { AlertTriangle, ChefHat, SlidersHorizontal, ClipboardList, Flame, Globe, HandCoins, ReceiptText, Store, Timer, TrendingUp, Trash2, UserRound, Users, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { QuickActions } from "@/components/dashboard/quick-actions";
@@ -9,12 +9,20 @@ import { TrendChart } from "@/components/dashboard/trend-chart";
 import { OrderDetailDialog } from "@/components/orders/order-detail-dialog";
 import { RefundDialog } from "@/components/orders/refund-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
 import { useManagedOrders } from "@/hooks/use-orders";
 import { openEntity } from "@/lib/entity-events";
-import { useDashboardSummary, useDashboardTrends } from "@/hooks/use-dashboard";
+import { CustomizePanel } from "@/components/dashboard/customize-panel";
+import {
+  DEFAULT_DASHBOARD_PREFS,
+  useDashboardPrefs,
+  useDashboardSummary,
+  useDashboardTrends,
+  useSaveDashboardPrefs,
+} from "@/hooks/use-dashboard";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -91,15 +99,54 @@ function TableStatusRow({
 export default function DashboardPage() {
   const { branchId } = useBranch();
   const { data, isLoading } = useDashboardSummary(branchId);
-  const { data: trends, isLoading: trendsLoading } = useDashboardTrends(branchId);
+  const { data: prefsData } = useDashboardPrefs();
+  const prefs = prefsData ?? DEFAULT_DASHBOARD_PREFS;
+  const savePrefs = useSaveDashboardPrefs();
+  const { data: trends, isLoading: trendsLoading } = useDashboardTrends(branchId, prefs.trendDays);
   const [viewingOrderId, setViewingOrderId] = useState<string | null>(null);
+  const [customizing, setCustomizing] = useState(false);
+
+  // Layout only: where a widget sits and whether it shows. CSS `order` keeps
+  // the existing markup in place, and a hidden widget is simply not displayed.
+  const slot = (group: "top" | "card", id: string, className = "") => {
+    const list = group === "top" ? prefs.topOrder : prefs.cardOrder;
+    const index = Math.max(list.indexOf(id), 0);
+    // Inline display:none always beats a utility class like `flex` or `grid`.
+    return {
+      className,
+      style: {
+        order: (group === "top" ? 10 : 100) + index,
+        ...(prefs.hidden.includes(id) ? { display: "none" } : {}),
+      },
+    };
+  };
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Real-time overview of today&apos;s service</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Real-time overview of today&apos;s service</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-expanded={customizing}
+          onClick={() => setCustomizing((v) => !v)}
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          Customize
+        </Button>
       </div>
+
+      {customizing && (
+        <CustomizePanel
+          prefs={prefs}
+          saving={savePrefs.isPending}
+          onChange={(next) => savePrefs.mutate(next)}
+          onClose={() => setCustomizing(false)}
+        />
+      )}
 
       <OrderDetailDialog
         branchId={branchId}
@@ -114,6 +161,7 @@ export default function DashboardPage() {
 
       <QuickActions />
 
+      <div {...slot("top", "kpis")}>
       {isLoading || !data ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -152,9 +200,10 @@ export default function DashboardPage() {
           />
         </div>
       )}
+      </div>
 
       {data && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div {...slot("top", "attention", "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5")}>
           <StatCard
             label="Pending payments"
             value={
@@ -193,31 +242,31 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div {...slot("top", "charts", "grid grid-cols-1 gap-4 lg:grid-cols-2")}>
         <TrendChart
-          title="Revenue — last 14 days"
+          title={`Revenue — last ${prefs.trendDays} days`}
           icon={TrendingUp}
           data={trends?.revenue ?? []}
           valueKey="amount"
           color="var(--success)"
           valueFormatter={(v) => formatCurrency(v)}
           isLoading={trendsLoading}
-          emptyMessage="No paid orders in the last 14 days yet."
+          emptyMessage={`No paid orders in the last ${prefs.trendDays} days yet.`}
         />
         <TrendChart
-          title="Food waste cost — last 14 days"
+          title={`Food waste cost — last ${prefs.trendDays} days`}
           icon={Trash2}
           data={trends?.waste ?? []}
           valueKey="cost"
           color="var(--warning)"
           valueFormatter={(v) => formatCurrency(v)}
           isLoading={trendsLoading}
-          emptyMessage="No waste logged in the last 14 days — nice."
+          emptyMessage={`No waste logged in the last ${prefs.trendDays} days — nice.`}
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="flex flex-col gap-1 p-6 lg:col-span-1">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" style={{ order: 100 }}>
+        <Card {...slot("card", "tables", "flex flex-col gap-1 p-6 lg:col-span-1")}>
           <h2 className="mb-3 text-[18px] font-medium text-foreground">Tables</h2>
           {data && (
             <>
@@ -229,7 +278,7 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        <Card className="flex flex-col gap-1 p-6 lg:col-span-1">
+        <Card {...slot("card", "kitchen", "flex flex-col gap-1 p-6 lg:col-span-1")}>
           <h2 className="mb-3 flex items-center gap-2 text-[18px] font-medium text-foreground">
             <ChefHat className="h-[18px] w-[18px] text-muted-foreground" />
             Kitchen queue
@@ -244,7 +293,7 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        <Card className="flex flex-col gap-3 p-6 lg:col-span-1">
+        <Card {...slot("card", "recent", "flex flex-col gap-3 p-6 lg:col-span-1")}>
           <h2 className="flex items-center gap-2 text-[18px] font-medium text-foreground">
             <Timer className="h-[18px] w-[18px] text-muted-foreground" />
             Recent transactions
@@ -292,7 +341,7 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        <Card className="flex flex-col gap-3 p-6 lg:col-span-1">
+        <Card {...slot("card", "channels", "flex flex-col gap-3 p-6 lg:col-span-1")}>
           <h2 className="flex items-center gap-2 text-[18px] font-medium text-foreground">
             <ReceiptText className="h-[18px] w-[18px] text-muted-foreground" />
             Order channels
