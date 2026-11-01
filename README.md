@@ -308,6 +308,16 @@ Postgres over the originally-specced SQLite — is in
 </p>
 
 
+### One-line install (Ubuntu / Debian, amd64 and arm64)
+
+```bash
+curl -fsSL https://orderrestro.nodedr.com/install-linux.sh | sudo bash
+```
+
+Installs the `nodedr-orderrestro` .deb (runs in Docker; installs Docker if
+missing). OrderRestro opens on port 1995. Direct downloads and checksums are on
+the [releases page](https://github.com/Raktim94/nodedr-restaurant-pos/releases/latest).
+
 ### Installing Docker
 
 Skip this if `docker --version` already works. Otherwise, pick your OS:
