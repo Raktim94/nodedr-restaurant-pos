@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCurrentUser } from "@/hooks/use-auth";
 import { useBranch } from "@/hooks/use-branch";
 import { useManagedOrders } from "@/hooks/use-orders";
 import { openEntity } from "@/lib/entity-events";
@@ -34,6 +35,8 @@ function StatCard({
   icon: Icon,
   accent,
   href,
+  size = "default",
+  className,
 }: {
   label: string;
   value: string;
@@ -41,28 +44,52 @@ function StatCard({
   accent?: "success" | "warning";
   /** Where the full records behind this number live. */
   href: string;
+  /** hero = the one number to look at first; compact = supporting figures. */
+  size?: "hero" | "default" | "compact";
+  className?: string;
 }) {
+  const hero = size === "hero";
+  const compact = size === "compact";
   return (
     <Link
       href={href}
       aria-label={`${label}: ${value}. Open details`}
-      className="group block rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+      className={cn(
+        "group block rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+        className,
+      )}
     >
-    <Card className="flex h-full flex-col gap-3 p-6 transition group-hover:border-primary/40 group-hover:shadow-md">
+    <Card
+      className={cn(
+        "flex h-full flex-col transition group-hover:border-primary/40 group-hover:shadow-md",
+        hero
+          ? "justify-between gap-6 border-success/25 bg-gradient-to-br from-success/10 via-card to-card p-6 sm:p-7"
+          : compact
+            ? "gap-2 p-4"
+            : "gap-3 p-4 sm:p-6",
+        accent === "warning" && !hero && "border-warning/40",
+      )}
+    >
       <div className="flex items-center justify-between">
-        <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
+        <span className={cn("font-medium text-muted-foreground", compact ? "text-xs" : "text-[13px]")}>{label}</span>
         <div
           className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-xl",
+            "flex items-center justify-center rounded-xl",
+            compact ? "h-7 w-7" : "h-9 w-9",
             accent === "success" && "bg-success/10 text-success",
             accent === "warning" && "bg-warning/10 text-warning",
             !accent && "bg-primary/10 text-primary",
           )}
         >
-          <Icon className="h-[18px] w-[18px]" />
+          <Icon className={compact ? "h-4 w-4" : "h-[18px] w-[18px]"} />
         </div>
       </div>
-      <span className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
+      <span
+        className={cn(
+          "font-semibold tabular-nums tracking-tight text-foreground",
+          hero ? "text-4xl sm:text-5xl" : compact ? "text-xl sm:text-2xl" : "text-2xl sm:text-3xl",
+        )}
+      >
         {value}
       </span>
     </Card>
@@ -105,6 +132,12 @@ export default function DashboardPage() {
   const { data: trends, isLoading: trendsLoading } = useDashboardTrends(branchId, prefs.trendDays);
   const [viewingOrderId, setViewingOrderId] = useState<string | null>(null);
   const [customizing, setCustomizing] = useState(false);
+  const { data: me } = useCurrentUser();
+  const [now] = useState(() => new Date());
+  const hour = now.getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const firstName = (me?.user?.name ?? "").trim().split(/\s+/)[0];
+  const today = now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
   // Layout only: where a widget sits and whether it shows. CSS `order` keeps
   // the existing markup in place, and a hidden widget is simply not displayed.
@@ -125,8 +158,17 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Real-time overview of today&apos;s service</p>
+          <h1 className="text-[32px] font-semibold tracking-tight text-foreground">
+            {greeting}
+            {firstName ? `, ${firstName}` : ""}
+          </h1>
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="relative flex h-2 w-2" aria-hidden>
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/60 motion-reduce:animate-none" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+            </span>
+            Live · {today}
+          </p>
         </div>
         <Button
           variant="outline"
@@ -163,19 +205,21 @@ export default function DashboardPage() {
 
       <div {...slot("top", "kpis")}>
       {isLoading || !data ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[104px] rounded-2xl" />
+            <Skeleton key={i} className={cn("h-[120px] rounded-2xl", i === 0 && "col-span-2 xl:col-span-2")} />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
           <StatCard
             label="Today's Revenue"
             value={formatCurrency(data.todayRevenue)}
             icon={Wallet}
             accent="success"
             href="/reports"
+            size="hero"
+            className="col-span-2 xl:col-span-2"
           />
           <StatCard
             label="Today's Orders"
@@ -203,8 +247,9 @@ export default function DashboardPage() {
       </div>
 
       {data && (
-        <div {...slot("top", "attention", "grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5")}>
+        <div {...slot("top", "attention", "grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5")}>
           <StatCard
+            size="compact"
             label="Pending payments"
             value={
               data.pendingPayments.count === 0
@@ -217,6 +262,7 @@ export default function DashboardPage() {
           />
           {data.lowStock !== null && (
             <StatCard
+            size="compact"
               label="Low stock"
               value={String(data.lowStock)}
               icon={AlertTriangle}
@@ -225,13 +271,14 @@ export default function DashboardPage() {
             />
           )}
           {data.customers !== null && (
-            <StatCard label="Customers" value={String(data.customers)} icon={Users} href="/customers" />
+            <StatCard size="compact" label="Customers" value={String(data.customers)} icon={Users} href="/customers" />
           )}
           {data.employees !== null && (
-            <StatCard label="Team members" value={String(data.employees)} icon={UserRound} href="/team" />
+            <StatCard size="compact" label="Team members" value={String(data.employees)} icon={UserRound} href="/team" />
           )}
           {data.unpaidPayrollRuns !== null && (
             <StatCard
+            size="compact"
               label="Payroll to pay"
               value={String(data.unpaidPayrollRuns)}
               icon={Wallet}
@@ -265,7 +312,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" style={{ order: 100 }}>
+      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-4" style={{ order: 100 }}>
         <Card {...slot("card", "tables", "flex flex-col gap-1 p-6 lg:col-span-1")}>
           <h2 className="mb-3 text-[18px] font-medium text-foreground">Tables</h2>
           {data && (
