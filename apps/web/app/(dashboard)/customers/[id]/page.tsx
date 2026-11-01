@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useState } from "react";
 import { toast } from "sonner";
+import { AddressesCard } from "@/components/customers/addresses-card";
 import { EditCustomerDialog } from "@/components/customers/edit-customer-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -119,6 +120,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           <p className="mt-1 text-sm text-destructive">{customer.allergies}</p>
         </Card>
       )}
+
+      <AddressesCard branchId={branchId} customerId={customer.id} addresses={customer.addresses ?? []} />
 
       {customer.giftCards.length > 0 && (
         <Card className="flex flex-col gap-3 p-5">

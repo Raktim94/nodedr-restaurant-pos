@@ -1182,9 +1182,35 @@ model Customer {
   createdAt DateTime   @default(now())
   orders    Order[]
   giftCards GiftCard[]
+  addresses CustomerAddress[]
 
   @@index([branchId, phone])
   @@map("customers")
+}
+
+// Saved delivery addresses (a customer can have several). An order copies the
+// chosen address into Order.deliveryAddress/deliveryPincode when it is placed,
+// so editing or deleting an address later never rewrites past orders.
+model CustomerAddress {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  label        String? // Home, Office...
+  line1        String // house / flat / building
+  street       String? // street / locality
+  landmark     String?
+  city         String?
+  state        String?
+  pincode      String?
+  instructions String? // delivery notes
+  isDefault    Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@map("customer_addresses")
 }
 
 // ---------------------------------------------------------------------------

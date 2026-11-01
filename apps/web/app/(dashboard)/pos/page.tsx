@@ -333,6 +333,7 @@ function PosPageInner() {
                 onDeliveryChange={setDelivery}
                 scheduledFor={scheduledFor}
                 onScheduledForChange={setScheduledFor}
+                branchId={branchId}
               />
             )}
           </Card>

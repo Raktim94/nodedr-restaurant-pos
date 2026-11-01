@@ -10,7 +10,12 @@ import {
   UsePipes,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { customerSchema, type SessionUser } from '@nodedr-restaurant/types';
+import {
+  customerAddressSchema,
+  customerAddressUpdateSchema,
+  customerSchema,
+  type SessionUser,
+} from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -81,5 +86,58 @@ export class CustomersController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.customersService.remove(branchId, id);
+  }
+
+  @Auth('customers.manage')
+  @Get(':id/addresses')
+  async listAddresses(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.customersService.listAddresses(branchId, id);
+  }
+
+  @Auth('customers.manage')
+  @Post(':id/addresses')
+  async addAddress(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(customerAddressSchema)) body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.customersService.addAddress(branchId, id, body as never);
+  }
+
+  @Auth('customers.manage')
+  @Patch(':id/addresses/:addressId')
+  async updateAddress(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Param('addressId') addressId: string,
+    @Body(new ZodValidationPipe(customerAddressUpdateSchema)) body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.customersService.updateAddress(
+      branchId,
+      id,
+      addressId,
+      body as never,
+    );
+  }
+
+  @Auth('customers.manage')
+  @Delete(':id/addresses/:addressId')
+  async removeAddress(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Param('addressId') addressId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.customersService.removeAddress(branchId, id, addressId);
   }
 }

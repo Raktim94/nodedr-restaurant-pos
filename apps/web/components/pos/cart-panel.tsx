@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CartLine } from "@/components/pos/cart-line";
+import { SavedAddressPicker } from "@/components/pos/saved-address-picker";
 import type { RestaurantTable } from "@/hooks/use-tables";
 import { formatCurrency } from "@/lib/format";
 import { subtotalOf } from "@/lib/pricing-preview";
@@ -45,6 +46,7 @@ export function CartPanel({
   onDeliveryChange,
   scheduledFor,
   onScheduledForChange,
+  branchId = null,
 }: {
   lines: CartLine[];
   orderType: PosOrderType;
@@ -69,6 +71,8 @@ export function CartPanel({
   onDeliveryChange: (d: DeliveryDetails) => void;
   scheduledFor: string;
   onScheduledForChange: (v: string) => void;
+  /** Used to look up a returning customer's saved addresses by phone. */
+  branchId?: string | null;
 }) {
   const subtotal = subtotalOf(lines.map((l) => l.unitPrice * l.quantity));
   const deliveryReady =
@@ -120,6 +124,11 @@ export function CartPanel({
             placeholder="Delivery address"
             value={delivery.address}
             onChange={(e) => onDeliveryChange({ ...delivery, address: e.target.value })}
+          />
+          <SavedAddressPicker
+            branchId={branchId}
+            phone={delivery.phone}
+            onPick={(address, pincode) => onDeliveryChange({ ...delivery, address, pincode })}
           />
           <div className="grid grid-cols-2 gap-2">
             <Input
