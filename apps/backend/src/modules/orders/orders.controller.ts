@@ -38,6 +38,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import {
+  BILL_SHARE_TTL_SECONDS,
+  BillShareService,
+} from '../bill-share/bill-share.service';
+import {
   buildKotTestSlip,
   buildOpenDrawer,
   buildReceiptEscPosJob,
@@ -186,6 +190,7 @@ export class OrdersController {
     private readonly branchAccess: BranchAccessService,
     private readonly kotPrint: KotPrintService,
     private readonly verifactu: VerifactuService,
+    private readonly billShare: BillShareService,
   ) {}
 
   @Auth('orders.create')
@@ -475,6 +480,37 @@ export class OrdersController {
       },
     });
     res.type('html').send(html);
+  }
+
+  // A guest-shareable QR/link for this one bill: same bill-vs-receipt
+  // rendering as GET :id/receipt, but opened on the guest's own phone with
+  // no printer involved (see PublicBillController). The token is opaque and
+  // expires on its own (BillShareService) — nothing to revoke or clean up.
+  @Auth('bills.print')
+  @Post(':id/bill-share')
+  async createBillShare(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    // 404s here (not this branch's order) rather than inside the public,
+    // unauthenticated endpoint later.
+    const { overrides } = await this.ordersService.getBillForPrint(
+      branchId,
+      id,
+      {},
+    );
+    if (overrides.isProvisional) {
+      await this.ordersService.recordBillPrinted(
+        branchId,
+        id,
+        user.id,
+        'QR_SHARE',
+      );
+    }
+    const token = this.billShare.issueToken(id, branchId);
+    return { token, expiresInSeconds: BILL_SHARE_TTL_SECONDS };
   }
 
   @Auth('orders.create')

@@ -261,6 +261,14 @@ containers, not just "it compiles."
       the kitchen ticket is released ~25 min before the time (per-minute worker).
 - [x] Click & collect: online takeaway orders (integration API / POS) with a
       scheduled time.
+- [x] Bill QR-share (2026-11-01): "Share bill (QR)" / "Share receipt (QR)" on
+      the checkout panel mints a short-lived (~2h), opaque signed token
+      (`BillShareService`, no DB row) behind a new guest-facing
+      `/bill/[token]` page — the same bill-vs-receipt figures as the staff
+      print route, plus a tap-to-pay UPI link while a balance is still due.
+      Public endpoint: `GET /v1/public/bill/:token` (throttled, same
+      unauthenticated-token pattern as `/public/menu/:qrToken`). Not an
+      inventory-facing change — scoped deliberately away from Phase 4.
 - [ ] Live GPS tracking of drivers — not built (status tracking only).
 
 ### Phase 6 — Staff, Payroll, Accounting, Multi-branch

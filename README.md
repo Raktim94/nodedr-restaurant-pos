@@ -176,7 +176,9 @@ expiry tracking, FIFO waste logging, and automatic ingredient deduction
 on checkout (combo-aware, never blocks a sale on a stock shortfall).
 Also shipped: printable receipts (opens the browser's print dialog, same
 "any printer, or Save as PDF" approach as [`nodedr-pos`](https://github.com/Raktim94/nodedr-pos)),
-a Settings area (restaurant + branch details, per-branch tax regime — India
+a "Share bill (QR)" option that puts the same bill or receipt on the
+guest's own phone — no printer needed, scan and pay the balance via UPI
+right from there — a Settings area (restaurant + branch details, per-branch tax regime — India
 GST/US Sales Tax/EU VAT/Spain IVA, tax-inclusive or -exclusive menu
 pricing) and staff account management (create/deactivate staff, assign
 roles) under **Settings** in the sidebar, photo upload on menu items, and

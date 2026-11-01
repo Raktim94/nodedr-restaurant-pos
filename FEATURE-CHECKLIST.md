@@ -54,7 +54,7 @@ partially built, the note says what's missing.
 | Multiple currencies | Planned | Single `currency` field per restaurant (default INR), no multi-currency checkout |
 | Customer-facing display | Planned | |
 | Receipt printing | Shipped | Self-printing HTML receipt via browser dialog |
-| Digital receipt | Planned | |
+| Digital receipt | Shipped | Guest-facing `/bill/[token]` page opened from a QR/link on the bill or receipt screen (`POST /orders/:id/bill-share`, `GET /public/bill/:token`); opaque token expires in ~2h, no printer or login needed |
 | WhatsApp / SMS / Email receipt | Planned | No messaging integration in codebase |
 
 ## 🪑 Restaurant Table Management
@@ -428,15 +428,15 @@ partially built, the note says what's missing.
 ## Summary
 
 Rough counts across all 29 categories (line-item granularity, not
-category granularity), updated 2026-08-14 after procurement depth and
-direct-USB printing shipped: **~100 Shipped, ~29 Partial, ~176 Planned**
-out of ~305 line items in the pasted taxonomy.
+category granularity), updated 2026-11-01 after the bill-share QR (digital
+receipt) landed: **~101 Shipped, ~29 Partial, ~175 Planned** out of ~305
+line items in the pasted taxonomy.
 
 **Closest to complete (of the 10 core modules):**
 1. **Tables / Floor Plan** — full status lifecycle, reservations, waitlist, QR tokens, shape-aware icons; missing mainly the drag-to-reposition designer UI and table-level analytics (turnover, revenue/seat).
 2. **Purchasing** — core PO/GRN/supplier flow plus the full procurement-depth layer (quotations with price comparison, purchase requests, vendor invoices with payment tracking, supplier performance) shipped 2026-08-14; missing purchase returns, price-variance, and automatic reorder suggestions.
 3. **Kitchen / KDS** — status columns, timers, priority, stations, performance widget, sound alerts all real; missing per-station column view, expediter screen.
-4. **POS / Billing** — correct India tax model, discounts, tips, refunds, combos, merge, and now direct-USB thermal printing alongside browser print; missing split payment, item-level discounts/notes, hold/draft orders, digital/WhatsApp receipts.
+4. **POS / Billing** — correct India tax model, discounts, tips, refunds, combos, merge, direct-USB thermal printing alongside browser print, and now a digital bill/receipt via QR; missing split payment, item-level discounts/notes, hold/draft orders, WhatsApp/SMS/email receipts.
 5. **Inventory** — genuinely deep (weighted-average costing, FIFO waste, batch/expiry, auto-deduction); missing yield/wastage-% reporting.
 
 **Furthest from complete:**

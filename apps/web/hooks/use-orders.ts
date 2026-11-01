@@ -92,6 +92,19 @@ export function useBillPreview(branchId: string | null, orderId: string, adj: Bi
   });
 }
 
+export interface BillShareLink {
+  token: string;
+  expiresInSeconds: number;
+}
+
+/** Mints a fresh, time-limited QR/link for this one bill — see bill-share-dialog.tsx. */
+export function useCreateBillShare(branchId: string | null) {
+  return useMutation({
+    mutationFn: (orderId: string) =>
+      api.post<BillShareLink>(`/orders/${orderId}/bill-share?branchId=${branchId}`),
+  });
+}
+
 export function useCheckoutOrder(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({

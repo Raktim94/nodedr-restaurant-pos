@@ -1,7 +1,7 @@
 "use client";
 
 import { kitchenProgress, type PaymentMethodDto } from "@nodedr-restaurant/types";
-import { ArrowLeft, CheckCircle2, ChefHat, Pencil, Printer } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChefHat, Pencil, Printer, QrCode } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { StatusNote, useNoteToast } from "@/components/ui/status-note";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QueryError } from "@/components/ui/query-error";
+import { BillShareDialog } from "@/components/pos/bill-share-dialog";
 import { PaymentMethodButtons } from "@/components/pos/payment-method-buttons";
 import { CustomerPicker } from "@/components/pos/customer-picker";
 import type { Customer } from "@/hooks/use-customers";
@@ -105,6 +106,7 @@ export function CheckoutPanel({
   const canDiscount = hasPermission(me?.user, "discounts.apply");
   const [cancelOpen, setCancelOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [shareOrderId, setShareOrderId] = useState<string | null>(null);
   const printUsb = usePrintOrderUsb(branchId);
   const printKot = usePrintKot(branchId);
   const onPrinted = (r: PrintJobResult) =>
@@ -338,8 +340,18 @@ export function CheckoutPanel({
           >
             {printUsb.isPending ? "Printing…" : "Thermal receipt"}
           </Button>
+          <Button variant="outline" className="h-11" onClick={() => setShareOrderId(completed.id)}>
+            <QrCode className="h-4 w-4" />
+            Share receipt (QR)
+          </Button>
           <Button className="h-11" onClick={onDone}>New order</Button>
         </div>
+        <BillShareDialog
+          orderId={shareOrderId ?? ""}
+          branchId={branchId}
+          open={!!shareOrderId}
+          onOpenChange={(o) => !o && setShareOrderId(null)}
+        />
       </div>
     );
   }
@@ -751,6 +763,18 @@ export function CheckoutPanel({
         </div>
 
         <Button
+          type="button"
+          variant="outline"
+          className="h-11"
+          disabled={!bill}
+          onClick={() => setShareOrderId(order.id)}
+          title="Shows a QR code the guest can scan to see this bill on their own phone — no printer needed."
+        >
+          <QrCode className="h-4 w-4" />
+          Share bill (QR)
+        </Button>
+
+        <Button
           className="h-12 text-base"
           disabled={checkout.isPending || !bill || repricing || !plan.valid}
           onClick={handleCheckout}
@@ -764,6 +788,12 @@ export function CheckoutPanel({
                 : "Complete payment"}
         </Button>
       </div>
+      <BillShareDialog
+        orderId={shareOrderId ?? ""}
+        branchId={branchId}
+        open={!!shareOrderId}
+        onOpenChange={(o) => !o && setShareOrderId(null)}
+      />
     </div>
   );
 }
