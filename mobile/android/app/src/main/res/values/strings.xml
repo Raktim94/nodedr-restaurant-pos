@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">OrderRestro</string>
+    <string name="title_activity_main">OrderRestro</string>
+    <string name="package_name">com.nodedr.orderrestro</string>
+    <string name="custom_url_scheme">com.nodedr.orderrestro</string>
+</resources>

@@ -2,6 +2,7 @@
 
 import { permissionSatisfied, type LoginDto, type RegisterDto, type SessionUser } from "@nodedr-restaurant/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { savedPushToken, savePushToken } from "@/lib/native";
 import { api } from "@/lib/api";
 
 export function useCurrentUser() {
@@ -38,7 +39,15 @@ export function useRegister() {
 export function useLogout() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post("/auth/logout"),
+    mutationFn: async () => {
+      // Stop pushes to this phone before the session ends.
+      const token = savedPushToken();
+      if (token) {
+        await api.delete(`/devices/${encodeURIComponent(token)}`).catch(() => undefined);
+        savePushToken(null);
+      }
+      return api.post("/auth/logout");
+    },
     onSuccess: () => {
       queryClient.clear();
     },

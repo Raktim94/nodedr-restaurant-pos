@@ -1,0 +1,17 @@
+{
+  "appId": "com.nodedr.orderrestro",
+  "appName": "OrderRestro",
+  "webDir": "www",
+  "backgroundColor": "#ffffff",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  },
+  "android": { "allowMixedContent": true },
+  "plugins": {
+    "SplashScreen": { "launchShowDuration": 600, "backgroundColor": "#9f1239", "showSpinner": false },
+    "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] },
+    "Keyboard": { "resize": "body" }
+  }
+}

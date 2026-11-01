@@ -1,6 +1,8 @@
 # OrderRestro mobile app: Play Store and App Store plan
 
-Status: plan only, nothing built yet. Written 2026-11-02 against OrderRestro 1.14.1.
+Status (2026-11-02, version 1.15.0): **built**, see `mobile/README.md`. Android debug and signed release builds run on an emulator; the iOS project is written but not compiled; store submission still needs the owner's accounts, a Firebase project and a public demo server. The sections below are the original plan.
+
+What differs from the plan: the app opens the restaurant's own web app in the native shell (Capacitor `server.url`, chosen at runtime) instead of bundling the web build, so the web UI stays in one place. Offline support is a banner plus a queue for rider status updates (`apps/web/lib/outbox.ts`); a phone-side database cache and the `/v1/mobile/changes` and `/v1/mobile/outbox` endpoints were not built.
 
 ## 1. What we are shipping
 

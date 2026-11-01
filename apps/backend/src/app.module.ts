@@ -41,6 +41,7 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { AuditModule } from './audit/audit.module';
 import { RolesModule } from './roles/roles.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PushModule } from './push/push.module';
 import { BackupModule } from './backup/backup.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { McpModule } from './mcp/mcp.module';
@@ -88,6 +89,7 @@ import { VerifactuModule } from './modules/verifactu/verifactu.module';
     AuditModule,
     RolesModule,
     NotificationsModule,
+    PushModule,
     BackupModule,
     IntegrationsModule,
     McpModule,

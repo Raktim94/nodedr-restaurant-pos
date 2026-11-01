@@ -1,7 +1,8 @@
 "use client";
 
 import type { SessionUser } from "@nodedr-restaurant/types";
-import { LogOut, Moon, Sun } from "lucide-react";
+import { LogOut, Moon, Server, Sun, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -13,7 +14,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DeleteAccountDialog } from "@/components/layout/delete-account-dialog";
 import { useLogout } from "@/hooks/use-auth";
+import { changeServer, isNativeApp } from "@/lib/native";
 
 function initials(name?: string) {
   if (!name) return "?";
@@ -29,6 +32,7 @@ export function UserMenu({ user }: { user?: SessionUser }) {
   const { theme, setTheme } = useTheme();
   const logout = useLogout();
   const router = useRouter();
+  const [deleting, setDeleting] = useState(false);
 
   return (
     <div className="flex items-center gap-2">
@@ -63,8 +67,21 @@ export function UserMenu({ user }: { user?: SessionUser }) {
             <LogOut className="h-4 w-4" />
             Sign out
           </DropdownMenuItem>
+          {isNativeApp() && (
+            <DropdownMenuItem
+              onClick={() => logout.mutate(undefined, { onSuccess: () => changeServer() })}
+            >
+              <Server className="h-4 w-4" />
+              Change server
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={() => setDeleting(true)} className="text-destructive">
+            <Trash2 className="h-4 w-4" />
+            Delete my account
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <DeleteAccountDialog open={deleting} onOpenChange={setDeleting} />
     </div>
   );
 }

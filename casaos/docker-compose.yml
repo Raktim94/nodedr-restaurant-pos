@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.14.1
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.15.0
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -85,7 +85,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.14.1
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.15.0
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -183,10 +183,18 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.14.1"
+  version: "1.15.0"
   update_at: "2026-11-03"
   release_notes:
     en_US: |-
+      1.15.0: Android and iPhone app. Staff and riders connect by typing the server
+      address or scanning the QR code in Settings > Mobile app, then sign in as usual.
+      Phones get a notification for each new order and delivery (turn it on by adding a
+      Firebase key, see mobile/README.md), riders share live location through the app,
+      and rider updates made with no signal are sent when the connection returns. You can
+      delete your own account from the user menu. A database change is applied
+      automatically on update.
+
       1.14.1: a cleaner dashboard. A greeting with the date, today's revenue as the main
       number, smaller supporting figures, two across on phones, and cards that no
       longer stretch into empty space.

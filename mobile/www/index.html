@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>OrderRestro</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main>
+  <img class="logo" src="assets/logo.png" alt="" width="72" height="72">
+  <h1>Connect to your restaurant</h1>
+  <p class="sub">Enter the address of your OrderRestro server. Staff and riders use the same sign-in as the web app.</p>
+  <form id="f" class="card" novalidate>
+    <label for="addr">Server address</label>
+    <input id="addr" name="addr" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="url" placeholder="192.168.1.20 or pos.example.com">
+    <p class="hint">On the restaurant WiFi this works with no internet. Ask the owner for the address, or scan the QR code in Settings.</p>
+    <button class="btn" id="go" type="submit">Connect</button>
+    <button class="btn ghost" id="scan" type="button" hidden>Scan QR code</button>
+    <p id="msg" class="msg" role="alert" hidden></p>
+  </form>
+  <div id="recent" class="recent" hidden></div>
+  <p class="foot"><span id="ver"></span> · <a href="https://orderrestro.nodedr.com/privacy">Privacy</a> · <a href="https://orderrestro.nodedr.com/">orderrestro.nodedr.com</a></p>
+</main>
+<script src="connect.js"></script>
+</body>
+</html>

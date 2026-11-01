@@ -284,6 +284,7 @@ model User {
   auditLogs     AuditLog[]
   refundsIssued Refund[]
   notifications Notification[] @relation("NotificationRecipient")
+  deviceTokens  DeviceToken[]
 
   purchaseOrdersCreated PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
   goodsReceiptsReceived GoodsReceipt[]  @relation("GoodsReceiptReceivedBy")
@@ -2507,4 +2508,19 @@ model PointsLedger {
 
   @@index([customerId, createdAt])
   @@map("points_ledger")
+}
+
+// A phone that signed in to the mobile app and can receive push notifications.
+model DeviceToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  platform   String // ANDROID | IOS
+  appVersion String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("device_tokens")
 }

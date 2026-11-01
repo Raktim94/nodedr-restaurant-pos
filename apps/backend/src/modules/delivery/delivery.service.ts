@@ -1,3 +1,4 @@
+import { PushService } from '../../push/push.service';
 import {
   BadRequestException,
   Injectable,
@@ -32,6 +33,7 @@ export class DeliveryService {
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
     private readonly webhooks: WebhooksService,
+    private readonly push: PushService,
   ) {}
 
   // --- Zones ---------------------------------------------------------------
@@ -180,6 +182,12 @@ export class DeliveryService {
     this.realtime.emitToUsers([driverId], 'rider.assigned', {
       orderId,
       orderNumber: saved.orderNumber,
+    });
+    this.push.sendToUsers([driverId], {
+      title: 'New delivery',
+      body: `Order ${saved.orderNumber} is assigned to you`,
+      path: '/my-deliveries',
+      data: { type: 'rider.assigned' },
     });
     return saved;
   }

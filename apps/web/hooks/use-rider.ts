@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { isNetworkError, outbox } from "@/lib/outbox";
 
 export type RiderStatus = "ASSIGNED" | "PICKED_UP" | "DELIVERED" | "FAILED";
 
@@ -59,8 +60,18 @@ export function useRiderActions() {
       onSuccess: refresh,
     }),
     status: useMutation({
-      mutationFn: (v: { id: string; status: "PICKED_UP" | "DELIVERED" | "FAILED"; reason?: string }) =>
-        api.patch<RiderCard>(`/rider/deliveries/${v.id}/status`, { status: v.status, reason: v.reason }),
+      mutationFn: async (v: { id: string; status: "PICKED_UP" | "DELIVERED" | "FAILED"; reason?: string }) => {
+        const path = `/rider/deliveries/${v.id}/status`;
+        const body = { status: v.status, reason: v.reason };
+        try {
+          return await api.patch<RiderCard>(path, body);
+        } catch (e) {
+          // No connection: keep the update on the phone and send it when the server is back.
+          if (!isNetworkError(e)) throw e;
+          outbox.add({ method: "PATCH", path, body, label: `Delivery ${v.status.toLowerCase().replace("_", " ")}` });
+          return null;
+        }
+      },
       onSuccess: refresh,
     }),
   };

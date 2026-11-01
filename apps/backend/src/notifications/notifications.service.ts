@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { NotificationListQueryDto } from '@nodedr-restaurant/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { PushService } from '../push/push.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 export interface NotifyPayload {
@@ -44,7 +45,15 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly realtime: RealtimeGateway,
+    private readonly push: PushService,
   ) {}
+
+  /** Where the mobile app opens when a notification is tapped. */
+  private pathFor(p: NotifyPayload) {
+    if (p.type.startsWith('order.')) return '/orders';
+    if (p.type.startsWith('reservation')) return '/reservations';
+    return '/dashboard';
+  }
 
   // All active staff assigned to this branch whose role holds the given
   // permission key — resolved via User -> Role -> RolePermission ->
@@ -85,6 +94,10 @@ export class NotificationsService {
       'notification.created',
       payload,
     );
+    this.push.sendToUsers(
+      recipients.map((r) => r.id),
+      { title: payload.title, body: payload.body, path: this.pathFor(payload), data: { type: payload.type } },
+    );
   }
 
   async notifyUser(userId: string, branchId: string, payload: NotifyPayload) {
@@ -101,6 +114,12 @@ export class NotificationsService {
     });
 
     this.realtime.emitToUsers([userId], 'notification.created', payload);
+    this.push.sendToUsers([userId], {
+      title: payload.title,
+      body: payload.body,
+      path: this.pathFor(payload),
+      data: { type: payload.type },
+    });
   }
 
   async list(userId: string, query: NotificationListQueryDto) {

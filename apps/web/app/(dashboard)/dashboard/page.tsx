@@ -241,6 +241,7 @@ export default function DashboardPage() {
             icon={Flame}
             accent="warning"
             href="/kds"
+            className="col-span-2 xl:col-span-1"
           />
         </div>
       )}

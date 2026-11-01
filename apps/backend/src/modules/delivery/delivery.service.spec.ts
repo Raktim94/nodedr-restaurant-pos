@@ -24,6 +24,7 @@ function setup(order: Record<string, unknown> | null, zoneClash = false) {
     prisma as never,
     realtime as never,
     webhooks as never,
+    { sendToUsers: jest.fn() } as never,
   );
   return { svc, prisma, realtime };
 }

@@ -1,10 +1,12 @@
 import {
   ForbiddenException,
   BadRequestException,
+  ConflictException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Prisma } from '@prisma/client';
 import {
   DEFAULT_ROLE_PERMISSIONS,
   PERMISSIONS,
@@ -41,6 +43,65 @@ export class AuthService {
       roleName: user.role.name,
       permissions: user.role.permissions.map((rp) => rp.permission.key),
     };
+  }
+
+  /**
+   * Delete my own account (an app-store requirement). The person's details are
+   * erased and the login closed; order and payment rows that point at the user
+   * stay, because tax records must be kept. The last active owner cannot do
+   * this, or the restaurant would be locked out.
+   */
+  async deleteOwnAccount(userId: string, password: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { role: true },
+    });
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      throw new UnauthorizedException('Password is incorrect');
+    }
+    if (user.role.name === 'OWNER') {
+      const otherOwners = await this.prisma.user.count({
+        where: {
+          restaurantId: user.restaurantId,
+          isActive: true,
+          id: { not: user.id },
+          role: { name: 'OWNER' },
+        },
+      });
+      if (otherOwners === 0) {
+        throw new ConflictException(
+          'You are the only owner. Make someone else an owner first, or contact support to close the restaurant.',
+        );
+      }
+    }
+    const scrambled = await bcrypt.hash(
+      `${userId}:${Date.now()}:${Math.random()}`,
+      10,
+    );
+    await this.prisma.$transaction([
+      this.prisma.deviceToken.deleteMany({ where: { userId } }),
+      this.prisma.notification.deleteMany({ where: { recipientUserId: userId } }),
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          name: 'Deleted user',
+          email: null,
+          phone: null,
+          passwordHash: scrambled,
+          pinHash: null,
+          isActive: false,
+          riderOnline: false,
+          riderLat: null,
+          riderLng: null,
+          riderLocationAt: null,
+          dashboardPrefs: Prisma.JsonNull,
+          twoFactorSecret: null,
+          twoFactorEnabled: false,
+          twoFactorRecoveryHashes: [],
+        },
+      }),
+    ]);
+    return { ok: true };
   }
 
   async login(dto: LoginDto) {

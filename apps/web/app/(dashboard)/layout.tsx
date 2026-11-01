@@ -6,6 +6,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { useCurrentUser } from "@/hooks/use-auth";
 import { BranchProvider, useBranch } from "@/hooks/use-branch";
 import { useRealtime } from "@/hooks/use-realtime";
+import { NativeBridge } from "@/components/native/native-bridge";
 import { NAV_ITEMS } from "@/components/layout/nav-items";
 import { canOpen, firstAllowedHref } from "@/lib/route-access";
 
@@ -62,6 +63,7 @@ export default function DashboardGroupLayout({ children }: { children: React.Rea
   return (
     <BranchProvider>
       <RealtimeBridge />
+      <NativeBridge />
       <AppShell user={data.user}>{children}</AppShell>
     </BranchProvider>
   );

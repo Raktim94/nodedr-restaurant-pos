@@ -16,6 +16,16 @@ import {
   type RiderCard,
 } from "@/hooks/use-rider";
 import { ApiError } from "@/lib/api";
+import { isNativeApp, plugin } from "@/lib/native";
+
+interface NativeGeo {
+  requestPermissions: () => Promise<{ location: string; coarseLocation: string }>;
+  watchPosition: (
+    o: { enableHighAccuracy?: boolean; timeout?: number; maximumAge?: number },
+    cb: (pos: { coords: { latitude: number; longitude: number } } | null, err?: unknown) => void,
+  ) => Promise<string>;
+  clearWatch: (o: { id: string }) => Promise<void>;
+}
 
 const money = (n: number) => `₹${Number.isInteger(n) ? n : n.toFixed(2)}`;
 const FAIL_REASONS = ["Customer not reachable", "Wrong or incomplete address", "Customer refused the order", "Could not find the place"];
@@ -26,17 +36,48 @@ function useLiveLocation(online: boolean) {
   const last = useRef(0);
   useEffect(() => {
     if (!online) return;
+    const report = (lat: number, lng: number) => {
+      setState("ok");
+      if (Date.now() - last.current < 20_000) return;
+      last.current = Date.now();
+      void sendRiderLocation(lat, lng);
+    };
+
+    // In the phone app use the native location plugin: web geolocation is blocked
+    // on a plain-http restaurant server, which is the usual case on a local network.
+    const native = plugin<NativeGeo>("Geolocation");
+    if (isNativeApp() && native) {
+      let watchId: string | null = null;
+      let stopped = false;
+      void (async () => {
+        try {
+          const perm = await native.requestPermissions();
+          if (perm.location !== "granted" && perm.coarseLocation !== "granted") {
+            if (!stopped) setState("denied");
+            return;
+          }
+          const id = await native.watchPosition({ enableHighAccuracy: true, timeout: 20_000, maximumAge: 10_000 }, (pos, err) => {
+            if (err || !pos) return setState("unavailable");
+            report(pos.coords.latitude, pos.coords.longitude);
+          });
+          if (stopped) void native.clearWatch({ id });
+          else watchId = id;
+        } catch {
+          if (!stopped) setState("denied");
+        }
+      })();
+      return () => {
+        stopped = true;
+        if (watchId) void native.clearWatch({ id: watchId });
+      };
+    }
+
     if (!("geolocation" in navigator)) {
       const t = setTimeout(() => setState("unavailable"), 0);
       return () => clearTimeout(t);
     }
     const id = navigator.geolocation.watchPosition(
-      (p) => {
-        setState("ok");
-        if (Date.now() - last.current < 20_000) return;
-        last.current = Date.now();
-        void sendRiderLocation(p.coords.latitude, p.coords.longitude);
-      },
+      (p) => report(p.coords.latitude, p.coords.longitude),
       (err) => setState(err.code === err.PERMISSION_DENIED ? "denied" : "unavailable"),
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 },
     );

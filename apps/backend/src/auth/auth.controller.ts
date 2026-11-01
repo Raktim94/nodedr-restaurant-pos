@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -93,6 +94,24 @@ export class AuthController {
     const { token, user } = await this.authService.pinLogin(body as never);
     this.setSessionCookie(res, token);
     return { user };
+  }
+
+  // Delete my own account; asks for the password again.
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Delete('me')
+  async deleteMe(
+    @CurrentUser() user: SessionUser,
+    @Body() body: { password?: string },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.authService.deleteOwnAccount(user.id, String(body?.password ?? ''));
+    res.clearCookie(SESSION_COOKIE, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: isCookieSecure(),
+    });
+    return { ok: true };
   }
 
   @Post('logout')
