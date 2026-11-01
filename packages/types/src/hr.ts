@@ -47,3 +47,21 @@ export const payrollRunSchema = z
     path: ["periodEnd"],
   });
 export type PayrollRunDto = z.infer<typeof payrollRunSchema>;
+
+const money = z.coerce.number().min(0).max(10_000_000);
+export const payrollLineAdjustSchema = z
+  .object({
+    allowances: money.optional(),
+    bonus: money.optional(),
+    advanceRecovery: money.optional(),
+    otherDeductions: money.optional(),
+    adjustmentNote: z.string().trim().max(200).optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: "Nothing to change" });
+export type PayrollLineAdjustDto = z.infer<typeof payrollLineAdjustSchema>;
+
+export const payrollPaySchema = z.object({
+  method: z.enum(["CASH", "BANK_TRANSFER", "UPI", "OTHER"]),
+  reference: z.string().trim().max(100).optional(),
+});
+export type PayrollPayDto = z.infer<typeof payrollPaySchema>;

@@ -14,10 +14,14 @@ import { ApiTags } from '@nestjs/swagger';
 import {
   leaveDecisionSchema,
   leaveRequestSchema,
+  payrollLineAdjustSchema,
+  payrollPaySchema,
   payrollRunSchema,
   shiftSchema,
   staffPaySchema,
   type LeaveRequestDto,
+  type PayrollLineAdjustDto,
+  type PayrollPayDto,
   type PayrollRunDto,
   type SessionUser,
   type ShiftDto,
@@ -207,6 +211,46 @@ export class HrController {
   ) {
     await this.access(u, branchId);
     return this.hr.finalizeRun(branchId, id);
+  }
+
+  @Auth('staff.manage')
+  @AuditAction('payroll.line_adjusted', 'PayrollRun')
+  @Patch('payroll/:id/lines/:userId')
+  async adjustLine(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body(new ZodValidationPipe(payrollLineAdjustSchema))
+    body: PayrollLineAdjustDto,
+  ) {
+    await this.access(u, branchId);
+    return this.hr.adjustLine(branchId, id, userId, body);
+  }
+
+  @Auth('staff.manage')
+  @AuditAction('payroll.paid', 'PayrollRun')
+  @Post('payroll/:id/pay')
+  async payRun(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(payrollPaySchema)) body: PayrollPayDto,
+  ) {
+    await this.access(u, branchId);
+    return this.hr.payRun(branchId, id, u.id, body);
+  }
+
+  @Auth('staff.manage')
+  @Get('payroll/:id/lines/:userId/slip')
+  async slip(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+  ) {
+    await this.access(u, branchId);
+    return this.hr.slip(branchId, id, userId);
   }
 
   @Auth('staff.manage')

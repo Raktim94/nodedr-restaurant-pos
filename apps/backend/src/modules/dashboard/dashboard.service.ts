@@ -131,7 +131,7 @@ export class DashboardService {
           : null,
         has('staff.manage')
           ? this.prisma.payrollRun.count({
-              where: { branchId, status: 'DRAFT' },
+              where: { branchId, status: { in: ['DRAFT', 'FINALIZED'] } },
             })
           : null,
       ]);
@@ -153,7 +153,7 @@ export class DashboardService {
             ).length,
       customers,
       employees,
-      draftPayrollRuns: draftPayroll,
+      unpaidPayrollRuns: draftPayroll,
     };
   }
 

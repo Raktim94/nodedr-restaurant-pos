@@ -1,6 +1,8 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { StatusNote, useNoteToast } from "@/components/ui/status-note";
+import { AdjustLineDialog, PayRunDialog, SlipButton } from "@/components/team/payroll-dialogs";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -139,27 +141,43 @@ function Leave({ branchId }: { branchId: string | null }) {
 function RunDetail({ branchId, id }: { branchId: string | null; id: string }) {
   const { data } = usePayrollRun(branchId, id);
   const { finalizeRun, deleteRun } = useHrActions(branchId);
+  const [adjusting, setAdjusting] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
+  const { note, clear, toast: runToast } = useNoteToast();
   if (!data) return <Skeleton className="h-24" />;
+  const editable = data.status === "DRAFT";
+  const adjustingLine = data.lines.find((l) => l.user.id === adjusting);
   return (
     <Card className="flex flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium text-foreground">
           {fmtDate(data.periodStart)} – {fmtDate(data.periodEnd)} · {data.status.toLowerCase()} · tip pool{" "}
           {formatCurrency(data.tipPool)}
+          {data.status === "PAID" && data.paidAt
+            ? ` · paid ${fmtDate(data.paidAt)}${data.paymentMethod ? ` by ${data.paymentMethod.replace("_", " ").toLowerCase()}` : ""}`
+            : ""}
         </p>
         {data.status === "DRAFT" && (
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => finalizeRun.mutate(id, { onSuccess: () => toast.success("Payroll finalized"), onError: (e) => toast.error(errMsg(e)) })}>
+            <Button size="sm" onClick={() => finalizeRun.mutate(id, { onSuccess: () => runToast.success("Payroll finalized - adjustments are now locked"), onError: (e) => runToast.error(errMsg(e)) })}>
               Finalize
             </Button>
-            <Button size="sm" variant="outline" onClick={() => deleteRun.mutate(id)}>Discard draft</Button>
+            <Button size="sm" variant="outline" onClick={() => deleteRun.mutate(id, { onError: (e) => runToast.error(errMsg(e)) })}>Discard draft</Button>
           </div>
         )}
+        {data.status === "FINALIZED" && (
+          <Button size="sm" onClick={() => setPaying(true)}>Mark as paid</Button>
+        )}
       </div>
+      <StatusNote note={note} onClear={clear} />
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="text-left text-xs text-muted-foreground">
-            <tr><th className="py-1">Staff</th><th>Hours</th><th>Base</th><th>Leave −</th><th>Tips</th><th className="text-right">Net</th></tr>
+            <tr>
+              <th className="py-1">Staff</th><th>Hours</th><th>Base</th><th>Leave −</th><th>Tips</th>
+              <th>Allow. +</th><th>Bonus +</th><th>Advance −</th><th>Other −</th>
+              <th className="text-right">Net</th><th />
+            </tr>
           </thead>
           <tbody>
             {data.lines.map((l) => (
@@ -169,13 +187,29 @@ function RunDetail({ branchId, id }: { branchId: string | null; id: string }) {
                 <td>{formatCurrency(l.basePay)}</td>
                 <td>{formatCurrency(l.unpaidLeaveDeduction)}</td>
                 <td>{formatCurrency(l.tipShare)}</td>
+                <td>{formatCurrency(l.allowances)}</td>
+                <td>{formatCurrency(l.bonus)}</td>
+                <td>{formatCurrency(l.advanceRecovery)}</td>
+                <td>{formatCurrency(l.otherDeductions)}</td>
                 <td className="text-right font-medium">{formatCurrency(l.netPay)}</td>
+                <td className="whitespace-nowrap text-right">
+                  {editable && (
+                    <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setAdjusting(l.user.id)}>
+                      Adjust
+                    </Button>
+                  )}
+                  <SlipButton branchId={branchId} runId={id} userId={l.user.id} />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <p className="text-right text-sm font-semibold">Total {formatCurrency(data.totalNet)}</p>
+      {adjustingLine && (
+        <AdjustLineDialog key={adjustingLine.id} branchId={branchId} runId={id} line={adjustingLine} onClose={() => setAdjusting(null)} />
+      )}
+      {paying && <PayRunDialog branchId={branchId} runId={id} total={data.totalNet} onClose={() => setPaying(false)} />}
     </Card>
   );
 }

@@ -30,9 +30,12 @@ export interface PayrollRunRow {
   id: string;
   periodStart: string;
   periodEnd: string;
-  status: "DRAFT" | "FINALIZED";
+  status: "DRAFT" | "FINALIZED" | "PAID";
   tipPool: string;
   totalNet: string;
+  paidAt?: string | null;
+  paymentMethod?: string | null;
+  paymentRef?: string | null;
 }
 export interface PayrollRunDetail extends PayrollRunRow {
   lines: {
@@ -42,6 +45,11 @@ export interface PayrollRunDetail extends PayrollRunRow {
     basePay: string;
     tipShare: string;
     unpaidLeaveDeduction: string;
+    allowances: string;
+    bonus: string;
+    advanceRecovery: string;
+    otherDeductions: string;
+    adjustmentNote: string | null;
     netPay: string;
   }[];
 }
@@ -139,9 +147,43 @@ export function useHrActions(branchId: string | null) {
       mutationFn: (id: string) => api.post(`/hr/payroll/${id}/finalize?${q(branchId)}`),
       onSuccess: done,
     }),
+    adjustLine: useMutation({
+      mutationFn: (v: {
+        runId: string;
+        userId: string;
+        dto: { allowances?: number; bonus?: number; advanceRecovery?: number; otherDeductions?: number; adjustmentNote?: string };
+      }) => api.patch(`/hr/payroll/${v.runId}/lines/${v.userId}?${q(branchId)}`, v.dto),
+      onSuccess: done,
+    }),
+    payRun: useMutation({
+      mutationFn: (v: { id: string; method: "CASH" | "BANK_TRANSFER" | "UPI" | "OTHER"; reference?: string }) =>
+        api.post(`/hr/payroll/${v.id}/pay?${q(branchId)}`, { method: v.method, reference: v.reference }),
+      onSuccess: done,
+    }),
     deleteRun: useMutation({
       mutationFn: (id: string) => api.delete(`/hr/payroll/${id}?${q(branchId)}`),
       onSuccess: done,
     }),
   };
+}
+
+export interface SalarySlip {
+  employer: string;
+  branch: string;
+  address: string | null;
+  periodStart: string;
+  periodEnd: string;
+  status: "DRAFT" | "FINALIZED" | "PAID";
+  paidAt: string | null;
+  paymentMethod: string | null;
+  employee: string;
+  hoursWorked: number;
+  earnings: { basePay: number; tipShare: number; allowances: number; bonus: number };
+  deductions: { unpaidLeave: number; advanceRecovery: number; other: number };
+  netPay: number;
+  note: string | null;
+}
+
+export function fetchSlip(branchId: string | null, runId: string, userId: string) {
+  return api.get<SalarySlip>(`/hr/payroll/${runId}/lines/${userId}/slip?${q(branchId)}`);
 }

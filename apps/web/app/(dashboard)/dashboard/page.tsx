@@ -181,12 +181,12 @@ export default function DashboardPage() {
           {data.employees !== null && (
             <StatCard label="Team members" value={String(data.employees)} icon={UserRound} href="/team" />
           )}
-          {data.draftPayrollRuns !== null && (
+          {data.unpaidPayrollRuns !== null && (
             <StatCard
-              label="Payroll in draft"
-              value={String(data.draftPayrollRuns)}
+              label="Payroll to pay"
+              value={String(data.unpaidPayrollRuns)}
               icon={Wallet}
-              accent={data.draftPayrollRuns > 0 ? "warning" : undefined}
+              accent={data.unpaidPayrollRuns > 0 ? "warning" : undefined}
               href="/team?tab=payroll"
             />
           )}

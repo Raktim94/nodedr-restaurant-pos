@@ -3,7 +3,6 @@
 import { formatCustomerAddress } from "@nodedr-restaurant/types";
 import { MapPin, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import {
   useAddAddress,
   useDeleteAddress,
@@ -47,6 +47,7 @@ export function AddressesCard({
   const [editing, setEditing] = useState<CustomerAddress | "new" | null>(null);
   const update = useUpdateAddress(branchId, customerId);
   const remove = useDeleteAddress(branchId, customerId);
+  const { note, clear, toast } = useNoteToast();
 
   const fail = (err: unknown) =>
     toast.error(err instanceof ApiError ? err.message : "Could not save the address");
@@ -60,6 +61,7 @@ export function AddressesCard({
           Add address
         </Button>
       </div>
+      <StatusNote note={note} onClear={clear} />
       {addresses.length === 0 ? (
         <p className="py-4 text-sm text-muted-foreground">
           No saved addresses yet. Add one to pick it quickly on delivery orders.
@@ -156,6 +158,7 @@ function AddressDialog({
 }) {
   const add = useAddAddress(branchId, customerId);
   const update = useUpdateAddress(branchId, customerId);
+  const { note, clear, toast } = useNoteToast();
   const [f, setF] = useState(
     address
       ? {
@@ -181,10 +184,8 @@ function AddressDialog({
       Object.entries(f).map(([k, v]) => [k, v.trim()]).filter(([k, v]) => v || k === "line1"),
     ) as typeof EMPTY;
     const opts = {
-      onSuccess: () => {
-        toast.success(address ? "Address updated" : "Address added");
-        onClose();
-      },
+      // The list behind the dialog shows the saved address; errors stay here.
+      onSuccess: onClose,
       onError: (err: unknown) =>
         toast.error(err instanceof ApiError ? err.message : "Could not save the address"),
     };
@@ -235,6 +236,7 @@ function AddressDialog({
             <Label htmlFor="a-notes">Delivery instructions</Label>
             <Input id="a-notes" value={f.instructions} onChange={set("instructions")} maxLength={300} />
           </div>
+          <StatusNote note={note} onClear={clear} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel

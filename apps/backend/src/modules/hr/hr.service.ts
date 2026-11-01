@@ -5,13 +5,15 @@ import {
 } from '@nestjs/common';
 import type {
   LeaveRequestDto,
+  PayrollLineAdjustDto,
+  PayrollPayDto,
   ShiftDto,
   StaffPayDto,
 } from '@nodedr-restaurant/types';
 import { localDate, zonedRange } from '../../common/time';
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { computePayroll, round2 } from './payroll.calc';
+import { computePayroll, netWithAdjustments, round2 } from './payroll.calc';
 
 const dayStart = (d: string) => new Date(`${d}T00:00:00.000Z`);
 const USER = { select: { id: true, name: true } } as const;
@@ -295,17 +297,175 @@ export class HrService {
       })),
     );
 
-    return this.prisma.payrollRun.create({
-      data: {
-        branchId,
-        periodStart: from,
-        periodEnd: dayStart(periodEnd),
-        tipPool,
-        totalNet: round2(lines.reduce((s, l) => s + l.netPay, 0)),
-        lines: { create: lines },
-      },
-      include: { lines: { include: { user: USER } } },
+    // The overlap check above is a read followed by a write, so two requests
+    // for the same period could both pass it. Serialise runs per branch and
+    // check again inside the lock so a period is only ever paid for once.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'payroll:' + branchId}))`;
+      const again = await tx.payrollRun.findFirst({
+        where: {
+          branchId,
+          periodStart: { lte: dayStart(periodEnd) },
+          periodEnd: { gte: from },
+        },
+      });
+      if (again)
+        throw new BadRequestException(
+          'A payroll run already covers part of this period',
+        );
+      return tx.payrollRun.create({
+        data: {
+          branchId,
+          periodStart: from,
+          periodEnd: dayStart(periodEnd),
+          tipPool,
+          totalNet: round2(lines.reduce((s, l) => s + l.netPay, 0)),
+          lines: { create: lines },
+        },
+        include: { lines: { include: { user: USER } } },
+      });
     });
+  }
+
+  /**
+   * Allowances, bonus, advance recovery and other deductions for one person,
+   * on a DRAFT run only (a finalized run is what was approved and must not
+   * change under it). Net pay and the run total are recomputed from stored
+   * figures in the same transaction.
+   */
+  async adjustLine(
+    branchId: string,
+    runId: string,
+    userId: string,
+    dto: PayrollLineAdjustDto,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const run = await tx.payrollRun.findFirst({
+        where: { id: runId, branchId },
+      });
+      if (!run) throw new NotFoundException('Payroll run not found');
+      if (run.status !== 'DRAFT')
+        throw new BadRequestException(
+          'Only a draft payroll can be adjusted - this one is ' +
+            run.status.toLowerCase(),
+        );
+      const line = await tx.payrollLine.findFirst({ where: { runId, userId } });
+      if (!line) throw new NotFoundException('That person is not on this run');
+
+      const next = {
+        allowances: dto.allowances ?? Number(line.allowances),
+        bonus: dto.bonus ?? Number(line.bonus),
+        advanceRecovery: dto.advanceRecovery ?? Number(line.advanceRecovery),
+        otherDeductions: dto.otherDeductions ?? Number(line.otherDeductions),
+      };
+      let netPay: number;
+      try {
+        netPay = netWithAdjustments(
+          {
+            basePay: Number(line.basePay),
+            tipShare: Number(line.tipShare),
+            unpaidLeaveDeduction: Number(line.unpaidLeaveDeduction),
+          },
+          next,
+        );
+      } catch (e) {
+        throw new BadRequestException((e as Error).message);
+      }
+      const updated = await tx.payrollLine.update({
+        where: { id: line.id },
+        data: {
+          ...next,
+          netPay,
+          ...(dto.adjustmentNote !== undefined
+            ? { adjustmentNote: dto.adjustmentNote || null }
+            : {}),
+        },
+        include: { user: USER },
+      });
+      const agg = await tx.payrollLine.aggregate({
+        where: { runId },
+        _sum: { netPay: true },
+      });
+      await tx.payrollRun.update({
+        where: { id: runId },
+        data: { totalNet: round2(Number(agg._sum.netPay ?? 0)) },
+      });
+      return updated;
+    });
+  }
+
+  /**
+   * FINALIZED -> PAID, once. The guarded update is the duplicate-payment
+   * control: a second click, a retry or a second admin matches no row.
+   */
+  async payRun(
+    branchId: string,
+    id: string,
+    userId: string,
+    dto: PayrollPayDto,
+  ) {
+    const res = await this.prisma.payrollRun.updateMany({
+      where: { id, branchId, status: 'FINALIZED' },
+      data: {
+        status: 'PAID',
+        paidAt: new Date(),
+        paidById: userId,
+        paymentMethod: dto.method,
+        paymentRef: dto.reference || null,
+      },
+    });
+    if (res.count === 0) {
+      const run = await this.prisma.payrollRun.findFirst({
+        where: { id, branchId },
+      });
+      if (!run) throw new NotFoundException('Payroll run not found');
+      throw new BadRequestException(
+        run.status === 'PAID'
+          ? 'This payroll was already paid'
+          : 'Finalize the payroll before paying it',
+      );
+    }
+    return this.getRun(branchId, id);
+  }
+
+  /** Everything a salary slip shows for one person on one run. */
+  async slip(branchId: string, runId: string, userId: string) {
+    const run = await this.getRun(branchId, runId);
+    const line = run.lines.find((l) => l.userId === userId);
+    if (!line) throw new NotFoundException('That person is not on this run');
+    const branch = await this.prisma.branch.findUniqueOrThrow({
+      where: { id: branchId },
+      select: {
+        name: true,
+        address: true,
+        restaurant: { select: { name: true, legalName: true } },
+      },
+    });
+    return {
+      employer: branch.restaurant.legalName ?? branch.restaurant.name,
+      branch: branch.name,
+      address: branch.address,
+      periodStart: run.periodStart,
+      periodEnd: run.periodEnd,
+      status: run.status,
+      paidAt: run.paidAt,
+      paymentMethod: run.paymentMethod,
+      employee: line.user.name,
+      hoursWorked: Number(line.hoursWorked),
+      earnings: {
+        basePay: Number(line.basePay),
+        tipShare: Number(line.tipShare),
+        allowances: Number(line.allowances),
+        bonus: Number(line.bonus),
+      },
+      deductions: {
+        unpaidLeave: Number(line.unpaidLeaveDeduction),
+        advanceRecovery: Number(line.advanceRecovery),
+        other: Number(line.otherDeductions),
+      },
+      netPay: Number(line.netPay),
+      note: line.adjustmentNote,
+    };
   }
 
   async finalizeRun(branchId: string, id: string) {

@@ -146,9 +146,9 @@ run('Dashboard attention figures (e2e)', () => {
       ing.filter((i) => Number(i.currentStock) <= Number(i.reorderLevel))
         .length,
     );
-    expect(s.draftPayrollRuns).toBe(
+    expect(s.unpaidPayrollRuns).toBe(
       await prisma.payrollRun.count({
-        where: { branchId: BRANCH, status: 'DRAFT' },
+        where: { branchId: BRANCH, status: { in: ['DRAFT', 'FINALIZED'] } },
       }),
     );
   });
@@ -157,7 +157,7 @@ run('Dashboard attention figures (e2e)', () => {
     const s = await summary(cashier);
     expect(typeof s.customers).toBe('number'); // customers.manage
     expect(s.employees).toBeNull(); // staff.manage
-    expect(s.draftPayrollRuns).toBeNull();
+    expect(s.unpaidPayrollRuns).toBeNull();
     expect(s.lowStock).toBeNull(); // inventory.manage
   });
 });

@@ -24,6 +24,9 @@ Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass,
 | Dashboard: pending payments, low stock, customers, team, draft payroll cards | Verified | DB-backed, role-gated on the server (cashier gets null for staff/inventory fields; e2e + browser). Deep links to /inventory?filter=low and /team?tab=payroll |
 | Dashboard widget show/hide/reorder, date ranges, role presets | Open | |
 | Cashier 403 on GET /settings (shell brand + checkout UPI QR silently missing) | Fixed + verified | New allow-listed GET /settings/display; cashier now sees the UPI QR in a browser |
-| Payroll calc | Tested (unit) | `payroll.calc.spec.ts`; attendance has no tests |
+| Payroll: adjustments (allowances, bonus, advance, deductions), PAID state, pay-once guard, salary slip, duplicate-run lock | Verified | 10 e2e tests (incl. concurrent create/pay races, mutation-checked), unit tests for the maths, and a browser run: adjust -> finalize -> pay -> printable slip, DB confirmed. Migration 20261101180000 applied on scratch Postgres |
+| Payroll: statutory deductions (PF/ESI/TDS), overtime, daily wages, attendance corrections log, CSV/PDF export | Open | Amounts are manual adjustments only; rules must be configurable per restaurant, none hardcoded |
+| Attendance module | Open | Still no tests; only exercised indirectly via payroll hours |
+| **App-wide: `toast.*` renders nothing (Toaster removed in 1.3.0)** | **Open - decision needed** | 65 files still call sonner `toast`, so their success/error messages are invisible. New code uses inline `StatusNote`. Remount an errors-only Toaster, or convert the 65 files |
 | Cash register open/close reconciliation | Open | `Shift` model exists, not audited |
 | Browser verification of every screen | Partial | Dashboard, POS, Orders, Customer detail driven in Chrome via Playwright; the other screens not yet |

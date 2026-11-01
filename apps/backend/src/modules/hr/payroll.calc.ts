@@ -87,3 +87,35 @@ export function computePayroll(
     };
   });
 }
+
+export interface LineAdjustments {
+  allowances: number;
+  bonus: number;
+  advanceRecovery: number;
+  otherDeductions: number;
+}
+
+/**
+ * Net pay once manual adjustments are applied on top of the calculated pay.
+ * Everything is added or subtracted in 2-dp steps so the stored net always
+ * equals the printed lines; a draft whose deductions exceed its pay is
+ * refused rather than saved as a negative salary.
+ */
+export function netWithAdjustments(
+  line: { basePay: number; tipShare: number; unpaidLeaveDeduction: number },
+  adj: LineAdjustments,
+): number {
+  const earned = round2(
+    line.basePay + line.tipShare + adj.allowances + adj.bonus,
+  );
+  const deducted = round2(
+    line.unpaidLeaveDeduction + adj.advanceRecovery + adj.otherDeductions,
+  );
+  const net = round2(earned - deducted);
+  if (net < 0) {
+    throw new RangeError(
+      `Deductions (${deducted}) are more than the pay (${earned})`,
+    );
+  }
+  return net;
+}

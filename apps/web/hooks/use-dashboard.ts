@@ -21,7 +21,7 @@ export interface DashboardSummary {
   lowStock: number | null;
   customers: number | null;
   employees: number | null;
-  draftPayrollRuns: number | null;
+  unpaidPayrollRuns: number | null;
   recentOrders: {
     id: string;
     orderNumber: string;

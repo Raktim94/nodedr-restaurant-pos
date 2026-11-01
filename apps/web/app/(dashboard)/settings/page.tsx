@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import {
   Select,
   SelectContent,
@@ -200,6 +201,7 @@ function GeneralSettingsForm({
   const preset = TAX_REGIME_PRESETS[taxRegime];
 
   const updateRestaurant = useUpdateRestaurantSettings(branchId);
+  const { note: saveNote, clear: clearSaveNote, toast: saveToast } = useNoteToast();
   const updateBranch = useUpdateBranchSettings(branchId);
 
   const onSubmitRestaurant = (e: React.FormEvent) => {
@@ -219,8 +221,8 @@ function GeneralSettingsForm({
         requireDiscountReason: requireReason,
       },
       {
-        onSuccess: () => toast.success("Restaurant details saved"),
-        onError: (err) => toast.error(err instanceof ApiError ? err.message : "Could not save"),
+        onSuccess: () => saveToast.success("Restaurant details saved"),
+        onError: (err) => saveToast.error(err instanceof ApiError ? err.message : "Could not save"),
       },
     );
   };
@@ -440,6 +442,7 @@ function GeneralSettingsForm({
             </div>
           </div>
 
+          <StatusNote note={saveNote} onClear={clearSaveNote} />
           <Button type="submit" disabled={updateRestaurant.isPending} className="self-start">
             {updateRestaurant.isPending ? "Saving…" : "Save restaurant"}
           </Button>
