@@ -239,6 +239,24 @@ The response is the order in the shape below (without customer details):
 `deliveryStatus` is `UNASSIGNED`, `ASSIGNED`, `PICKED_UP`, `DELIVERED` or
 `FAILED`. Prices are tax-inclusive (see ARCHITECTURE.md).
 
+### `POST /locations/:branchId/rewards`
+
+Points, rewards and the referral link for a signed-in website customer.
+
+```json
+{ "customerPhone": "+91 98765 43210", "customerName": "Asha" }
+```
+
+Returns `points`, `pointValue`, `balanceValue`, `rewards[]` (what the balance
+buys), `code` (the customer's personal referral code, or `null` when referral
+rewards are off), `sharerPoints`, `referredPoints`, `invited`, `rewarded` and
+recent `history`. Needs the `orders:write` scope. Only call it for a customer
+your own site has authenticated. See [REFERRALS.md](./REFERRALS.md).
+
+Orders accept three more optional fields: `referralCode`, `sharedItemId` and
+`redeemPoints`; the order response then includes `rewards.referral` and
+`rewards.redeem`. Points are only redeemed up to the balance and the bill's value.
+
 ### `GET /locations/:branchId/orders/:orderId`
 
 Scope: `orders:read`. Same shape as above, for polling an order's progress.

@@ -9,10 +9,12 @@ import { Prisma } from '@prisma/client';
 import type {
   CreateIntegrationOrderDto,
   CreateIntegrationReservationDto,
+  IntegrationRewardsLookupDto,
 } from '@nodedr-restaurant/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeliveryService } from '../modules/delivery/delivery.service';
 import { OrdersService } from '../modules/orders/orders.service';
+import { ReferralsService } from '../modules/referrals/referrals.service';
 import { ReservationsService } from '../modules/reservations/reservations.service';
 
 /** Extra scope that unlocks customer contact and delivery address on reads. */
@@ -50,6 +52,7 @@ export class IntegrationsService {
     private readonly orders: OrdersService,
     private readonly delivery: DeliveryService,
     private readonly reservations: ReservationsService,
+    private readonly referrals: ReferralsService,
   ) {}
 
   private async assertBranch(ctx: IntegrationKeyContext, branchId: string) {
@@ -176,30 +179,13 @@ export class IntegrationsService {
     }
 
     // find-or-attach a lightweight Customer record so repeat integration
-    // orders from the same phone number accumulate under one profile —
-    // same idea as the in-app POS's walk-in customer capture, just keyed
-    // by phone since that's the only identity an external order carries.
-    const existing = await this.prisma.customer.findFirst({
-      where: { branchId, phone: dto.customerPhone },
-    });
-    const customer = existing
-      ? await this.prisma.customer.update({
-          where: { id: existing.id },
-          data: {
-            name: dto.customerName || existing.name,
-            ...(dto.customerEmail && !existing.email
-              ? { email: dto.customerEmail }
-              : {}),
-          },
-        })
-      : await this.prisma.customer.create({
-          data: {
-            branchId,
-            name: dto.customerName,
-            phone: dto.customerPhone,
-            email: dto.customerEmail,
-          },
-        });
+    // orders from the same phone number accumulate under one profile.
+    const customer = await this.customerFor(
+      branchId,
+      dto.customerName,
+      dto.customerPhone,
+      dto.customerEmail,
+    );
 
     // An external order has no staff member behind it, but Order.createdById
     // is a required FK — attribute it to any staff linked to the branch
@@ -253,10 +239,23 @@ export class IntegrationsService {
             integrationKeyId: ctx.id,
           },
         );
+        const rewards =
+          dto.referralCode || dto.redeemPoints
+            ? await this.applyRewards(
+                ctx,
+                branchId,
+                created.id,
+                customer.id,
+                dto,
+              )
+            : undefined;
         const order = await this.findOwnOrder(ctx, branchId, {
           id: created.id,
         });
-        return this.present(ctx, order!);
+        return {
+          ...this.present(ctx, order!),
+          ...(rewards ? { rewards } : {}),
+        };
       } catch (err) {
         if (
           err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -275,6 +274,116 @@ export class IntegrationsService {
         throw err;
       }
     }
+  }
+
+  private async customerFor(
+    branchId: string,
+    name: string,
+    phone: string,
+    email?: string,
+  ) {
+    const existing = await this.prisma.customer.findFirst({
+      where: { branchId, phone },
+    });
+    return existing
+      ? this.prisma.customer.update({
+          where: { id: existing.id },
+          data: {
+            name: name || existing.name,
+            ...(email && !existing.email ? { email } : {}),
+          },
+        })
+      : this.prisma.customer.create({
+          data: { branchId, name, phone, email },
+        });
+  }
+
+  /**
+   * Referral attribution and a points-redemption request for a freshly placed
+   * order. Neither can fail the order: a bad code or an empty balance is
+   * reported back instead. Attribution is idempotent (one referral per
+   * customer) and no points are paid until the first purchase is paid.
+   */
+  private async applyRewards(
+    ctx: IntegrationKeyContext,
+    branchId: string,
+    orderId: string,
+    customerId: string,
+    dto: CreateIntegrationOrderDto,
+  ) {
+    const out: {
+      referral?: { applied: boolean; reason?: string };
+      redeem?: { points: number; discount: number };
+    } = {};
+    if (dto.referralCode) {
+      try {
+        const r = await this.referrals.attach(
+          ctx.restaurantId,
+          customerId,
+          dto.referralCode,
+          dto.sharedItemId,
+        );
+        out.referral = r.applied
+          ? { applied: true }
+          : { applied: false, reason: r.reason };
+      } catch {
+        out.referral = {
+          applied: false,
+          reason: 'Referral could not be recorded',
+        };
+      }
+    }
+    if (dto.redeemPoints) {
+      const [cust, rest, order] = await Promise.all([
+        this.prisma.customer.findUniqueOrThrow({
+          where: { id: customerId },
+          select: { loyaltyPoints: true },
+        }),
+        this.prisma.restaurant.findUniqueOrThrow({
+          where: { id: ctx.restaurantId },
+          select: { loyaltyPointValue: true },
+        }),
+        this.prisma.order.findUniqueOrThrow({
+          where: { id: orderId },
+          select: { subtotal: true },
+        }),
+      ]);
+      const value = Number(rest.loyaltyPointValue);
+      if (value > 0) {
+        // Never more than the balance, never more than the bill is worth.
+        const cap = Math.floor(Number(order.subtotal) / value);
+        const points = Math.max(
+          0,
+          Math.min(dto.redeemPoints, cust.loyaltyPoints, cap),
+        );
+        if (points > 0) {
+          await this.prisma.order.update({
+            where: { id: orderId },
+            data: { requestedRedeemPoints: points },
+          });
+          out.redeem = {
+            points,
+            discount: Math.round(points * value * 100) / 100,
+          };
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Balance, rewards and referral link data for a website customer. */
+  async rewards(
+    ctx: IntegrationKeyContext,
+    branchId: string,
+    dto: IntegrationRewardsLookupDto,
+  ) {
+    await this.assertBranch(ctx, branchId);
+    const customer = await this.customerFor(
+      branchId,
+      dto.customerName ?? '',
+      dto.customerPhone,
+    );
+    return this.referrals.summary(ctx.restaurantId, customer.id);
   }
 
   /** Fee / minimum / ETA for a pincode, so a website can quote before ordering. */

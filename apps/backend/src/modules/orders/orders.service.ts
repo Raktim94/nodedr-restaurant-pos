@@ -44,6 +44,7 @@ import {
   type Bill,
 } from './settlement';
 import type { TaxMode } from '@nodedr-restaurant/types';
+import { ReferralsService } from '../referrals/referrals.service';
 import { VerifactuService } from '../verifactu/verifactu.service';
 
 const KOT_FORWARD_STATUSES = [
@@ -67,6 +68,7 @@ export class OrdersService {
     private readonly marketing: MarketingService,
     private readonly webhooks: WebhooksService,
     private readonly verifactu: VerifactuService,
+    private readonly referrals: ReferralsService,
   ) {}
 
   async listOpen(branchId: string, tableId?: string) {
@@ -1308,7 +1310,12 @@ export class OrdersService {
       round2(lines.reduce((sum, l) => sum + l.lineTotal, 0)),
       adj.couponCode,
     );
-    const pointsToRedeem = adj.loyaltyPointsToRedeem ?? 0;
+    // Points a guest asked to use when ordering online apply here unless staff
+    // choose otherwise; they are capped at the balance so an out-of-date
+    // request can never block taking payment.
+    const pointsToRedeem =
+      adj.loyaltyPointsToRedeem ??
+      Math.min(order.requestedRedeemPoints, order.customer?.loyaltyPoints ?? 0);
     if (pointsToRedeem > 0 && !customerId) {
       throw new BadRequestException(
         'Cannot redeem loyalty points without a customer on the order',
@@ -1554,6 +1561,13 @@ export class OrdersService {
                 'Customer loyalty balance changed — please retry checkout',
               );
             }
+            await this.referrals.recordOrderPoints(tx, {
+              branchId,
+              customerId: effectiveCustomerId,
+              orderId,
+              earned: 0,
+              redeemed: pointsToRedeem,
+            });
           }
         }
 
@@ -1672,7 +1686,21 @@ export class OrdersService {
               where: { id: effectiveCustomerId },
               data: { loyaltyPoints: { increment: pointsEarned } },
             });
+            await this.referrals.recordOrderPoints(tx, {
+              branchId,
+              customerId: effectiveCustomerId,
+              orderId,
+              earned: pointsEarned,
+              redeemed: 0,
+            });
           }
+          // First paid purchase of a referred customer: pays both sides, once.
+          await this.referrals.onOrderPaid(tx, {
+            id: orderId,
+            branchId,
+            customerId: effectiveCustomerId,
+            totalAmount: bill.totalDue,
+          });
         }
 
         // `status: 'OPEN'` in the where clause is the actual concurrency

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { use, useState } from "react";
 import { toast } from "@/lib/toast";
 import { AddressesCard } from "@/components/customers/addresses-card";
+import { RewardsCard } from "@/components/customers/rewards-card";
 import { EditCustomerDialog } from "@/components/customers/edit-customer-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -121,6 +122,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         </Card>
       )}
 
+      <RewardsCard branchId={branchId} customerId={customer.id} />
       <AddressesCard branchId={branchId} customerId={customer.id} addresses={customer.addresses ?? []} />
 
       {customer.giftCards.length > 0 && (

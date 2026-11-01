@@ -96,6 +96,12 @@ export const createIntegrationOrderSchema = z
     // minutes ahead.
     scheduledFor: z.string().datetime().optional(),
     items: z.array(integrationOrderItemSchema).min(1).max(50),
+    // Referral link the customer arrived through (optional, ignored if invalid).
+    referralCode: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{6,12}$/).optional(),
+    // The shared dish, when the link was for one item.
+    sharedItemId: z.string().trim().max(64).optional(),
+    // Loyalty points the customer wants to use against this order's bill.
+    redeemPoints: z.number().int().min(1).max(1_000_000).optional(),
   })
   .refine((o) => o.type !== "DELIVERY" || !!o.delivery, {
     path: ["delivery"],
@@ -107,6 +113,13 @@ export type CreateIntegrationOrderDto = z.infer<typeof createIntegrationOrderSch
 export const integrationIdempotencyKeySchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{8,64}$/, "Idempotency-Key must be 8-64 characters of A-Z a-z 0-9 _ -");
+
+// Rewards lookup for a signed-in website customer (identified by mobile number).
+export const integrationRewardsLookupSchema = z.object({
+  customerPhone: phoneSchema,
+  customerName: z.string().trim().min(1).max(80).optional(),
+});
+export type IntegrationRewardsLookupDto = z.infer<typeof integrationRewardsLookupSchema>;
 
 export const createIntegrationReservationSchema = z.object({
   customerName: z.string().trim().min(1).max(80),

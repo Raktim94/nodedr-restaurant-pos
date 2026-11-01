@@ -20,6 +20,7 @@ import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
+import { ReferralsService } from '../referrals/referrals.service';
 import { CustomersService } from './customers.service';
 
 @ApiTags('customers')
@@ -28,6 +29,7 @@ export class CustomersController {
   constructor(
     private readonly customersService: CustomersService,
     private readonly branchAccess: BranchAccessService,
+    private readonly referrals: ReferralsService,
   ) {}
 
   @Auth('customers.manage')
@@ -39,6 +41,19 @@ export class CustomersController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.customersService.list(branchId, search);
+  }
+
+  // Points balance, available rewards, referral code and recent point changes.
+  @Auth('customers.manage')
+  @Get(':id/rewards')
+  async rewards(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    await this.customersService.getById(branchId, id); // 404 if not in this branch
+    return this.referrals.summary(user.restaurantId, id);
   }
 
   @Auth('customers.manage')

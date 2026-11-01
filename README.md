@@ -148,7 +148,7 @@ by phase.
 | 4 | Menu Management — categories, modifier groups, combos, seasonal menus, availability scheduling | ✅ |
 | 5 | Inventory & Store Management — ingredients, recipe costing, POs, suppliers, GRN, waste, batch/lot | ✅ |
 | 6 | Procurement — vendor quotations, purchase requests/orders, invoices, supplier payments, and supplier performance | ✅ core · 🚧 returns, price variance, reorder suggestions |
-| 7 | CRM — profiles, loyalty points, memberships, gift vouchers, feedback, visit history | ✅ |
+| 7 | CRM — profiles, loyalty points, **referral rewards (share a dish or link, points for both sides, redeem at checkout)**, memberships, gift vouchers, feedback, visit history | ✅ |
 | 8 | Staff Management — accounts & roles, attendance (clock in/out), shift scheduling with clash checks, leave, payroll from clocked hours, tip pool split by hours | ✅ |
 | 9 | Accounting — expenses, nightly cash close with variance, profit & loss, balance sheet, budgets vs actual, bank-statement reconciliation, tax summary by rate | ✅ |
 | 10 | Delivery Management — zones by pincode, fee/minimum/ETA, driver assignment, status flow | ✅ · 🚧 live GPS, 3rd-party platforms |

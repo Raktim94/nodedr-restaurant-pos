@@ -183,6 +183,9 @@ function GeneralSettingsForm({
   const [loyaltyEarnPerCurrency, setLoyaltyEarnPerCurrency] = useState(
     String(restaurant.loyaltyEarnPerCurrency),
   );
+  const [referralEnabled, setReferralEnabled] = useState(!!restaurant.referralEnabled);
+  const [referralSharerPoints, setReferralSharerPoints] = useState(String(restaurant.referralSharerPoints ?? 15));
+  const [referralReferredPoints, setReferralReferredPoints] = useState(String(restaurant.referralReferredPoints ?? 10));
   const [maxDiscount, setMaxDiscount] = useState(String(Number(restaurant.maxManualDiscountPercent ?? 100)));
   const [requireReason, setRequireReason] = useState(!!restaurant.requireDiscountReason);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -217,6 +220,9 @@ function GeneralSettingsForm({
         upiPayeeName: upiPayeeName.trim() || null,
         loyaltyPointValue: Number(loyaltyPointValue) || 0,
         loyaltyEarnPerCurrency: Number(loyaltyEarnPerCurrency) || 1,
+        referralEnabled,
+        referralSharerPoints: Math.max(Math.floor(Number(referralSharerPoints) || 0), 0),
+        referralReferredPoints: Math.max(Math.floor(Number(referralReferredPoints) || 0), 0),
         maxManualDiscountPercent: Math.min(Math.max(Number(maxDiscount) || 0, 0), 100),
         requireDiscountReason: requireReason,
       },
@@ -384,6 +390,51 @@ function GeneralSettingsForm({
                   value={loyaltyPointValue}
                   onChange={(e) => setLoyaltyPointValue(e.target.value)}
                   required
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-medium text-foreground">Referral rewards</h3>
+                <p className="text-xs text-muted-foreground">
+                  Customers share a dish or their personal link. Points are paid only after the new customer&apos;s
+                  first purchase is paid. Points are worth the &ldquo;1 point redeems for&rdquo; amount above
+                  (for 100 points = {currency} 10, enter 0.10).
+                </p>
+              </div>
+              <Switch
+                id="r-referral-enabled"
+                aria-label="Enable referral rewards"
+                checked={referralEnabled}
+                onCheckedChange={setReferralEnabled}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="r-referral-sharer">Points for the customer who shares</Label>
+                <Input
+                  id="r-referral-sharer"
+                  type="number"
+                  min="0"
+                  step="1"
+                  disabled={!referralEnabled}
+                  value={referralSharerPoints}
+                  onChange={(e) => setReferralSharerPoints(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="r-referral-referred">Points for the new customer</Label>
+                <Input
+                  id="r-referral-referred"
+                  type="number"
+                  min="0"
+                  step="1"
+                  disabled={!referralEnabled}
+                  value={referralReferredPoints}
+                  onChange={(e) => setReferralReferredPoints(e.target.value)}
                 />
               </div>
             </div>

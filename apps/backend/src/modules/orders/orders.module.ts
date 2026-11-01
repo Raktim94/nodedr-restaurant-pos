@@ -5,6 +5,7 @@ import { NotificationsModule } from '../../notifications/notifications.module';
 import { GiftCardsModule } from '../gift-cards/gift-cards.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { MarketingModule } from '../marketing/marketing.module';
+import { ReferralsModule } from '../referrals/referrals.module';
 import { VerifactuModule } from '../verifactu/verifactu.module';
 import { KotPrintService } from './kot-print.service';
 import { OrdersController } from './orders.controller';
@@ -19,6 +20,7 @@ import { ScheduledOrdersService } from './scheduled-orders.service';
     NotificationsModule,
     MarketingModule,
     VerifactuModule,
+    ReferralsModule,
   ],
   controllers: [OrdersController],
   providers: [

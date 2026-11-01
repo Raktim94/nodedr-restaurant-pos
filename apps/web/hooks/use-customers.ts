@@ -125,3 +125,28 @@ export function useDeleteAddress(branchId: string | null, customerId: string) {
     onSuccess: done,
   });
 }
+
+export interface CustomerRewards {
+  referralEnabled: boolean;
+  code: string | null;
+  points: number;
+  pointValue: number;
+  currency: string;
+  balanceValue: number;
+  sharerPoints: number;
+  referredPoints: number;
+  rewards: { points: number; discount: number }[];
+  invited: number;
+  rewarded: number;
+  pointsFromReferrals: number;
+  referredBy: "PENDING" | "REWARDED" | null;
+  history: { delta: number; reason: string; createdAt: string }[];
+}
+
+export function useCustomerRewards(branchId: string | null, id: string | null) {
+  return useQuery({
+    queryKey: ["customers", branchId, "rewards", id],
+    queryFn: () => api.get<CustomerRewards>(`/customers/${id}/rewards?branchId=${branchId}`),
+    enabled: !!branchId && !!id,
+  });
+}

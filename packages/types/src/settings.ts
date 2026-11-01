@@ -25,6 +25,9 @@ export const restaurantSettingsSchema = z.object({
   upiPayeeName: z.string().trim().max(60).optional().nullable(),
   loyaltyPointValue: z.coerce.number().min(0).optional(),
   loyaltyEarnPerCurrency: z.coerce.number().int().positive().optional(),
+  referralEnabled: z.boolean().optional(),
+  referralSharerPoints: z.coerce.number().int().min(0).max(100000).optional(),
+  referralReferredPoints: z.coerce.number().int().min(0).max(100000).optional(),
   maxManualDiscountPercent: z.coerce.number().min(0).max(100).optional(),
   requireDiscountReason: z.boolean().optional(),
 });

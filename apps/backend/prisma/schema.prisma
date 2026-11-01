@@ -65,6 +65,12 @@ model Restaurant {
   loyaltyPointValue      Decimal @default(1) @db.Decimal(6, 2)
   loyaltyEarnPerCurrency Int     @default(100)
 
+  // Referral rewards. Off until the owner turns it on. Both rewards are paid
+  // only after the referred customer's first qualifying (paid) purchase.
+  referralEnabled        Boolean @default(false)
+  referralSharerPoints   Int     @default(15)
+  referralReferredPoints Int     @default(10)
+
   // Discount guardrails. A manual discount above maxManualDiscountPercent
   // (as a share of the bill subtotal) needs the discounts.unlimited
   // permission or an owner/administrator role. 100 = no cap, which keeps
@@ -75,11 +81,11 @@ model Restaurant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branches           Branch[]
-  roles              Role[]
-  users              User[]
-  integrationApiKeys IntegrationApiKey[]
-  webhookEndpoints   WebhookEndpoint[]
+  branches               Branch[]
+  roles                  Role[]
+  users                  User[]
+  integrationApiKeys     IntegrationApiKey[]
+  webhookEndpoints       WebhookEndpoint[]
   integrationConnections IntegrationConnection[]
 
   @@map("restaurants")
@@ -1178,14 +1184,19 @@ model Customer {
   notes       String?
 
   loyaltyPoints   Int     @default(0)
+  // Personal referral code (created the first time it is needed).
+  referralCode    String? @unique
   // Opted out of marketing messages; excluded from every campaign audience.
   marketingOptOut Boolean @default(false)
   walletBalance   Decimal @default(0) @db.Decimal(12, 2) // store credit
 
-  createdAt DateTime   @default(now())
-  orders    Order[]
-  giftCards GiftCard[]
-  addresses CustomerAddress[]
+  createdAt        DateTime          @default(now())
+  orders           Order[]
+  giftCards        GiftCard[]
+  addresses        CustomerAddress[]
+  referralsMade    Referral[]        @relation("ReferralReferrer")
+  referralReceived Referral?         @relation("ReferralReferred")
+  pointsLedger     PointsLedger[]
 
   @@index([branchId, phone])
   @@map("customers")
@@ -1207,7 +1218,7 @@ model CustomerAddress {
   state        String?
   pincode      String?
   instructions String? // delivery notes
-  isDefault    Boolean  @default(false)
+  isDefault    Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1355,6 +1366,8 @@ model Order {
   discountAmount        Decimal @default(0) @db.Decimal(12, 2)
   taxAmount             Decimal @default(0) @db.Decimal(12, 2) // informational breakup only — see ARCHITECTURE.md inclusive-pricing note
   tipAmount             Decimal @default(0) @db.Decimal(12, 2)
+  // Points the guest asked to use when ordering online; applied to the bill at checkout.
+  requestedRedeemPoints Int     @default(0)
   loyaltyPointsRedeemed Int     @default(0)
   loyaltyDiscountAmount Decimal @default(0) @db.Decimal(12, 2)
   totalAmount           Decimal @default(0) @db.Decimal(12, 2)
@@ -1371,8 +1384,8 @@ model Order {
 
   // The manual discount as the cashier entered it, kept next to the computed
   // discountAmount so a bill can show both the percentage and the amount.
-  discountType  ManualDiscountType?
-  discountValue Decimal?            @db.Decimal(12, 2)
+  discountType   ManualDiscountType?
+  discountValue  Decimal?            @db.Decimal(12, 2)
   // Why the cashier gave the manual discount (audit + reports).
   discountReason String?
 
@@ -1383,11 +1396,11 @@ model Order {
 
   // The Integration API key that placed this order (null for staff/QR/kiosk
   // orders). Integration reads are limited to orders their own key placed.
-  integrationKeyId String?
+  integrationKeyId  String?
   // Fingerprint of the request body that created this order, so reusing an
   // Idempotency-Key with a different body is refused instead of replayed.
   clientRequestHash String?
-  integrationKey   IntegrationApiKey? @relation(fields: [integrationKeyId], references: [id], onDelete: SetNull)
+  integrationKey    IntegrationApiKey? @relation(fields: [integrationKeyId], references: [id], onDelete: SetNull)
 
   // Delivery (Phase 5). deliveryFee is added on top of the item total at
   // checkout; the zone's fee is snapshotted so later zone edits never
@@ -1847,13 +1860,13 @@ model PayrollRun {
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
-  periodStart DateTime      @db.Date
-  periodEnd   DateTime      @db.Date
-  status      PayrollStatus @default(DRAFT)
-  tipPool     Decimal       @default(0) @db.Decimal(12, 2)
-  totalNet    Decimal       @default(0) @db.Decimal(12, 2)
-  createdAt   DateTime      @default(now())
-  finalizedAt DateTime?
+  periodStart   DateTime      @db.Date
+  periodEnd     DateTime      @db.Date
+  status        PayrollStatus @default(DRAFT)
+  tipPool       Decimal       @default(0) @db.Decimal(12, 2)
+  totalNet      Decimal       @default(0) @db.Decimal(12, 2)
+  createdAt     DateTime      @default(now())
+  finalizedAt   DateTime?
   // Set once, when salaries are actually paid out (FINALIZED -> PAID).
   paidAt        DateTime?
   paidById      String?
@@ -2371,7 +2384,6 @@ model SyncChange {
   @@map("sync_changes")
 }
 
-
 // ---------------------------------------------------------------------------
 // Integrations hub: a restaurant's own connections to outside platforms
 // ---------------------------------------------------------------------------
@@ -2425,4 +2437,54 @@ model IntegrationLog {
 
   @@index([connectionId, createdAt])
   @@map("integration_logs")
+}
+
+enum ReferralStatus {
+  PENDING
+  REWARDED
+}
+
+// One row per referred customer (referredId is unique, so a customer can be
+// referred once). It is attribution first; the points are paid only when the
+// referred customer's first qualifying purchase is paid, claimed atomically
+// (PENDING -> REWARDED) so a retried checkout can never pay twice.
+model Referral {
+  id           String         @id @default(cuid())
+  branchId     String
+  code         String
+  referrerId   String
+  referrer     Customer       @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredId   String         @unique
+  referred     Customer       @relation("ReferralReferred", fields: [referredId], references: [id], onDelete: Cascade)
+  // The shared dish, when the link was for one item.
+  sharedItemId String?
+  status       ReferralStatus @default(PENDING)
+
+  referrerPoints    Int?
+  referredPoints    Int?
+  qualifyingOrderId String?
+  rewardedAt        DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([referrerId])
+  @@index([branchId, status])
+  @@map("referrals")
+}
+
+// Every change to a customer's points balance from referrals / redemptions /
+// earning, with a unique idempotency key so replaying the same event is a no-op.
+model PointsLedger {
+  id             String   @id @default(cuid())
+  branchId       String
+  customerId     String
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  delta          Int
+  reason         String // REFERRAL_REFERRER | REFERRAL_REFERRED | REDEEM | EARN
+  referralId     String?
+  orderId        String?
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  @@index([customerId, createdAt])
+  @@map("points_ledger")
 }

@@ -21,6 +21,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import {
   createIntegrationOrderSchema,
+  integrationRewardsLookupSchema,
   createIntegrationReservationSchema,
   integrationIdempotencyKeySchema,
 } from '@nodedr-restaurant/types';
@@ -134,6 +135,23 @@ export class IntegrationsController {
       orderId,
       include === 'customer',
     );
+  }
+
+  @ApiOperation({
+    summary: "A signed-in customer's points, rewards and referral link",
+    description:
+      'Looks the customer up by mobile number (creating the profile if new) and returns their points balance, what it is worth, the rewards it buys, and their personal referral code. Call it only for a customer your own site has signed in. Needs the orders:write scope.',
+  })
+  @RequireScope('orders:write')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Post('locations/:branchId/rewards')
+  @UsePipes(new ZodValidationPipe(integrationRewardsLookupSchema))
+  rewards(
+    @CurrentIntegrationKey() key: IntegrationKeyContext,
+    @Param('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    return this.integrations.rewards(key, branchId, body as never);
   }
 
   @RequireScope('reservations:write')
