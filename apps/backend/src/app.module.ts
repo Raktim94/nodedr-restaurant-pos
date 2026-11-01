@@ -19,6 +19,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { IntegrationHubModule } from './integration-hub/integration-hub.module';
+import { ImportsModule } from './modules/imports/imports.module';
 import { EmailModule } from './modules/email/email.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { OrdersModule } from './modules/orders/orders.module';
@@ -64,6 +65,7 @@ import { VerifactuModule } from './modules/verifactu/verifactu.module';
     OperationsModule,
     WebhooksModule,
     IntegrationHubModule,
+    ImportsModule,
     EmailModule,
     OrdersModule,
     KdsModule,

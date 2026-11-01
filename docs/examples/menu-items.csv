@@ -1,0 +1,8 @@
+name,category,price,half_price,tax_rate_percent,sku,description,station,is_veg,spice_level,prep_time_minutes,cost_price,calories,allergens,available_from,available_to,is_active
+Paneer Tikka,Starters,280,160,5,STR-001,Char-grilled cottage cheese with mint chutney,Tandoor,yes,MEDIUM,15,110,320,dairy,,,yes
+Chicken 65,Starters,320,,5,STR-002,Crispy fried chicken with curry leaves,Main Kitchen,no,HOT,15,125,410,,,,yes
+Dal Makhani,Main Course,260,150,5,MC-001,Slow-cooked black lentils in butter and cream,Main Kitchen,yes,MILD,20,70,350,dairy,,,yes
+Butter Naan,Breads,60,,5,BR-001,,Tandoor,yes,NONE,6,12,260,"gluten;dairy",,,yes
+Masala Chai,Beverages,40,,5,BV-001,Served 6 AM to 10 PM,Main Kitchen,yes,NONE,5,8,90,dairy,06:00,22:00,yes
+Fresh Lime Soda,Beverages,70,,5,BV-002,Sweet or salted,Bar,yes,NONE,3,15,60,,,,yes
+Gulab Jamun (2 pc),Desserts,90,,5,DS-001,Served warm,Main Kitchen,yes,NONE,4,22,300,"dairy;gluten",,,yes

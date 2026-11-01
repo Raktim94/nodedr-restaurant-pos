@@ -4,6 +4,7 @@ import { EyeOff, Layers, Leaf, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AddCategoryDialog } from "@/components/menu/add-category-dialog";
+import { ImportCsvDialog } from "@/components/imports/import-csv-dialog";
 import { AddItemDialog } from "@/components/menu/add-item-dialog";
 import { ComboComponentsDialog } from "@/components/menu/combo-components-dialog";
 import { EditCategoryDialog } from "@/components/menu/edit-category-dialog";
@@ -195,7 +196,12 @@ export default function MenuPage() {
         <Card className="flex flex-col gap-4 p-4 sm:p-6">
           <div className="flex items-center justify-between">
             <h2 className="text-[18px] font-medium text-foreground">Items</h2>
-            {canManage && <AddItemDialog branchId={branchId} categories={categories ?? []} />}
+            {canManage && (
+              <div className="flex flex-wrap items-center gap-2">
+                <ImportCsvDialog kind="menu" branchId={branchId} />
+                <AddItemDialog branchId={branchId} categories={categories ?? []} />
+              </div>
+            )}
           </div>
 
           {itemsLoading ? (

@@ -4,7 +4,7 @@ Status: **Verified** = run and observed · **Tested** = automated tests pass ·
 **Implemented** = code written, not run end to end · **Existing** = predates this
 checklist, inspected by reading code only · **Open** = not done · **Blocked** = needs access.
 
-Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 139 e2e tests (15 suites) pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
+Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 162 e2e tests (16 suites) pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -13,6 +13,7 @@ Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass,
 | AGPL notices (NOTICE, COPYRIGHT, TRADEMARK_POLICY, SECURITY) | Implemented | Ownership and trademark registration unverified; 3 deps lack a licence field |
 | AGPL s13 source link in Settings | Implemented | Not seen in a browser |
 | Product image delivery: optimized WebP thumbnails, 1-year cache, restricted to upload + app static paths | Verified (menu page); kiosk cards not browser-tested | Realistic 660 KB photo served as 760 B (48px) / 1.9 KB (96px) / 7.5 KB (384px). Regression caught and fixed during verification: configuring `localPatterns` had blocked `/logo.png`; now an explicit allow-list (traversal / API / external URLs return 400). Uploads themselves are still stored at full size |
+| **Bulk CSV import: menu items + ingredients** (docs/IMPORT.md, example files in docs/examples/) | Verified | Preview-then-commit, idempotent re-import, blank cells never erase, opening stock via the stock ledger only for ingredients with no history, all-or-nothing with opt-in skip, per-row errors with line numbers + downloadable problem list, Excel encodings/delimiters, formula-injection and unquoted-comma protection, 2 MB / 2000-row limits, permissions + tenant isolation, audit. 29 unit + 23 e2e tests (stock-doubling guard mutation-checked); browser: example download -> upload -> import, broken file, mobile 360px, cashier blocked. Shipped example files are tested to import with zero errors |
 | Menu grid text overflow, lazy images | Verified | Browser check with a 100-char unbroken name at 360/768/1440px: no page overflow, card inside grid, label clamped |
 | Edit open bill, refunds, cancel with reason | Existing | |
 | Edit paid bill via adjustment entries | Open | Today: refund only |

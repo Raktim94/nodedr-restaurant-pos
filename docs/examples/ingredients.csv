@@ -1,0 +1,10 @@
+name,unit,sku,reorder_level,cost_per_unit,opening_stock,is_active
+Paneer,KG,ING-001,5,320,12.5,yes
+Basmati Rice,KG,ING-002,25,95,60,yes
+Chicken (boneless),KG,ING-003,10,260,18,yes
+Refined Oil,L,ING-004,15,140,40,yes
+Milk,L,ING-005,10,56,20,yes
+Eggs,DOZEN,ING-006,5,84,12,yes
+Butter,PACK,ING-007,6,60,15,yes
+Tea Leaves,G,ING-008,1000,0.45,5000,yes
+Takeaway Boxes,PIECE,PKG-001,200,6.5,800,yes

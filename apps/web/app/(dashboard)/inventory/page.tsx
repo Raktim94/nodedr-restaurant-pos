@@ -3,6 +3,7 @@
 import { AlertTriangle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { ImportCsvDialog } from "@/components/imports/import-csv-dialog";
 import { AddIngredientDialog } from "@/components/inventory/add-ingredient-dialog";
 import { AdjustStockDialog } from "@/components/inventory/adjust-stock-dialog";
 import { InventoryTabs } from "@/components/inventory/inventory-tabs";
@@ -18,12 +19,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useBranch } from "@/hooks/use-branch";
 import { useIngredients, useTrackingStatus } from "@/hooks/use-inventory";
 import { formatCurrency } from "@/lib/format";
 
 function InventoryView() {
   const { branchId } = useBranch();
+  const { data: me } = useCurrentUser();
+  const canImport = hasPermission(me?.user, "inventory.manage");
   const [search, setSearch] = useState("");
   // Dashboard deep link: /inventory?filter=low starts on the low-stock view.
   const params = useSearchParams();
@@ -46,7 +50,10 @@ function InventoryView() {
             Ingredients, recipe costing, purchase orders, and waste
           </p>
         </div>
-        <AddIngredientDialog branchId={branchId} />
+        <div className="flex flex-wrap items-center gap-2">
+          {canImport && <ImportCsvDialog kind="ingredients" branchId={branchId} />}
+          <AddIngredientDialog branchId={branchId} />
+        </div>
       </div>
 
       <InventoryTabs />
