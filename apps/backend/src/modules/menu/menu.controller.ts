@@ -29,7 +29,15 @@ import {
   assertValidImageSignature,
   imageUploadOptions,
 } from '../../common/upload/image-upload.config';
+import { z } from 'zod';
 import { MenuService } from './menu.service';
+
+const bulkPriceSchema = z.object({
+  percent: z.number().min(-90).max(500),
+  categoryId: z.string().min(1).optional(),
+  roundToWhole: z.boolean().default(true),
+  preview: z.boolean().default(false),
+});
 
 @ApiTags('menu')
 @Controller('v1/menu')
@@ -147,6 +155,18 @@ export class MenuController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.menuService.createItem(branchId, body as never);
+  }
+
+  @Auth('menu.manage')
+  @Post('items/bulk-price')
+  @UsePipes(new ZodValidationPipe(bulkPriceSchema))
+  async bulkPrice(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.menuService.bulkPriceChange(branchId, user.id, body as z.infer<typeof bulkPriceSchema>);
   }
 
   @Auth('menu.manage')

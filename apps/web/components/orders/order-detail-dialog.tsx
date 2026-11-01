@@ -9,6 +9,7 @@ import { ChannelBadge, TypeBadge } from "@/components/orders/channel-badges";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CancelOrderDialog, useCanCancelOrders } from "@/components/orders/cancel-order-dialog";
+import { DeliveryWhere } from "@/components/orders/delivery-where";
 import { EditBillDialog } from "@/components/orders/edit-bill-dialog";
 import { ReasonDialog } from "@/components/orders/reason-dialog";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
@@ -160,6 +161,8 @@ export function OrderDetailDialog({
                 <p className="text-xs text-muted-foreground">No phone number on file.</p>
               )}
             </div>
+
+            <DeliveryWhere order={order} />
 
             {order.notes && (
               <p className="rounded-lg bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">

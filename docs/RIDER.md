@@ -26,3 +26,11 @@ Delivery page: a Riders panel (online / offline, active deliveries, last positio
 ## Limits
 
 Cash collected is shown to the rider but is settled by staff at the till; riders do not record payments. Location uses the phone's browser location: it needs the page open (the browser pauses background location on some phones).
+
+## Staff: delivery address and Google Maps
+
+Whenever staff open an order (to accept, decline or manage it) a **Deliver to** block shows the address, pin code, the customer's landmark and an **Open in Google Maps** button. If the customer shared their live location on the website the button opens that exact point; otherwise it searches the typed address.
+
+## Menu: change all prices
+
+Menu → **Change all prices**: enter a percentage (positive raises, negative lowers), optionally pick one category, press **Preview** to see the effect, then **Apply**. Prices are rounded to whole rupees unless you untick that. Open and paid bills keep the price they were rung up at. This changes the real menu prices (POS, QR and website); for a website-only change use Settings → Website food prices.

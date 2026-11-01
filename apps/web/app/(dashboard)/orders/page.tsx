@@ -270,6 +270,12 @@ function OrderRow({
           )}
         </div>
         <span className="truncate text-xs text-muted-foreground">{summary}</span>
+        {order.type === "DELIVERY" && order.deliveryAddress && (
+          <span className="truncate text-xs text-muted-foreground">
+            📍 {order.deliveryAddress}
+            {order.deliveryLat != null ? " · location shared" : ""}
+          </span>
+        )}
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
         <span className="text-sm font-medium tabular-nums text-foreground">

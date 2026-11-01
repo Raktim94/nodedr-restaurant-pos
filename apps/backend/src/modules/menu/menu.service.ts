@@ -161,6 +161,59 @@ export class MenuService {
     return updated;
   }
 
+  /**
+   * Raise or lower every dish price by a percentage (negative = cheaper).
+   * `preview` returns what would change without writing anything. Paid and
+   * open bills keep the price they were rung up at (order lines snapshot it).
+   */
+  async bulkPriceChange(
+    branchId: string,
+    userId: string,
+    input: { percent: number; categoryId?: string; roundToWhole: boolean; preview: boolean },
+  ) {
+    const { percent, categoryId, roundToWhole, preview } = input;
+    const items = await this.prisma.menuItem.findMany({
+      where: { branchId, ...(categoryId ? { categoryId } : {}) },
+      select: { id: true, name: true, price: true, halfPrice: true },
+    });
+    const move = (v: number) => {
+      const next = Math.max(0, v * (1 + percent / 100));
+      return roundToWhole ? Math.round(next) : Math.round(next * 100) / 100;
+    };
+    const changes = items.map((i) => ({
+      id: i.id,
+      name: i.name,
+      before: Number(i.price),
+      after: move(Number(i.price)),
+      halfBefore: i.halfPrice == null ? null : Number(i.halfPrice),
+      halfAfter: i.halfPrice == null ? null : move(Number(i.halfPrice)),
+    }));
+    const changed = changes.filter((c) => c.before !== c.after || c.halfBefore !== c.halfAfter);
+    if (!preview && changed.length > 0) {
+      await this.prisma.$transaction(
+        changed.map((c) =>
+          this.prisma.menuItem.update({
+            where: { id: c.id },
+            data: { price: c.after, ...(c.halfAfter != null ? { halfPrice: c.halfAfter } : {}) },
+          }),
+        ),
+      );
+      await this.audit.record({
+        userId,
+        action: 'menu_item.bulk_price_changed',
+        entity: 'MenuItem',
+        entityId: branchId,
+        metadata: { percent, categoryId: categoryId ?? null, roundToWhole, count: changed.length },
+      });
+    }
+    return {
+      applied: !preview,
+      count: changed.length,
+      total: items.length,
+      sample: changed.slice(0, 5).map((c) => ({ name: c.name, before: c.before, after: c.after })),
+    };
+  }
+
   private async assertModifierGroupsInBranch(
     branchId: string,
     modifierGroupIds: string[],

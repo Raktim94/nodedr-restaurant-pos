@@ -5,6 +5,7 @@ import { useState } from "react";
 import { toast } from "@/lib/toast";
 import { AddCategoryDialog } from "@/components/menu/add-category-dialog";
 import { ImportCsvDialog } from "@/components/imports/import-csv-dialog";
+import { BulkPriceDialog } from "@/components/menu/bulk-price-dialog";
 import { AddItemDialog } from "@/components/menu/add-item-dialog";
 import { ComboComponentsDialog } from "@/components/menu/combo-components-dialog";
 import { EditCategoryDialog } from "@/components/menu/edit-category-dialog";
@@ -198,6 +199,7 @@ export default function MenuPage() {
             <h2 className="text-[18px] font-medium text-foreground">Items</h2>
             {canManage && (
               <div className="flex flex-wrap items-center gap-2">
+                <BulkPriceDialog branchId={branchId} categories={categories ?? []} />
                 <ImportCsvDialog kind="menu" branchId={branchId} />
                 <AddItemDialog branchId={branchId} categories={categories ?? []} />
               </div>

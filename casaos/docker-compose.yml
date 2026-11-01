@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.13.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.14.0
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -85,7 +85,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.13.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.14.0
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -183,10 +183,16 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.13.0"
+  version: "1.14.0"
   update_at: "2026-11-03"
   release_notes:
     en_US: |-
+      1.14.0: Menu > Change all prices raises or lowers every dish by a percentage
+      (preview first; positive = costlier, negative = cheaper). Staff now see the
+      customer's delivery address, landmark and an Open in Google Maps button when
+      they accept or manage an order. The website lets customers create their
+      account while ordering and shows a Return to Home button after an order.
+
       1.13.0: delivery riders. Add a staff member with the Delivery staff role and a
       phone number; they sign in to the normal app with their phone number and
       password and land on My deliveries: go online, share live location, get new

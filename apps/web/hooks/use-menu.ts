@@ -137,3 +137,22 @@ export function useDeleteMenuItem(branchId: string | null) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["menu", "items", branchId] }),
   });
 }
+
+export interface BulkPriceResult {
+  applied: boolean;
+  count: number;
+  total: number;
+  sample: { name: string; before: number; after: number }[];
+}
+
+/** Raise (+) or lower (−) every dish price by a percentage; `preview` writes nothing. */
+export function useBulkPrice(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: { percent: number; categoryId?: string; roundToWhole: boolean; preview: boolean }) =>
+      api.post<BulkPriceResult>(`/menu/items/bulk-price?branchId=${branchId}`, dto),
+    onSuccess: (r) => {
+      if (r.applied) void queryClient.invalidateQueries({ queryKey: ["menu", "items", branchId] });
+    },
+  });
+}
