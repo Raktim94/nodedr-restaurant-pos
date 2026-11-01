@@ -2,7 +2,7 @@
 
 import { EyeOff, Layers, Leaf, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { AddCategoryDialog } from "@/components/menu/add-category-dialog";
 import { ImportCsvDialog } from "@/components/imports/import-csv-dialog";
 import { AddItemDialog } from "@/components/menu/add-item-dialog";

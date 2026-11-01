@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
+import { Toaster } from "@/components/ui/sonner";
 import { useState } from "react";
 import { I18nProvider } from "@/lib/i18n/context";
 
@@ -22,6 +23,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           {children}
         </QueryClientProvider>
       </I18nProvider>
+      <Toaster position="top-center" closeButton />
     </ThemeProvider>
   );
 }

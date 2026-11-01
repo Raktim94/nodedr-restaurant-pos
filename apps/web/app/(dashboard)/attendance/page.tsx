@@ -8,7 +8,7 @@ import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useAttendance, useClock, useMyShift } from "@/hooks/use-attendance";
 import { useBranch } from "@/hooks/use-branch";
 import { useHrActions, useMyLeave } from "@/hooks/use-hr";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 
 const time = (iso: string) =>

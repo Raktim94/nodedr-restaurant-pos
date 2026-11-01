@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, MessageCircle, Phone, Users, X } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ChannelBadge } from "@/components/orders/channel-badges";

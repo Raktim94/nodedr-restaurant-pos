@@ -2,7 +2,7 @@
 
 import { ImagePlus, X } from "lucide-react";
 import { useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   RESTAURANT_NAME_MAX_LENGTH,
   TAX_REGIME_PRESETS,

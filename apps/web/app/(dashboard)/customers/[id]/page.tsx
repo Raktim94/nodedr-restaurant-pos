@@ -4,7 +4,7 @@ import { ArrowLeft, CreditCard, Gift, Pencil, Star, Trash2 } from "lucide-react"
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { AddressesCard } from "@/components/customers/addresses-card";
 import { EditCustomerDialog } from "@/components/customers/edit-customer-dialog";
 import { Badge } from "@/components/ui/badge";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { IngredientUnit } from "@nodedr-restaurant/types";
 import { Button } from "@/components/ui/button";
 import {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { CreateIntegrationKeyDialog } from "@/components/settings/create-integration-key-dialog";
 import { CreateStaffKeyDialog } from "@/components/settings/create-staff-key-dialog";
 import { NewApiKeyDialog } from "@/components/settings/new-api-key-dialog";

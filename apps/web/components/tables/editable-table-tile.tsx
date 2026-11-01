@@ -2,7 +2,7 @@
 
 import { Pencil, Trash2, Users } from "lucide-react";
 import { useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import {
   useDeleteTable,

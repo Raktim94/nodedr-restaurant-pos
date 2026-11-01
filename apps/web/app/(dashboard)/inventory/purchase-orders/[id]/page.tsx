@@ -3,7 +3,7 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { use } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { ReceivePoDialog } from "@/components/inventory/receive-po-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { PermissionChecklist } from "@/components/settings/permission-checklist";
 import { Button } from "@/components/ui/button";
 import {
