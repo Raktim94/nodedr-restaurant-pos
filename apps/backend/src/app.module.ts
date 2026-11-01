@@ -12,6 +12,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { MenuModule } from './modules/menu/menu.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { DeliveryModule } from './modules/delivery/delivery.module';
+import { RiderModule } from './modules/rider/rider.module';
 import { HrModule } from './modules/hr/hr.module';
 import { AccountingModule } from './modules/accounting/accounting.module';
 import { MarketingModule } from './modules/marketing/marketing.module';
@@ -58,6 +59,7 @@ import { VerifactuModule } from './modules/verifactu/verifactu.module';
     TablesModule,
     AttendanceModule,
     DeliveryModule,
+    RiderModule,
     HrModule,
     AccountingModule,
     MarketingModule,

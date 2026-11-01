@@ -125,16 +125,38 @@ export class DeliveryService {
   }
 
   /** Staff who can be assigned: active users with access to this branch. */
-  listDrivers(branchId: string) {
-    return this.prisma.user.findMany({
+  async listDrivers(branchId: string) {
+    const drivers = await this.prisma.user.findMany({
       where: {
         isActive: true,
         branches: { some: { branchId } },
         role: { name: 'DELIVERY_STAFF' },
       },
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        riderOnline: true,
+        riderLat: true,
+        riderLng: true,
+        riderLocationAt: true,
+      },
       orderBy: { name: 'asc' },
     });
+    const active = await this.prisma.order.groupBy({
+      by: ['driverId'],
+      where: {
+        branchId,
+        driverId: { in: drivers.map((d) => d.id) },
+        deliveryStatus: { in: ['ASSIGNED', 'PICKED_UP'] },
+      },
+      _count: { _all: true },
+    });
+    const byDriver = new Map(active.map((a) => [a.driverId, a._count._all]));
+    return drivers.map((d) => ({
+      ...d,
+      activeDeliveries: byDriver.get(d.id) ?? 0,
+    }));
   }
 
   async assignDriver(branchId: string, orderId: string, driverId: string) {
@@ -149,16 +171,24 @@ export class DeliveryService {
     });
     if (!driver)
       throw new BadRequestException('Driver not found for this branch');
-    return this.save(branchId, orderId, {
+    const saved = await this.save(branchId, orderId, {
       driverId,
       deliveryStatus: 'ASSIGNED',
+      assignedAt: new Date(),
     });
+    // Tell the rider's phone straight away.
+    this.realtime.emitToUsers([driverId], 'rider.assigned', {
+      orderId,
+      orderNumber: saved.orderNumber,
+    });
+    return saved;
   }
 
   async setStatus(
     branchId: string,
     orderId: string,
     status: DeliveryStatusDto,
+    reason?: string,
   ) {
     const order = await this.getDelivery(branchId, orderId);
     const current: DeliveryStatusDto = order.deliveryStatus ?? 'UNASSIGNED';
@@ -169,7 +199,11 @@ export class DeliveryService {
     return this.save(branchId, orderId, {
       deliveryStatus: status,
       ...(status === 'UNASSIGNED' ? { driverId: null } : {}),
+      ...(status === 'PICKED_UP' ? { pickedUpAt: new Date() } : {}),
       ...(status === 'DELIVERED' ? { deliveredAt: new Date() } : {}),
+      ...(status === 'FAILED'
+        ? { deliveryFailedReason: reason?.slice(0, 200) ?? null }
+        : {}),
     });
   }
 

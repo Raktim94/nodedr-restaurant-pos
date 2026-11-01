@@ -81,6 +81,13 @@ export const integrationDeliverySchema = z.object({
   pincode: z.string().trim().min(3).max(12),
   // Defaults to customerPhone when omitted.
   phone: phoneSchema.optional(),
+  // The customer's shared position (both or neither) and/or a named place / landmark.
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  place: z.string().trim().max(200).optional(),
+}).refine((d) => (d.lat === undefined) === (d.lng === undefined), {
+  path: ["lat"],
+  message: "Send both lat and lng, or neither",
 });
 
 export const createIntegrationOrderSchema = z

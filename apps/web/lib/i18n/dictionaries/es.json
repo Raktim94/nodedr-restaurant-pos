@@ -107,5 +107,6 @@
   "kiosk.ticket.taxIncluded": "Incluye",
   "kiosk.ticket.notPaid": "NO PAGADO",
   "kiosk.ticket.payAtCounter": "Pague en caja",
-  "kiosk.language": "Idioma"
+  "kiosk.language": "Idioma",
+  "nav.myDeliveries": "Mis entregas"
 }

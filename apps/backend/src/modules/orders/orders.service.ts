@@ -44,6 +44,10 @@ import {
   type Bill,
 } from './settlement';
 import type { TaxMode } from '@nodedr-restaurant/types';
+import {
+  adjustOnlinePrice,
+  type OnlinePriceAdjust,
+} from '../../common/online-price';
 import { ReferralsService } from '../referrals/referrals.service';
 import { VerifactuService } from '../verifactu/verifactu.service';
 
@@ -175,6 +179,8 @@ export class OrdersService {
       externalCustomerRef?: string;
       /** Refuse the order when its item total is below this (website / API orders). */
       minOrderAmount?: number;
+      /** Website pricing change from Settings (cheaper / costlier). */
+      priceAdjust?: OnlinePriceAdjust | null;
     } = {},
   ) {
     const channel = options.channel ?? 'STAFF';
@@ -199,7 +205,26 @@ export class OrdersService {
         'One or more menu items are invalid for this branch',
       );
     }
-    const menuItemById = new Map(menuItems.map((m) => [m.id, m]));
+    const adjust = options.priceAdjust ?? null;
+    const menuItemById = new Map(
+      menuItems.map((m) => [
+        m.id,
+        adjust
+          ? {
+              ...m,
+              price: new Prisma.Decimal(
+                adjustOnlinePrice(Number(m.price), adjust),
+              ),
+              halfPrice:
+                m.halfPrice == null
+                  ? null
+                  : new Prisma.Decimal(
+                      adjustOnlinePrice(Number(m.halfPrice), adjust),
+                    ),
+            }
+          : m,
+      ]),
+    );
     const taxMode = await this.getBranchTaxMode(branchId);
 
     const modifierIds = [...new Set(dto.items.flatMap((i) => i.modifierIds))];
@@ -265,6 +290,9 @@ export class OrdersService {
       | 'deliveryZoneId'
       | 'deliveryFee'
       | 'deliveryAddress'
+      | 'deliveryLat'
+      | 'deliveryLng'
+      | 'deliveryPlace'
       | 'deliveryPincode'
       | 'deliveryPhone'
       | 'deliveryStatus'
@@ -286,6 +314,9 @@ export class OrdersService {
       delivery = {
         deliveryStatus: 'UNASSIGNED',
         deliveryAddress: dto.delivery?.address,
+        deliveryLat: dto.delivery?.lat,
+        deliveryLng: dto.delivery?.lng,
+        deliveryPlace: dto.delivery?.place,
         deliveryPincode: dto.delivery?.pincode,
         deliveryPhone: dto.delivery?.phone,
       };
@@ -358,6 +389,9 @@ export class OrdersService {
                 deliveryAddress: delivery.deliveryAddress,
                 deliveryPincode: delivery.deliveryPincode,
                 deliveryPhone: delivery.deliveryPhone,
+                deliveryLat: delivery.deliveryLat,
+                deliveryLng: delivery.deliveryLng,
+                deliveryPlace: delivery.deliveryPlace,
                 deliveryStatus: delivery.deliveryStatus,
                 deliveryEtaAt: delivery.deliveryEtaAt,
               }

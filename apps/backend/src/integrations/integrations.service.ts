@@ -11,6 +11,7 @@ import type {
   CreateIntegrationReservationDto,
   IntegrationRewardsLookupDto,
 } from '@nodedr-restaurant/types';
+import { adjustOnlinePrice, onlinePriceAdjustOf } from '../common/online-price';
 import { PrismaService } from '../prisma/prisma.service';
 import { DeliveryService } from '../modules/delivery/delivery.service';
 import { OrdersService } from '../modules/orders/orders.service';
@@ -132,6 +133,12 @@ export class IntegrationsService {
         },
       },
     });
+    const adjust = onlinePriceAdjustOf(
+      await this.prisma.restaurant.findUniqueOrThrow({
+        where: { id: ctx.restaurantId },
+        select: { onlinePriceAdjustKind: true, onlinePriceAdjustValue: true },
+      }),
+    );
     return {
       locationId: branch.id,
       locationName: branch.name,
@@ -139,6 +146,11 @@ export class IntegrationsService {
         ...category,
         items: category.items.map(({ modifierGroups, ...item }) => ({
           ...item,
+          // The price a website customer pays: the Settings price change is already applied.
+          price:
+            adjust && item.price != null
+              ? adjustOnlinePrice(Number(item.price), adjust)
+              : item.price,
           modifierGroups: modifierGroups.map((g) => g.modifierGroup),
         })),
       })),
@@ -206,14 +218,16 @@ export class IntegrationsService {
     // Prices, tax and the delivery fee are all worked out by OrdersService
     // from the live menu and the location's zones; nothing monetary from the
     // caller is read (the schema strips unknown fields).
-    const minOrderAmount = Number(
-      (
-        await this.prisma.restaurant.findUniqueOrThrow({
-          where: { id: ctx.restaurantId },
-          select: { onlineMinOrderAmount: true },
-        })
-      ).onlineMinOrderAmount,
-    );
+    const settings = await this.prisma.restaurant.findUniqueOrThrow({
+      where: { id: ctx.restaurantId },
+      select: {
+        onlineMinOrderAmount: true,
+        onlinePriceAdjustKind: true,
+        onlinePriceAdjustValue: true,
+      },
+    });
+    const minOrderAmount = Number(settings.onlineMinOrderAmount);
+    const priceAdjust = onlinePriceAdjustOf(settings);
     for (let attempt = 1; ; attempt++) {
       try {
         const created = await this.orders.createOrder(
@@ -230,6 +244,9 @@ export class IntegrationsService {
               address: dto.delivery.address,
               pincode: dto.delivery.pincode,
               phone: dto.delivery.phone ?? dto.customerPhone,
+              lat: dto.delivery.lat,
+              lng: dto.delivery.lng,
+              place: dto.delivery.place,
             },
             scheduledFor: dto.scheduledFor,
             items: dto.items.map((item) => ({
@@ -246,6 +263,7 @@ export class IntegrationsService {
             clientRequestHash,
             integrationKeyId: ctx.id,
             minOrderAmount: minOrderAmount > 0 ? minOrderAmount : undefined,
+            priceAdjust,
           },
         );
         const rewards =
@@ -507,6 +525,9 @@ export class IntegrationsService {
                     address: order.deliveryAddress,
                     pincode: order.deliveryPincode,
                     phone: order.deliveryPhone,
+                    lat: order.deliveryLat,
+                    lng: order.deliveryLng,
+                    place: order.deliveryPlace,
                   }
                 : null,
           }

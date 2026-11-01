@@ -49,6 +49,18 @@ function DeliveryCard({ order, branchId }: { order: DeliveryOrder; branchId: str
             {order.deliveryAddress ?? "Address in notes"}
             {order.deliveryPincode && ` · ${order.deliveryPincode}`}
           </p>
+          {order.deliveryPlace && <p className="text-xs text-foreground">Landmark: {order.deliveryPlace}</p>}
+          {order.deliveryLat != null && order.deliveryLng != null && (
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${order.deliveryLat},${order.deliveryLng}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-xs text-primary underline underline-offset-2"
+            >
+              Customer shared their location — open map
+            </a>
+          )}
+          {order.deliveryFailedReason && <p className="text-xs text-destructive">Not delivered: {order.deliveryFailedReason}</p>}
           {order.deliveryPhone && (
             <a href={`tel:${order.deliveryPhone}`} className="text-xs text-primary underline underline-offset-2">
               {order.deliveryPhone}
@@ -83,7 +95,8 @@ function DeliveryCard({ order, branchId }: { order: DeliveryOrder; branchId: str
             <option value="">Assign driver…</option>
             {drivers?.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name}
+                {d.riderOnline ? "● Online" : "○ Offline"} · {d.name}
+                {d.activeDeliveries > 0 ? ` (${d.activeDeliveries} active)` : ""}
               </option>
             ))}
           </select>
@@ -185,6 +198,51 @@ function ZonesTab({ branchId }: { branchId: string | null }) {
   );
 }
 
+function RidersPanel({ branchId }: { branchId: string | null }) {
+  const { data: drivers, dataUpdatedAt } = useDrivers(branchId);
+  if (!drivers || drivers.length === 0) return null;
+  const ago = (iso: string | null) => {
+    if (!iso) return "no location yet";
+    const m = Math.max(Math.round((dataUpdatedAt - new Date(iso).getTime()) / 60_000), 0);
+    return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
+  };
+  return (
+    <section aria-labelledby="riders-h" className="flex flex-col gap-2">
+      <h2 id="riders-h" className="text-sm font-medium text-foreground">
+        Riders ({drivers.filter((d) => d.riderOnline).length} online)
+      </h2>
+      <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {drivers.map((d) => (
+          <li key={d.id} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3 text-sm">
+            <div className="min-w-0">
+              <p className="truncate font-medium text-foreground">
+                <span className={d.riderOnline ? "text-success" : "text-muted-foreground"} aria-hidden>
+                  ●
+                </span>{" "}
+                {d.name}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {d.riderOnline ? "Online" : "Offline"} · {d.activeDeliveries} active
+                {d.riderOnline && ` · ${ago(d.riderLocationAt)}`}
+              </p>
+            </div>
+            {d.riderOnline && d.riderLat != null && d.riderLng != null && (
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${d.riderLat},${d.riderLng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 text-xs text-primary underline underline-offset-2"
+              >
+                Map
+              </a>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export default function DeliveryPage() {
   const { branchId } = useBranch();
   const [tab, setTab] = useState<"active" | "history" | "zones">("active");
@@ -196,6 +254,7 @@ export default function DeliveryPage() {
         <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Delivery</h1>
         <p className="text-sm text-muted-foreground">Assign drivers, track deliveries, and manage zones</p>
       </div>
+      <RidersPanel branchId={branchId} />
       <div className="flex gap-2">
         {(["active", "history", "zones"] as const).map((t) => (
           <button

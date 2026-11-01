@@ -1,8 +1,9 @@
 import { z } from "zod";
 
 export const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
+  // Login ID: an email address or a phone number (delivery riders sign in with their phone).
+  email: z.string().trim().min(3).max(200),
+  password: z.string().min(4).max(200),
   // Authenticator code or recovery code, once two-factor auth is on.
   totp: z.string().trim().min(6).max(20).optional(),
 });

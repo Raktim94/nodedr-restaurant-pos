@@ -123,6 +123,9 @@ run('Referral rewards (e2e)', () => {
         onlineMinOrderAmount: original.onlineMinOrderAmount as never,
       },
     });
+    await prisma.integrationApiKey.deleteMany({
+      where: { name: { endsWith: `-${tag}` } },
+    });
     await app.close();
   });
 

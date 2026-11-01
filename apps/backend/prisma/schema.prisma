@@ -74,6 +74,9 @@ model Restaurant {
   referralMinPurchase    Decimal @default(200) @db.Decimal(10, 2)
   // Smallest order a website / API customer may place. 0 = no minimum.
   onlineMinOrderAmount   Decimal @default(0) @db.Decimal(10, 2)
+  // Website / API ordering price change: PERCENT or AMOUNT (per item). Negative = cheaper, positive = costlier. 0 = off.
+  onlinePriceAdjustKind  String  @default("PERCENT")
+  onlinePriceAdjustValue Decimal @default(0) @db.Decimal(10, 2)
 
   // Discount guardrails. A manual discount above maxManualDiscountPercent
   // (as a share of the bill subtotal) needs the discounts.unlimited
@@ -265,6 +268,12 @@ model User {
   twoFactorEnabled        Boolean  @default(false)
   twoFactorRecoveryHashes String[] @default([]) // bcrypt hashes of unused one-time recovery codes
   twoFactorLastStep       Int? // last accepted TOTP step: a code works once
+
+  // Delivery rider app: on duty, and the last position the rider's phone reported.
+  riderOnline     Boolean   @default(false)
+  riderLat        Float?
+  riderLng        Float?
+  riderLocationAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1409,19 +1418,26 @@ model Order {
   // Delivery (Phase 5). deliveryFee is added on top of the item total at
   // checkout; the zone's fee is snapshotted so later zone edits never
   // rewrite history.
-  deliveryZoneId  String?
-  deliveryZone    DeliveryZone?   @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
-  deliveryFee     Decimal         @default(0) @db.Decimal(12, 2)
-  deliveryAddress String?
-  deliveryPincode String?
-  deliveryPhone   String?
-  deliveryStatus  DeliveryStatus?
-  driverId        String?
-  driver          User?           @relation("OrderDriver", fields: [driverId], references: [id], onDelete: SetNull)
-  deliveryEtaAt   DateTime?
-  deliveredAt     DateTime?
+  deliveryZoneId       String?
+  deliveryZone         DeliveryZone?   @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
+  deliveryFee          Decimal         @default(0) @db.Decimal(12, 2)
+  deliveryAddress      String?
+  deliveryPincode      String?
+  deliveryPhone        String?
+  // Position the customer shared with the order, and a named place / landmark.
+  deliveryLat          Float?
+  deliveryLng          Float?
+  deliveryPlace        String?
+  deliveryStatus       DeliveryStatus?
+  driverId             String?
+  driver               User?           @relation("OrderDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  deliveryEtaAt        DateTime?
+  assignedAt           DateTime?
+  pickedUpAt           DateTime?
+  deliveredAt          DateTime?
+  deliveryFailedReason String?
   // Scheduled / pre-order: the kitchen should not start before this time.
-  scheduledFor    DateTime?
+  scheduledFor         DateTime?
 
   // Orders that arrive from an outside platform (delivery aggregators, other
   // systems). The pair (source, id) is unique per branch so a platform that

@@ -44,20 +44,29 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findFirst({
-      where: { email: dto.email, isActive: true },
-      include: {
-        role: { include: { permissions: { include: { permission: true } } } },
-      },
-    });
-
-    if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+    const include = {
+      role: { include: { permissions: { include: { permission: true } } } },
+    } as const;
+    const id = dto.email.trim();
+    let user: Awaited<ReturnType<typeof this.findLoginCandidate>> = null;
+    // An email address, or a phone number as the login ID (delivery riders).
+    // Every failure gives the same message so nothing reveals which IDs exist.
+    if (id.includes('@')) {
+      const u = await this.prisma.user.findFirst({
+        where: { email: id, isActive: true },
+        include,
+      });
+      if (u && (await bcrypt.compare(dto.password, u.passwordHash))) user = u;
+    } else {
+      user = await this.findLoginCandidate(id, dto.password);
     }
-
-    const valid = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!valid) {
-      throw new UnauthorizedException('Invalid email or password');
+    if (!user) {
+      // Spend comparable time when the ID is unknown, so timing does not reveal it.
+      await bcrypt.compare(
+        dto.password,
+        '$2b$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidi',
+      );
+      throw new UnauthorizedException('Invalid login ID or password');
     }
 
     // Only asked for after the password is right, so the response never
@@ -67,6 +76,24 @@ export class AuthService {
     }
 
     return this.issueSession(user);
+  }
+
+  /** Phone-number login: compare real digits, then the password, against every active match. */
+  private async findLoginCandidate(id: string, password: string) {
+    const tail = id.replace(/\D/g, '').slice(-10);
+    if (tail.length < 6) return null;
+    const candidates = await this.prisma.user.findMany({
+      where: { isActive: true, phone: { endsWith: tail.slice(-6) } },
+      include: {
+        role: { include: { permissions: { include: { permission: true } } } },
+      },
+      take: 10,
+    });
+    for (const u of candidates) {
+      if ((u.phone ?? '').replace(/\D/g, '').slice(-10) !== tail) continue;
+      if (await bcrypt.compare(password, u.passwordHash)) return u;
+    }
+    return null;
   }
 
   async register(dto: RegisterDto) {

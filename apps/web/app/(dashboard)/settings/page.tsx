@@ -188,6 +188,10 @@ function GeneralSettingsForm({
   const [referralReferredPoints, setReferralReferredPoints] = useState(String(restaurant.referralReferredPoints ?? 10));
   const [referralMinPurchase, setReferralMinPurchase] = useState(String(Number(restaurant.referralMinPurchase ?? 200)));
   const [onlineMinOrder, setOnlineMinOrder] = useState(String(Number(restaurant.onlineMinOrderAmount ?? 0)));
+  const initialAdjust = Number(restaurant.onlinePriceAdjustValue ?? 0);
+  const [adjustKind, setAdjustKind] = useState<"PERCENT" | "AMOUNT">(restaurant.onlinePriceAdjustKind ?? "PERCENT");
+  const [adjustDir, setAdjustDir] = useState<"cheaper" | "costlier">(initialAdjust < 0 ? "cheaper" : "costlier");
+  const [adjustValue, setAdjustValue] = useState(String(Math.abs(initialAdjust)));
   const [maxDiscount, setMaxDiscount] = useState(String(Number(restaurant.maxManualDiscountPercent ?? 100)));
   const [requireReason, setRequireReason] = useState(!!restaurant.requireDiscountReason);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -227,6 +231,8 @@ function GeneralSettingsForm({
         referralReferredPoints: Math.max(Math.floor(Number(referralReferredPoints) || 0), 0),
         referralMinPurchase: Math.max(Number(referralMinPurchase) || 0, 0),
         onlineMinOrderAmount: Math.max(Number(onlineMinOrder) || 0, 0),
+        onlinePriceAdjustKind: adjustKind,
+        onlinePriceAdjustValue: (adjustDir === "cheaper" ? -1 : 1) * Math.abs(Number(adjustValue) || 0),
         maxManualDiscountPercent: Math.min(Math.max(Number(maxDiscount) || 0, 0), 100),
         requireDiscountReason: requireReason,
       },
@@ -454,6 +460,65 @@ function GeneralSettingsForm({
                 onChange={(e) => setReferralMinPurchase(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+            <div>
+              <h3 className="text-sm font-medium text-foreground">Website food prices</h3>
+              <p className="text-xs text-muted-foreground">
+                Make every dish cheaper or costlier for customers ordering on your website, by a percentage or a fixed
+                amount. In-restaurant, POS and marketplace prices do not change. Leave at 0 for no change.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="r-adjust-dir">Make prices</Label>
+                <select
+                  id="r-adjust-dir"
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={adjustDir}
+                  onChange={(e) => setAdjustDir(e.target.value as "cheaper" | "costlier")}
+                >
+                  <option value="cheaper">Cheaper</option>
+                  <option value="costlier">Costlier</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="r-adjust-kind">By</Label>
+                <select
+                  id="r-adjust-kind"
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  value={adjustKind}
+                  onChange={(e) => setAdjustKind(e.target.value as "PERCENT" | "AMOUNT")}
+                >
+                  <option value="PERCENT">Percentage (%)</option>
+                  <option value="AMOUNT">Amount ({currency} per dish)</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="r-adjust-value">{adjustKind === "PERCENT" ? "Percent" : `Amount (${currency})`}</Label>
+                <Input
+                  id="r-adjust-value"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={adjustValue}
+                  onChange={(e) => setAdjustValue(e.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {Number(adjustValue) > 0
+                ? `A ${currency} 100 dish will cost ${currency} ${Math.max(
+                    Math.round(
+                      (adjustKind === "PERCENT"
+                        ? 100 * (1 + ((adjustDir === "cheaper" ? -1 : 1) * Number(adjustValue)) / 100)
+                        : 100 + (adjustDir === "cheaper" ? -1 : 1) * Number(adjustValue)) * 100,
+                    ) / 100,
+                    0,
+                  )} on the website.`
+                : "No change to website prices."}
+            </p>
           </div>
 
           <div className="flex flex-col gap-2">

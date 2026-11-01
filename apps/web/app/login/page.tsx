@@ -33,7 +33,12 @@ export default function LoginPage() {
   const onSubmit = (dto: LoginDto) => {
     setError(null);
     login.mutate(dto, {
-      onSuccess: () => router.push("/dashboard"),
+      onSuccess: (data) => {
+        // A delivery rider has no back-office screens: open their deliveries.
+        const user = (data as { user?: { roleName?: string; permissions?: string[] } }).user;
+        const rider = user?.roleName === "DELIVERY_STAFF" && user.permissions?.includes("delivery.rider");
+        router.push(rider ? "/my-deliveries" : "/dashboard");
+      },
       onError: (err) => {
         if (err instanceof ApiError && err.message === "TWO_FACTOR_REQUIRED") {
           setNeedsCode(true);
@@ -74,10 +79,10 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Email or phone number</Label>
             <Input
               id="email"
-              type="email"
+              type="text"
               autoComplete="username"
               inputMode="email"
               autoCapitalize="none"
@@ -86,7 +91,7 @@ export default function LoginPage() {
               enterKeyHint="next"
               autoFocus
               className="h-11"
-              placeholder="you@restaurant.com"
+              placeholder="you@restaurant.com or phone number"
               {...register("email")}
             />
             {errors.email && (

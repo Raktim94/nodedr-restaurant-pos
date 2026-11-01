@@ -1,6 +1,7 @@
 import {
   CalendarClock,
   Clock,
+  Bike,
   Truck,
   Users,
   Landmark,
@@ -41,6 +42,7 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.kds", href: "/kds", icon: ChefHat, permission: "kds.manage" },
   { labelKey: "nav.customers", href: "/customers", icon: UsersRound, permission: "customers.manage" },
   { labelKey: "nav.inventory", href: "/inventory", icon: Package, permission: "inventory.manage" },
+  { labelKey: "nav.myDeliveries", href: "/my-deliveries", icon: Bike, permission: "delivery.rider" },
   { labelKey: "nav.delivery", href: "/delivery", icon: Truck, permission: "delivery.manage" },
   { labelKey: "nav.team", href: "/team", icon: Users, permission: "staff.manage" },
   { labelKey: "nav.accounting", href: "/accounting", icon: Landmark, permission: "accounting.manage" },

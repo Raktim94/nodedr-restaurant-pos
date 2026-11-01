@@ -25,6 +25,8 @@ export interface RestaurantSettings {
   referralReferredPoints: number;
   referralMinPurchase: string;
   onlineMinOrderAmount: string;
+  onlinePriceAdjustKind: "PERCENT" | "AMOUNT";
+  onlinePriceAdjustValue: string;
   maxManualDiscountPercent: string;
   requireDiscountReason: boolean;
 }
@@ -70,7 +72,7 @@ export function useSettings(branchId: string | null) {
 export type DisplayRestaurant = Pick<
   RestaurantSettings,
   | "id" | "name" | "legalName" | "logoUrl" | "currency" | "timezone"
-  | "upiVpa" | "upiPayeeName" | "loyaltyPointValue" | "loyaltyEarnPerCurrency" | "referralEnabled" | "referralSharerPoints" | "referralReferredPoints" | "referralMinPurchase" | "onlineMinOrderAmount"
+  | "upiVpa" | "upiPayeeName" | "loyaltyPointValue" | "loyaltyEarnPerCurrency" | "referralEnabled" | "referralSharerPoints" | "referralReferredPoints" | "referralMinPurchase" | "onlineMinOrderAmount" | "onlinePriceAdjustKind" | "onlinePriceAdjustValue"
   | "maxManualDiscountPercent" | "requireDiscountReason"
 >;
 export type DisplayBranch = Pick<

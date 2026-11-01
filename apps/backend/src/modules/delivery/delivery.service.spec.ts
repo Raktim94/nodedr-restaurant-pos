@@ -18,7 +18,7 @@ function setup(order: Record<string, unknown> | null, zoneClash = false) {
       create: jest.fn().mockResolvedValue({ id: 'z1' }),
     },
   };
-  const realtime = { emitToBranch: jest.fn() };
+  const realtime = { emitToBranch: jest.fn(), emitToUsers: jest.fn() };
   const webhooks = { emitForBranch: jest.fn() };
   const svc = new DeliveryService(
     prisma as never,
@@ -38,7 +38,14 @@ describe('DeliveryService', () => {
     expect(prisma.order.update.mock.calls[0][0].data).toEqual({
       driverId: 'd1',
       deliveryStatus: 'ASSIGNED',
+      assignedAt: expect.any(Date),
     });
+    // the rider's phone is told straight away
+    expect(realtime.emitToUsers).toHaveBeenCalledWith(
+      ['d1'],
+      'rider.assigned',
+      expect.objectContaining({ orderId: 'o1' }),
+    );
     expect(realtime.emitToBranch).toHaveBeenCalledWith('b1', 'order.updated', {
       id: 'o1',
     });

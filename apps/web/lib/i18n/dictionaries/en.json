@@ -107,5 +107,6 @@
   "kiosk.ticket.taxIncluded": "Includes",
   "kiosk.ticket.notPaid": "NOT PAID",
   "kiosk.ticket.payAtCounter": "Pay at the counter",
-  "kiosk.language": "Language"
+  "kiosk.language": "Language",
+  "nav.myDeliveries": "My deliveries"
 }

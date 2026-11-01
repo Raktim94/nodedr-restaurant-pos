@@ -34,6 +34,7 @@ export const PERMISSIONS = [
   { key: "backup.manage", label: "Manage Backups", category: "Admin" },
   { key: "attendance.manage", label: "Manage Staff Attendance", category: "Staff" },
   { key: "delivery.manage", label: "Manage Deliveries", category: "Delivery" },
+  { key: "delivery.rider", label: "Use the Rider App (own deliveries)", category: "Delivery" },
   { key: "staff.manage", label: "Manage Staff Schedules, Leave & Payroll", category: "Staff" },
   { key: "accounting.manage", label: "Manage Accounting", category: "Accounting" },
   { key: "marketing.manage", label: "Manage Coupons, Promotions & Campaigns", category: "Marketing" },
@@ -104,7 +105,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
   KITCHEN_STAFF: ["kds.manage", "orders.accept"],
   CHEF: ["kds.manage", "orders.accept", "menu.manage", "menu.view"],
   BARTENDER: ["orders.create", "orders.accept", "kds.manage", "menu.view", "tables.view"],
-  DELIVERY_STAFF: ["orders.edit", "delivery.manage"],
+  DELIVERY_STAFF: ["orders.edit", "delivery.manage", "delivery.rider"],
   ACCOUNTANT: ["sales.view", "dashboard.sales.view", "reports.access", "reports.financial.view", "data.export", "accounting.manage"],
   INVENTORY_MANAGER: ["inventory.manage", "reports.access"],
 };

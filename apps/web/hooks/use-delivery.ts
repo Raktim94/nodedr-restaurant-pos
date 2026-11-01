@@ -13,6 +13,10 @@ export interface DeliveryOrder {
   deliveryAddress: string | null;
   deliveryPincode: string | null;
   deliveryPhone: string | null;
+  deliveryLat: number | null;
+  deliveryLng: number | null;
+  deliveryPlace: string | null;
+  deliveryFailedReason: string | null;
   deliveryStatus: DeliveryStatus | null;
   deliveryEtaAt: string | null;
   deliveredAt: string | null;
@@ -42,10 +46,21 @@ export function useDeliveries(branchId: string | null, history: boolean) {
   });
 }
 
+export interface Driver {
+  id: string;
+  name: string;
+  phone: string | null;
+  riderOnline: boolean;
+  riderLat: number | null;
+  riderLng: number | null;
+  riderLocationAt: string | null;
+  activeDeliveries: number;
+}
+
 export function useDrivers(branchId: string | null) {
   return useQuery({
     queryKey: ["deliveries", "drivers", branchId],
-    queryFn: () => api.get<{ id: string; name: string }[]>(`/delivery/drivers?branchId=${branchId}`),
+    queryFn: () => api.get<Driver[]>(`/delivery/drivers?branchId=${branchId}`),
     enabled: !!branchId,
   });
 }

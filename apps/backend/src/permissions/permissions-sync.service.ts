@@ -12,6 +12,13 @@ import { PrismaService } from '../prisma/prisma.service';
 // report this fixes: "Kitchen tab broken, but a new account worked".
 const ALWAYS_FULL_ACCESS_ROLES = ['OWNER', 'ADMINISTRATOR'] as const;
 
+// A permission that is new in a release can also be granted to the role that
+// should have it by default, but only at the moment it is first created - so an
+// admin who later removes it is not overruled on the next restart.
+const GRANT_WHEN_CREATED: Record<string, string[]> = {
+  'delivery.rider': ['DELIVERY_STAFF'],
+};
+
 @Injectable()
 export class PermissionsSyncService implements OnModuleInit {
   private readonly logger = new Logger(PermissionsSyncService.name);
@@ -23,12 +30,31 @@ export class PermissionsSyncService implements OnModuleInit {
   }
 
   async sync() {
+    const known = new Set(
+      (await this.prisma.permission.findMany({ select: { key: true } })).map(
+        (p) => p.key,
+      ),
+    );
     for (const permission of PERMISSIONS) {
-      await this.prisma.permission.upsert({
+      const row = await this.prisma.permission.upsert({
         where: { key: permission.key },
         update: { label: permission.label, category: permission.category },
         create: permission,
       });
+      const roleNames = GRANT_WHEN_CREATED[permission.key];
+      if (roleNames && !known.has(permission.key)) {
+        const roles = await this.prisma.role.findMany({
+          where: { name: { in: roleNames } },
+          select: { id: true },
+        });
+        await this.prisma.rolePermission.createMany({
+          data: roles.map((r) => ({ roleId: r.id, permissionId: row.id })),
+          skipDuplicates: true,
+        });
+        this.logger.log(
+          `Granted new permission ${permission.key} to ${roles.length} ${roleNames.join('/')} role(s)`,
+        );
+      }
     }
     const allPermissions = await this.prisma.permission.findMany();
 

@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.12.2
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.13.0
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -85,7 +85,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.12.2
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.13.0
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -183,10 +183,20 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.12.2"
-  update_at: "2026-11-02"
+  version: "1.13.0"
+  update_at: "2026-11-03"
   release_notes:
     en_US: |-
+      1.13.0: delivery riders. Add a staff member with the Delivery staff role and a
+      phone number; they sign in to the normal app with their phone number and
+      password and land on My deliveries: go online, share live location, get new
+      deliveries with a sound, navigate and call the customer, and mark picked up /
+      delivered / could not deliver. The Delivery page shows riders and the
+      customer's shared location. New Settings: make website food prices cheaper or
+      costlier by percentage or amount. Website checkout can send the customer's
+      current location and a landmark. A database change is applied automatically
+      on update.
+
       1.12.2: referral rewards. Customers share a dish or their personal link; when
       a new customer's first order is paid, the person who shared earns points and
       so does the new customer (Settings > General > Referral rewards: on/off, points
