@@ -25,14 +25,22 @@ function StatCard({
   value,
   icon: Icon,
   accent,
+  href,
 }: {
   label: string;
   value: string;
   icon: typeof Wallet;
   accent?: "success" | "warning";
+  /** Where the full records behind this number live. */
+  href: string;
 }) {
   return (
-    <Card className="flex flex-col gap-3 p-6">
+    <Link
+      href={href}
+      aria-label={`${label}: ${value}. Open details`}
+      className="group block rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+    >
+    <Card className="flex h-full flex-col gap-3 p-6 transition group-hover:border-primary/40 group-hover:shadow-md">
       <div className="flex items-center justify-between">
         <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
         <div
@@ -50,18 +58,33 @@ function StatCard({
         {value}
       </span>
     </Card>
+    </Link>
   );
 }
 
-function TableStatusRow({ label, count, dotClass }: { label: string; count: number; dotClass: string }) {
+function TableStatusRow({
+  label,
+  count,
+  dotClass,
+  href,
+}: {
+  label: string;
+  count: number;
+  dotClass: string;
+  href: string;
+}) {
   return (
-    <div className="flex items-center justify-between py-1.5 text-sm">
+    <Link
+      href={href}
+      aria-label={`${label}: ${count}. Open`}
+      className="-mx-2 flex items-center justify-between rounded-lg px-2 py-1.5 text-sm outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary"
+    >
       <div className="flex items-center gap-2">
         <span className={cn("h-2 w-2 rounded-full", dotClass)} />
         <span className="text-muted-foreground">{label}</span>
       </div>
       <span className="font-medium tabular-nums text-foreground">{count}</span>
-    </div>
+    </Link>
   );
 }
 
@@ -104,14 +127,19 @@ export default function DashboardPage() {
             value={formatCurrency(data.todayRevenue)}
             icon={Wallet}
             accent="success"
+            href="/reports"
           />
-          <Link href="/orders" className="block rounded-xl transition hover:opacity-90" title="Manage orders">
-            <StatCard label="Today's Orders" value={String(data.todayOrders)} icon={ReceiptText} />
-          </Link>
+          <StatCard
+            label="Today's Orders"
+            value={String(data.todayOrders)}
+            icon={ReceiptText}
+            href="/orders?tab=history"
+          />
           <StatCard
             label="Occupied Tables"
             value={String(data.tables.occupied)}
             icon={ClipboardList}
+            href="/tables"
           />
           <StatCard
             label="Kitchen Queue"
@@ -120,6 +148,7 @@ export default function DashboardPage() {
             )}
             icon={Flame}
             accent="warning"
+            href="/kds"
           />
         </div>
       )}
@@ -152,10 +181,10 @@ export default function DashboardPage() {
           <h2 className="mb-3 text-[18px] font-medium text-foreground">Tables</h2>
           {data && (
             <>
-              <TableStatusRow label="Available" count={data.tables.available} dotClass="bg-success" />
-              <TableStatusRow label="Occupied" count={data.tables.occupied} dotClass="bg-primary" />
-              <TableStatusRow label="Reserved" count={data.tables.reserved} dotClass="bg-warning" />
-              <TableStatusRow label="Cleaning" count={data.tables.cleaning} dotClass="bg-muted-foreground" />
+              <TableStatusRow label="Available" count={data.tables.available} dotClass="bg-success" href="/tables" />
+              <TableStatusRow label="Occupied" count={data.tables.occupied} dotClass="bg-primary" href="/tables" />
+              <TableStatusRow label="Reserved" count={data.tables.reserved} dotClass="bg-warning" href="/tables" />
+              <TableStatusRow label="Cleaning" count={data.tables.cleaning} dotClass="bg-muted-foreground" href="/tables" />
             </>
           )}
         </Card>
@@ -167,10 +196,10 @@ export default function DashboardPage() {
           </h2>
           {data && (
             <>
-              <TableStatusRow label="New" count={data.kitchenQueue.new} dotClass="bg-primary" />
-              <TableStatusRow label="Accepted" count={data.kitchenQueue.accepted} dotClass="bg-warning" />
-              <TableStatusRow label="Preparing" count={data.kitchenQueue.preparing} dotClass="bg-warning" />
-              <TableStatusRow label="Ready" count={data.kitchenQueue.ready} dotClass="bg-success" />
+              <TableStatusRow label="New" count={data.kitchenQueue.new} dotClass="bg-primary" href="/kds" />
+              <TableStatusRow label="Accepted" count={data.kitchenQueue.accepted} dotClass="bg-warning" href="/kds" />
+              <TableStatusRow label="Preparing" count={data.kitchenQueue.preparing} dotClass="bg-warning" href="/kds" />
+              <TableStatusRow label="Ready" count={data.kitchenQueue.ready} dotClass="bg-success" href="/kds" />
             </>
           )}
         </Card>
@@ -231,7 +260,11 @@ export default function DashboardPage() {
           <p className="text-xs text-muted-foreground">Today, self-serve vs staff-entered</p>
           {data && (
             <>
-              <div className="flex items-center justify-between py-1.5 text-sm">
+              <Link
+                href="/orders?tab=history&filter=online"
+                aria-label={`Online orders today: ${data.channels.online}. Open`}
+                className="-mx-2 flex items-center justify-between rounded-lg px-2 py-1.5 text-sm outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary"
+              >
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Globe className="h-3.5 w-3.5" />
                   Online (QR / kiosk)
@@ -239,8 +272,12 @@ export default function DashboardPage() {
                 <span className="font-medium tabular-nums text-foreground">
                   {data.channels.online}
                 </span>
-              </div>
-              <div className="flex items-center justify-between py-1.5 text-sm">
+              </Link>
+              <Link
+                href="/orders?tab=history&filter=offline"
+                aria-label={`Offline orders today: ${data.channels.offline}. Open`}
+                className="-mx-2 flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary"
+              >
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Store className="h-3.5 w-3.5" />
                   Offline (dine-in / takeaway / phone)
@@ -248,7 +285,7 @@ export default function DashboardPage() {
                 <span className="font-medium tabular-nums text-foreground">
                   {data.channels.offline}
                 </span>
-              </div>
+              </Link>
               <div className="mt-1 h-2 overflow-hidden rounded-full bg-secondary">
                 <div
                   className="h-full bg-primary transition-all"

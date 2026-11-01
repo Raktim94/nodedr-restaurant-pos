@@ -4,7 +4,7 @@ Status: **Verified** = run and observed · **Tested** = automated tests pass ·
 **Implemented** = code written, not run end to end · **Existing** = predates this
 checklist, inspected by reading code only · **Open** = not done · **Blocked** = needs access.
 
-Last updated 2026-11-01. Baseline: backend typecheck clean, 262 jest tests pass, web typecheck clean.
+Last updated 2026-11-01. Baseline: backend typecheck clean, 262 unit tests pass, 94 e2e tests pass against Postgres 16 (scratch cluster), web typecheck + production build clean.
 
 | Area | Status | Notes |
 |---|---|---|
@@ -12,15 +12,16 @@ Last updated 2026-11-01. Baseline: backend typecheck clean, 262 jest tests pass,
 | Discount cap + reason | Tested (unit) | Migration `20261101000000_discount_guardrails` NOT yet applied anywhere (no Docker access in session) |
 | AGPL notices (NOTICE, COPYRIGHT, TRADEMARK_POLICY, SECURITY) | Implemented | Ownership and trademark registration unverified; 3 deps lack a licence field |
 | AGPL s13 source link in Settings | Implemented | Not seen in a browser |
-| Menu grid text overflow, lazy images | Implemented | tsc + eslint clean; not yet checked in a browser at 360/768/1440 |
+| Menu grid text overflow, lazy images | Verified | Browser check with a 100-char unbroken name at 360/768/1440px: no page overflow, card inside grid, label clamped |
 | Edit open bill, refunds, cancel with reason | Existing | |
 | Edit paid bill via adjustment entries | Open | Today: refund only |
 | Per-item discounts | Open | |
-| Multiple customer addresses | Open | Customer has one free-text address |
+| Multiple customer addresses | Verified | Model + migration (applied on Postgres 16, old address carried over), API, 6 e2e tests incl. tenant isolation, UI add/edit/default/delete and POS phone-based picker driven in a real browser |
 | Webhooks (HMAC, SSRF guard), API keys/scopes | Existing | Retry/backoff, replay protection, delivery history not re-audited |
 | Zomato / Swiggy adapters | Open + Blocked | Needs partner API access and merchant credentials; none exist in this repo |
 | Order lifecycle NEW..COMPLETED, PREPARING/READY | Open | Status enum is OPEN/BILLED/PAID/CANCELLED plus acceptance gate; KDS tracks kitchen state separately |
-| Interactive dashboard KPIs, widget customisation | Open | |
+| Dashboard KPI click-through | Verified | 10/10 cards/rows link to the right view in a browser; `/orders?tab=&filter=` deep links work. Chart axis clipping fixed |
+| Dashboard: pending payments, low stock, customers, employees, payroll KPIs; widget show/hide/reorder | Open | Summary API does not return these yet |
 | Payroll calc | Tested (unit) | `payroll.calc.spec.ts`; attendance has no tests |
 | Cash register open/close reconciliation | Open | `Shift` model exists, not audited |
-| Browser verification of every screen | Open | Needs running app + DB |
+| Browser verification of every screen | Partial | Dashboard, POS, Orders, Customer detail driven in Chrome via Playwright; the other screens not yet |

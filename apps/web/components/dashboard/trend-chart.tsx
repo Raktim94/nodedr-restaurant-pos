@@ -16,6 +16,9 @@ function formatDayLabel(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
+// Axis ticks are short (10K); the tooltip carries the exact currency value.
+const compactNumber = new Intl.NumberFormat("en-IN", { notation: "compact", maximumFractionDigits: 1 });
+
 export function TrendChart({
   title,
   icon: Icon,
@@ -66,8 +69,8 @@ export function TrendChart({
                 tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                 axisLine={false}
                 tickLine={false}
-                width={48}
-                tickFormatter={(v: number) => valueFormatter(v)}
+                width={44}
+                tickFormatter={(v: number) => compactNumber.format(v)}
               />
               <Tooltip
                 formatter={(value: number) => valueFormatter(value)}
