@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { DocList, DocPage, DocSection } from "@/components/marketing/doc-page";
 
 export const metadata: Metadata = {
-  title: "Accessibility statement — Nodedr OrderRestro",
+  title: "Accessibility statement — OrderRestro",
   description: "OrderRestro's accessibility conformance target, testing methodology, and known gaps.",
 };
 
@@ -11,7 +11,7 @@ export default function AccessibilityPage() {
     <DocPage title="Accessibility statement" updated="15 August 2026">
       <DocSection heading="Our target">
         <p>
-          Nodedr OrderRestro targets{" "}
+          OrderRestro targets{" "}
           <strong className="text-foreground">WCAG 2.1 Level AA</strong> across
           this marketing site and the product application (POS, dashboard,
           kitchen display, settings). This is the standard referenced by

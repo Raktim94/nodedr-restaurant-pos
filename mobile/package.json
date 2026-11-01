@@ -9,22 +9,21 @@
     "android:release": "cap sync android && cd android && ./gradlew bundleRelease assembleRelease"
   },
   "dependencies": {
+    "@capacitor-mlkit/barcode-scanning": "^7.0.0",
     "@capacitor/android": "^7.0.0",
     "@capacitor/app": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/geolocation": "^7.0.0",
     "@capacitor/haptics": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
+    "@capacitor/keyboard": "^7.0.0",
     "@capacitor/network": "^7.0.0",
     "@capacitor/preferences": "^7.0.0",
     "@capacitor/push-notifications": "^7.0.0",
     "@capacitor/splash-screen": "^7.0.0",
-    "@capacitor/status-bar": "^7.0.0",
-    "@capacitor/keyboard": "^7.0.0",
-    "@capacitor-mlkit/barcode-scanning": "^7.0.0"
+    "@capacitor/status-bar": "^7.0.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^7.0.0",
-    "@capacitor/assets": "^3.0.5"
+    "@capacitor/cli": "^7.0.0"
   }
 }

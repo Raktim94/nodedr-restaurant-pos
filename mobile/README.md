@@ -51,3 +51,11 @@ The iOS code (`AppDelegate.swift` holds `ServerLinkPlugin` and `MainViewControll
 ## Tested
 
 Android debug and signed release builds run on an Android 14 emulator against a local server: connect screen, sign-in by phone, rider screen with live location from the native plugin, notification and location permission prompts, offline screen, release (minified) build. Not tested on a physical phone, on iOS, with real Firebase push, or QR scanning with a real camera.
+
+## Icons and splash screens
+
+Source images are in `resources/`. To regenerate every size (the tool is not a project dependency, so it is fetched on demand):
+
+```bash
+npx @capacitor/assets generate --android --ios --iconBackgroundColor '#9f1239' --splashBackgroundColor '#9f1239' --splashBackgroundColorDark '#141110'
+```

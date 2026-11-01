@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { DocList, DocPage, DocSection } from "@/components/marketing/doc-page";
 
 export const metadata: Metadata = {
-  title: "India compliance notes — Nodedr OrderRestro",
+  title: "India compliance notes — OrderRestro",
   description: "How OrderRestro's architecture relates to Indian data-protection, IT, and consumer-protection law.",
 };
 

@@ -4,7 +4,7 @@ import { DocPage, DocSection } from "@/components/marketing/doc-page";
 import { downloadHref } from "@/lib/downloads";
 
 export const metadata: Metadata = {
-  title: "Documentation — Nodedr OrderRestro",
+  title: "Documentation — OrderRestro",
   description: "API & MCP, accessibility, and India compliance docs for a self-hosted OrderRestro instance.",
 };
 

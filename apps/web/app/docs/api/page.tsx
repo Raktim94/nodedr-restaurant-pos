@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { DocList, DocPage, DocSection } from "@/components/marketing/doc-page";
 
 export const metadata: Metadata = {
-  title: "API & MCP — Nodedr OrderRestro",
+  title: "API & MCP — OrderRestro",
   description:
     "Connect an AI client via MCP, or use OrderRestro as a backend for your own website: browse the menu, place orders, and book tables through a scoped API key.",
 };
