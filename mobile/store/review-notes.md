@@ -2,7 +2,7 @@
 
 OrderRestro is open-source restaurant software that each restaurant hosts on its own computer. This app is the staff and rider client, so it needs a server address on first launch.
 
-**Demo server for reviewers:** https://orderrestro-demo.nodedr.com (TO DO before submitting: stand this up with sample data; see docs/MOBILE-APP-PLAN.md section 5)
+**Demo server for reviewers:** https://orderrestro-demo.nodedr.com
 
 1. Open the app. On the connect screen enter `orderrestro-demo.nodedr.com` and tap Connect.
 2. Sign in as the manager: `reviewer@orderrestro.nodedr.com` / (password supplied in the review form).
