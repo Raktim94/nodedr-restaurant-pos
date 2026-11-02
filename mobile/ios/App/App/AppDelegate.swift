@@ -61,6 +61,8 @@ enum ServerStore {
     static let externalKey = "orderrestro.externalUrl"
     static let lastLocalKey = "orderrestro.lastLocalUrl"
     static let lastExternalKey = "orderrestro.lastExternalUrl"
+    static let modeKey = "orderrestro.mode" // "app" or "standalone"
+    static var mode: String { d.string(forKey: modeKey) ?? "app" }
     private static var d: UserDefaults { UserDefaults.standard }
 
     /// True for addresses that only work on the restaurant network.
@@ -166,6 +168,7 @@ public class ServerLinkPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "current", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "connect", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "forget", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setMode", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "pushReady", returnType: CAPPluginReturnPromise),
     ]
 
@@ -180,6 +183,7 @@ public class ServerLinkPlugin: CAPPlugin, CAPBridgedPlugin {
             "externalUrl": e.isEmpty && active.isEmpty ? (d.string(forKey: ServerStore.lastExternalKey) ?? "") : e,
             "mode": active.isEmpty ? "" : (active == l ? "local" : "online"),
             "version": version,
+            "startMode": ServerStore.mode,
         ])
     }
 
@@ -196,6 +200,14 @@ public class ServerLinkPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         ServerStore.save(local: l, external: e)
+        call.resolve()
+        ServerStore.relaunchUI()
+    }
+
+    @objc func setMode(_ call: CAPPluginCall) {
+        let m = call.getString("mode") ?? "app"
+        guard m == "app" || m == "standalone" else { call.reject("Unknown mode"); return }
+        UserDefaults.standard.set(m, forKey: ServerStore.modeKey)
         call.resolve()
         ServerStore.relaunchUI()
     }
@@ -259,7 +271,7 @@ public class NativePrinterPlugin: CAPPlugin, CAPBridgedPlugin {
 class MainViewController: CAPBridgeViewController {
     override func instanceDescriptor() -> InstanceDescriptor {
         let descriptor = super.instanceDescriptor()
-        let server = ServerStore.resolve()
+        let server = ServerStore.mode == "standalone" ? "" : ServerStore.resolve()
         if !server.isEmpty {
             descriptor.serverURL = server
             descriptor.allowedNavigationHostnames = ["*"]

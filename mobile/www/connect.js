@@ -136,7 +136,14 @@
 
   drawRecent();
   if (native && P.ServerLink) {
-    P.ServerLink.current().then(function (r) { document.getElementById('ver').textContent = 'Version ' + r.version; if (r.localUrl && !inLocal.value) inLocal.value = r.localUrl; if (r.externalUrl && !inOnline.value) inOnline.value = r.externalUrl; }).catch(function () {});
+    P.ServerLink.current().then(function (r) {
+      // The phone was left in standalone mode: go straight back to the POS.
+      if (r.startMode === 'standalone' && !/[?&]stay=1/.test(location.search)) { location.replace('pos/index.html'); return; } document.getElementById('ver').textContent = 'Version ' + r.version; if (r.localUrl && !inLocal.value) inLocal.value = r.localUrl; if (r.externalUrl && !inOnline.value) inOnline.value = r.externalUrl; }).catch(function () {});
+  }
+  var sa = document.getElementById('standalone');
+  if (sa && native && P.ServerLink) {
+    sa.hidden = false;
+    sa.addEventListener('click', function () { P.ServerLink.setMode({ mode: 'standalone' }); });
   }
   var qs = new URLSearchParams(location.search);
   if (qs.get('server')) { var q = qs.get('server'); if (isLocal(q)) inLocal.value = q; else inOnline.value = q; }

@@ -16,7 +16,10 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ServerLinkPlugin.class);
         registerPlugin(NativePrinterPlugin.class);
-        String server = ServerLinkPlugin.resolve(this);
+        // In standalone mode the POS bundled in the app opens instead of the
+        // restaurant's web app, so it starts with no server at all.
+        boolean standalone = "standalone".equals(ServerLinkPlugin.mode(this));
+        String server = standalone ? null : ServerLinkPlugin.resolve(this);
         if (server != null && !server.isEmpty()) {
             // Open the restaurant's own server. The native bridge is injected for
             // that address, so push, haptics and location work inside its pages.
@@ -49,6 +52,7 @@ public class MainActivity extends BridgeActivity {
             return WindowInsetsCompat.CONSUMED;
         });
         watchNetwork();
+        quietErrors();
         // The error page is served locally, where the Capacitor bridge is not
         // injected, so it gets this tiny interface to retry or change server.
         if (getBridge() != null && getBridge().getWebView() != null) {
@@ -62,6 +66,12 @@ public class MainActivity extends BridgeActivity {
                 @android.webkit.JavascriptInterface
                 public void forgetServer() {
                     ServerLinkPlugin.forgetAll(MainActivity.this);
+                    runOnUiThread(MainActivity.this::recreate);
+                }
+
+                @android.webkit.JavascriptInterface
+                public void openStandalone() {
+                    getSharedPreferences(ServerLinkPlugin.PREFS, MODE_PRIVATE).edit().putString(ServerLinkPlugin.KEY_MODE, "standalone").apply();
                     runOnUiThread(MainActivity.this::recreate);
                 }
 
@@ -106,5 +116,51 @@ public class MainActivity extends BridgeActivity {
             } catch (Throwable ignored) {}
         }
         super.onDestroy();
+    }
+
+    private int pageRetries = 0;
+
+    /**
+     * Capacitor swaps the whole app for the "Can't reach the server" page on any
+     * failed page load or HTTP error, even one that clears a moment later
+     * (changing tab, WiFi hopping, a dropped connection). Here a failed load is
+     * retried quietly first, and an HTTP error status keeps the page the server
+     * sent instead of replacing it.
+     */
+    private void quietErrors() {
+        if (getBridge() == null) return;
+        getBridge().setWebViewClient(
+            new com.getcapacitor.BridgeWebViewClient(getBridge()) {
+                @Override
+                public void onReceivedHttpError(
+                    android.webkit.WebView view,
+                    android.webkit.WebResourceRequest request,
+                    android.webkit.WebResourceResponse errorResponse
+                ) {
+                    // keep whatever the server returned (its own error page, a redirect...)
+                }
+
+                @Override
+                public void onReceivedError(
+                    android.webkit.WebView view,
+                    android.webkit.WebResourceRequest request,
+                    android.webkit.WebResourceError error
+                ) {
+                    if (request.isForMainFrame() && pageRetries < 3) {
+                        pageRetries++;
+                        final String url = request.getUrl().toString();
+                        view.postDelayed(() -> view.loadUrl(url), 600L * pageRetries);
+                        return;
+                    }
+                    super.onReceivedError(view, request, error);
+                }
+
+                @Override
+                public void onPageFinished(android.webkit.WebView view, String url) {
+                    super.onPageFinished(view, url);
+                    pageRetries = 0;
+                }
+            }
+        );
     }
 }

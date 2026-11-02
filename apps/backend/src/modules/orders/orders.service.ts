@@ -181,6 +181,12 @@ export class OrdersService {
       minOrderAmount?: number;
       /** Website pricing change from Settings (cheaper / costlier). */
       priceAdjust?: OnlinePriceAdjust | null;
+      /**
+       * A sale that already happened (taken on a phone with no connection and
+       * sent later): stamped with when it was sold, and it never reaches the
+       * kitchen, occupies a table or raises a "new order" alert.
+       */
+      historical?: { createdAt: Date };
     } = {},
   ) {
     const channel = options.channel ?? 'STAFF';
@@ -371,6 +377,7 @@ export class OrdersService {
           guestName: dto.guestName,
           notes: dto.notes,
           clientRequestId: options.clientRequestId,
+          ...(options.historical ? { createdAt: options.historical.createdAt } : {}),
           integrationKeyId: options.integrationKeyId,
           clientRequestHash: options.clientRequestHash,
           externalSource: options.externalSource,
@@ -418,7 +425,7 @@ export class OrdersService {
         include: { items: true },
       });
 
-      if (dto.tableId) {
+      if (dto.tableId && !options.historical) {
         await tx.table.update({
           where: { id: dto.tableId },
           data: { status: 'OCCUPIED', statusSince: new Date() },
@@ -429,12 +436,18 @@ export class OrdersService {
       // (acceptOrder() generates the tickets then).
       // A scheduled order also waits: releaseDueScheduledOrders() sends it to
       // the kitchen shortly before its time.
-      if (acceptance !== 'PENDING' && !this.isDeferred(scheduledFor)) {
+      if (
+        acceptance !== 'PENDING' &&
+        !this.isDeferred(scheduledFor) &&
+        !options.historical
+      ) {
         await this.generateKots(tx, created.id, branchId, created.items);
       }
 
       return created;
     });
+
+    if (options.historical) return this.getOrder(branchId, order.id);
 
     // `acceptance` rides along so a kitchen screen can sound the alert for an
     // order that is waiting on a yes/no (it has no ticket to announce yet).
