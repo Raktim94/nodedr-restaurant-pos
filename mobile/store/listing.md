@@ -32,6 +32,10 @@ Works on the restaurant's own network, with no internet needed day to day. Your 
 
 Free. No ads. No tracking. Delete your account any time from the user menu.
 
+## What's new (1.18.0)
+- Works without the restaurant server: a standalone point of sale on the phone takes orders and payments (cash, card, UPI) and syncs them to the server when it is back online
+- No more "Can't reach the server" flashes when switching tabs
+
 ## What's new (1.17.0)
 - Print bills and kitchen tickets from the phone: Bluetooth thermal printer, or Print / Save PDF
 - UPI "scan to pay" QR on the printed bill
