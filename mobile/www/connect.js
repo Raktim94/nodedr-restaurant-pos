@@ -25,7 +25,9 @@
     if (!v) return '';
     if (!/^https?:\/\//i.test(v)) {
       var host = v.split('/')[0].split(':')[0];
-      var lan = kind === 'local' || (kind !== 'online' && (/^(\d{1,3}\.){3}\d{1,3}$/.test(host) || /\.local$/i.test(host) || host.indexOf('.') === -1));
+      var privateHost = /^(\d{1,3}\.){3}\d{1,3}$/.test(host) || /\.(local|lan)$/i.test(host) || host.indexOf('.') === -1;
+      // A public domain is https, even when typed in the Local field.
+      var lan = kind === 'online' ? false : privateHost;
       v = (lan ? 'http://' : 'https://') + v;
       if (lan && !/^https?:\/\/[^/]+:\d+/.test(v)) v = v.replace(/^(http:\/\/[^/]+)/, '$1:1995');
     }
