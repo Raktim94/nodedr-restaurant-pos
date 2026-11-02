@@ -6,6 +6,7 @@ import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
 import { kv, newId, nextLocalNumber, sales } from './lib/store.js';
 import { native, pickServer, reachable, savedServers } from './lib/net.js';
 import { login, pullSnapshot, syncNow } from './lib/sync.js';
+import { checkLocalPassword, createLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, upsertDish } from './lib/local.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -26,11 +27,13 @@ const S = {
   pending: 0,
   lastSync: null,
   note: null,
+  unlocked: false,
 };
 
 const ICON = {
   sell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.6 12.4a2 2 0 0 0 2 1.6h8.1a2 2 0 0 0 2-1.5L21 8H6"/></svg>',
   sales: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6"/></svg>',
+  menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
   sync: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18.5 2v4h-4M5.5 22v-4h4"/></svg>',
 };
 
@@ -199,7 +202,10 @@ async function renderLogin(message) {
     <input id="pw" type="password" autocomplete="current-password">
     <button class="btn block mt" id="go" type="submit">Sign in and download the menu</button>
     <p class="center mt"><a href="../index.html?stay=1" class="mute">Back to connect screen</a></p>
+    <hr class="sep">
+    <button class="btn line block" id="nosrv" type="button">${(await hasLocalAccount()) ? 'Open my account on this phone' : 'No server yet? Create an account on this phone'}</button>
   </form>`;
+  $('nosrv').onclick = async () => ((await hasLocalAccount()) ? renderUnlock() : renderSetup());
   $('lf').onsubmit = async (ev) => {
     ev.preventDefault();
     const go = $('go');
@@ -220,17 +226,177 @@ async function renderLogin(message) {
   };
 }
 
+
+// ------------------------------------------------- on this phone (no server) ---
+function renderSetup(message, v = {}) {
+  $('app').innerHTML = `
+  <form class="login" id="sf" novalidate>
+    <img src="../assets/logo.png" alt="">
+    <h1 class="center">Create your account</h1>
+    <p class="mute center">No server needed. Your menu and sales stay on this phone. You can connect a restaurant server later and your sales will be sent to it.</p>
+    ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+    <label for="n">Your name</label>
+    <input id="n" autocomplete="name" value="${esc(v.name)}">
+    <label for="e">Email <span class="mute">(optional)</span></label>
+    <input id="e" type="email" autocomplete="email" autocapitalize="none" value="${esc(v.email)}">
+    <label for="r">Restaurant or shop name</label>
+    <input id="r" value="${esc(v.restaurant)}">
+    <label for="u">UPI id <span class="mute">(optional, shows a Scan to pay code on the bill)</span></label>
+    <input id="u" autocapitalize="none" placeholder="name@bank" value="${esc(v.upi)}">
+    <label for="p">Password <span class="mute">(at least 6 characters)</span></label>
+    <input id="p" type="password" autocomplete="new-password">
+    <button class="btn block mt" id="go" type="submit">Create account and start</button>
+    <p class="center mt"><a href="#" id="back" class="mute">I already have a server</a></p>
+  </form>`;
+  $('back').onclick = (e) => (e.preventDefault(), renderLogin());
+  $('sf').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const vals = { name: $('n').value, email: $('e').value, restaurant: $('r').value, upi: $('u').value };
+    try {
+      S.snap = await createLocalAccount({ ...vals, password: $('p').value, upiVpa: vals.upi });
+      S.unlocked = true;
+      S.view = 'menu';
+      S.note = { text: 'Account created. Add your dishes here, then go to Sell.' };
+      render();
+    } catch (e) {
+      renderSetup(e.message, vals);
+    }
+  };
+}
+
+function renderUnlock(message) {
+  $('app').innerHTML = `
+  <form class="login" id="uf" novalidate>
+    <img src="../assets/logo.png" alt="">
+    <h1 class="center">Welcome back</h1>
+    ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+    <label for="p">Password</label>
+    <input id="p" type="password" autocomplete="current-password">
+    <button class="btn block mt" id="go" type="submit">Open</button>
+    <p class="center mt"><a href="#" id="srv" class="mute">Sign in to a server instead</a></p>
+  </form>`;
+  $('srv').onclick = (e) => (e.preventDefault(), renderLogin());
+  $('uf').onsubmit = async (ev) => {
+    ev.preventDefault();
+    if (!(await checkLocalPassword($('p').value))) return renderUnlock('That password is not right.');
+    S.unlocked = true;
+    S.snap = await kv.get('snapshot');
+    if (!S.snap) return renderLogin();
+    render();
+  };
+}
+
+function viewMenu() {
+  const { categories, items } = S.snap;
+  const cat = (id) => (categories.find((c) => c.id === id) || {}).name || 'No category';
+  $('view').innerHTML = `
+    ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
+    <button class="btn block" id="add">Add a dish</button>
+    <div class="mt">${
+      items
+        .map(
+          (i) => `<button class="row dishrow" data-edit="${esc(i.id)}"><div class="grow"><b>${esc(i.name)}</b><br><small>${esc(cat(i.categoryId))}${i.taxRate ? ` &middot; tax ${esc(i.taxRate)}%` : ''}</small></div><b>${inr(i.price)}</b></button>`,
+        )
+        .join('') || '<p class="mute center mt">Your menu is empty. Tap Add a dish to start.</p>'
+    }</div>`;
+  $('add').onclick = () => dishSheet();
+  document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => dishSheet(S.snap.items.find((i) => i.id === b.dataset.edit))));
+}
+
+function dishSheet(item, message) {
+  const cats = S.snap.categories;
+  const cur = item ? (cats.find((c) => c.id === item.categoryId) || {}).name || '' : '';
+  openSheet(
+    `<header><h2>${item ? 'Edit dish' : 'Add a dish'}</h2><button class="x" data-close aria-label="Close">&times;</button></header>
+     <div class="body">
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       <label for="dn">Name</label><input id="dn" value="${esc(item && item.name)}">
+       <label for="dpr">Price (₹)</label><input id="dpr" type="number" inputmode="decimal" min="0" step="0.01" value="${item ? esc(item.price) : ''}">
+       <label for="dc">Category <span class="mute">(optional)</span></label>
+       <input id="dc" list="cl" value="${esc(cur)}" placeholder="Starters, Drinks…"><datalist id="cl">${cats.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
+       <label for="dt">Tax included in price (%)</label><input id="dt" type="number" inputmode="decimal" min="0" max="100" value="${item ? esc(item.taxRate) : 0}">
+       <label class="chk"><input id="dv" type="checkbox" ${!item || item.isVeg ? 'checked' : ''}> Vegetarian</label>
+     </div>
+     <footer>${item ? '<button class="btn line" id="dd">Delete</button>' : ''}<button class="btn" id="ds">Save</button></footer>`,
+    (p) => {
+      p.querySelector('#ds').onclick = async () => {
+        try {
+          S.snap = await upsertDish(S.snap, { id: item && item.id, name: $('dn').value, price: $('dpr').value, taxRate: $('dt').value, isVeg: $('dv').checked, categoryName: $('dc').value });
+          closeSheet();
+          S.note = null;
+          render();
+        } catch (e) {
+          dishSheet(item, e.message);
+        }
+      };
+      const del = p.querySelector('#dd');
+      if (del)
+        del.onclick = async () => {
+          if (!confirm(`Delete ${item.name} from the menu? Past sales keep it.`)) return;
+          S.snap = await removeDish(S.snap, item.id);
+          S.cart.delete(item.id);
+          closeSheet();
+          render();
+        };
+    },
+  );
+}
+
+/** Switch from "on this phone" to a real server: sign in, match the dishes, send the sales. */
+function connectSheet(message) {
+  openSheet(
+    `<header><h2>Connect to a server</h2><button class="x" data-close aria-label="Close">&times;</button></header>
+     <form class="body" id="cf" novalidate>
+       <p class="mute">Your account stays on this phone. The sales you took are matched to the server's dishes by name and sent to it.</p>
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       <label for="cs">Server address</label><input id="cs" placeholder="192.168.1.20 or pos.example.com" inputmode="url" autocapitalize="none">
+       <label for="ci">Email or phone number</label><input id="ci" autocapitalize="none" autocomplete="username">
+       <label for="cp">Password</label><input id="cp" type="password" autocomplete="current-password">
+       <button class="btn block mt" id="cg" type="submit">Connect and send my sales</button>
+     </form>`,
+    (p) => {
+      p.querySelector('#cf').onsubmit = async (ev) => {
+        ev.preventDefault();
+        const b = p.querySelector('#cg');
+        b.disabled = true;
+        b.textContent = 'Connecting…';
+        let base = $('cs').value.trim();
+        if (base && !/^https?:\/\//i.test(base)) base = (/^[\d.]+(:\d+)?$/.test(base) ? 'http://' : 'https://') + base;
+        try {
+          if (!base || !(await reachable(base))) throw new Error("Can't reach that server from here. Check the address and that you are online.");
+          const keep = await kv.get('snapshot');
+          await login(base, $('ci').value.trim(), $('cp').value);
+          const server = await pullSnapshot(base); // replaces the local menu
+          const r = await remapSalesToServer(server.items);
+          await kv.set('localMenuBackup', keep);
+          closeSheet();
+          S.snap = server;
+          S.view = 'sync';
+          S.note = { text: `Connected. ${r.matched} sale${r.matched === 1 ? '' : 's'} ready to send${r.unmatched ? `, ${r.unmatched} with dishes the server does not have (see Sales)` : ''}.` };
+          render();
+          syncNow().then(afterSync);
+        } catch (e) {
+          await kv.set('snapshot', S.snap); // keep working on this phone
+          await kv.set('branchId', 'local');
+          connectSheet(e.message);
+        }
+      };
+    },
+  );
+}
+
 // ------------------------------------------------------------------- shell ---
 function shell() {
   const tabs = [
     ['sell', 'Sell', ICON.sell],
+    ...(S.snap.local ? [['menu', 'Menu', ICON.menu]] : []),
     ['sales', 'Sales', ICON.sales],
     ['sync', 'Sync', ICON.sync],
   ];
   $('app').innerHTML = `
   <header class="top">
     <h1>${esc(S.snap.branch.name)}</h1>
-    <span class="pill ${S.online ? 'on' : 'off'}" id="pill"><i></i>${S.online ? 'Online' : 'Offline'}</span>
+    <span class="pill ${S.snap.local || S.online ? 'on' : 'off'}" id="pill"><i></i>${S.snap.local ? 'On this phone' : S.online ? 'Online' : 'Offline'}</span>
   </header>
   <main class="view" id="view"></main>
   <div id="barwrap"></div>
@@ -248,9 +414,10 @@ async function refreshPending() {
 }
 async function render() {
   if (!S.snap) return renderLogin();
+  if (S.snap.local && !S.unlocked) return renderUnlock();
   await refreshPending();
   shell();
-  ({ sell: viewSell, sales: viewSales, sync: viewSync })[S.view]();
+  ({ sell: viewSell, menu: viewMenu, sales: viewSales, sync: viewSync })[S.view]();
 }
 
 // -------------------------------------------------------------------- sell ---
@@ -269,7 +436,7 @@ function viewSell() {
           <b><span class="veg ${i.isVeg ? '' : 'nv'}"></span>${esc(i.name)}</b>
           <span>${inr(i.price)}${S.cart.get(i.id)?.qty ? ` &middot; <strong style="color:var(--brand)">&times;${S.cart.get(i.id).qty}</strong>` : ''}</span>
           ${i.sellOffline ? '' : '<small>Needs options: use the full app</small>'}
-        </button>`).join('') || '<p class="mute center mt">Nothing matches.</p>'}
+        </button>`).join('') || (S.snap.local && !S.snap.items.length ? '<p class="mute center mt">Your menu is empty. Open the Menu tab to add your dishes.</p>' : '<p class="mute center mt">Nothing matches.</p>')}
     </div>`;
   $('q').oninput = (e) => {
     S.q = e.target.value;
@@ -443,7 +610,7 @@ function openDone(sale) {
        <div style="font-size:3rem;color:var(--ok)" aria-hidden="true">&#10003;</div>
        <h2>${inr(sale.bill.total)}</h2>
        <p class="mute">Bill ${esc(sale.localNumber)}${sale.change > 0 ? ` &middot; give change ${inr(sale.change)}` : ''}</p>
-       <p class="note">Saved on this phone. It goes to the server by itself when you are online.</p>
+       <p class="note">${S.snap.local ? 'Saved on this phone. Connect a server later (Sync tab) and it is sent then.' : 'Saved on this phone. It goes to the server by itself when you are online.'}</p>
        <div class="mt">${printActions()}</div>
      </div>
      <footer><button class="btn block" id="newsale">New sale</button></footer>`,
@@ -490,7 +657,33 @@ async function viewSales() {
 }
 
 // -------------------------------------------------------------------- sync ---
+async function viewSyncLocal() {
+  const printer = savedPrinter();
+  $('view').innerHTML = `
+    ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
+    <div class="card mt">
+      <dl class="kv">
+        <dt>Account</dt><dd>${esc(S.snap.user.name)} &middot; ${esc(S.snap.restaurant.name)}</dd>
+        <dt>Where it is kept</dt><dd>On this phone only</dd>
+        <dt>Sales taken</dt><dd>${(await sales.all()).length}</dd>
+        <dt>Dishes</dt><dd>${S.snap.items.length}</dd>
+      </dl>
+      <button class="btn block mt" id="conn">Connect to a server</button>
+      <p class="mute center">Do this when your restaurant has a server. Your sales are sent to it.</p>
+    </div>
+    <div class="card mt">
+      <h2 style="font-size:1.05rem">Bluetooth printer</h2>
+      <p class="mute">${printer ? `Printing on <b>${esc(printer.name)}</b>` : 'No printer chosen yet.'}</p>
+      <button class="btn ghost block" id="pick">${printer ? 'Change printer' : 'Choose printer'}</button>
+    </div>
+    <div class="card mt"><button class="btn line block" id="lock">Lock</button></div>`;
+  $('conn').onclick = () => connectSheet();
+  $('pick').onclick = async () => (await choosePrinter(), viewSync());
+  $('lock').onclick = () => ((S.unlocked = false), (S.cart = new Map()), render());
+}
+
 async function viewSync() {
+  if (S.snap.local) return viewSyncLocal();
   const snapAt = await kv.get('snapshotAt');
   const last = await kv.get('lastSync');
   const printer = savedPrinter();
@@ -568,6 +761,7 @@ async function doSync() {
 async function start() {
   S.snap = await kv.get('snapshot');
   if (!S.snap) return renderLogin();
+  if (S.snap.local) return render();
   S.online = !!(await pickServer(await kv.get('serverBase')));
   render();
   if (S.online) syncNow().then(afterSync);

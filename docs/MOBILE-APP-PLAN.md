@@ -156,3 +156,7 @@ The app can also run without the restaurant server being reachable. The phone ha
 - **Offline policy**: cash, card, UPI and other payments are allowed offline and saved as "waiting to sync". The server accepts them as final and records them at the prices charged on the phone. No kitchen ticket is made and no table is occupied for synced sales.
 - **Refusals**: a sale the server cannot take (for example a dish removed or a payment short of the total) is cancelled on the server and shown as "Needs attention" on the phone.
 - **Quiet errors**: the Android shell retries a failed page load three times before showing the error page, and ignores HTTP error statuses, so changing tabs no longer shows "Can't reach the server".
+
+### On-this-phone account (1.19.0)
+
+Standalone mode no longer needs a server first. "Create an account on this phone" (`pos/lib/local.js`) stores the account (PBKDF2-SHA256 password hash), the restaurant and an editable menu in IndexedDB. Sales are taken as usual and stay pending. "Connect to a server" (Sync tab) signs in, downloads the server menu, matches waiting sales to server dishes by name (a sale with a dish the server lacks is marked refused and kept) and sends the rest. Local data is never sent anywhere until a server is connected.

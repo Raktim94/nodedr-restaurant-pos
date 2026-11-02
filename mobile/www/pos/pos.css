@@ -66,3 +66,10 @@ h1,h2{margin:0}
 .login img{display:block;width:72px;height:72px;border-radius:18px;margin:0 auto .75rem}
 .search{margin-bottom:.6rem}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem}.kv dt{color:var(--mute)}.kv dd{margin:0;text-align:right;overflow-wrap:anywhere}
+
+.sep{border:0;border-top:1px solid var(--line);margin:1.2rem 0 1rem}
+.chk{display:flex;align-items:center;gap:.6rem;font-weight:600}
+.chk input{width:auto;min-height:0}
+.dishrow{width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:.5rem;padding:.7rem .9rem;color:var(--ink);font:inherit;min-height:56px}
+.panel>footer{display:flex;gap:.6rem}
+.panel>footer .btn{flex:1}

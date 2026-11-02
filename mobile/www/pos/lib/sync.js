@@ -91,6 +91,8 @@ export function syncNow({ refreshMenu = true } = {}) {
   running = (async () => {
     const out = { online: false, done: 0, refused: 0, error: null, authExpired: false };
     try {
+      const snap = await kv.get('snapshot');
+      if (snap && snap.local) return out; // on-this-phone mode: nothing to sync until a server is connected
       const base = await pickServer(await kv.get('serverBase'));
       if (!base) return out;
       out.online = true;

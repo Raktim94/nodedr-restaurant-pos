@@ -32,6 +32,11 @@ Works on the restaurant's own network, with no internet needed day to day. Your 
 
 Free. No ads. No tracking. Delete your account any time from the user menu.
 
+## What's new (1.19.0)
+- Start with no server: create an account on the phone, add your dishes and take orders and payments straight away
+- Connect a restaurant server later from the Sync tab; the sales you took are matched to its dishes and sent
+- The phone asks for your password when you reopen the app, and Lock is one tap away
+
 ## What's new (1.18.0)
 - Works without the restaurant server: a standalone point of sale on the phone takes orders and payments (cash, card, UPI) and syncs them to the server when it is back online
 - No more "Can't reach the server" flashes when switching tabs
