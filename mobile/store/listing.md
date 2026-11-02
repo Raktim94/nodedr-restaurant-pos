@@ -32,6 +32,9 @@ Works on the restaurant's own network, with no internet needed day to day. Your 
 
 Free. No ads. No tracking. Delete your account any time from the user menu.
 
+## What's new (1.19.1)
+- If you started on the phone and then connected a server, the Sync tab now has "Disconnect and go back to my phone account" instead of a confusing sign-out
+
 ## What's new (1.19.0)
 - Start with no server: create an account on the phone, add your dishes and take orders and payments straight away
 - Connect a restaurant server later from the Sync tab; the sales you took are matched to its dishes and sent
