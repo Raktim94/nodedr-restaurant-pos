@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import Network
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -55,14 +56,79 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 /// screen); after that the app opens that server's own web app, with the native
 /// bridge (push, location, haptics) available inside its pages.
 enum ServerStore {
-    static let key = "orderrestro.serverUrl"
-    static var url: String? {
-        get { UserDefaults.standard.string(forKey: key) }
-        set {
-            if let v = newValue { UserDefaults.standard.set(v, forKey: key) }
-            else { UserDefaults.standard.removeObject(forKey: key) }
-        }
+    static let activeKey = "orderrestro.serverUrl" // the address in use (also the pre-1.16 single address)
+    static let localKey = "orderrestro.localUrl"
+    static let externalKey = "orderrestro.externalUrl"
+    static let lastLocalKey = "orderrestro.lastLocalUrl"
+    static let lastExternalKey = "orderrestro.lastExternalUrl"
+    private static var d: UserDefaults { UserDefaults.standard }
+
+    /// True for addresses that only work on the restaurant network.
+    static func isLocalAddress(_ url: String) -> Bool {
+        guard let h = URL(string: url)?.host?.lowercased() else { return false }
+        let range = NSRange(location: 0, length: h.utf16.count)
+        let priv = try? NSRegularExpression(pattern: "^(10|127)\\.|^192\\.168\\.|^172\\.(1[6-9]|2\\d|3[01])\\.|^169\\.254\\.")
+        return priv?.firstMatch(in: h, range: range) != nil || h.hasSuffix(".local") || h.hasSuffix(".lan") || !h.contains(".")
     }
+
+    static var local: String {
+        let v = d.string(forKey: localKey) ?? ""
+        let old = d.string(forKey: activeKey) ?? ""
+        if v.isEmpty && (d.string(forKey: externalKey) ?? "").isEmpty && isLocalAddress(old) { return old }
+        return v
+    }
+    static var external: String {
+        let v = d.string(forKey: externalKey) ?? ""
+        let old = d.string(forKey: activeKey) ?? ""
+        if v.isEmpty && (d.string(forKey: localKey) ?? "").isEmpty && !old.isEmpty && !isLocalAddress(old) { return old }
+        return v
+    }
+    /// The address chosen last time (no network access). Empty when not connected.
+    static var saved: String {
+        let a = d.string(forKey: activeKey) ?? ""
+        if !a.isEmpty { return a }
+        return local.isEmpty ? external : local
+    }
+
+    static func save(local l: String, external e: String) {
+        d.set(l, forKey: localKey)
+        d.set(e, forKey: externalKey)
+        d.set(l.isEmpty ? e : l, forKey: activeKey)
+    }
+
+    static func forget() {
+        d.set(local, forKey: lastLocalKey)
+        d.set(external, forKey: lastExternalKey)
+        d.removeObject(forKey: localKey)
+        d.removeObject(forKey: externalKey)
+        d.removeObject(forKey: activeKey)
+    }
+
+    /// Does an OrderRestro server answer at this address within a moment?
+    static func reachable(_ base: String) -> Bool {
+        guard let url = URL(string: base + "/api/v1/auth/setup-status") else { return false }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 1.5
+        let sem = DispatchSemaphore(value: 0)
+        var ok = false
+        URLSession.shared.dataTask(with: req) { _, resp, _ in
+            ok = (resp as? HTTPURLResponse)?.statusCode == 200
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + 2.5)
+        return ok
+    }
+
+    /// Local address if it answers, otherwise the online one. Blocks for at most about 2.5 seconds.
+    static func resolve() -> String {
+        let l = local, e = external
+        let pick: String
+        if l.isEmpty || e.isEmpty { pick = l.isEmpty ? e : l }
+        else { pick = reachable(l) ? l : e }
+        if !pick.isEmpty { d.set(pick, forKey: activeKey) }
+        return pick
+    }
+
     /// Start over with a fresh web view so the new server takes effect.
     static func relaunchUI() {
         DispatchQueue.main.async {
@@ -70,6 +136,25 @@ enum ServerStore {
             window.rootViewController = MainViewController()
             window.makeKeyAndVisible()
         }
+    }
+
+    private static var monitor: NWPathMonitor?
+    /// With both addresses saved, move to the better one when the phone changes network.
+    static func watchNetwork() {
+        monitor?.cancel()
+        monitor = nil
+        guard !local.isEmpty, !external.isEmpty else { return }
+        let m = NWPathMonitor()
+        var first = true
+        m.pathUpdateHandler = { path in
+            if first { first = false; return }
+            guard path.status == .satisfied else { return }
+            let now = saved
+            let next = resolve()
+            if !next.isEmpty && next != now { relaunchUI() }
+        }
+        m.start(queue: DispatchQueue(label: "orderrestro.network"))
+        monitor = m
     }
 }
 
@@ -86,21 +171,37 @@ public class ServerLinkPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func current(_ call: CAPPluginCall) {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-        call.resolve(["url": ServerStore.url ?? "", "version": version])
+        let active = ServerStore.saved
+        let l = ServerStore.local, e = ServerStore.external
+        let d = UserDefaults.standard
+        call.resolve([
+            "url": active,
+            "localUrl": l.isEmpty && active.isEmpty ? (d.string(forKey: ServerStore.lastLocalKey) ?? "") : l,
+            "externalUrl": e.isEmpty && active.isEmpty ? (d.string(forKey: ServerStore.lastExternalKey) ?? "") : e,
+            "mode": active.isEmpty ? "" : (active == l ? "local" : "online"),
+            "version": version,
+        ])
     }
 
     @objc func connect(_ call: CAPPluginCall) {
-        guard let url = call.getString("url"), url.hasPrefix("http://") || url.hasPrefix("https://") else {
+        var l = call.getString("localUrl") ?? ""
+        var e = call.getString("externalUrl") ?? ""
+        let one = call.getString("url") ?? ""
+        if l.isEmpty && e.isEmpty && !one.isEmpty {
+            if ServerStore.isLocalAddress(one) { l = one } else { e = one }
+        }
+        func valid(_ u: String) -> Bool { u.isEmpty || u.hasPrefix("http://") || u.hasPrefix("https://") }
+        guard !(l.isEmpty && e.isEmpty), valid(l), valid(e) else {
             call.reject("Enter a full address such as http://192.168.1.20:1995")
             return
         }
-        ServerStore.url = url
+        ServerStore.save(local: l, external: e)
         call.resolve()
         ServerStore.relaunchUI()
     }
 
     @objc func forget(_ call: CAPPluginCall) {
-        ServerStore.url = nil
+        ServerStore.forget()
         call.resolve()
         ServerStore.relaunchUI()
     }
@@ -114,7 +215,8 @@ public class ServerLinkPlugin: CAPPlugin, CAPBridgedPlugin {
 class MainViewController: CAPBridgeViewController {
     override func instanceDescriptor() -> InstanceDescriptor {
         let descriptor = super.instanceDescriptor()
-        if let server = ServerStore.url, !server.isEmpty {
+        let server = ServerStore.resolve()
+        if !server.isEmpty {
             descriptor.serverURL = server
             descriptor.allowedNavigationHostnames = ["*"]
         }
@@ -123,5 +225,6 @@ class MainViewController: CAPBridgeViewController {
 
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(ServerLinkPlugin())
+        ServerStore.watchNetwork()
     }
 }

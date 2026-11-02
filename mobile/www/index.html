@@ -13,9 +13,12 @@
   <h1>Connect to your restaurant</h1>
   <p class="sub">Enter the address of your OrderRestro server. Staff and riders use the same sign-in as the web app.</p>
   <form id="f" class="card" novalidate>
-    <label for="addr">Server address</label>
-    <input id="addr" name="addr" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="url" placeholder="192.168.1.20 or pos.example.com">
-    <p class="hint">On the restaurant WiFi this works with no internet. Ask the owner for the address, or scan the QR code in Settings.</p>
+    <label for="local">Local address</label>
+    <input id="local" name="local" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="192.168.1.20">
+    <p class="hint">The server computer on the restaurant WiFi. Works with no internet.</p>
+    <label for="online" class="gap">Online address <span class="opt">(optional)</span></label>
+    <input id="online" name="online" inputmode="url" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="pos.example.com">
+    <p class="hint">Only if the server has a public https address. The app uses it when you are away from the restaurant, and switches by itself.</p>
     <button class="btn" id="go" type="submit">Connect</button>
     <button class="btn ghost" id="scan" type="button" hidden>Scan QR code</button>
     <p id="msg" class="msg" role="alert" hidden></p>

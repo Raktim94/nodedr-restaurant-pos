@@ -24,3 +24,6 @@ input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid color
 .foot{text-align:center;color:var(--mute);font-size:.8rem;margin-top:1.5rem}
 .foot a{color:inherit}
 @media (prefers-reduced-motion:no-preference){.btn{transition:background .15s}}
+
+label.gap{margin-top:1.1rem}
+.opt{font-weight:400;color:var(--mute)}

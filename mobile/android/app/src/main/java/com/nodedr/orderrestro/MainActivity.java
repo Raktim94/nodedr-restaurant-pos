@@ -15,7 +15,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ServerLinkPlugin.class);
-        String server = ServerLinkPlugin.saved(this);
+        String server = ServerLinkPlugin.resolve(this);
         if (server != null && !server.isEmpty()) {
             // Open the restaurant's own server. The native bridge is injected for
             // that address, so push, haptics and location work inside its pages.
@@ -47,6 +47,7 @@ public class MainActivity extends BridgeActivity {
             v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
             return WindowInsetsCompat.CONSUMED;
         });
+        watchNetwork();
         // The error page is served locally, where the Capacitor bridge is not
         // injected, so it gets this tiny interface to retry or change server.
         if (getBridge() != null && getBridge().getWebView() != null) {
@@ -59,10 +60,50 @@ public class MainActivity extends BridgeActivity {
 
                 @android.webkit.JavascriptInterface
                 public void forgetServer() {
-                    getSharedPreferences(ServerLinkPlugin.PREFS, MODE_PRIVATE).edit().remove(ServerLinkPlugin.KEY_URL).apply();
+                    ServerLinkPlugin.forgetAll(MainActivity.this);
+                    runOnUiThread(MainActivity.this::recreate);
+                }
+
+                @android.webkit.JavascriptInterface
+                public void retry() {
+                    // Pick the local or online address again, then reopen.
                     runOnUiThread(MainActivity.this::recreate);
                 }
             }, "OrderRestroNative");
         }
+    }
+
+    private android.net.ConnectivityManager.NetworkCallback networkCallback;
+
+    /**
+     * With both a local and an online address saved, move to the better one when
+     * the phone changes network (walks into the restaurant WiFi, or leaves it).
+     */
+    private void watchNetwork() {
+        if (ServerLinkPlugin.local(this).isEmpty() || ServerLinkPlugin.external(this).isEmpty()) return;
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            networkCallback = new android.net.ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(android.net.Network network) {
+                    new Thread(() -> {
+                        String now = ServerLinkPlugin.saved(MainActivity.this);
+                        String next = ServerLinkPlugin.resolve(MainActivity.this);
+                        if (!next.isEmpty() && !next.equals(now)) runOnUiThread(MainActivity.this::recreate);
+                    }).start();
+                }
+            };
+            cm.registerDefaultNetworkCallback(networkCallback);
+        } catch (Throwable ignored) {}
+    }
+
+    @Override
+    public void onDestroy() {
+        if (networkCallback != null) {
+            try {
+                ((android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE)).unregisterNetworkCallback(networkCallback);
+            } catch (Throwable ignored) {}
+        }
+        super.onDestroy();
     }
 }

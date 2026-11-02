@@ -9,6 +9,12 @@ A Capacitor app that wraps the restaurant's own OrderRestro web app with native 
 3. `apps/web/components/native/native-bridge.tsx` registers push, shows the offline banner and sends queued updates (`apps/web/lib/outbox.ts`). In a normal browser all of it is a no-op.
 4. If the server cannot be reached, `www/offline.html` appears with Try again and Change server.
 
+## Local and online address (like Immich)
+
+The connect screen takes two addresses for the same restaurant server: a **local** one (the computer on the restaurant WiFi, no internet needed) and an optional **online** one (a public https address). At launch the app asks the local address for `/api/v1/auth/setup-status`; if it answers within about 1.5 seconds it uses it, otherwise it uses the online address. On mobile data it skips the local probe. When the phone changes network the app picks again and reopens on the better address. Everything still goes to the restaurant's own server; there is no NodeDR cloud in between.
+
+Sign-in is stored per address, so a person signs in once on each address.
+
 ## Build (Android)
 
 Needs JDK 21 and the Android SDK (platform 35, build-tools 35).
