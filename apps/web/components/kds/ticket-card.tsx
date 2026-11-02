@@ -163,10 +163,10 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-2">
         {nextStatus && (
           <Button
-            className="h-12 min-w-[7rem] flex-1 text-base"
+            className="h-12 w-full text-base"
             disabled={updateStatus.isPending}
             onClick={() =>
               updateStatus.mutate(
@@ -185,10 +185,11 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
             {updateStatus.isPending ? "Updating…" : STATUS_LABEL[ticket.status]}
           </Button>
         )}
+        <div className="flex items-center gap-2">
         {canReject && (
           <Button
             variant="destructive"
-            className="h-12 shrink-0 px-4"
+            className="h-12 min-w-0 flex-1 px-4"
             onClick={() => setRejectOpen(true)}
             aria-label={`Reject ticket for order ${ticket.order.orderNumber}`}
           >
@@ -232,6 +233,7 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
         >
           <Printer className="h-5 w-5" />
         </Button>
+        </div>
       </div>
     </Card>
   );
