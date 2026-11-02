@@ -29,9 +29,15 @@ public class ServerLinkPlugin extends Plugin {
     static final String KEY_ACTIVE = "serverUrl"; // the address in use right now (also the pre-1.16 single address)
     static final String KEY_LAST_LOCAL = "lastLocalUrl";
     static final String KEY_LAST_EXTERNAL = "lastExternalUrl";
+    static final String KEY_MODE = "mode"; // "app" (the restaurant's web app) or "standalone" (the POS inside this app)
 
     private static SharedPreferences prefs(Context ctx) {
         return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    /** Which half of the app opens at start: "app" or "standalone". */
+    static String mode(Context ctx) {
+        return prefs(ctx).getString(KEY_MODE, "app");
     }
 
     /** True for addresses that only work on the restaurant network. */
@@ -146,7 +152,21 @@ public class ServerLinkPlugin extends Plugin {
         r.put("externalUrl", e.isEmpty() && active.isEmpty() ? str(p, KEY_LAST_EXTERNAL) : e);
         r.put("mode", active.isEmpty() ? "" : active.equals(l) ? "local" : "online");
         r.put("version", com.nodedr.orderrestro.BuildConfig.VERSION_NAME);
+        r.put("startMode", mode(ctx));
         call.resolve(r);
+    }
+
+    /** Open the app as the restaurant's web app ("app") or as the standalone POS ("standalone"). */
+    @PluginMethod
+    public void setMode(PluginCall call) {
+        String m = call.getString("mode", "app");
+        if (!"app".equals(m) && !"standalone".equals(m)) {
+            call.reject("Unknown mode");
+            return;
+        }
+        prefs(getContext()).edit().putString(KEY_MODE, m).apply();
+        call.resolve();
+        getActivity().runOnUiThread(() -> getActivity().recreate());
     }
 
     /**

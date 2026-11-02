@@ -40,6 +40,7 @@ input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid color
   <p class="sub" id="where">Check that this phone is on the restaurant WiFi (or has internet, if an online address is saved) and the server computer is on.</p>
   <div class="card">
     <button class="btn" id="retry" type="button">Try again</button>
+    <button class="btn ghost" id="standalone" type="button">Open the standalone point of sale</button>
     <button class="btn ghost" id="change" type="button">Change server</button>
     <p class="hint">Deliveries you already marked on this phone are kept and sent when the connection is back.</p>
   </div>
@@ -50,6 +51,9 @@ input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid color
   var url=N?N.serverUrl():'';
   if(url){document.getElementById('where').textContent='Could not reach '+url+'. Check that this phone is on the restaurant WiFi and the server computer is on.';}
   document.getElementById('retry').addEventListener('click',function(){if(N&&N.retry)N.retry();else location.href=url||'/';});
+  document.getElementById('standalone').addEventListener('click',function(){if(N&&N.openStandalone)N.openStandalone();});
+  // Keep trying quietly, and go back to the app by itself as soon as the server answers.
+  if(url){var tries=0;var t=setInterval(function(){tries++;fetch(url+'/api/v1/auth/setup-status',{mode:'no-cors',cache:'no-store'}).then(function(){clearInterval(t);if(N&&N.retry)N.retry();else location.href=url;}).catch(function(){});if(tries>200)clearInterval(t);},4000);}
   document.getElementById('change').addEventListener('click',function(){if(N)N.forgetServer();else location.href='/';});
 })();
 </script>

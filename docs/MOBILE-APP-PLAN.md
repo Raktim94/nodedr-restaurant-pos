@@ -145,3 +145,14 @@ Store listing wording avoids claiming "certified" tax compliance (VERI*FACTU sta
 3. Stand up the demo server with sample data.
 4. Write the device-token and push backend (Phase 2 backend part) while the shell is being built.
 5. Draft listing text, privacy policy mobile section and the data-safety answers from section 5.
+
+## Standalone mode (branch `standalone-mode`, not released)
+
+The app can also run without the restaurant server being reachable. The phone has a bundled mini point of sale (`mobile/www/pos/`) that stores the menu and sales in IndexedDB and syncs with the server when it is online.
+
+- **Start mode**: `app` (default, opens the restaurant's web app) or `standalone` (opens the bundled POS). It is set from the connect screen or from the "Can't reach the server" page ("Open the standalone point of sale").
+- **Snapshot**: `GET /api/v1/mobile/standalone/snapshot?branchId=` returns menu, categories, taxes, payment modes, UPI id and restaurant details. Dishes that need required options or are combos have `sellOffline:false` and are disabled in the app.
+- **Sales push**: `POST /api/v1/mobile/standalone/sales?branchId=`. Each sale has an id that becomes `Order.clientRequestId` and `Payment.clientRequestId`, so a retry never creates a second order. Results are `created`, `duplicate` or `refused` (with a reason).
+- **Offline policy**: cash, card, UPI and other payments are allowed offline and saved as "waiting to sync". The server accepts them as final and records them at the prices charged on the phone. No kitchen ticket is made and no table is occupied for synced sales.
+- **Refusals**: a sale the server cannot take (for example a dish removed or a payment short of the total) is cancelled on the server and shown as "Needs attention" on the phone.
+- **Quiet errors**: the Android shell retries a failed page load three times before showing the error page, and ignores HTTP error statuses, so changing tabs no longer shows "Can't reach the server".
