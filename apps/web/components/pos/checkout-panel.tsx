@@ -750,8 +750,12 @@ export function CheckoutPanel({
           </Button>
         </div>
 
+      </div>
+
+      {/* Pinned to the bottom of the scrolling panel on phones, so billing is always one tap away. */}
+      <div className="sticky bottom-0 z-10 -mx-1 bg-card px-1 pb-1 pt-2 max-lg:border-t max-lg:border-border max-lg:shadow-[0_-8px_12px_-10px_rgba(0,0,0,0.25)]">
         <Button
-          className="h-12 text-base"
+          className="h-12 w-full text-base"
           disabled={checkout.isPending || !bill || repricing || !plan.valid}
           onClick={handleCheckout}
         >
@@ -761,7 +765,9 @@ export function CheckoutPanel({
               ? partialLabel
               : plan.change > 0
                 ? `Complete payment · change ${formatCurrency(plan.change)}`
-                : "Complete payment"}
+                : bill
+                  ? `Complete payment · ${formatCurrency(bill.totalDue)}`
+                  : "Complete payment"}
         </Button>
       </div>
     </div>
