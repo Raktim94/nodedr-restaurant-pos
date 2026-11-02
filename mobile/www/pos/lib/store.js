@@ -45,6 +45,7 @@ export const sales = {
   put: (sale) => tx('sales', 'readwrite', (s) => s.put(sale)),
   get: (id) => tx('sales', 'readonly', (s) => s.get(id)),
   all: () => tx('sales', 'readonly', (s) => s.getAll()).then((a) => a.sort((x, y) => (x.soldAt < y.soldAt ? 1 : -1))),
+  clear: () => tx('sales', 'readwrite', (s) => s.clear()),
   pending: () => sales.all().then((a) => a.filter((s) => s.status === 'pending')),
 };
 

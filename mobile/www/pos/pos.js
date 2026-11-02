@@ -6,7 +6,7 @@ import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
 import { kv, newId, nextLocalNumber, sales } from './lib/store.js';
 import { native, pickServer, reachable, savedServers } from './lib/net.js';
 import { login, pullSnapshot, syncNow } from './lib/sync.js';
-import { checkLocalPassword, createLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, upsertDish } from './lib/local.js';
+import { changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, upsertDish } from './lib/local.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -274,7 +274,18 @@ function renderUnlock(message) {
     <input id="p" type="password" autocomplete="current-password">
     <button class="btn block mt" id="go" type="submit">Open</button>
     <p class="center mt"><a href="#" id="srv" class="mute">Sign in to a server instead</a></p>
+    <p class="center"><a href="#" id="forgot" class="mute">Forgot my password</a></p>
   </form>`;
+  $('forgot').onclick = async (e) => {
+    e.preventDefault();
+    const n = (await sales.all()).length;
+    const t = prompt(`This erases the account, the menu and ${n} sale${n === 1 ? '' : 's'} on this phone, because the password cannot be recovered. Type ERASE to continue.`);
+    if (t === null || t.trim().toUpperCase() !== 'ERASE') return;
+    await eraseLocalAccount();
+    S.snap = null;
+    S.unlocked = false;
+    renderSetup();
+  };
   $('srv').onclick = (e) => (e.preventDefault(), renderLogin());
   $('uf').onsubmit = async (ev) => {
     ev.preventDefault();
@@ -338,6 +349,31 @@ function dishSheet(item, message) {
           closeSheet();
           render();
         };
+    },
+  );
+}
+
+function passwordSheet(message) {
+  openSheet(
+    `<header><h2>Change password</h2><button class="x" data-close aria-label="Close">&times;</button></header>
+     <form class="body" id="pf" novalidate>
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       <label for="op">Current password</label><input id="op" type="password" autocomplete="current-password">
+       <label for="np">New password <span class="mute">(at least 6 characters)</span></label><input id="np" type="password" autocomplete="new-password">
+       <button class="btn block mt" type="submit">Save new password</button>
+     </form>`,
+    (p) => {
+      p.querySelector('#pf').onsubmit = async (ev) => {
+        ev.preventDefault();
+        try {
+          await changeLocalPassword($('op').value, $('np').value);
+          closeSheet();
+          S.note = { text: 'Password changed.' };
+          render();
+        } catch (e) {
+          passwordSheet(e.message);
+        }
+      };
     },
   );
 }
@@ -676,7 +712,8 @@ async function viewSyncLocal() {
       <p class="mute">${printer ? `Printing on <b>${esc(printer.name)}</b>` : 'No printer chosen yet.'}</p>
       <button class="btn ghost block" id="pick">${printer ? 'Change printer' : 'Choose printer'}</button>
     </div>
-    <div class="card mt"><button class="btn line block" id="lock">Lock</button></div>`;
+    <div class="card mt"><button class="btn line block" id="lock">Lock</button><button class="btn line block mt" id="chpw">Change password</button></div>`;
+  $('chpw').onclick = () => passwordSheet();
   $('conn').onclick = () => connectSheet();
   $('pick').onclick = async () => (await choosePrinter(), viewSync());
   $('lock').onclick = () => ((S.unlocked = false), (S.cart = new Map()), render());

@@ -32,6 +32,10 @@ Works on the restaurant's own network, with no internet needed day to day. Your 
 
 Free. No ads. No tracking. Delete your account any time from the user menu.
 
+## What's new (1.19.2)
+- Change your phone-account password from the Sync tab
+- Forgot the password? Erase the phone account from the unlock screen and start fresh (asks you to type ERASE first)
+
 ## What's new (1.19.1)
 - If you started on the phone and then connected a server, the Sync tab now has "Disconnect and go back to my phone account" instead of a confusing sign-out
 

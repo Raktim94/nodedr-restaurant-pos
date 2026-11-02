@@ -160,3 +160,4 @@ The app can also run without the restaurant server being reachable. The phone ha
 ### On-this-phone account (1.19.0)
 
 Standalone mode no longer needs a server first. "Create an account on this phone" (`pos/lib/local.js`) stores the account (PBKDF2-SHA256 password hash), the restaurant and an editable menu in IndexedDB. Sales are taken as usual and stay pending. "Connect to a server" (Sync tab) signs in, downloads the server menu, matches waiting sales to server dishes by name (a sale with a dish the server lacks is marked refused and kept) and sends the rest. Local data is never sent anywhere until a server is connected.
+Password handling (1.19.2): change it from the Sync tab (current password required). A forgotten password cannot be recovered; "Forgot my password" erases the phone account, its menu and its sales after typing ERASE.

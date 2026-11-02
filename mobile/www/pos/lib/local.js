@@ -118,3 +118,18 @@ export async function remapSalesToServer(serverItems) {
   }
   return { matched, unmatched };
 }
+
+/** Change the phone-account password (needs the current one). */
+export async function changeLocalPassword(current, next) {
+  if (!(await checkLocalPassword(current))) throw new Error('The current password is not right.');
+  if (String(next || '').length < 6) throw new Error('Choose a new password of at least 6 characters.');
+  const a = await kv.get('localAccount');
+  const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
+  await kv.set('localAccount', { ...a, salt, hash: await hashPassword(next, salt) });
+}
+
+/** Forgot the password: wipe the phone account, its menu and its sales so a new one can be made. */
+export async function eraseLocalAccount() {
+  await sales.clear();
+  for (const k of ['localAccount', 'snapshot', 'snapshotAt', 'branchId', 'localMenuBackup', 'serverBase']) await kv.del(k);
+}
