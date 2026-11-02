@@ -11,7 +11,7 @@ A small, throwaway OrderRestro for App Store and Play reviewers: sample data, a 
 
 ## Where it runs now
 
-On `rakbotrapo-vps2` in `~/orderrestro-demo` (containers `orderrestro-demo-db`, `-backend`, `-web`, 1.1 GB memory cap, web on 127.0.0.1:19951). The nightly reset is NOT scheduled yet: run `./reset.sh` by hand, or add the cron line shown in the script header. It is also not reachable from the internet yet: it needs a Cloudflare Tunnel public hostname pointing `demo.orderrestro.nodedr.com` at `http://localhost:19951`. The reviewer credentials are in `~/orderrestro-signing/demo/credentials.txt` on the maintainer's machine.
+On `rakbotrapo-vps2` in `~/orderrestro-demo` (containers `orderrestro-demo-db`, `-backend`, `-web`, 1.1 GB memory cap, web on 127.0.0.1:19951). The nightly reset is NOT scheduled yet: run `./reset.sh` by hand, or add the cron line shown in the script header. It is also not reachable from the internet yet: it needs a Cloudflare Tunnel public hostname pointing `orderrestro-demo.nodedr.com` at `http://localhost:19951`. The reviewer credentials are in `~/orderrestro-signing/demo/credentials.txt` on the maintainer's machine.
 
 ## Deploy
 
@@ -21,7 +21,7 @@ mkdir -p ~/orderrestro-demo && cd ~/orderrestro-demo
 cat > .env <<ENV            # chmod 600
 DEMO_DB_PASSWORD=$(openssl rand -hex 16)
 DEMO_JWT_SECRET=$(openssl rand -hex 32)
-DEMO_ORIGIN=https://demo.orderrestro.nodedr.com
+DEMO_ORIGIN=https://orderrestro-demo.nodedr.com
 APP_VERSION=1.15.1
 ENV
 chmod 600 .env
@@ -29,7 +29,7 @@ chmod 600 .env
 ./reset.sh                           # loads the sample data
 ```
 
-Point a public hostname (for example `demo.orderrestro.nodedr.com`) at `http://127.0.0.1:19951` through a Cloudflare Tunnel public hostname. Keep it https so the app can reach it from anywhere.
+Point a public hostname (for example `orderrestro-demo.nodedr.com`) at `http://127.0.0.1:19951` through a Cloudflare Tunnel public hostname. Keep it https so the app can reach it from anywhere.
 
 ## Reviewer login
 
