@@ -54,6 +54,7 @@ import {
   probeCharDevices,
 } from './escpos-usb';
 import { KotPrintService } from './kot-print.service';
+import { upiForBill } from './upi';
 import {
   sendToBranchPrinter,
   type BranchPrinterTarget,
@@ -151,6 +152,19 @@ function toEscposOrder(
       changeGiven: p.changeGiven ? Number(p.changeGiven) : null,
     })),
   };
+}
+
+// "Scan to pay" UPI QR for a bill that is not settled yet, when the
+// restaurant has a UPI id (Settings). Null otherwise.
+function upiFor(order: ReceiptData, overrides: BillOverrides) {
+  const r = order.branch.restaurant;
+  return upiForBill({
+    vpa: r.upiVpa,
+    payeeName: r.upiPayeeName ?? r.name,
+    orderNumber: order.orderNumber,
+    balanceDue: overrides.balanceDue,
+    isProvisional: overrides.isProvisional,
+  });
 }
 
 // Typing a discount or coupon onto a bill needs discounts.apply, whether it is
@@ -472,6 +486,7 @@ export class OrdersController {
         verifactu: overrides.isProvisional
           ? null
           : await this.verifactu.qrForOrder(order.id),
+        upi: upiFor(order, overrides),
       },
     });
     res.type('html').send(html);
@@ -563,6 +578,7 @@ export class OrdersController {
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId?: string,
     @Query('kind') kind?: string,
+    @Query('via') via?: string,
   ) {
     let profile = resolveProfile();
     let target: BranchPrinterTarget = {
@@ -579,6 +595,9 @@ export class OrdersController {
       kind === 'kot'
         ? buildKotTestSlip(profile).buffer
         : buildTestSlip(profile);
+    if (via === 'device') {
+      return { ok: true, profile, escpos: [buffer.toString('base64')] };
+    }
     await this.deliver(target, buffer);
     return { ok: true, profile };
   }
@@ -589,6 +608,7 @@ export class OrdersController {
   async openDrawer(
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId?: string,
+    @Query('via') via?: string,
   ) {
     let target: BranchPrinterTarget = {
       printerConnection: 'USB',
@@ -598,6 +618,9 @@ export class OrdersController {
     if (branchId) {
       await this.branchAccess.assertAccess(user.restaurantId, branchId);
       target = await this.ordersService.printerTarget(branchId);
+    }
+    if (via === 'device') {
+      return { ok: true, escpos: [buildOpenDrawer().toString('base64')] };
     }
     await this.deliver(target, buildOpenDrawer());
     return { ok: true };
@@ -613,6 +636,7 @@ export class OrdersController {
     @Param('id') id: string,
     @Query('width') width?: string,
     @Query('drawer') drawer?: string,
+    @Query('via') via?: string,
     @Query() query: Record<string, string> = {},
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
@@ -652,11 +676,15 @@ export class OrdersController {
         verifactu: overrides.isProvisional
           ? null
           : await this.verifactu.qrForOrder(order.id),
+        upi: upiFor(order, overrides),
       },
       profile,
       // A bill handed over before payment never pops the till.
       openDrawer: drawer === 'true' && !overrides.isProvisional,
     });
+    // via=device: hand the print data to the phone/tablet instead of printing
+    // on the server's own printer (Bluetooth printers, phones, tablets).
+    if (via === 'device') return this.deviceJob(job);
     return this.sendJob(job, order.branch);
   }
 
@@ -671,9 +699,15 @@ export class OrdersController {
     @Query('branchId') branchId: string,
     @Param('id') id: string,
     @Query('reprint') reprint?: string,
+    @Query('via') via?: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.kotPrint.printOrder(branchId, id, reprint === 'true');
+    return this.kotPrint.printOrder(
+      branchId,
+      id,
+      reprint === 'true',
+      via === 'device',
+    );
   }
 
   // Kept for older clients; same behaviour as POST :id/print/kot.
@@ -697,6 +731,14 @@ export class OrdersController {
       }
       throw err;
     }
+  }
+
+  private deviceJob(job: PrintResult) {
+    return {
+      ok: true,
+      unsupportedChars: job.unsupportedChars,
+      escpos: [job.buffer.toString('base64')],
+    };
   }
 
   private async sendJob(job: PrintResult, target: BranchPrinterTarget) {

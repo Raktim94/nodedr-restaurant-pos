@@ -3,6 +3,9 @@
 // new tab, so there's no blank/finished tab left for the cashier to notice
 // and close. The OS print dialog still opens exactly as it would for any
 // other page (any printer, or "Save as PDF").
+import { canPrintOnDevice, printHtmlOnDevice } from "@/lib/device-print";
+import { toast } from "@/lib/toast";
+
 let printFrame: HTMLIFrameElement | null = null;
 
 function getPrintFrame(): HTMLIFrameElement {
@@ -37,8 +40,23 @@ export function billQueryString(adj: BillQuery = {}): string {
   return s ? `&${s}` : "";
 }
 
+/** In the phone app: fetch the page and hand it to Android's print dialog (Save as PDF or any printer). */
+function printPageOnDevice(url: string, name: string) {
+  void fetch(url, { credentials: "include" })
+    .then((r) => {
+      if (!r.ok) throw new Error(`Could not load the ${name.toLowerCase()} (${r.status})`);
+      return r.text();
+    })
+    .then((html) => printHtmlOnDevice(html, name))
+    .catch((e: unknown) => toast.error(e instanceof Error ? e.message : "Could not open the print dialog"));
+}
+
 /** Browser print of the bill (open order) or receipt (paid order). Read-only. */
 export function openReceiptPrint(orderId: string, branchId: string, adj: BillQuery = {}) {
+  if (canPrintOnDevice()) {
+    printPageOnDevice(`/api/v1/orders/${orderId}/receipt?branchId=${branchId}${billQueryString(adj)}`, "Bill");
+    return;
+  }
   const frame = getPrintFrame();
   frame.onload = () => {
     const win = frame.contentWindow;
@@ -55,6 +73,10 @@ export function openReceiptPrint(orderId: string, branchId: string, adj: BillQue
 }
 
 export function openKotPrint(orderId: string, branchId: string) {
+  if (canPrintOnDevice()) {
+    printPageOnDevice(`/api/v1/orders/${orderId}/kot?branchId=${branchId}`, "Kitchen ticket");
+    return;
+  }
   const frame = getPrintFrame();
   frame.onload = () => {
     const win = frame.contentWindow;

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { api, ApiError } from "@/lib/api";
 import { savePushToken } from "@/lib/native";
+import { clearOfflineCache } from "@/lib/offline-cache";
 
 /** Delete my own account. Required by the app stores; reachable from the user menu. */
 export function DeleteAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -25,6 +26,7 @@ export function DeleteAccountDialog({ open, onOpenChange }: { open: boolean; onO
       await api.delete("/auth/me", { password });
       savePushToken(null);
       qc.clear();
+      clearOfflineCache();
       onOpenChange(false);
       router.push("/login");
     } catch (e) {

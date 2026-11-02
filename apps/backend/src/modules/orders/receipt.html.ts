@@ -41,6 +41,8 @@ function esc(value: string | number | null | undefined): string {
 }
 
 interface ReceiptOrder {
+  /** "Scan to pay" UPI QR, printed on a bill that is not paid yet. */
+  upi?: { uri: string; amountText: string; payee: string | null } | null;
   /** Spain VERI*FACTU invoice QR, printed on a paid receipt. */
   verifactu?: ReceiptVerifactu | null;
   orderNumber: string;
@@ -272,6 +274,11 @@ export function buildReceiptHtml({
     ${
       order.verifactu && !order.isProvisional
         ? `<hr class="rule"><div class="vf"><strong>Factura simplificada ${esc(order.verifactu.invoiceNumber)}</strong><div>${esc(order.verifactu.heading)}</div>${qrSvg(order.verifactu.url, '35mm')}<div>${esc(order.verifactu.legend)}</div><strong>${esc(order.verifactu.short)}</strong></div>`
+        : ''
+    }
+    ${
+      order.upi && order.isProvisional
+        ? `<hr class="rule"><div class="vf"><strong>Scan to pay by UPI</strong>${qrSvg(order.upi.uri, '35mm')}<strong>Amount: ${esc(order.upi.amountText)}</strong>${order.upi.payee ? `<div>${esc(order.upi.payee)}</div>` : ''}</div>`
         : ''
     }
     <hr class="rule">

@@ -57,6 +57,8 @@ export interface ReceiptVerifactu {
 }
 
 export interface EscposReceiptOrder {
+  /** "Scan to pay" UPI QR, printed on a bill that is not paid yet. */
+  upi?: { uri: string; amountText: string; payee: string | null } | null;
   /** Spain VERI*FACTU invoice QR, printed on a paid receipt. */
   verifactu?: ReceiptVerifactu | null;
   orderNumber: string;
@@ -245,6 +247,14 @@ export function buildReceiptEscPosJob({
     w.qr(order.verifactu.url);
     w.text(order.verifactu.legend, { align: 'center' });
     w.text(order.verifactu.short, { align: 'center', bold: true });
+  }
+
+  if (order.upi && order.isProvisional) {
+    w.rule();
+    w.text('Scan to pay by UPI', { align: 'center', bold: true });
+    w.qr(order.upi.uri);
+    w.text(`Amount: ${order.upi.amountText}`, { align: 'center', bold: true });
+    if (order.upi.payee) w.text(order.upi.payee, { align: 'center' });
   }
 
   w.rule();

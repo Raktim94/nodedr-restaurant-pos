@@ -15,6 +15,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ServerLinkPlugin.class);
+        registerPlugin(NativePrinterPlugin.class);
         String server = ServerLinkPlugin.resolve(this);
         if (server != null && !server.isEmpty()) {
             // Open the restaurant's own server. The native bridge is injected for

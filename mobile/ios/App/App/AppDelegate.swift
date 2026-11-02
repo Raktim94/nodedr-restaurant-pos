@@ -212,6 +212,50 @@ public class ServerLinkPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
+
+// MARK: - Printing from the phone
+
+/// AirPrint (any printer on the network, or "Save to Files" as PDF) for bills and
+/// kitchen tickets. iPhones cannot talk to Bluetooth thermal printers directly
+/// (no Bluetooth Classic access), so btPrinters reports "not supported" and the
+/// web app uses the print dialog instead.
+@objc(NativePrinterPlugin)
+public class NativePrinterPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "NativePrinterPlugin"
+    public let jsName = "NativePrinter"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "btPrinters", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "btPrint", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "printHtml", returnType: CAPPluginReturnPromise),
+    ]
+
+    @objc func btPrinters(_ call: CAPPluginCall) {
+        call.resolve(["supported": false, "enabled": false, "devices": []])
+    }
+
+    @objc func btPrint(_ call: CAPPluginCall) {
+        call.reject("Bluetooth thermal printers are not available on iPhone. Use Print / Save PDF (AirPrint).")
+    }
+
+    @objc func printHtml(_ call: CAPPluginCall) {
+        guard let html = call.getString("html"), !html.isEmpty else {
+            call.reject("Nothing to print.")
+            return
+        }
+        let name = call.getString("name") ?? "OrderRestro"
+        DispatchQueue.main.async {
+            let info = UIPrintInfo(dictionary: nil)
+            info.outputType = .general
+            info.jobName = name
+            let controller = UIPrintInteractionController.shared
+            controller.printInfo = info
+            controller.printFormatter = UIMarkupTextPrintFormatter(markupText: html)
+            controller.present(animated: true) { _, _, _ in }
+            call.resolve()
+        }
+    }
+}
+
 class MainViewController: CAPBridgeViewController {
     override func instanceDescriptor() -> InstanceDescriptor {
         let descriptor = super.instanceDescriptor()
@@ -225,6 +269,7 @@ class MainViewController: CAPBridgeViewController {
 
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(ServerLinkPlugin())
+        bridge?.registerPluginInstance(NativePrinterPlugin())
         ServerStore.watchNetwork()
     }
 }

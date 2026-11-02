@@ -15,6 +15,16 @@ The connect screen takes two addresses for the same restaurant server: a **local
 
 Sign-in is stored per address, so a person signs in once on each address.
 
+## Printing from the phone
+
+Bills and kitchen tickets no longer depend on a printer plugged into the restaurant computer.
+
+- **Bluetooth thermal printers** (58 mm and 80 mm "mobile printers"): pair the printer in the phone's Bluetooth settings, then Settings > Bluetooth printer (this phone) > Choose printer. The server builds the ESC/POS data (`?via=device` on the print endpoints) and the app sends it over Bluetooth serial (`NativePrinterPlugin`, Android). Needs the "Nearby devices" permission on Android 12+.
+- **Print / Save PDF**: opens Android's print dialog (or AirPrint on iPhone) for the bill, receipt or kitchen ticket, so you can save a PDF or use any print service installed on the phone.
+- **UPI QR on the bill**: when a UPI id is set under Settings, an unpaid bill prints a "Scan to pay by UPI" QR with the exact amount due (thermal and PDF). It is left off paid receipts.
+
+iPhones cannot talk to Bluetooth thermal printers, so there it is AirPrint / PDF only.
+
 ## Build (Android)
 
 Needs JDK 21 and the Android SDK (platform 35, build-tools 35).

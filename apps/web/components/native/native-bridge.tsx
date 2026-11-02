@@ -2,6 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { WifiOff } from "lucide-react";
+import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { api } from "@/lib/api";
@@ -24,8 +25,18 @@ interface PushApi {
 export function NativeBridge() {
   const router = useRouter();
   const qc = useQueryClient();
+  const { resolvedTheme } = useTheme();
   const [online, setOnline] = useState(true);
   const waiting = useSyncExternalStore(outbox.subscribe, outbox.count, () => 0);
+
+  // Clock and battery icons must stay readable: dark icons on the light theme,
+  // light icons on the dark theme (Android 15+ draws the app under the status bar).
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    const bar = plugin<{ setStyle: (o: { style: string }) => Promise<void> }>("StatusBar");
+    // Capacitor naming: style DARK = light icons (for a dark app), LIGHT = dark icons.
+    void bar?.setStyle({ style: resolvedTheme === "dark" ? "DARK" : "LIGHT" }).catch(() => undefined);
+  }, [resolvedTheme]);
 
   useEffect(() => {
     if (!isNativeApp()) return;

@@ -14,6 +14,8 @@ export interface KotPrintResult {
   ok: true;
   printed: { id: string; ticketNumber: string; reprint: number }[];
   unsupportedChars: string[];
+  /** Base64 ESC/POS data, only when the phone/tablet does the printing. */
+  escpos?: string[];
 }
 
 // Prints kitchen tickets (KOTs) on the branch's thermal printer.
@@ -62,7 +64,12 @@ export class KotPrintService {
     return this.run(branchId, kots, reprint);
   }
 
-  async printOrder(branchId: string, orderId: string, reprint: boolean) {
+  async printOrder(
+    branchId: string,
+    orderId: string,
+    reprint: boolean,
+    toDevice = false,
+  ) {
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
       select: { id: true },
@@ -75,13 +82,14 @@ export class KotPrintService {
         message: 'This order has no kitchen tickets to print',
       });
     }
-    return this.run(branchId, kots, reprint);
+    return this.run(branchId, kots, reprint, toDevice);
   }
 
   private async run(
     branchId: string,
     kots: Awaited<ReturnType<KotPrintService['load']>>,
     reprint: boolean,
+    toDevice = false,
   ): Promise<KotPrintResult> {
     const todo = reprint ? kots : kots.filter((k) => k.printedCount === 0);
     if (todo.length === 0) {
@@ -96,6 +104,7 @@ export class KotPrintService {
       ok: true,
       printed: [],
       unsupportedChars: [],
+      ...(toDevice ? { escpos: [] as string[] } : {}),
     };
     for (const kot of todo) {
       if (!reprint) {
@@ -147,7 +156,13 @@ export class KotPrintService {
       });
 
       try {
-        await sendToBranchPrinter(branch, job.buffer);
+        if (toDevice) {
+          // The phone/tablet prints it (Bluetooth or system print), so the
+          // server only hands over the bytes and records the ticket as printed.
+          result.escpos?.push(job.buffer.toString('base64'));
+        } else {
+          await sendToBranchPrinter(branch, job.buffer);
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Printing failed';
         await this.prisma.kot.update({

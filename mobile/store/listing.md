@@ -32,7 +32,13 @@ Works on the restaurant's own network, with no internet needed day to day. Your 
 
 Free. No ads. No tracking. Delete your account any time from the user menu.
 
-## What's new (1.14.1)
+## What's new (1.17.0)
+- Print bills and kitchen tickets from the phone: Bluetooth thermal printer, or Print / Save PDF
+- UPI "scan to pay" QR on the printed bill
+- Pay button stays visible in Point of Sale; Kitchen Display buttons fit small screens
+- Readable status bar on Android 15 and 16
+
+## First release (1.14.1)
 First release of the OrderRestro app for Android and iPhone.
 
 ## Keywords (App Store, 100 chars)

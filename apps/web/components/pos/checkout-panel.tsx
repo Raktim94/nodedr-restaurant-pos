@@ -34,6 +34,7 @@ import { publishDisplay } from "@/lib/customer-display";
 import { playPaymentReceived } from "@/lib/celebrate";
 import { buildUpiUri } from "@/lib/upi";
 import { QRCodeSVG } from "qrcode.react";
+import { canPrintOnDevice } from "@/lib/device-print";
 import { openKotPrint, openReceiptPrint } from "@/lib/print";
 import { round2 } from "@/lib/pricing-preview";
 
@@ -105,6 +106,7 @@ export function CheckoutPanel({
   const canDiscount = hasPermission(me?.user, "discounts.apply");
   const [cancelOpen, setCancelOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const phone = canPrintOnDevice();
   const printUsb = usePrintOrderUsb(branchId);
   const printKot = usePrintKot(branchId);
   const onPrinted = (r: PrintJobResult) =>
@@ -129,7 +131,7 @@ export function CheckoutPanel({
             });
             return;
           }
-          toast.error(err instanceof ApiError ? err.message : "Could not print to the kitchen printer");
+          toast.error(err instanceof Error ? err.message : "Could not print to the kitchen printer");
         },
       },
     );
@@ -290,7 +292,7 @@ export function CheckoutPanel({
       {
         onSuccess: onPrinted,
         onError: (err) =>
-          toast.error(err instanceof ApiError ? err.message : "Could not print to the thermal printer"),
+          toast.error(err instanceof Error ? err.message : "Could not print to the thermal printer"),
       },
     );
 
@@ -322,7 +324,7 @@ export function CheckoutPanel({
             className="h-11"
             onClick={() => branchId && openReceiptPrint(completed.id, branchId)}
           >
-            Print receipt (browser)
+            {phone ? "Print / Save PDF" : "Print receipt (browser)"}
           </Button>
           <Button
             variant="outline"
@@ -332,11 +334,11 @@ export function CheckoutPanel({
               printUsb.mutate({ orderId: completed.id, drawer: completed.payments?.some((p) => p.method === "CASH") }, {
                 onSuccess: onPrinted,
                 onError: (err) =>
-                  toast.error(err instanceof ApiError ? err.message : "Could not print to the thermal printer"),
+                  toast.error(err instanceof Error ? err.message : "Could not print to the thermal printer"),
               })
             }
           >
-            {printUsb.isPending ? "Printing…" : "Thermal receipt"}
+            {printUsb.isPending ? "Printing…" : phone ? "Bluetooth receipt" : "Thermal receipt"}
           </Button>
           <Button className="h-11" onClick={onDone}>New order</Button>
         </div>
@@ -429,7 +431,7 @@ export function CheckoutPanel({
             onClick={() => branchId && openKotPrint(order.id, branchId)}
           >
             <Printer className="h-4 w-4" />
-            KOT (browser)
+            {phone ? "KOT / PDF" : "KOT (browser)"}
           </Button>
           <Button
             type="button"
@@ -440,7 +442,7 @@ export function CheckoutPanel({
             onClick={() => printKotNow(false)}
           >
             <Printer className="h-4 w-4" />
-            {printKot.isPending ? "Printing…" : "KOT (thermal)"}
+            {printKot.isPending ? "Printing…" : phone ? "KOT (Bluetooth)" : "KOT (thermal)"}
           </Button>
           </div>
         </div>
@@ -735,7 +737,7 @@ export function CheckoutPanel({
             title="Prints the bill for the guest. Nothing is charged and the table stays open."
           >
             <Printer className="h-4 w-4" />
-            Print bill
+            {phone ? "Print / Save PDF" : "Print bill"}
           </Button>
           <Button
             type="button"
@@ -746,7 +748,7 @@ export function CheckoutPanel({
             title="Prints the bill on the thermal printer. Nothing is charged and the cash drawer stays shut."
           >
             <Printer className="h-4 w-4" />
-            {printUsb.isPending ? "Printing…" : "Print bill (thermal)"}
+            {printUsb.isPending ? "Printing…" : phone ? "Print bill (Bluetooth)" : "Print bill (thermal)"}
           </Button>
         </div>
 
