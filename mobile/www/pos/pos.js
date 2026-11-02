@@ -684,6 +684,7 @@ async function viewSyncLocal() {
 
 async function viewSync() {
   if (S.snap.local) return viewSyncLocal();
+  S.hasPhoneAccount = !!(await kv.get('localAccount')) && !!(await kv.get('localMenuBackup'));
   const snapAt = await kv.get('snapshotAt');
   const last = await kv.get('lastSync');
   const printer = savedPrinter();
@@ -709,7 +710,7 @@ async function viewSync() {
     </div>
     <div class="card mt">
       <button class="btn line block" id="full">Open the full app (needs the server)</button>
-      <button class="btn line block mt" id="out">Sign out of standalone mode</button>
+      <button class="btn line block mt" id="out">${S.hasPhoneAccount ? 'Disconnect and go back to my phone account' : 'Sign out of standalone mode'}</button>
     </div>`;
   $('syncnow').onclick = doSync;
   $('pick').onclick = async () => (await choosePrinter(), viewSync());
@@ -721,6 +722,16 @@ async function viewSync() {
   $('out').onclick = async () => {
     const waiting = (await sales.pending()).length;
     if (waiting && !confirm(`${waiting} sale(s) are not on the server yet. Signing out keeps them on this phone, but they cannot be sent until you sign in again. Sign out anyway?`)) return;
+    const back = S.hasPhoneAccount && (await kv.get('localMenuBackup'));
+    if (back) {
+      // Signed up on this phone, then connected: go back to the phone account (its menu and sales stay).
+      await kv.set('snapshot', back);
+      await kv.set('branchId', 'local');
+      await kv.del('serverBase');
+      S.snap = back;
+      S.note = { text: 'Back on your phone account.' };
+      return render();
+    }
     await kv.del('snapshot');
     try {
       localStorage.removeItem('orderrestro.standalone.ready');
