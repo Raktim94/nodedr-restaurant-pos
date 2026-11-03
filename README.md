@@ -459,6 +459,7 @@ docs/           Screenshots and supplementary docs
 | [`docs/verifactu.md`](./docs/verifactu.md) | Spain VERI*FACTU: chained invoice records, QR on the 80 mm receipt and AEAT reporting. Implemented, not certified; what is and is not verified |
 | [`docs/IMPORT.md`](./docs/IMPORT.md) | Bulk-import the menu and ingredients from CSV: columns, matching rules, example files |
 | [`SECURITY-AUDIT-REPORT.md`](./SECURITY-AUDIT-REPORT.md) | Full Critical/High/Medium/Low security audit findings + fixes, and Windows/MSIX Store-readiness status (what's verified vs. not tested) |
+| [`docs/staff-access-tutorial.html`](./docs/staff-access-tutorial.html) ([PDF](./docs/staff-access-tutorial.pdf)) | Departments, per-person access exceptions, invoice-text reading, and install steps for every platform |
 | [`docs/KIOSK-AND-KDS.md`](./docs/KIOSK-AND-KDS.md) | Customer self-service kiosk and kitchen-display (KDS) tablet setup: URL/launch, Android notes, printer/scanner status, tests |
 | [`docs/integrations-api.md`](./docs/integrations-api.md) | MCP server (for AI clients) and the public integration REST API (for an external website's backend) — auth, endpoints, examples |
 

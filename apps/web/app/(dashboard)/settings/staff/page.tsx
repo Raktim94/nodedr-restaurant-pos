@@ -2,6 +2,8 @@
 
 import { Trash2 } from "lucide-react";
 import { toast } from "@/lib/toast";
+import { DepartmentsCard } from "@/components/settings/departments-card";
+import { StaffAccessDialog } from "@/components/settings/staff-access-dialog";
 import { AddStaffDialog } from "@/components/settings/add-staff-dialog";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
 import { Badge } from "@/components/ui/badge";
@@ -18,14 +20,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useCurrentUser } from "@/hooks/use-auth";
-import { useDeleteStaff, useStaff, useUpdateStaff, type StaffMember } from "@/hooks/use-staff";
+import { useDeleteStaff, useDepartments, useStaff, useUpdateStaff, type StaffMember } from "@/hooks/use-staff";
 import { api, ApiError } from "@/lib/api";
+import { useState } from "react";
 
 export default function StaffPage() {
   const { data: staff, isLoading } = useStaff();
   const { data: currentUser } = useCurrentUser();
   const updateStaff = useUpdateStaff();
   const deleteStaff = useDeleteStaff();
+  const { data: departments } = useDepartments();
+  const [dept, setDept] = useState<string>("all");
+  const visible = staff?.filter((m) => dept === "all" || (dept === "none" ? !m.departmentId : m.departmentId === dept));
+  const canEditAccess = currentUser?.user.permissions.includes("roles.manage") ?? false;
 
   const onResetTwoFactor = (member: StaffMember) => {
     if (!confirm(`Turn off two-factor authentication for ${member.name}? They will sign in with just their password until they set it up again.`)) return;
@@ -59,29 +66,48 @@ export default function StaffPage() {
           <AddStaffDialog />
         </div>
 
+        {departments && departments.length > 0 && (
+          <div role="group" aria-label="Filter by department" className="flex flex-wrap gap-1.5">
+            {[{ id: "all", name: "Everyone" }, ...departments, { id: "none", name: "No department" }].map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                aria-pressed={dept === d.id}
+                onClick={() => setDept(d.id)}
+                className={`min-h-8 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${
+                  dept === d.id ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {d.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         {isLoading ? (
           <div className="flex flex-col gap-2">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-12 rounded-lg" />
             ))}
           </div>
-        ) : staff && staff.length > 0 ? (
+        ) : visible && visible.length > 0 ? (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Contact</TableHead>
+                <TableHead className="hidden md:table-cell">Contact</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead>Branches</TableHead>
+                <TableHead className="hidden md:table-cell">Department</TableHead>
+                <TableHead className="hidden lg:table-cell">Branches</TableHead>
                 <TableHead className="text-right">Active</TableHead>
-                <TableHead className="w-40" />
+                <TableHead className="sm:w-64" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {staff.map((member) => (
+              {visible.map((member) => (
                 <TableRow key={member.id}>
                   <TableCell className="font-medium text-foreground">{member.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="hidden text-muted-foreground md:table-cell">
                     {member.email || member.phone || "—"}
                   </TableCell>
                   <TableCell>
@@ -89,11 +115,13 @@ export default function StaffPage() {
                       {member.role.label}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="hidden text-muted-foreground md:table-cell">{member.department?.name ?? "—"}</TableCell>
+                  <TableCell className="hidden text-muted-foreground lg:table-cell">
                     {member.branches.map((b) => b.branch.name).join(", ") || "—"}
                   </TableCell>
                   <TableCell className="text-right">
                     <Switch
+                      aria-label={`${member.name} active`}
                       checked={member.isActive}
                       onCheckedChange={(checked) =>
                         updateStaff.mutate(
@@ -111,6 +139,7 @@ export default function StaffPage() {
                   <TableCell>
                     {member.id !== currentUser?.user.id && (
                       <div className="flex items-center justify-end gap-1">
+                        {canEditAccess && <StaffAccessDialog member={member} />}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -138,11 +167,13 @@ export default function StaffPage() {
           </Table>
         ) : (
           <div className="flex flex-col items-center gap-2 py-16 text-center">
-            <p className="text-sm font-medium text-foreground">No staff accounts yet</p>
-            <p className="text-sm text-muted-foreground">Add your first staff account above.</p>
+            <p className="text-sm font-medium text-foreground">{staff && staff.length > 0 ? "No staff in this department" : "No staff accounts yet"}</p>
+            <p className="text-sm text-muted-foreground">{staff && staff.length > 0 ? "Choose another filter above." : "Add your first staff account above."}</p>
           </div>
         )}
       </Card>
+
+      <DepartmentsCard />
     </div>
   );
 }

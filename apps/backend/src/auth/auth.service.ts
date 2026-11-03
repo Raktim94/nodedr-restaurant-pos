@@ -19,6 +19,11 @@ import {
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { TwoFactorService } from './two-factor.service';
+import {
+  effectivePermissions,
+  permissionInclude,
+  type PermissionSource,
+} from './effective-permissions';
 
 @Injectable()
 export class AuthService {
@@ -34,6 +39,7 @@ export class AuthService {
     name: string;
     roleId: string;
     role: { name: string; permissions: { permission: { key: string } }[] };
+    permissionOverrides?: PermissionSource['permissionOverrides'];
   }): SessionUser {
     return {
       id: user.id,
@@ -41,7 +47,7 @@ export class AuthService {
       name: user.name,
       roleId: user.roleId,
       roleName: user.role.name,
-      permissions: user.role.permissions.map((rp) => rp.permission.key),
+      permissions: effectivePermissions(user),
     };
   }
 
@@ -80,7 +86,9 @@ export class AuthService {
     );
     await this.prisma.$transaction([
       this.prisma.deviceToken.deleteMany({ where: { userId } }),
-      this.prisma.notification.deleteMany({ where: { recipientUserId: userId } }),
+      this.prisma.notification.deleteMany({
+        where: { recipientUserId: userId },
+      }),
       this.prisma.user.update({
         where: { id: userId },
         data: {
@@ -105,9 +113,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const include = {
-      role: { include: { permissions: { include: { permission: true } } } },
-    } as const;
+    const include = permissionInclude;
     const id = dto.email.trim();
     let user: Awaited<ReturnType<typeof this.findLoginCandidate>> = null;
     // An email address, or a phone number as the login ID (delivery riders).
@@ -145,9 +151,7 @@ export class AuthService {
     if (tail.length < 6) return null;
     const candidates = await this.prisma.user.findMany({
       where: { isActive: true, phone: { endsWith: tail.slice(-6) } },
-      include: {
-        role: { include: { permissions: { include: { permission: true } } } },
-      },
+      include: permissionInclude,
       take: 10,
     });
     for (const u of candidates) {
@@ -232,9 +236,7 @@ export class AuthService {
           email: dto.email,
           passwordHash,
         },
-        include: {
-          role: { include: { permissions: { include: { permission: true } } } },
-        },
+        include: permissionInclude,
       });
 
       await tx.userBranch.create({
@@ -257,9 +259,7 @@ export class AuthService {
   async pinLogin(dto: PinLoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { id: dto.userId },
-      include: {
-        role: { include: { permissions: { include: { permission: true } } } },
-      },
+      include: permissionInclude,
     });
 
     if (!user || !user.isActive || !user.pinHash) {

@@ -6,11 +6,14 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   UsePipes,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   createStaffSchema,
+  departmentSchema,
+  setPermissionOverridesSchema,
   updateStaffSchema,
   type SessionUser,
 } from '@nodedr-restaurant/types';
@@ -63,5 +66,64 @@ export class UsersController {
   @Delete(':id')
   remove(@CurrentUser() user: SessionUser, @Param('id') id: string) {
     return this.usersService.remove(user.restaurantId, user.id, id);
+  }
+
+  // --- Departments ---------------------------------------------------------
+
+  @Auth('users.manage')
+  @Get('departments')
+  listDepartments(@CurrentUser() user: SessionUser) {
+    return this.usersService.listDepartments(user.restaurantId);
+  }
+
+  @Auth('users.manage')
+  @Post('departments')
+  @UsePipes(new ZodValidationPipe(departmentSchema))
+  createDepartment(@CurrentUser() user: SessionUser, @Body() body: unknown) {
+    return this.usersService.createDepartment(
+      user.restaurantId,
+      user.id,
+      body as never,
+    );
+  }
+
+  @Auth('users.manage')
+  @Patch('departments/:id')
+  @UsePipes(new ZodValidationPipe(departmentSchema))
+  renameDepartment(
+    @CurrentUser() user: SessionUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.usersService.renameDepartment(
+      user.restaurantId,
+      user.id,
+      id,
+      body as never,
+    );
+  }
+
+  @Auth('users.manage')
+  @Delete('departments/:id')
+  removeDepartment(@CurrentUser() user: SessionUser, @Param('id') id: string) {
+    return this.usersService.removeDepartment(user.restaurantId, user.id, id);
+  }
+
+  // --- Permission overrides ------------------------------------------------
+
+  @Auth('users.manage', 'roles.manage')
+  @Put(':id/permission-overrides')
+  @UsePipes(new ZodValidationPipe(setPermissionOverridesSchema))
+  setPermissionOverrides(
+    @CurrentUser() user: SessionUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.usersService.setPermissionOverrides(
+      user.restaurantId,
+      user,
+      id,
+      body as never,
+    );
   }
 }

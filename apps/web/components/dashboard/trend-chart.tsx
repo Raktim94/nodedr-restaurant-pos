@@ -50,7 +50,7 @@ export function TrendChart({
       {isLoading ? (
         <Skeleton className="h-56 rounded-xl" />
       ) : !hasData ? (
-        <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">
+        <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
           {emptyMessage}
         </div>
       ) : (

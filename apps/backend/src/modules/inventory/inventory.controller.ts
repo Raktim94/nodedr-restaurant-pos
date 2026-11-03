@@ -38,9 +38,15 @@ import { InventoryService } from './inventory.service';
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { PurchaseRequestsService } from './purchase-requests.service';
 import { StockService } from './stock.service';
+import { parseInvoiceText, MAX_INVOICE_TEXT } from './invoice-text';
+import { z } from 'zod';
 import { SupplierInvoicesService } from './supplier-invoices.service';
 import { SupplierQuotationsService } from './supplier-quotations.service';
 import { WasteService } from './waste.service';
+
+const parseInvoiceTextSchema = z.object({
+  text: z.string().trim().min(1).max(MAX_INVOICE_TEXT),
+});
 
 @ApiTags('inventory')
 @Controller('v1/inventory')
@@ -533,6 +539,14 @@ export class InventoryController {
   }
 
   // --- Supplier invoices & payments -------------------------------------------------
+
+  // Pre-fill the invoice form from pasted invoice text. Nothing is saved.
+  @Auth('inventory.manage')
+  @Post('supplier-invoices/parse-text')
+  @UsePipes(new ZodValidationPipe(parseInvoiceTextSchema))
+  parseInvoiceText(@Body() body: unknown) {
+    return parseInvoiceText((body as { text: string }).text);
+  }
 
   @Auth('inventory.manage')
   @Get('supplier-invoices')

@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useBranch } from "@/hooks/use-branch";
-import { useCreateStaff, useStaffRoles } from "@/hooks/use-staff";
+import { useCreateStaff, useDepartments, useStaffRoles } from "@/hooks/use-staff";
 import { ApiError } from "@/lib/api";
 
 export function AddStaffDialog() {
@@ -33,10 +33,12 @@ export function AddStaffDialog() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [roleId, setRoleId] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
   const { branches } = useBranch();
   const [branchIds, setBranchIds] = useState<string[]>([]);
 
   const { data: roles } = useStaffRoles();
+  const { data: departments } = useDepartments();
   const createStaff = useCreateStaff();
 
   const reset = () => {
@@ -45,6 +47,7 @@ export function AddStaffDialog() {
     setPhone("");
     setPassword("");
     setRoleId("");
+    setDepartmentId("");
     setBranchIds([]);
   };
 
@@ -70,6 +73,7 @@ export function AddStaffDialog() {
         password,
         roleId,
         branchIds,
+        departmentId: departmentId || undefined,
       },
       {
         onSuccess: () => {
@@ -135,6 +139,24 @@ export function AddStaffDialog() {
               </SelectContent>
             </Select>
           </div>
+
+          {departments && departments.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <Label>Department (optional)</Label>
+              <Select value={departmentId} onValueChange={(v) => setDepartmentId(v ?? "")}>
+                <SelectTrigger>
+                  <SelectValue placeholder="No department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="flex flex-col gap-2">
             <Label>Branches</Label>

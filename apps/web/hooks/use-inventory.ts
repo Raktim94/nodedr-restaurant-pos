@@ -509,6 +509,28 @@ export function useSupplierInvoices(branchId: string | null, supplierId?: string
   });
 }
 
+export interface ParsedInvoice {
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  dueDate: string | null;
+  supplierName: string | null;
+  gstin: string | null;
+  gstinValid: boolean | null;
+  taxAmount: number | null;
+  totalAmount: number | null;
+  confidence: number;
+  requiresReview: boolean;
+  warnings: string[];
+}
+
+/** Reads header fields out of pasted invoice text. Saves nothing. */
+export function useParseInvoiceText(branchId: string | null) {
+  return useMutation({
+    mutationFn: (text: string) =>
+      api.post<ParsedInvoice>(`/inventory/supplier-invoices/parse-text?branchId=${branchId}`, { text }),
+  });
+}
+
 export function useCreateSupplierInvoice(branchId: string | null) {
   const qc = useQueryClient();
   return useMutation({

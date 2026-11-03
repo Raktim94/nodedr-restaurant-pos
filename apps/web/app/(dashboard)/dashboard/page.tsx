@@ -205,13 +205,13 @@ export default function DashboardPage() {
 
       <div {...slot("top", "kpis")}>
       {isLoading || !data ? (
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5 [&>a:last-child:nth-child(odd)]:col-span-2 xl:[&>a:last-child:nth-child(odd)]:col-span-1">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className={cn("h-[120px] rounded-2xl", i === 0 && "col-span-2 xl:col-span-2")} />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5 [&>a:last-child:nth-child(odd)]:col-span-2 xl:[&>a:last-child:nth-child(odd)]:col-span-1">
           <StatCard
             label="Today's Revenue"
             value={formatCurrency(data.todayRevenue)}
@@ -248,7 +248,7 @@ export default function DashboardPage() {
       </div>
 
       {data && (
-        <div {...slot("top", "attention", "grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5")}>
+        <div {...slot("top", "attention", "grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5 [&>a:last-child:nth-child(odd)]:col-span-2 xl:[&>a:last-child:nth-child(odd)]:col-span-1")}>
           <StatCard
             size="compact"
             label="Pending payments"
@@ -290,7 +290,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div {...slot("top", "charts", "grid grid-cols-1 gap-4 lg:grid-cols-2")}>
+      <div {...slot("top", "charts", "grid grid-cols-1 items-start gap-4 lg:grid-cols-2")}>
         <TrendChart
           title={`Revenue — last ${prefs.trendDays} days`}
           icon={TrendingUp}
@@ -353,37 +353,36 @@ export default function DashboardPage() {
             {data?.recentOrders.map((order) => {
               const isOnline = ONLINE_ORDER_TYPES.has(order.type);
               return (
-                <button
-                  key={order.id}
-                  type="button"
-                  onClick={() => setViewingOrderId(order.id)}
-                  className="flex items-center justify-between py-2.5 text-left text-sm transition hover:opacity-80"
-                  title="View order details"
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium text-foreground">#{order.orderNumber}</span>
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        "mt-0.5 w-fit text-[11px] font-normal",
-                        isOnline && "bg-primary/10 text-primary",
-                      )}
-                    >
-                      {order.type.replace("_", " ")}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-1">
+                <div key={order.id} className="flex items-center justify-between gap-2 py-2.5 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setViewingOrderId(order.id)}
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md text-left outline-none transition hover:opacity-80 focus-visible:ring-2 focus-visible:ring-primary"
+                    title="View order details"
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-medium text-foreground">#{order.orderNumber}</span>
+                      <Badge
+                        variant="secondary"
+                        className={cn(
+                          "mt-0.5 w-fit text-[11px] font-normal",
+                          isOnline && "bg-primary/10 text-primary",
+                        )}
+                      >
+                        {order.type.replace("_", " ")}
+                      </Badge>
+                    </div>
                     <span className="font-medium tabular-nums text-foreground">
                       {formatCurrency(order.totalAmount)}
                     </span>
-                    <RefundDialog
-                      branchId={branchId}
-                      orderId={order.id}
-                      orderNumber={order.orderNumber}
-                      maxAmount={Number(order.totalAmount)}
-                    />
-                  </div>
-                </button>
+                  </button>
+                  <RefundDialog
+                    branchId={branchId}
+                    orderId={order.id}
+                    orderNumber={order.orderNumber}
+                    maxAmount={Number(order.totalAmount)}
+                  />
+                </div>
               );
             })}
           </div>

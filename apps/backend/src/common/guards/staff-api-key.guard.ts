@@ -7,6 +7,10 @@ import {
 import { createHash } from 'node:crypto';
 import type { SessionUser } from '@nodedr-restaurant/types';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  effectivePermissions,
+  permissionInclude,
+} from '../../auth/effective-permissions';
 import type { AuthenticatedRequest } from '../types/authenticated-request';
 
 // Authenticates the MCP server (src/mcp/) via a personal access token
@@ -40,13 +44,7 @@ export class StaffApiKeyGuard implements CanActivate {
     const key = await this.prisma.staffApiKey.findUnique({
       where: { tokenHash },
       include: {
-        user: {
-          include: {
-            role: {
-              include: { permissions: { include: { permission: true } } },
-            },
-          },
-        },
+        user: { include: permissionInclude },
       },
     });
 
@@ -63,7 +61,7 @@ export class StaffApiKeyGuard implements CanActivate {
       name: key.user.name,
       roleId: key.user.roleId,
       roleName: key.user.role.name,
-      permissions: key.user.role.permissions.map((rp) => rp.permission.key),
+      permissions: effectivePermissions(key.user),
     };
     request.user = sessionUser;
 

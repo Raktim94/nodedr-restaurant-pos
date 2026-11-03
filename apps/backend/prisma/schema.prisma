@@ -41,6 +41,7 @@ enum TaxMode {
 }
 
 model Restaurant {
+  departments Department[]
   id        String  @id @default(cuid())
   name      String
   legalName String?
@@ -217,8 +218,46 @@ model Permission {
   category String // grouping for the settings UI, e.g. "Orders", "Inventory"
 
   roles RolePermission[]
+  userOverrides UserPermissionOverride[]
 
   @@map("permissions")
+}
+
+enum PermissionEffect {
+  GRANT
+  DENY
+}
+
+// Organisational unit (Kitchen, Front of house, Accounts...). Purely a label
+// for grouping staff and filtering the team list - it grants nothing itself.
+model Department {
+  id           String     @id @default(cuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  createdAt    DateTime   @default(now())
+
+  users User[]
+
+  @@unique([restaurantId, name])
+  @@map("departments")
+}
+
+// A per-user exception on top of the role: GRANT adds a permission the role
+// lacks, DENY removes one it has. DENY always wins. Optional expiry makes
+// temporary access (cover shift, audit week) self-revoking.
+model UserPermissionOverride {
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  effect       PermissionEffect
+  reason       String?
+  expiresAt    DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@id([userId, permissionId])
+  @@map("user_permission_overrides")
 }
 
 model Role {
@@ -255,6 +294,10 @@ model User {
 
   roleId String
   role   Role   @relation(fields: [roleId], references: [id])
+
+  departmentId        String?
+  department          Department?              @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  permissionOverrides UserPermissionOverride[]
 
   name                    String
   email                   String?

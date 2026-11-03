@@ -74,7 +74,7 @@ export function RefundDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive">
+          <Button variant="ghost" size="icon" aria-label={`Refund order ${orderNumber}`} title="Refund" className="h-8 w-8 text-muted-foreground hover:text-destructive">
             <RotateCcw className="h-3.5 w-3.5" />
           </Button>
         }

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OrderRestro — Departments, Access Exceptions &amp; Invoice Reading</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  :root { --ink:#111827; --mute:#6b7280; --line:#e5e7eb; --brand:#9f1239; --bg:#fafafa; --card:#fff; --ok:#15803d; --warn:#b45309; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,"Liberation Sans",Arial,sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: clamp(28px,5vw,40px); line-height:1.1; letter-spacing:-.02em; margin:0 0 8px; }
+  h2 { font-size: 24px; letter-spacing:-.01em; margin: 44px 0 10px; padding-bottom: 8px; border-bottom: 2px solid var(--line); break-after: avoid; }
+  h3 { font-size: 17px; margin: 24px 0 6px; break-after: avoid; }
+  p { margin: 8px 0; max-width: 68ch; }
+  .lead { font-size: 18px; color: var(--mute); }
+  .kicker { color: var(--brand); font-weight: 600; letter-spacing:.08em; text-transform: uppercase; font-size: 12px; }
+  code, kbd { font: 13.5px ui-monospace,"Liberation Mono",Menlo,Consolas,monospace; background:#f1f5f9; border:1px solid var(--line); padding: 1px 5px; border-radius: 4px; }
+  pre { background:#0f172a; color:#e2e8f0; padding: 14px 16px; border-radius: 10px; overflow-x:auto; font: 13.5px/1.5 ui-monospace,"Liberation Mono",Menlo,Consolas,monospace; break-inside: avoid; }
+  pre code { background:none; border:0; padding:0; color:inherit; }
+  figure { margin: 16px 0; break-inside: avoid; }
+  figure img { display:block; max-width:100%; height:auto; border:1px solid var(--line); border-radius: 10px; background:#fff; }
+  figcaption { color: var(--mute); font-size: 14px; margin-top: 6px; }
+  .pair { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items:start; }
+  .pair.phone { grid-template-columns: minmax(0,260px) 1fr; }
+  @media (max-width:640px){ .pair, .pair.phone { grid-template-columns: 1fr; } }
+  table { border-collapse: collapse; width:100%; font-size: 14.5px; margin: 12px 0; break-inside: avoid; }
+  th,td { border:1px solid var(--line); padding: 8px 10px; text-align:left; vertical-align: top; }
+  th { background:#f3f4f6; }
+  .note,.warn,.ok { padding: 10px 14px; border-radius: 8px; margin: 14px 0; border-left: 4px solid; break-inside: avoid; }
+  .note { background:#eff6ff; border-color:#3b82f6; } .warn { background:#fffbeb; border-color:#f59e0b; } .ok { background:#f0fdf4; border-color:#22c55e; }
+  ol.steps { counter-reset: s; list-style:none; padding:0; }
+  ol.steps li { counter-increment: s; position:relative; padding-left: 40px; margin: 12px 0; }
+  ol.steps li::before { content: counter(s); position:absolute; left:0; top:0; width:28px; height:28px; border-radius:50%; background:var(--brand); color:#fff; font-weight:600; display:grid; place-items:center; font-size:14px; }
+  nav.toc { background:var(--card); border:1px solid var(--line); border-radius:10px; padding: 12px 18px; margin: 20px 0; }
+  nav.toc ol { margin:6px 0; padding-left: 20px; columns: 2; } @media (max-width:640px){ nav.toc ol { columns:1; } }
+  a { color: var(--brand); }
+  a:focus-visible { outline: 3px solid #fb7185; outline-offset: 2px; }
+  @media print { body { background:#fff; font-size: 11pt; } main { padding:0; max-width:none; } h2 { margin-top: 26px; } a { color: inherit; text-decoration: none; } nav.toc { display:none; } }
+</style>
+</head>
+<body>
+<main>
+  <p class="kicker">OrderRestro · Tutorial</p>
+  <h1>Departments, access exceptions &amp; invoice reading</h1>
+  <p class="lead">Group your staff by team, give one person a little more (or less) access than their role, and fill in supplier invoices from pasted text. Plus how to install OrderRestro on every platform.</p>
+
+  <nav class="toc" aria-label="Contents">
+    <strong>In this guide</strong>
+    <ol>
+      <li><a href="#install">Install on your platform</a></li>
+      <li><a href="#dashboard">The dashboard</a></li>
+      <li><a href="#departments">Departments</a></li>
+      <li><a href="#access">Access exceptions</a></li>
+      <li><a href="#invoice">Reading invoice text</a></li>
+      <li><a href="#security">How it stays safe</a></li>
+      <li><a href="#faq">Troubleshooting</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="install">1. Install on your platform</h2>
+  <p>OrderRestro runs on one computer in your restaurant (the <em>server</em>). Everyone else — tablets, phones, the kitchen screen — opens it in a browser or the mobile app. Pick the server option for your computer:</p>
+  <table>
+    <thead><tr><th>You have</th><th>Use this</th><th>Effort</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Ubuntu / Debian PC, mini-PC, or Raspberry Pi 4/5 (64-bit)</strong></td><td>One-line installer (<code>.deb</code>, amd64 and arm64)</td><td>2 minutes. Best choice.</td></tr>
+      <tr><td><strong>Windows 10 / 11</strong></td><td>Docker Desktop + <code>install.sh</code> from WSL2 or Git Bash; or the Microsoft Store app</td><td>~15 minutes</td></tr>
+      <tr><td><strong>macOS</strong></td><td>Docker Desktop + <code>install.sh</code></td><td>~10 minutes</td></tr>
+      <tr><td><strong>CasaOS / ZimaOS home server</strong></td><td>One-click app install</td><td>2 minutes</td></tr>
+      <tr><td><strong>Android phone / tablet, iPhone / iPad</strong></td><td>Not a server. Use the OrderRestro mobile app, or any browser, to connect to your server.</td><td>1 minute</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><strong>Recommendation:</strong> a small always-on Linux machine is the most reliable server. Use Windows or macOS if that is what you already have in the restaurant.</div>
+
+  <h3>Ubuntu / Debian / Raspberry Pi</h3>
+  <pre><code>curl -fsSL https://orderrestro.nodedr.com/install-linux.sh | sudo bash</code></pre>
+  <p>Installs Docker if it is missing, checks the download, and starts the app on port <code>1995</code>.</p>
+
+  <h3>Windows</h3>
+  <ol class="steps">
+    <li>Open PowerShell and run <code>winget install Docker.DockerDesktop</code>. Reboot if asked, accept the WSL2 backend, then open Docker Desktop once.</li>
+    <li>Open <strong>WSL2</strong> (Ubuntu) or <strong>Git Bash</strong> — plain PowerShell cannot run the install script.</li>
+    <li>Run:
+<pre><code>git clone https://github.com/Raktim94/nodedr-restaurant-pos.git
+cd nodedr-restaurant-pos
+./install.sh</code></pre></li>
+  </ol>
+
+  <h3>macOS</h3>
+  <ol class="steps">
+    <li><code>brew install --cask docker</code>, then open Docker.app once so the engine is running.</li>
+    <li>Run the same three commands as Windows (<code>git clone</code>, <code>cd</code>, <code>./install.sh</code>) in Terminal.</li>
+  </ol>
+
+  <h3>First sign-in</h3>
+  <p>Open <code>http://localhost:1995</code> on the server, or <code>http://&lt;server-ip&gt;:1995</code> from another device on the same Wi-Fi. Create your restaurant at <code>/signup</code>. To explore with sample data, install with <code>./install.sh --demo</code> and sign in as <code>owner@demo.local</code> / <code>Password123!</code> (change it before real use).</p>
+  <div class="warn">Updating an existing install? These features add a small database migration. It is applied automatically on start; take a backup first (Settings → Backup).</div>
+
+  <h2 id="dashboard">2. The dashboard</h2>
+  <p>The dashboard is the first screen after sign-in. It answers three questions in order: <em>how much did we make</em> (the large revenue card), <em>what needs me right now</em> (orders, tables, kitchen queue, then pending payments and low stock) and <em>how are we trending</em> (14-day revenue and waste).</p>
+  <figure><img src="screenshots/sa-dashboard-desktop.png" alt="OrderRestro dashboard on a desktop: revenue card, order and table counts, revenue trend and recent transactions" width="1440" height="1119"><figcaption>Desktop. Every card links to the full records behind the number.</figcaption></figure>
+  <div class="pair phone">
+    <figure><img src="screenshots/sa-dashboard-mobile.png" alt="Dashboard on a phone" width="375" height="2441"><figcaption>Phone (375 px).</figcaption></figure>
+    <figure><img src="screenshots/sa-dashboard-dark.png" alt="Dashboard in dark mode" width="1440" height="900"><figcaption>Dark mode is designed separately, not inverted.</figcaption></figure>
+  </div>
+  <p>This release polished the dashboard: a lone card on a phone now spans the full row, an empty chart no longer leaves a large blank panel, and the refund button inside Recent transactions is a separate, labelled control (before, it was a button nested inside a button, which broke keyboard use). Use <strong>Customize</strong> to hide or reorder cards.</p>
+
+  <h2 id="departments">3. Departments</h2>
+  <p>A department is a label for a team — Kitchen, Front of house, Accounts. It helps you find people quickly. <strong>It does not grant any access</strong>; what a person can do still comes from their role.</p>
+  <figure><img src="screenshots/sa-staff-desktop.png" alt="Settings, Staff: filter chips for each department, a staff table with department column, and a Departments card" width="1440" height="996"><figcaption>Settings → Staff. Click a chip to filter the list.</figcaption></figure>
+  <ol class="steps">
+    <li>Go to <strong>Settings → Staff</strong> and scroll to <strong>Departments</strong>.</li>
+    <li>Type a name and press <strong>Add</strong>. Use the pencil to rename, the bin to delete (people are kept, just unassigned).</li>
+    <li>When you <strong>Add staff</strong> (or edit them), pick a department. Filter the table with the chips above it.</li>
+  </ol>
+
+  <h2 id="access">4. Access exceptions</h2>
+  <p>Sometimes one person needs one thing different from their role: a chef covering a stock count, or a waiter who should not give discounts. Instead of making a new role, set an <strong>exception</strong> for that person.</p>
+  <div class="pair">
+    <figure><img src="screenshots/sa-access-desktop.png" alt="Access dialog with Role / Allow / Block choices for every permission" width="1440" height="900"><figcaption>Role = follow the role. Allow = add it. Block = remove it.</figcaption></figure>
+    <figure><img src="screenshots/sa-access-dark.png" alt="Access dialog in dark mode" width="1440" height="900"><figcaption>Same dialog in dark mode.</figcaption></figure>
+  </div>
+  <ol class="steps">
+    <li>In <strong>Settings → Staff</strong>, press <strong>Access</strong> on the person's row (shield icon on phones). The number shows how many exceptions they have.</li>
+    <li>For each permission choose <strong>Role</strong> (no change), <strong>Allow</strong> or <strong>Block</strong>. Each row says whether the role already includes it.</li>
+    <li>Optionally set <strong>Exceptions end on</strong> — access then returns to normal by itself — and a <strong>Reason</strong> for your records.</li>
+    <li><strong>Save access</strong>. It takes effect on their very next action; they do not need to sign out.</li>
+  </ol>
+  <h3>Rules that keep it safe</h3>
+  <ul>
+    <li><strong>Block always wins</strong> over the role and over an Allow.</li>
+    <li>You can only <strong>Allow</strong> something you have yourself. The option is disabled otherwise, and the server enforces it too.</li>
+    <li>You cannot change <strong>your own</strong> exceptions, and the <strong>Owner</strong> account cannot have exceptions, so nobody can lock the business out.</li>
+    <li>Needs both <em>Manage Users</em> and <em>Manage Roles</em>. Every change is written to the Audit Log.</li>
+  </ul>
+  <figure class="phone"><img src="screenshots/sa-access-mobile.png" alt="Access dialog on a phone" width="375" height="812" style="max-width:260px"><figcaption>On a phone the list scrolls inside the dialog and Save stays visible.</figcaption></figure>
+
+  <h2 id="invoice">5. Reading invoice text</h2>
+  <p>When a supplier sends an invoice as a PDF or email, copy its text and let OrderRestro fill in the form for you.</p>
+  <figure><img src="screenshots/sa-invoice-desktop.png" alt="Add a vendor invoice dialog with pasted text and the form filled in" width="1440" height="900"><figcaption>Procurement → Vendor invoices → New invoice.</figcaption></figure>
+  <ol class="steps">
+    <li>Open <strong>Inventory → Procurement</strong>, then <strong>New invoice</strong>.</li>
+    <li>Paste the invoice text into the box and press <strong>Read invoice</strong>.</li>
+    <li>Invoice number, dates and total are filled in. If the supplier name on the invoice matches one of your suppliers exactly, it is picked for you; otherwise choose it.</li>
+    <li><strong>Check every field</strong>, then <strong>Add invoice</strong>. Nothing is saved until you press it.</li>
+  </ol>
+  <p>It understands Indian formats: <code>03/11/2026</code>, <code>3 Nov 2026</code>, <code>₹ 1,24,410.50</code>, <code>Rs.250/-</code>, CGST/SGST/IGST lines, and GSTIN (with a check-digit test). Anything it cannot find or doubts is listed in an amber note so you review it instead of trusting it.</p>
+  <div class="note">It reads text only — it does not do OCR on photos or scanned PDFs. For a scan, use your phone's "copy text from image" first. Because it works on plain text it behaves the same on Windows, macOS, Linux, Android and iOS.</div>
+
+  <h2 id="security">6. How it stays safe</h2>
+  <ul>
+    <li>Permissions are checked on the server for every request, using the person's current role <em>and</em> exceptions. Hiding a button is convenience, not security.</li>
+    <li>Exceptions are scoped to your restaurant; a department or permission from another restaurant is rejected.</li>
+    <li>The invoice reader has a 20,000-character limit, needs the Manage Inventory permission, never stores the text, and is tested against hostile input for speed.</li>
+    <li>Accessibility: the new screens pass an automated WCAG 2.1 AA scan (0 violations), work by keyboard, and respect dark mode.</li>
+    <li>Release checks: backend 330 unit tests, 59 web tests and 7 end-to-end tests against a real database (grant, block, expiry, escalation, departments, invoice parsing).</li>
+  </ul>
+
+  <h2 id="faq">7. Troubleshooting</h2>
+  <table>
+    <tbody>
+      <tr><th>Problem</th><th>Fix</th></tr>
+      <tr><td>No <strong>Access</strong> button on staff rows</td><td>You need both Manage Users and Manage Roles. The button is also hidden on your own row and on the Owner.</td></tr>
+      <tr><td>"You cannot grant … because you do not hold it yourself"</td><td>Ask someone who has that permission (usually the Owner) to grant it.</td></tr>
+      <tr><td>Invoice reader says "Invoice number not found"</td><td>Make sure the pasted text includes a line like <code>Invoice No: 123</code>; type it in by hand otherwise.</td></tr>
+      <tr><td>GSTIN warning</td><td>The 15th character did not match. Compare it with the invoice; one wrong character is the usual cause.</td></tr>
+      <tr><td>Can't reach the server from a phone</td><td>Phone and server must be on the same Wi-Fi; use the server's LAN IP and port <code>1995</code>.</td></tr>
+    </tbody>
+  </table>
+</main>
+</body>
+</html>
