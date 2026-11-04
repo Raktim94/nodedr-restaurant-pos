@@ -54,7 +54,7 @@ partially built, the note says what's missing.
 | Multiple currencies | Planned | Single `currency` field per restaurant (default INR), no multi-currency checkout |
 | Customer-facing display | Planned | |
 | Receipt printing | Shipped | Self-printing HTML receipt via browser dialog |
-| Digital receipt | Planned | |
+| Digital receipt | Shipped | Guest-facing `/bill/[token]` page opened from a QR/link on the bill or receipt screen (`POST /orders/:id/bill-share`, `GET /v1/public/bill/:token`); signed token expires in 2h, carries the cashier's on-screen discount/tip, no printer or guest login |
 | WhatsApp / SMS / Email receipt | Planned | No messaging integration in codebase |
 
 ## 🪑 Restaurant Table Management
