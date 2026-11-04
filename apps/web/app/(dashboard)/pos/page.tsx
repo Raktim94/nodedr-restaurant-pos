@@ -46,7 +46,7 @@ function PosPageInner() {
   const preselectedTableId = useSearchParams().get("tableId") ?? "";
 
   const [lines, setLines] = useState<CartLine[]>([]);
-  const [orderType, setOrderType] = useState<PosOrderType>("DINE_IN");
+  const [orderType, setOrderType] = useState<PosOrderType>(preselectedTableId ? "DINE_IN" : "TAKEAWAY");
   const [delivery, setDelivery] = useState<DeliveryDetails>({ address: "", pincode: "", phone: "" });
   const [scheduledFor, setScheduledFor] = useState("");
   const [tableId, setTableIdRaw] = useState(preselectedTableId);
@@ -68,7 +68,10 @@ function PosPageInner() {
   const [seenPreselected, setSeenPreselected] = useState(preselectedTableId);
   if (preselectedTableId !== seenPreselected) {
     setSeenPreselected(preselectedTableId);
-    if (preselectedTableId && !activeOrder) setTableId(preselectedTableId);
+    if (preselectedTableId && !activeOrder) {
+      setOrderType("DINE_IN");
+      setTableId(preselectedTableId);
+    }
   }
   // Phones show the menu full-screen and the cart/checkout as an overlay; from
   // lg up both sit side by side and this flag is ignored.
@@ -241,6 +244,9 @@ function PosPageInner() {
 
   const handleTablePick = (table: RestaurantTable) => setTableId(table.id);
 
+  // Counter-first: new tickets default to Takeaway so the menu shows at once;
+  // the table grid only appears when the cashier picks Dine-in (or arrives
+  // via ?tableId=...).
   // Click-to-order: for a fresh dine-in ticket, land on a visual table grid
   // first — the rest of the flow (menu, cart, bill-or-add-more) is
   // unchanged once a table's picked. Takeaway orders and orders already

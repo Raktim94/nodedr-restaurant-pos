@@ -85,11 +85,11 @@ export function CartPanel({
     <div className="flex h-full flex-col gap-4">
       <Tabs value={orderType} onValueChange={(v) => onOrderTypeChange(v as PosOrderType)}>
         <TabsList className="w-full">
-          <TabsTrigger value="DINE_IN" className="flex-1">
-            Dine-in
-          </TabsTrigger>
           <TabsTrigger value="TAKEAWAY" className="flex-1">
             Takeaway
+          </TabsTrigger>
+          <TabsTrigger value="DINE_IN" className="flex-1">
+            Dine-in
           </TabsTrigger>
           <TabsTrigger value="DELIVERY" className="flex-1">
             Delivery
