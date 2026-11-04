@@ -1488,13 +1488,18 @@ export class OrdersService {
     };
   }
 
-  async recordBillPrinted(branchId: string, orderId: string, userId: string) {
+  async recordBillPrinted(
+    branchId: string,
+    orderId: string,
+    userId: string,
+    channel: 'PRINT' | 'QR_SHARE' = 'PRINT',
+  ) {
     await this.audit.record({
       userId,
       action: 'order.bill_printed',
       entity: 'Order',
       entityId: orderId,
-      metadata: { branchId },
+      metadata: { branchId, channel },
     });
   }
 
