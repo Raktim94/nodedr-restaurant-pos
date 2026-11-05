@@ -332,8 +332,12 @@ containers, not just "it compiles."
       accounting, SMS/WhatsApp and delivery-platform tools via any automation
       service.
 - [x] SMTP email (campaigns).
-- [ ] Not built: native payment-gateway checkout (automatic UPI confirmation
-      needs one), direct accounting-software and delivery-platform connectors,
+- [x] Payment-gateway checkout (1.21.0, [docs](./docs/PAYMENT-GATEWAYS.md)):
+      country-filtered setup, encrypted Test/Live credentials, hosted
+      checkout with server-side confirmation. Razorpay, Stripe and Cashfree have
+      adapters (not yet run against a live provider sandbox); other providers
+      are catalog-only; gateway refunds are made in the provider dashboard.
+- [ ] Not built: direct accounting-software and delivery-platform connectors,
       weighing scale, label printers, barcode scanner, GraphQL API.
 - [ ] Not built: SQLite deployment variant (the schema relies on Postgres
       arrays/enums/decimals), Windows/Linux native installers beyond the

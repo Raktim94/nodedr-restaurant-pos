@@ -160,7 +160,7 @@ by phase.
 | 16 | Maintenance — equipment register, service schedules with overdue flags | ✅ |
 | 17 | Documents — SOPs, contracts, recipes, purchase paperwork, with file attachments (PDF, images, Office) | ✅ |
 | 18 | Security — RBAC, audit log, two-factor sign-in with recovery codes, backup/restore, session expiry, PIN login | ✅ |
-| 19 | Integrations — **UPI QR payments with payment-received sound**, customer-facing second screen, direct-USB ESC/POS printing + cash drawer, signed webhooks, SMTP email, REST/Swagger and [API & MCP server](./docs/integrations-api.md) | ✅ · 🚧 payment-gateway checkout, accounting & delivery-platform connectors |
+| 19 | Integrations — **UPI QR payments with payment-received sound**, customer-facing second screen, direct-USB ESC/POS printing + cash drawer, signed webhooks, SMTP email, REST/Swagger and [API & MCP server](./docs/integrations-api.md) | ✅ · payment-gateway checkout (Razorpay, Stripe, Cashfree — see [docs](./docs/PAYMENT-GATEWAYS.md)) · 🚧 accounting & delivery-platform connectors |
 | 20 | Admin Panel — restaurant/branch settings, per-branch tax regime, UPI payee, roles, permissions | ✅ |
 
 Already shipped and running against real Docker/Postgres today: auth +
@@ -271,7 +271,8 @@ deductions, and a tip pool split by hours worked.
 Yes — every report exports to Excel, PDF or CSV, and can be emailed on a
 daily, weekly or monthly schedule through your own SMTP server.
 
-**What is not built yet?** Native payment-gateway checkout, direct
+**What is not built yet?** Gateways beyond Razorpay, Stripe and Cashfree
+(and refunds from inside OrderRestro), direct
 accounting-software and delivery-platform connectors, weighing-scale and
 label printers, a SQLite edition and native installers. The
 [roadmap](./ROADMAP.md) is explicit about what is done and what is not.

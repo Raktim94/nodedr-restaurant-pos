@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.20.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.21.0
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -85,7 +85,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.20.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.21.0
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
@@ -183,10 +183,16 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.20.0"
-  update_at: "2026-11-03"
+  version: "1.21.0"
+  update_at: "2026-11-05"
   release_notes:
     en_US: |-
+      1.21.0: online payments. Under Settings > Payments pick your country, choose a payment
+      gateway (Razorpay, Stripe and Cashfree work today) and enter its test keys. The cashier can
+      then show a payment link or QR code and the bill closes only after the gateway confirms the
+      money. Starts in Test mode and moves no real money until you switch to Live. A database
+      change is applied automatically on update; back up first.
+
       1.20.0: departments and per-person access. Group staff into departments, and allow or
       block single permissions for one person (with an optional end date) without making a new
       role. Paste a supplier invoice's text to fill in the invoice form. The dashboard is
