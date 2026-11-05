@@ -25,7 +25,10 @@ export class AiAnalyticsService {
         order: { select: { createdAt: true } },
       },
     });
-    const byItem = new Map<string, { name: string; daily: number[] }>();
+    const byItem = new Map<
+      string,
+      { name: string; daily: number[]; observations: number }
+    >();
     for (const item of items) {
       const age = Math.max(
         0,
@@ -37,8 +40,10 @@ export class AiAnalyticsService {
       const entry = byItem.get(item.menuItemId) ?? {
         name: item.nameSnapshot,
         daily: Array(56).fill(0),
+        observations: 0,
       };
       entry.daily[55 - age] += item.quantity;
+      entry.observations += 1;
       byItem.set(item.menuItemId, entry);
     }
     const forecasts = [...byItem.entries()].map(([menuItemId, entry]) => {
@@ -53,8 +58,16 @@ export class AiAnalyticsService {
         trendPercent: previous
           ? round(((recent - previous) / previous) * 100)
           : null,
+        // Confidence must reflect this menu item's own evidence. Using the
+        // branch-wide row count made a rarely ordered dish look HIGH confidence
+        // whenever other popular dishes generated enough sales.
         confidence:
-          items.length >= 100 ? 'HIGH' : items.length >= 30 ? 'MEDIUM' : 'LOW',
+          entry.observations >= 100
+            ? 'HIGH'
+            : entry.observations >= 30
+              ? 'MEDIUM'
+              : 'LOW',
+        observations: entry.observations,
       };
     });
     return {
