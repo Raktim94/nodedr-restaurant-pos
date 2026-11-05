@@ -47,6 +47,14 @@ services:
       INTEGRATION_WRITE_LIMIT_PER_MIN: "${INTEGRATION_WRITE_LIMIT_PER_MIN:-30}"
       INTEGRATION_READ_LIMIT_PER_MIN: "${INTEGRATION_READ_LIMIT_PER_MIN:-300}"
       UPLOADS_DIR: "/data/uploads"
+      # Online payment gateways (Settings > Payments). Provider API keys are stored encrypted in the
+      # database; this key is what decrypts them, so it must NOT live in the database or the image.
+      # Either set INTEGRATION_SECRET_KEY, or mount a file and point INTEGRATION_SECRET_KEY_FILE at it
+      # (e.g. a Docker secret at /run/secrets/integration_key). Unset = derived from JWT_SECRET.
+      # PUBLIC_BASE_URL is the https address customers and the gateway reach (payment return page + webhooks).
+      INTEGRATION_SECRET_KEY: "${INTEGRATION_SECRET_KEY:-}"
+      INTEGRATION_SECRET_KEY_FILE: "${INTEGRATION_SECRET_KEY_FILE:-}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
       # Spain VERI*FACTU (Settings > VERI*FACTU). The producer identifier is a legal fact only the software
       # producer can supply; leave it unset and the branch reports exactly what is missing. See docs/verifactu.md.
       VERIFACTU_PRODUCER_ID: "${VERIFACTU_PRODUCER_ID:-}"

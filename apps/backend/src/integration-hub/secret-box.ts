@@ -7,6 +7,7 @@
 // Each value is bound to a context string (restaurant + provider) as GCM
 // additional authenticated data, so a ciphertext copied into another tenant's
 // row, or another provider's, fails to decrypt instead of leaking.
+import { readFileSync } from 'fs';
 import {
   createCipheriv,
   createDecipheriv,
@@ -16,9 +17,24 @@ import {
 
 const VERSION = 'v1';
 
+// INTEGRATION_SECRET_KEY_FILE lets Docker/Kubernetes secrets or a root-only
+// file on Windows/Linux supply the key without it appearing in `docker inspect`
+// or the process environment.
+function dedicatedKey(): string {
+  const file = process.env.INTEGRATION_SECRET_KEY_FILE;
+  if (file) {
+    try {
+      return readFileSync(file, 'utf8').trim();
+    } catch {
+      throw new Error('INTEGRATION_SECRET_KEY_FILE is set but cannot be read');
+    }
+  }
+  return process.env.INTEGRATION_SECRET_KEY ?? '';
+}
+
 function key(): Buffer {
-  const material =
-    process.env.INTEGRATION_SECRET_KEY || process.env.JWT_SECRET || '';
+  const dedicated = dedicatedKey();
+  const material = dedicated || process.env.JWT_SECRET || '';
   if (material.length < 16) {
     throw new Error(
       'Set INTEGRATION_SECRET_KEY (or a JWT_SECRET of 16+ characters) before storing integration credentials',
@@ -29,7 +45,7 @@ function key(): Buffer {
       'sha256',
       material,
       'orderrestro-integration-secrets',
-      process.env.INTEGRATION_SECRET_KEY ? 'dedicated-key' : 'jwt-derived-key',
+      dedicated ? 'dedicated-key' : 'jwt-derived-key',
       32,
     ),
   );

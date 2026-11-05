@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QueryError } from "@/components/ui/query-error";
+import { OnlinePayment } from "@/components/pos/online-payment";
 import { PaymentMethodButtons } from "@/components/pos/payment-method-buttons";
 import { CustomerPicker } from "@/components/pos/customer-picker";
 import type { Customer } from "@/hooks/use-customers";
@@ -698,6 +699,8 @@ export function CheckoutPanel({
               )}
             </div>
           )}
+
+          {remainingDue > 0 && <OnlinePayment orderId={order.id} branchId={branchId} />}
 
           <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
             <Label htmlFor="split" className="text-xs text-muted-foreground">

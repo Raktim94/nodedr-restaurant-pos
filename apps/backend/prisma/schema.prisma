@@ -42,16 +42,16 @@ enum TaxMode {
 
 model Restaurant {
   departments Department[]
-  id        String  @id @default(cuid())
-  name      String
-  legalName String?
+  id          String       @id @default(cuid())
+  name        String
+  legalName   String?
   // The restaurant's own branding, shown in the app shell (sidebar header,
   // login screen) in place of the Nodedr OrderRestro product mark — this is
   // white-label self-hosted software, so the operator's brand should lead;
   // the product name stays as a small credit line instead (see BrandFooter).
-  logoUrl   String?
-  currency  String  @default("INR")
-  timezone  String  @default("Asia/Kolkata")
+  logoUrl     String?
+  currency    String       @default("INR")
+  timezone    String       @default("Asia/Kolkata")
 
   // UPI payee for the dynamic QR shown at checkout and on the customer
   // display (NPCI deep link, see apps/web/lib/upi.ts). Optional: when unset
@@ -89,12 +89,15 @@ model Restaurant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branches               Branch[]
-  roles                  Role[]
-  users                  User[]
-  integrationApiKeys     IntegrationApiKey[]
-  webhookEndpoints       WebhookEndpoint[]
-  integrationConnections IntegrationConnection[]
+  branches                  Branch[]
+  roles                     Role[]
+  users                     User[]
+  integrationApiKeys        IntegrationApiKey[]
+  webhookEndpoints          WebhookEndpoint[]
+  integrationConnections    IntegrationConnection[]
+  paymentGatewayConnections PaymentGatewayConnection[]
+  paymentGatewayCatalog     PaymentGatewayCatalogEntry[]
+  gatewayPayments           GatewayPayment[]
 
   @@map("restaurants")
 }
@@ -217,7 +220,7 @@ model Permission {
   label    String
   category String // grouping for the settings UI, e.g. "Orders", "Inventory"
 
-  roles RolePermission[]
+  roles         RolePermission[]
   userOverrides UserPermissionOverride[]
 
   @@map("permissions")
@@ -248,13 +251,13 @@ model Department {
 // temporary access (cover shift, audit week) self-revoking.
 model UserPermissionOverride {
   userId       String
-  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   permissionId String
-  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  permission   Permission       @relation(fields: [permissionId], references: [id], onDelete: Cascade)
   effect       PermissionEffect
   reason       String?
   expiresAt    DateTime?
-  createdAt    DateTime   @default(now())
+  createdAt    DateTime         @default(now())
 
   @@id([userId, permissionId])
   @@map("user_permission_overrides")
@@ -2566,4 +2569,115 @@ model DeviceToken {
 
   @@index([userId])
   @@map("device_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Online payment gateways (hosted checkout)
+// ---------------------------------------------------------------------------
+
+enum GatewayMode {
+  TEST
+  LIVE
+}
+
+enum GatewayPaymentStatus {
+  CREATED
+  SUCCEEDED
+  FAILED
+  EXPIRED
+  // Money was taken by the gateway but the order could not be settled (it was
+  // changed, cancelled or already paid). Needs a person to look at it.
+  NEEDS_REVIEW
+}
+
+// The country -> gateway catalog. Built-in rows (restaurantId null) are
+// refreshed from catalog-data.ts at start-up; a restaurant's own rows are its
+// "Custom provider" entries. Payment logic never reads this table for
+// behaviour - only the adapter named in `adapter` decides what is possible.
+model PaymentGatewayCatalogEntry {
+  id           String      @id @default(cuid())
+  restaurantId String?
+  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  key          String
+  name         String
+  countries    String[] // ISO 3166-1 alpha-2
+  integration  String // e.g. "Hosted payment link", "Hosted checkout"
+  docsUrl      String
+  // Adapter that implements it, or null when it is listed for reference only.
+  adapter      String?
+  notes        String?
+  sources      String[]
+  researchedAt String?
+  active       Boolean     @default(true)
+  updatedAt    DateTime    @updatedAt
+
+  @@unique([restaurantId, key])
+  @@map("payment_gateway_catalog")
+}
+
+model PaymentGatewayConnection {
+  id                 String      @id @default(cuid())
+  restaurantId       String
+  restaurant         Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  provider           String
+  country            String
+  enabled            Boolean     @default(true)
+  // The mode new payments use. Always TEST until someone confirms LIVE.
+  mode               GatewayMode @default(TEST)
+  liveConfirmedAt    DateTime?
+  liveConfirmedById  String?
+  // Encrypted JSON (secret-box), kept separately so test and live never mix.
+  testCredentialsEnc String?
+  liveCredentialsEnc String?
+  testKeys           String[] // names of the fields that are set, never values
+  liveKeys           String[]
+  lastError          String?
+  lastTestedAt       DateTime?
+  lastTestOk         Boolean?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  @@unique([restaurantId, provider])
+  @@map("payment_gateway_connections")
+}
+
+model GatewayPayment {
+  id                String               @id @default(cuid())
+  restaurantId      String
+  restaurant        Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  branchId          String
+  orderId           String
+  provider          String
+  mode              GatewayMode
+  // Amount snapshot taken from the server-side bill when the link was made.
+  amountMinor       Int
+  currency          String
+  status            GatewayPaymentStatus @default(CREATED)
+  // Provider's id for the hosted checkout (link / session).
+  providerRef       String?
+  providerPaymentId String?
+  checkoutUrl       String?
+  note              String?
+  createdById       String
+  appliedAt         DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@unique([provider, mode, providerRef])
+  @@index([orderId])
+  @@index([restaurantId, status])
+  @@map("gateway_payments")
+}
+
+// One row per provider event ever acted on, so a retried or duplicated
+// delivery is recognised and ignored.
+model GatewayWebhookEvent {
+  id         String      @id @default(cuid())
+  provider   String
+  mode       GatewayMode
+  eventId    String
+  receivedAt DateTime    @default(now())
+
+  @@unique([provider, mode, eventId])
+  @@map("gateway_webhook_events")
 }
