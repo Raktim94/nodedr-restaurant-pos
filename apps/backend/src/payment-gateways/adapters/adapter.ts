@@ -60,6 +60,21 @@ export interface VerifiedWebhook {
   providerRef: string | null;
 }
 
+export interface RefundInput {
+  /** The provider's id for the captured payment (what the refund is made against). */
+  providerPaymentId: string;
+  amountMinor: number;
+  currency: string;
+  /** Our GatewayRefund id; used as the provider-side idempotency key where one exists. */
+  reference: string;
+}
+
+export interface RefundResult {
+  providerRefundId: string;
+  /** `PENDING` = accepted and still processing at the provider. */
+  state: 'DONE' | 'PENDING';
+}
+
 export interface TestOutcome {
   ok: boolean;
   message: string;
@@ -76,6 +91,12 @@ export interface PaymentGatewayAdapter {
   readonly requiresCustomerPhone?: boolean;
   /** Honest list of what is not implemented. */
   readonly limitations: string[];
+  /**
+   * Refund against a captured payment. Absent = this adapter cannot refund and
+   * the UI says so. Must throw GatewayError on a definite rejection; a thrown
+   * `GatewayError` with no `status` means the outcome is unknown (timeout).
+   */
+  refund?(ctx: GatewayContext, input: RefundInput): Promise<RefundResult>;
 
   testConnection(ctx: GatewayContext): Promise<TestOutcome>;
   createPayment(

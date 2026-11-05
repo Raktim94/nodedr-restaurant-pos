@@ -37,7 +37,21 @@ const createSchema = z.object({
   origin: z.string().url().max(200).optional(),
 });
 
-// Taking payment is what checkout already needs: bills.print.
+const refundSchema = z.object({
+  amount: z.coerce.number().positive(),
+  reason: z.string().trim().max(200).optional(),
+  returnedItems: z
+    .array(
+      z.object({
+        orderItemId: z.string().min(1),
+        quantity: z.coerce.number().int().positive(),
+      }),
+    )
+    .max(100)
+    .optional(),
+});
+
+// Taking payment is what checkout already needs: bills.print. Refunds need refunds.process.
 @ApiTags('payment-gateways')
 @Controller('v1')
 export class GatewayPaymentsController {
@@ -76,6 +90,25 @@ export class GatewayPaymentsController {
   @Get('payment-gateways/payments')
   recent(@CurrentUser() u: SessionUser) {
     return this.svc.recent(u.restaurantId);
+  }
+
+  @Auth('settings.manage')
+  @Get('payment-gateways/refunds-to-review')
+  refundsToReview(@CurrentUser() u: SessionUser) {
+    return this.svc.refundsNeedingReview(u.restaurantId);
+  }
+
+  @Auth('refunds.process')
+  @AuditAction('gateway_payment.refunded', 'GatewayPayment')
+  @Post('gateway-payments/:id/refund')
+  @UsePipes(new ZodValidationPipe(refundSchema))
+  refund(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: z.infer<typeof refundSchema>,
+  ) {
+    return this.svc.refund(u.restaurantId, branchId, id, u.id, body);
   }
 
   @Auth('bills.print')

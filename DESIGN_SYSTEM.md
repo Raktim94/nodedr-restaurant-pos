@@ -13,6 +13,13 @@ color/typography stakes → `react-best-practices` / `composition-patterns`
 while writing components → `web-design-guidelines` + `accesslint` audit
 before calling anything done.
 
+> **2026-11-05: the Product Design System & UI/UX Handbook v1.0 now governs this app.**
+> Tokens in `apps/web/app/globals.css` follow it (warm-neutral surfaces, violet `#6D4AFF` /
+> `#A18AFF` action colour, 1px-border cards, flat primary buttons, focus ring `#3C82F6`/`#80B4FF`,
+> 12px base radius, 120-180ms motion with a reduced-motion safety net). Full contract: the
+> `product-design-system` skill. Where the colour tables below still show the previous
+> wine/burgundy palette, the handbook tokens win.
+
 ## Color tokens (light)
 
 ```

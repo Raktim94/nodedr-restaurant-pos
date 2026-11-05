@@ -29,6 +29,8 @@
   --color-destructive: var(--destructive);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-primary-hover: var(--primary-hover);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -51,78 +53,82 @@
 }
 
 :root {
-  /* Nodedr OrderRestro — light palette. See DESIGN_SYSTEM.md for rationale
-     (wine/burgundy primary is the one deliberate accent choice). */
-  --background: #FBF9F8;
-  --foreground: #111827;
+  /* Product Design System v1.0 (see ~/.claude/skills/product-design-system and
+     DESIGN_SYSTEM.md). Warm-neutral surfaces, one violet action colour. */
+  --background: #F7F7F5;
+  --foreground: #18181B;
   --card: #FFFFFF;
-  --card-foreground: #111827;
+  --card-foreground: #18181B;
   --popover: #FFFFFF;
-  --popover-foreground: #111827;
-  --primary: #9F1239;
+  --popover-foreground: #18181B;
+  --primary: #6D4AFF;
+  --primary-hover: #5B3BE8;
   --primary-foreground: #FFFFFF;
-  --secondary: #F5F1F0;
-  --secondary-foreground: #111827;
-  --muted: #F5F1F0;
-  --muted-foreground: #6B7280;
-  --accent: #FDF2F4;
-  --accent-foreground: #9F1239;
-  --destructive: #EF4444;
-  --success: #22C55E;
-  --warning: #F59E0B;
-  --border: #ECE6E4;
-  --input: #E4DCDA;
-  --ring: #9F1239;
-  --chart-1: #9F1239;
-  --chart-2: #22C55E;
-  --chart-3: #F59E0B;
-  --chart-4: #6366F1;
-  --chart-5: #6B7280;
-  --radius: 1rem;
-  --sidebar: #FFFDFC;
-  --sidebar-foreground: #111827;
-  --sidebar-primary: #9F1239;
+  --secondary: #F1F1EF;
+  --secondary-foreground: #18181B;
+  --muted: #F1F1EF;
+  --muted-foreground: #52525B;
+  --accent: #F0EBFF;
+  --accent-foreground: #4C2EC7;
+  --destructive: #C43D4D;
+  --success: #18845B;
+  --warning: #A65C00;
+  --info: #2863B8;
+  --border: #E4E4E7;
+  --input: #D4D4D8;
+  --ring: #3C82F6;
+  --chart-1: #6D4AFF;
+  --chart-2: #18845B;
+  --chart-3: #A65C00;
+  --chart-4: #2863B8;
+  --chart-5: #71717A;
+  --radius: 0.75rem;
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #18181B;
+  --sidebar-primary: #6D4AFF;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #FDF2F4;
-  --sidebar-accent-foreground: #9F1239;
-  --sidebar-border: #ECE6E4;
-  --sidebar-ring: #9F1239;
+  --sidebar-accent: #F0EBFF;
+  --sidebar-accent-foreground: #4C2EC7;
+  --sidebar-border: #E4E4E7;
+  --sidebar-ring: #3C82F6;
 }
 
 .dark {
-  --background: #0B0B0D;
+  --background: #111114;
   --foreground: #F4F4F5;
-  --card: #151517;
+  --card: #19191E;
   --card-foreground: #F4F4F5;
-  --popover: #151517;
+  --popover: #19191E;
   --popover-foreground: #F4F4F5;
-  --primary: #FB7185;
-  --primary-foreground: #1F0A0F;
-  --secondary: #1D1D20;
+  --primary: #A18AFF;
+  --primary-hover: #B5A5FF;
+  --primary-foreground: #17102E;
+  --secondary: #222228;
   --secondary-foreground: #F4F4F5;
-  --muted: #1D1D20;
-  --muted-foreground: #9CA3AF;
-  --accent: #2A151A;
-  --accent-foreground: #FB7185;
-  --destructive: #F87171;
-  --success: #34D399;
-  --warning: #FBBF24;
-  --border: #26262A;
-  --input: #26262A;
-  --ring: #FB7185;
-  --chart-1: #FB7185;
-  --chart-2: #34D399;
-  --chart-3: #FBBF24;
-  --chart-4: #818CF8;
-  --chart-5: #9CA3AF;
-  --sidebar: #111113;
+  --muted: #222228;
+  --muted-foreground: #A1A1AA;
+  --accent: #30284B;
+  --accent-foreground: #D6CBFF;
+  --destructive: #FF7A88;
+  --success: #5BC69A;
+  --warning: #F2BA62;
+  --info: #80B4FF;
+  --border: #34343C;
+  --input: #45454F;
+  --ring: #80B4FF;
+  --chart-1: #A18AFF;
+  --chart-2: #5BC69A;
+  --chart-3: #F2BA62;
+  --chart-4: #80B4FF;
+  --chart-5: #A1A1AA;
+  --sidebar: #19191E;
   --sidebar-foreground: #F4F4F5;
-  --sidebar-primary: #FB7185;
-  --sidebar-primary-foreground: #1F0A0F;
-  --sidebar-accent: #2A151A;
-  --sidebar-accent-foreground: #FB7185;
-  --sidebar-border: #26262A;
-  --sidebar-ring: #FB7185;
+  --sidebar-primary: #A18AFF;
+  --sidebar-primary-foreground: #17102E;
+  --sidebar-accent: #30284B;
+  --sidebar-accent-foreground: #D6CBFF;
+  --sidebar-border: #34343C;
+  --sidebar-ring: #80B4FF;
 }
 
 /* Customer kiosk (/kiosk/*): always the light palette, whatever the device's
@@ -131,30 +137,32 @@
    utilities are unaffected. */
 .kiosk-root {
   color-scheme: light;
-  --background: #FBF9F8;
-  --foreground: #111827;
+  --background: #F7F7F5;
+  --foreground: #18181B;
   --card: #FFFFFF;
-  --card-foreground: #111827;
+  --card-foreground: #18181B;
   --popover: #FFFFFF;
-  --popover-foreground: #111827;
-  --primary: #9F1239;
+  --popover-foreground: #18181B;
+  --primary: #6D4AFF;
   --primary-foreground: #FFFFFF;
-  --secondary: #F5F1F0;
-  --secondary-foreground: #111827;
-  --muted: #F5F1F0;
-  --muted-foreground: #4B5563;
-  --accent: #FDF2F4;
-  --accent-foreground: #9F1239;
-  --destructive: #B91C1C;
-  --success: #15803D;
-  --warning: #B45309;
-  --border: #D9CFCC;
-  --input: #C9BDBA;
-  --ring: #9F1239;
+  --secondary: #F1F1EF;
+  --secondary-foreground: #18181B;
+  --muted: #F1F1EF;
+  --muted-foreground: #52525B;
+  --accent: #F0EBFF;
+  --accent-foreground: #4C2EC7;
+  --destructive: #C43D4D;
+  --success: #18845B;
+  --warning: #A65C00;
+  --border: #D4D4D8;
+  --input: #A1A1AA;
+  --ring: #3C82F6;
   /* Explicit system fallbacks so the kiosk never renders in a serif face if the
      bundled web font is unavailable (offline start-up, blocked fonts CDN). */
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
+  --primary-hover: #5B3BE8;
+  --info: #2863B8;
 }
 
 /* The dashboard's coarse-pointer rule above sets a 44px floor on every
@@ -236,14 +244,19 @@
    rules would silently beat every utility class.
    --------------------------------------------------------------------------- */
 :root {
-  --shadow-card: 0 1px 2px rgb(17 24 39 / 0.04), 0 8px 24px -12px rgb(76 14 34 / 0.10);
-  --shadow-card-hover: 0 2px 4px rgb(17 24 39 / 0.05), 0 16px 32px -14px rgb(76 14 34 / 0.18);
-  --gradient-primary: linear-gradient(135deg, #B3163F 0%, #9F1239 45%, #7A0E2C 100%);
+  /* Cards are a 1px border, not a shadow; shadows mean "floating". */
+  --shadow-card: none;
+  --shadow-card-hover: 0 1px 2px rgb(24 24 27 / 0.06);
+  --shadow-float: 0 8px 24px rgb(24 24 27 / 0.10);
+  --gradient-primary: linear-gradient(var(--primary), var(--primary));
+  --motion-quick: 120ms;
+  --motion-standard: 180ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 .dark {
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 10px 28px -14px rgb(0 0 0 / 0.6);
-  --shadow-card-hover: 0 2px 4px rgb(0 0 0 / 0.45), 0 18px 36px -14px rgb(251 113 133 / 0.18);
-  --gradient-primary: linear-gradient(135deg, #FB7185 0%, #F43F5E 55%, #E11D48 100%);
+  --shadow-card: none;
+  --shadow-card-hover: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-float: 0 8px 24px rgb(0 0 0 / 0.5);
 }
 
 @layer base {
@@ -253,16 +266,13 @@
     font-feature-settings: "cv11", "ss01";
   }
   body {
-    background-image:
-      radial-gradient(60rem 28rem at 100% -10%, rgb(159 18 57 / 0.045), transparent 60%),
-      radial-gradient(48rem 24rem at -10% 110%, rgb(245 158 11 / 0.035), transparent 60%);
-    background-attachment: fixed;
+    background-color: var(--background);
   }
   h1, h2, h3 {
     letter-spacing: -0.015em;
   }
   ::selection {
-    background: rgb(159 18 57 / 0.18);
+    background: rgb(109 74 255 / 0.18);
   }
   :focus-visible {
     outline: 2px solid var(--ring);
@@ -300,24 +310,23 @@
   }
   [data-slot="card"] {
     box-shadow: var(--shadow-card);
-    transition: box-shadow 180ms ease, transform 180ms ease;
+    transition: box-shadow var(--motion-standard) var(--ease-standard), border-color var(--motion-standard) var(--ease-standard);
   }
   a[data-slot="card"]:hover,
   button[data-slot="card"]:hover {
     box-shadow: var(--shadow-card-hover);
-    transform: translateY(-1px);
+    border-color: var(--input);
   }
   [data-slot="button"][data-variant="default"],
   button[data-slot="button"].bg-primary {
-    background-image: var(--gradient-primary);
-    box-shadow: 0 1px 0 rgb(255 255 255 / 0.18) inset, 0 6px 14px -6px rgb(159 18 57 / 0.55);
-    transition: filter 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+    /* Flat brand fill; hover/press change colour only. */
+    background-image: none;
+    background-color: var(--primary);
+    box-shadow: none;
+    transition: background-color var(--motion-quick) var(--ease-standard);
   }
   [data-slot="button"][data-variant="default"]:hover:not(:disabled) {
-    filter: brightness(1.06);
-  }
-  [data-slot="button"][data-variant="default"]:active:not(:disabled) {
-    transform: translateY(1px);
+    background-color: var(--primary-hover);
   }
   table {
     font-variant-numeric: tabular-nums;
@@ -328,5 +337,16 @@
   [data-slot="card"],
   [data-slot="button"] {
     transition: none !important;
+  }
+}
+
+/* Safety net (handbook 8): essential feedback must still be shown by components
+   in text/icon/focus; this only removes the movement. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -8,15 +8,16 @@ never sees or stores card numbers, CVVs or any card data.
 
 | Provider | Countries in the catalog | Integration | Status |
 |---|---|---|---|
-| Razorpay | IN | Hosted Payment Link | Implemented. Signature verification, amount checks and settlement logic unit-tested. **Not yet run against a live Razorpay account** (only auth failure was seen against the real API) |
-| Stripe | US, GB, ES | Hosted Checkout Session | Same status |
+| Razorpay | IN | Hosted Payment Link + refunds | Implemented. Signature verification, amount checks and settlement logic unit-tested. **Not yet run against a live Razorpay account** (only auth failure was seen against the real API) |
+| Stripe | US, GB, ES | Hosted Checkout Session + refunds | Same status |
 | Cashfree Payments | IN | Hosted Payment Link | Same status, plus: the webhook body shape is taken from Cashfree's docs (which differ across API versions) and was not exercised live. Confirmation never depends on it: the server always re-reads the link from Cashfree, and the customer return page triggers that re-read too |
 | PayU, CCAvenue, BillDesk, PayPal/Braintree, PayPal, Square, Adyen, Worldpay, Checkout.com, Redsys, PAYCOMET, PhonePe | listed | none | **Listed for reference only. OrderRestro cannot take payments through them yet** and refuses to store credentials for them |
 
 "Implemented" is not "supported": before relying on a gateway in production, run one Test
 payment end to end with your own sandbox account (see *Trying it*).
 
-Refunds are made in the provider's dashboard. OrderRestro does not issue gateway refunds.
+**Refunds:** Razorpay and Stripe refunds can be sent from OrderRestro (below). Cashfree refunds are made in
+Cashfree's dashboard and recorded here as an *Other* refund. Test payments cannot be refunded (no money moved).
 
 ## Setup flow
 
@@ -57,6 +58,21 @@ back). It moved **no real money**, so it does **not** mark the bill as paid. The
 5. If money arrived but the bill cannot take it (edited, cancelled, already paid) or the provider
    reports a different amount, the payment is flagged **Needs review** in Settings → Payments;
    it is never silently dropped or applied.
+
+## Refunds through the gateway
+
+Orders → Refund. If the order was paid by an online payment, the dialog defaults to **Send it back to the
+customer's original payment** (switch it off to refund by cash/UPI/store credit as before). The server:
+
+1. checks the order and the payment can both still take that amount (cap = what the payment has not already
+   refunded or reserved; cap = what the order still allows);
+2. **reserves** the amount, then calls the provider **once** (Stripe with an idempotency key; Razorpay has none,
+   so it is never retried automatically);
+3. records the local refund (reports, stock return, VERI*FACTU) **only after the provider accepts it**.
+
+Ambiguous outcomes are never guessed: a timeout, or the provider refunding but the local record failing, is
+shown under **Settings → Payments → Refunds needing review** with what to check. Do not refund again until you
+have looked in the provider dashboard. Needs the `refunds.process` permission.
 
 ## Secrets
 

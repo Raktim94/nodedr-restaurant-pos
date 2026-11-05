@@ -48,7 +48,7 @@ export const cashfreeAdapter: PaymentGatewayAdapter = {
   limitations: [
     'Cashfree requires the payer phone number to create a link.',
     "Webhook body parsing follows Cashfree's documented schema but has not been exercised against a live Cashfree account; the payment is always confirmed by a server-side status lookup, and the return page also triggers that lookup.",
-    'Refunds are made in the Cashfree dashboard.',
+    'Refunds are made in the Cashfree dashboard; OrderRestro cannot send them (the link-order refund API was not verified).',
   ],
   fields: [
     {

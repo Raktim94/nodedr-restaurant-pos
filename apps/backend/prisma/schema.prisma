@@ -98,6 +98,7 @@ model Restaurant {
   paymentGatewayConnections PaymentGatewayConnection[]
   paymentGatewayCatalog     PaymentGatewayCatalogEntry[]
   gatewayPayments           GatewayPayment[]
+  gatewayRefunds            GatewayRefund[]
 
   @@map("restaurants")
 }
@@ -2680,4 +2681,39 @@ model GatewayWebhookEvent {
 
   @@unique([provider, mode, eventId])
   @@map("gateway_webhook_events")
+}
+
+enum GatewayRefundStatus {
+  // Reserved against the payment; the provider has not answered yet.
+  PENDING
+  SUCCEEDED
+  FAILED
+  // Money may have moved but we could not confirm or record it. A person decides.
+  NEEDS_REVIEW
+}
+
+// A refund sent back through the gateway that took the payment. The local
+// Refund row (what reports and the VERI*FACTU chain read) is only created once
+// the provider has accepted the refund.
+model GatewayRefund {
+  id               String              @id @default(cuid())
+  restaurantId     String
+  restaurant       Restaurant          @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  gatewayPaymentId String
+  orderId          String
+  provider         String
+  amountMinor      Int
+  currency         String
+  status           GatewayRefundStatus @default(PENDING)
+  providerRefundId String?
+  refundId         String? // the local Refund once recorded
+  reason           String?
+  note             String?
+  createdById      String
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([gatewayPaymentId])
+  @@index([orderId])
+  @@map("gateway_refunds")
 }

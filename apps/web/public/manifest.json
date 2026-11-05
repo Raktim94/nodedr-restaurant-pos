@@ -8,7 +8,7 @@
   "display_override": ["window-controls-overlay", "standalone"],
   "orientation": "any",
   "background_color": "#0f0f11",
-  "theme_color": "#9f1239",
+  "theme_color": "#6D4AFF",
   "lang": "en",
   "categories": ["business", "food", "productivity"],
   "icons": [

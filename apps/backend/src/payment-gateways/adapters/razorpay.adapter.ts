@@ -5,6 +5,8 @@ import {
   type CreatePaymentResult,
   type GatewayContext,
   type PaymentGatewayAdapter,
+  type RefundInput,
+  type RefundResult,
   type RemoteStatus,
   type TestOutcome,
   type VerifiedWebhook,
@@ -39,7 +41,7 @@ export const razorpayAdapter: PaymentGatewayAdapter = {
     'https://razorpay.com/docs/api/payments/payment-links/create-standard',
   integration: 'Razorpay-hosted Payment Link (UPI, cards, netbanking, wallets)',
   limitations: [
-    'Refunds are made in the Razorpay Dashboard; they are not issued from OrderRestro.',
+    'Refunds go back to the original payment method through the Razorpay API (Live payments only). Razorpay has no idempotency key, so a refund request is never retried automatically.',
     'Partial payments are disabled on the links this app creates.',
   ],
   fields: [
@@ -132,6 +134,32 @@ export const razorpayAdapter: PaymentGatewayAdapter = {
       reference: l.reference_id ?? null,
       providerPaymentId:
         l.payments?.find((p) => p.payment_id)?.payment_id ?? null,
+    };
+  },
+
+  async refund(ctx, i: RefundInput): Promise<RefundResult> {
+    const r = await gatewayFetch<{ id: string; status: string }>(
+      `${API}/v1/payments/${encodeURIComponent(i.providerPaymentId)}/refund`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: auth(ctx),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: i.amountMinor,
+          speed: 'normal',
+          receipt: i.reference,
+          notes: { gatewayRefundId: i.reference },
+        }),
+      },
+    );
+    if (r.status === 'failed') {
+      throw new GatewayError('Razorpay could not refund this payment', 400);
+    }
+    return {
+      providerRefundId: r.id,
+      state: r.status === 'processed' ? 'DONE' : 'PENDING',
     };
   },
 

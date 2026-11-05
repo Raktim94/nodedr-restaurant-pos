@@ -5,6 +5,8 @@ import {
   type CreatePaymentResult,
   type GatewayContext,
   type PaymentGatewayAdapter,
+  type RefundInput,
+  type RefundResult,
   type RemoteStatus,
   type TestOutcome,
   type VerifiedWebhook,
@@ -45,7 +47,7 @@ export const stripeAdapter: PaymentGatewayAdapter = {
   docsUrl: 'https://docs.stripe.com/payments/checkout',
   integration: 'Stripe-hosted Checkout page',
   limitations: [
-    'Refunds are made in the Stripe Dashboard; they are not issued from OrderRestro.',
+    'Refunds go back to the original card through the Stripe API (Live payments only).',
     'Only successful, fully paid Checkout Sessions settle a bill.',
   ],
   fields: [
@@ -143,6 +145,36 @@ export const stripeAdapter: PaymentGatewayAdapter = {
       currency: (s.currency ?? '').toUpperCase(),
       reference: s.client_reference_id,
       providerPaymentId: pi ?? null,
+    };
+  },
+
+  async refund(ctx, i: RefundInput): Promise<RefundResult> {
+    const r = await gatewayFetch<{ id: string; status: string }>(
+      `${API}/v1/refunds`,
+      {
+        method: 'POST',
+        headers: {
+          ...auth(ctx),
+          'Content-Type': 'application/x-www-form-urlencoded',
+          // Same key on a retry returns the same refund, never a second one.
+          'Idempotency-Key': `refund-${i.reference}`,
+        },
+        body: form([
+          ['payment_intent', i.providerPaymentId],
+          ['amount', String(i.amountMinor)],
+          ['metadata[gatewayRefundId]', i.reference],
+        ]),
+      },
+    );
+    if (r.status === 'failed' || r.status === 'canceled') {
+      throw new GatewayError(
+        `Stripe could not refund this payment (${r.status})`,
+        400,
+      );
+    }
+    return {
+      providerRefundId: r.id,
+      state: r.status === 'succeeded' ? 'DONE' : 'PENDING',
     };
   },
 

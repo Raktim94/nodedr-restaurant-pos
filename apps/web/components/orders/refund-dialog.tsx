@@ -17,7 +17,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { formatCurrency } from "@/lib/format";
 import { useRefundOrder } from "@/hooks/use-orders";
+import { useGatewayRefund, useOrderGatewayPayments } from "@/hooks/use-payment-gateways";
+import { fromMinorUnits } from "@/lib/money-units";
 import { api, ApiError } from "@/lib/api";
 
 const METHODS: PaymentMethodDto[] = ["CASH", "CARD", "UPI", "OTHER", "STORE_CREDIT"];
@@ -38,6 +42,14 @@ export function RefundDialog({
   const [method, setMethod] = useState<PaymentMethodDto>("CASH");
   const [reason, setReason] = useState("");
   const refund = useRefundOrder(branchId);
+  const gatewayRefund = useGatewayRefund(branchId);
+  // An online payment that can be sent back to the customer's own card/UPI.
+  const gw = useOrderGatewayPayments(branchId, orderId, open);
+  const online = gw.data?.find((p) => p.refundableMinor > 0) ?? null;
+  const [viaGateway, setViaGateway] = useState(true);
+  const useGateway = !!online && viaGateway;
+  const onlineMax = online ? fromMinorUnits(online.refundableMinor, online.currency) : 0;
+  const pending = refund.isPending || gatewayRefund.isPending;
   // Units physically handed back; only these go back into stock.
   const [returned, setReturned] = useState<Record<string, number>>({});
   const { data: order } = useQuery({
@@ -46,8 +58,26 @@ export function RefundDialog({
     enabled: open && !!branchId,
   });
 
+  const returnedItems = () =>
+    Object.entries(returned)
+      .filter(([, quantity]) => quantity > 0)
+      .map(([orderItemId, quantity]) => ({ orderItemId, quantity }));
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (useGateway && online) {
+      gatewayRefund.mutate(
+        { paymentId: online.id, amount: Number(amount), reason: reason || undefined, returnedItems: returnedItems() },
+        {
+          onSuccess: () => {
+            toast.success(`Sent ${amount} back to the customer's original payment on order #${orderNumber}`);
+            setOpen(false);
+          },
+          onError: (err) => toast.error(err instanceof ApiError ? err.message : "Refund failed"),
+        },
+      );
+      return;
+    }
     refund.mutate(
       {
         orderId,
@@ -79,18 +109,18 @@ export function RefundDialog({
           </Button>
         }
       />
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-md">
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>Refund order #{orderNumber}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="refund-amount">Amount (max {maxAmount})</Label>
+            <Label htmlFor="refund-amount">Amount (max {useGateway ? Math.min(maxAmount, onlineMax) : maxAmount})</Label>
             <Input
               id="refund-amount"
               type="number"
               min="0"
-              max={maxAmount}
+              max={useGateway ? Math.min(maxAmount, onlineMax) : maxAmount}
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -98,10 +128,26 @@ export function RefundDialog({
               autoFocus
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <Label>Refund method</Label>
-            <PaymentMethodButtons methods={METHODS} value={method} onChange={setMethod} label="Refund method" />
-          </div>
+          {online && (
+            <div className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/40 p-3 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Label htmlFor="refund-via-gw" className="font-medium">Send it back to the customer&apos;s original payment</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {online.provider} · up to {formatCurrency(onlineMax, online.currency)} of this online payment can still be refunded. It reaches the customer in the provider&apos;s normal refund time.
+                  </p>
+                </div>
+                <Switch id="refund-via-gw" checked={viaGateway} onCheckedChange={setViaGateway} />
+              </div>
+              {useGateway && <p className="text-xs text-muted-foreground">This is sent once and cannot be recalled. It is recorded here only after the provider accepts it.</p>}
+            </div>
+          )}
+          {!useGateway && (
+            <div className="flex flex-col gap-2">
+              <Label>Refund method</Label>
+              <PaymentMethodButtons methods={METHODS} value={method} onChange={setMethod} label="Refund method" />
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             <Label htmlFor="refund-reason">Reason (optional)</Label>
             <Input id="refund-reason" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -134,8 +180,8 @@ export function RefundDialog({
             </fieldset>
           )}
           <DialogFooter>
-            <Button type="submit" variant="destructive" disabled={refund.isPending}>
-              {refund.isPending ? "Refunding…" : "Issue refund"}
+            <Button type="submit" variant="destructive" disabled={pending}>
+              {pending ? "Refunding…" : useGateway ? `Refund ${amount || ""} to the original payment`.trim() : "Issue refund"}
             </Button>
           </DialogFooter>
         </form>

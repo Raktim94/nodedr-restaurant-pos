@@ -17,6 +17,19 @@ import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { fromMinorUnits } from "@/lib/money-units";
 
+declare global {
+  interface Window {
+    OrderRestroNative?: { openExternal?: (url: string) => void };
+  }
+}
+
+/** In the Android app the page opens in the phone's browser; elsewhere in a new tab. */
+function openPaymentPage(url: string) {
+  const native = typeof window === "undefined" ? undefined : window.OrderRestroNative;
+  if (native?.openExternal) native.openExternal(url);
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
+
 // Offers the customer a provider-hosted payment page for the bill's balance.
 // The amount is worked out by the server; this only asks for a link, shows it
 // and re-checks its status. "Paid" here is whatever the server says after it
@@ -58,7 +71,7 @@ export function OnlinePayment({ orderId, branchId, disabled }: { orderId: string
   const amount = pay ? formatCurrency(fromMinorUnits(pay.amountMinor, pay.currency), pay.currency) : "";
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-border p-3">
+    <section className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4" aria-label={`Pay online with ${active.name}`}>
       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
         <Globe className="h-4 w-4" aria-hidden /> Pay online with {active.name}
         {active.mode === "TEST" && (
@@ -70,6 +83,9 @@ export function OnlinePayment({ orderId, branchId, disabled }: { orderId: string
 
       {!pay || pay.status === "EXPIRED" || pay.status === "FAILED" ? (
         <>
+          <p className="text-xs text-muted-foreground">
+            Makes a {active.name} page for the amount still due on this bill. The customer pays there; card details never reach OrderRestro.
+          </p>
           {active.requiresCustomerPhone && (
             <div className="flex flex-col gap-1">
               <Label htmlFor="gw-phone" className="text-xs">Customer phone (required by {active.name})</Label>
@@ -77,7 +93,7 @@ export function OnlinePayment({ orderId, branchId, disabled }: { orderId: string
             </div>
           )}
           <Button type="button" variant="outline" disabled={disabled || create.isPending || (active.requiresCustomerPhone && phone.length < 6)} onClick={start}>
-            {create.isPending ? "Creating link…" : "Create payment link for the balance"}
+            {create.isPending ? "Creating link…" : "Create payment link"}
           </Button>
           {pay?.status === "EXPIRED" && <p className="text-xs text-muted-foreground">The last link expired. Create a new one.</p>}
         </>
@@ -90,14 +106,16 @@ export function OnlinePayment({ orderId, branchId, disabled }: { orderId: string
           <QRCodeSVG value={pay.checkoutUrl} size={168} level="M" marginSize={1} />
           <p className="text-xs font-medium text-[#17251d]">Scan to pay {amount}</p>
           <div className="flex gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => window.open(pay.checkoutUrl!, "_blank", "noopener,noreferrer")}>
+            <Button type="button" size="sm" variant="outline" onClick={() => openPaymentPage(pay.checkoutUrl!)}>
               <ExternalLink className="mr-1.5 h-3.5 w-3.5" aria-hidden /> Open
             </Button>
             <Button type="button" size="sm" variant="outline" onClick={() => void navigator.clipboard?.writeText(pay.checkoutUrl!).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })}>
               <Copy className="mr-1.5 h-3.5 w-3.5" aria-hidden /> {copied ? "Copied" : "Copy link"}
             </Button>
           </div>
-          <p className="text-xs text-neutral-600" role="status">Waiting for the customer to pay… this updates by itself.</p>
+          <p className="text-xs text-neutral-600" role="status" aria-live="polite">
+            Waiting for the customer to pay. The bill closes only after {active.name} confirms the payment; this updates by itself.
+          </p>
         </div>
       )}
 
@@ -114,6 +132,6 @@ export function OnlinePayment({ orderId, branchId, disabled }: { orderId: string
           A payment needs attention: {pay.note ?? "check the provider dashboard"}. It is listed under Settings → Payments.
         </p>
       )}
-    </div>
+    </section>
   );
 }

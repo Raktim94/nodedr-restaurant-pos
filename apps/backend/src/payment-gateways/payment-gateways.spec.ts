@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-base-to-string */
 import { createHash, createHmac } from 'crypto';
 import {
   cashfreeAdapter,
@@ -202,5 +203,73 @@ describe('catalog', () => {
   it('records when it was researched and has no duplicate keys', () => {
     const keys = BUILTIN_CATALOG.map((e) => e.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('refund requests', () => {
+  afterEach(() => jest.restoreAllMocks());
+  const ok = (body: unknown) =>
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }));
+
+  it('Stripe: payment_intent + integer amount + idempotency key derived from our refund id', async () => {
+    const f = ok({ id: 're_1', status: 'succeeded' });
+    const r = await stripeAdapter.refund!(
+      { mode: 'LIVE', credentials: { secretKey: 'sk_live_x' } },
+      {
+        providerPaymentId: 'pi_9',
+        amountMinor: 5000,
+        currency: 'USD',
+        reference: 'gr1',
+      },
+    );
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.stripe.com/v1/refunds');
+    expect(String(init.body)).toContain('payment_intent=pi_9');
+    expect(String(init.body)).toContain('amount=5000');
+    expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe(
+      'refund-gr1',
+    );
+    expect(r).toEqual({ providerRefundId: 're_1', state: 'DONE' });
+  });
+
+  it('Razorpay: refunds the payment id in paise and reports pending until processed', async () => {
+    const f = ok({ id: 'rfnd_1', status: 'pending' });
+    const r = await razorpayAdapter.refund!(
+      { mode: 'LIVE', credentials: { keyId: 'rzp_live_a', keySecret: 's' } },
+      {
+        providerPaymentId: 'pay_9',
+        amountMinor: 5000,
+        currency: 'INR',
+        reference: 'gr1',
+      },
+    );
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.razorpay.com/v1/payments/pay_9/refund');
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      amount: 5000,
+      receipt: 'gr1',
+    });
+    expect(r.state).toBe('PENDING');
+  });
+
+  it('a failed provider refund is a definite rejection', async () => {
+    ok({ id: 're_2', status: 'failed' });
+    await expect(
+      stripeAdapter.refund!(
+        { mode: 'LIVE', credentials: { secretKey: 'sk_live_x' } },
+        {
+          providerPaymentId: 'pi',
+          amountMinor: 1,
+          currency: 'USD',
+          reference: 'g',
+        },
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('Cashfree declares no refund support', () => {
+    expect(cashfreeAdapter.refund).toBeUndefined();
   });
 });

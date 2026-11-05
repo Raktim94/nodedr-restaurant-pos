@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { GatewayPayment } from '@prisma/client';
+import { round2 } from '../modules/orders/pricing';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../modules/orders/orders.service';
 import {
@@ -16,6 +17,7 @@ import {
 } from './adapters/adapter';
 import { getAdapter } from './adapters/registry';
 import { fromMinor, toMinor } from './money';
+import type { RefundDto } from '@nodedr-restaurant/types';
 import { PaymentGatewaysService } from './payment-gateways.service';
 
 // A link already made for this exact bill is reused for this long, so a
@@ -394,6 +396,225 @@ export class GatewayPaymentsService {
     return { duplicate: false };
   }
 
+  // ----- refunds -------------------------------------------------------------
+
+  /**
+   * Sends money back through the gateway that took it, then records the local
+   * Refund. Order of operations is chosen so a failure can never lose track of
+   * money: reserve -> provider (once) -> local record -> done. Anything
+   * ambiguous (timeout, provider ok but local record failed) is flagged for a
+   * person instead of being retried or guessed.
+   */
+  async refund(
+    restaurantId: string,
+    branchId: string,
+    gatewayPaymentId: string,
+    userId: string,
+    input: {
+      amount: number;
+      reason?: string;
+      returnedItems?: RefundDto['returnedItems'];
+    },
+  ) {
+    const p = await this.prisma.gatewayPayment.findFirst({
+      where: { id: gatewayPaymentId, restaurantId, branchId },
+    });
+    if (!p) throw new NotFoundException('Payment not found');
+    if (p.mode === 'TEST') {
+      throw new BadRequestException(
+        'A test payment moved no money, so there is nothing to refund',
+      );
+    }
+    if (p.status !== 'SUCCEEDED' || !p.appliedAt || !p.providerPaymentId) {
+      throw new BadRequestException(
+        'Only a confirmed, settled online payment can be refunded this way',
+      );
+    }
+    const conn = await this.prisma.paymentGatewayConnection.findUnique({
+      where: { restaurantId_provider: { restaurantId, provider: p.provider } },
+    });
+    const entry = await this.prisma.paymentGatewayCatalogEntry.findFirst({
+      where: {
+        key: p.provider,
+        OR: [{ restaurantId }, { restaurantId: null }],
+      },
+      orderBy: { restaurantId: 'desc' },
+    });
+    const adapter = getAdapter(entry?.adapter);
+    if (!conn || !adapter?.refund) {
+      throw new BadRequestException(
+        `${adapter?.name ?? 'This gateway'} refunds cannot be sent from OrderRestro. Refund it in the provider dashboard and record it as an Other refund.`,
+      );
+    }
+    const amountMinor = toMinor(input.amount, p.currency);
+    if (amountMinor <= 0)
+      throw new BadRequestException('Enter an amount to refund');
+
+    // Local limits first, so we never refund at the provider what the books would reject.
+    const order = await this.prisma.order.findFirst({
+      where: { id: p.orderId, branchId },
+      select: { totalAmount: true, status: true },
+    });
+    if (!order || order.status !== 'PAID') {
+      throw new BadRequestException('Only a paid order can be refunded');
+    }
+    const prior = await this.prisma.refund.aggregate({
+      where: { orderId: p.orderId },
+      _sum: { amount: true },
+    });
+    const localLeft = round2(
+      Number(order.totalAmount) - Number(prior._sum.amount ?? 0),
+    );
+    if (input.amount > localLeft) {
+      throw new BadRequestException(
+        `Only ${localLeft} remains refundable on this order`,
+      );
+    }
+
+    // Reserve the amount: pending and needs-review refunds count against the payment.
+    const row = await this.prisma.$transaction(async (tx) => {
+      await tx.gatewayPayment.update({
+        where: { id: p.id },
+        data: { updatedAt: new Date() },
+      }); // row lock
+      const held = await tx.gatewayRefund.aggregate({
+        where: {
+          gatewayPaymentId: p.id,
+          status: { in: ['PENDING', 'SUCCEEDED', 'NEEDS_REVIEW'] },
+        },
+        _sum: { amountMinor: true },
+      });
+      const left = p.amountMinor - (held._sum.amountMinor ?? 0);
+      if (amountMinor > left) {
+        throw new BadRequestException(
+          `Only ${fromMinor(left, p.currency)} ${p.currency} of this payment can still be refunded`,
+        );
+      }
+      return tx.gatewayRefund.create({
+        data: {
+          restaurantId,
+          gatewayPaymentId: p.id,
+          orderId: p.orderId,
+          provider: p.provider,
+          amountMinor,
+          currency: p.currency,
+          reason: input.reason,
+          createdById: userId,
+        },
+      });
+    });
+
+    let providerRefundId: string;
+    try {
+      const r = await adapter.refund(
+        this.gateways.context(restaurantId, conn, p.mode),
+        {
+          providerPaymentId: p.providerPaymentId,
+          amountMinor,
+          currency: p.currency,
+          reference: row.id,
+        },
+      );
+      providerRefundId = r.providerRefundId;
+    } catch (e) {
+      const definite = e instanceof GatewayError && e.status !== undefined;
+      const msg = e instanceof GatewayError ? e.message : 'Refund failed';
+      await this.prisma.gatewayRefund.update({
+        where: { id: row.id },
+        data: definite
+          ? { status: 'FAILED', note: msg.slice(0, 300) }
+          : {
+              status: 'NEEDS_REVIEW',
+              note: 'The provider did not answer, so it is unknown whether the refund went through. Check the provider dashboard before trying again.',
+            },
+      });
+      throw new BadRequestException(
+        definite
+          ? msg
+          : 'The provider did not answer. Check the provider dashboard before trying again; no refund was recorded here.',
+      );
+    }
+
+    try {
+      const local = await this.orders.refund(branchId, p.orderId, userId, {
+        amount: input.amount,
+        method: 'OTHER',
+        reason: input.reason
+          ? `${input.reason} (via ${adapter.name})`
+          : `Refunded via ${adapter.name}`,
+        returnedItems: input.returnedItems,
+      });
+      await this.prisma.gatewayRefund.update({
+        where: { id: row.id },
+        data: {
+          status: 'SUCCEEDED',
+          providerRefundId,
+          refundId: (local as { id: string }).id,
+          note: null,
+        },
+      });
+      return {
+        ok: true,
+        providerRefundId,
+        amount: input.amount,
+        currency: p.currency,
+      };
+    } catch (e) {
+      this.logger.error(
+        `Refund ${row.id} sent to ${p.provider} but not recorded: ${(e as Error).message}`,
+      );
+      await this.prisma.gatewayRefund.update({
+        where: { id: row.id },
+        data: {
+          status: 'NEEDS_REVIEW',
+          providerRefundId,
+          note: `Refunded at ${adapter.name} but could not be recorded in OrderRestro: ${(e as Error).message}`.slice(
+            0,
+            300,
+          ),
+        },
+      });
+      throw new ConflictException(
+        `The refund was sent to ${adapter.name} but could not be recorded here. It is flagged for review under Settings → Payments.`,
+      );
+    }
+  }
+
+  /** Refunds that need a person, newest first (shown on Settings > Payments). */
+  async refundsNeedingReview(restaurantId: string) {
+    const rows = await this.prisma.gatewayRefund.findMany({
+      where: { restaurantId, status: 'NEEDS_REVIEW' },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      orderId: r.orderId,
+      provider: r.provider,
+      amountMinor: r.amountMinor,
+      currency: r.currency,
+      note: r.note,
+      providerRefundId: r.providerRefundId,
+      createdAt: r.createdAt,
+    }));
+  }
+
+  async refundsForOrder(restaurantId: string, orderId: string) {
+    const rows = await this.prisma.gatewayRefund.findMany({
+      where: { restaurantId, orderId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      gatewayPaymentId: r.gatewayPaymentId,
+      amountMinor: r.amountMinor,
+      currency: r.currency,
+      status: r.status,
+      note: r.note,
+      createdAt: r.createdAt,
+    }));
+  }
+
   // ----- reads -------------------------------------------------------------------
 
   async forOrder(restaurantId: string, branchId: string, orderId: string) {
@@ -402,7 +623,25 @@ export class GatewayPaymentsService {
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
-    return rows.map((r) => this.present(r));
+    const refunds = await this.prisma.gatewayRefund.groupBy({
+      by: ['gatewayPaymentId'],
+      where: {
+        restaurantId,
+        orderId,
+        status: { in: ['PENDING', 'SUCCEEDED', 'NEEDS_REVIEW'] },
+      },
+      _sum: { amountMinor: true },
+    });
+    const held = new Map(
+      refunds.map((g) => [g.gatewayPaymentId, g._sum.amountMinor ?? 0]),
+    );
+    return rows.map((r) => ({
+      ...this.present(r),
+      refundableMinor:
+        r.status === 'SUCCEEDED' && r.mode === 'LIVE' && r.appliedAt
+          ? r.amountMinor - (held.get(r.id) ?? 0)
+          : 0,
+    }));
   }
 
   /** What a cashier needs to know to offer online payment, and nothing secret. */

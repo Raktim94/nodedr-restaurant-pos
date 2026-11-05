@@ -176,3 +176,54 @@ export function useActiveGateway() {
     staleTime: 60_000,
   });
 }
+
+export type OrderGatewayPayment = GatewayPaymentRow & { refundableMinor: number };
+
+/** Online payments taken for an order, with how much of each can still be sent back. */
+export function useOrderGatewayPayments(branchId: string | null, orderId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [...KEY, "order", branchId, orderId],
+    queryFn: () => api.get<OrderGatewayPayment[]>(`/orders/${orderId}/gateway-payments?branchId=${branchId}`),
+    enabled: enabled && !!branchId,
+  });
+}
+
+export function useGatewayRefund(branchId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      paymentId: string;
+      amount: number;
+      reason?: string;
+      returnedItems?: { orderItemId: string; quantity: number }[];
+    }) =>
+      api.post<{ ok: boolean; providerRefundId: string }>(`/gateway-payments/${v.paymentId}/refund?branchId=${branchId}`, {
+        amount: v.amount,
+        reason: v.reason,
+        returnedItems: v.returnedItems,
+      }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+      void qc.invalidateQueries({ queryKey: ["orders"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export interface RefundToReview {
+  id: string;
+  orderId: string;
+  provider: string;
+  amountMinor: number;
+  currency: string;
+  note: string | null;
+  providerRefundId: string | null;
+  createdAt: string;
+}
+
+export function useRefundsToReview() {
+  return useQuery({
+    queryKey: [...KEY, "refunds-to-review"],
+    queryFn: () => api.get<RefundToReview[]>("/payment-gateways/refunds-to-review"),
+  });
+}

@@ -12,12 +12,15 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   useGatewayActions,
   useGatewayCatalog,
   useGatewayConnections,
   useRecentGatewayPayments,
+  useRefundsToReview,
   type GatewayMode,
+  type GatewayPaymentRow,
   type GatewayProvider,
 } from "@/hooks/use-payment-gateways";
 import { ApiError } from "@/lib/api";
@@ -51,18 +54,19 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
+const PILL = "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-sm font-medium";
 /** Words plus an icon, never colour alone. */
 function StatusLine({ p }: { p: GatewayProvider }) {
   const c = p.connection;
   if (!p.integrated) return <span className="text-sm text-muted-foreground">Not integrated with OrderRestro yet</span>;
   if (!c) return <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"><CircleDashed className="h-4 w-4" aria-hidden />Not set up</span>;
   if (c.lastTestOk === false)
-    return <span className="inline-flex items-center gap-1.5 text-sm font-medium text-destructive"><ShieldAlert className="h-4 w-4" aria-hidden />Connection problem</span>;
+    return <span className={`${PILL} bg-destructive/10 text-destructive`}><ShieldAlert className="h-4 w-4" aria-hidden />Connection problem</span>;
   if (!c.enabled)
     return <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"><CircleDashed className="h-4 w-4" aria-hidden />Saved, not switched on</span>;
   if (c.mode === "TEST")
-    return <span className="inline-flex items-center gap-1.5 text-sm font-medium text-warning"><FlaskConical className="h-4 w-4" aria-hidden />On in Test mode — no real money moves</span>;
-  return <span className="inline-flex items-center gap-1.5 text-sm font-medium text-success"><Zap className="h-4 w-4" aria-hidden />Live — customers are charged real money</span>;
+    return <span className={`${PILL} bg-warning/10 text-warning`}><FlaskConical className="h-4 w-4" aria-hidden />On in Test mode — no real money moves</span>;
+  return <span className={`${PILL} bg-success/10 text-success`}><Zap className="h-4 w-4" aria-hidden />Live — customers are charged real money</span>;
 }
 
 function CredentialsForm({ p, country, mode }: { p: GatewayProvider; country: string; mode: GatewayMode }) {
@@ -197,10 +201,12 @@ function LiveDialog({ p, open, onClose }: { p: GatewayProvider; open: boolean; o
           <DialogTitle>Switch {p.name} to Live mode?</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3 text-sm">
-          <p>
-            In Live mode, customers who pay online are charged <strong>real money</strong>, and a paid link marks the bill as paid. We will first check that your
-            Live credentials are accepted.
-          </p>
+          <dl className="grid gap-2 rounded-lg border border-border bg-secondary/40 p-3">
+            <div><dt className="font-medium text-foreground">What changes</dt><dd className="text-muted-foreground">New payment links use your Live {p.name} account. Customers are charged real money, and a paid link closes the bill.</dd></div>
+            <div><dt className="font-medium text-foreground">What stays the same</dt><dd className="text-muted-foreground">Your Test credentials, past test payments and every bill already paid.</dd></div>
+            <div><dt className="font-medium text-foreground">Can I undo it?</dt><dd className="text-muted-foreground">Yes. Switch back to Test mode at any time. Money already collected is not reversed; refund it from the order.</dd></div>
+            <div><dt className="font-medium text-foreground">Before switching</dt><dd className="text-muted-foreground">We check that {p.name} accepts your Live credentials. If it does not, nothing changes.</dd></div>
+          </dl>
           <Label htmlFor="live-confirm">Type {LIVE_PHRASE} to confirm</Label>
           <Input id="live-confirm" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" />
           {err && <p className="text-destructive" role="alert">{err}</p>}
@@ -216,7 +222,7 @@ function LiveDialog({ p, open, onClose }: { p: GatewayProvider; open: boolean; o
               )
             }
           >
-            {setMode.isPending ? "Checking…" : "Switch to Live"}
+            {setMode.isPending ? "Checking credentials…" : "Switch to Live mode"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -251,13 +257,13 @@ function ProviderSetup({ p, country, open, onToggle }: { p: GatewayProvider; cou
             />
           </div>
         )}
-        <Button size="sm" variant={open ? "outline" : "default"} aria-expanded={open} onClick={onToggle}>
+        <Button size="sm" variant={open || !p.integrated ? "outline" : "default"} aria-expanded={open} onClick={onToggle}>
           {open ? "Close" : c ? "Manage" : p.integrated ? "Set up" : "Details"}
         </Button>
         </div>
       </div>
 
-      {!open && <p className="text-sm text-muted-foreground">{p.integration}{p.integrated ? "" : " · not integrated with OrderRestro yet"}</p>}
+      {!open && <p className="text-sm text-muted-foreground">{p.integration}</p>}
 
       {!open ? null : !p.integrated ? (
         <p className="rounded-lg bg-secondary/60 px-3 py-2 text-sm text-muted-foreground">
@@ -272,21 +278,16 @@ function ProviderSetup({ p, country, open, onToggle }: { p: GatewayProvider; cou
             ))}
           </div>
 
-          <div role="tablist" aria-label="Credential mode" className="flex gap-1 rounded-lg bg-secondary p-1">
-            {(["TEST", "LIVE"] as const).map((m) => (
-              <button
-                key={m}
-                role="tab"
-                type="button"
-                aria-selected={tab === m}
-                className={`min-h-11 flex-1 rounded-md px-3 text-sm font-medium ${tab === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
-                onClick={() => setTab(m)}
-              >
-                {m === "TEST" ? "Test credentials" : "Live credentials"}
-                {c?.mode === m && <Badge className="ml-2" variant="secondary">in use</Badge>}
-              </button>
-            ))}
-          </div>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as GatewayMode)}>
+            <TabsList aria-label="Credential mode" className="w-full">
+              {(["TEST", "LIVE"] as const).map((m) => (
+                <TabsTrigger key={m} value={m} className="min-h-11 flex-1">
+                  {m === "TEST" ? "Test credentials" : "Live credentials"}
+                  {c?.mode === m && <Badge className="ml-2" variant="secondary">in use</Badge>}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
 
           <CredentialsForm key={`${p.key}-${tab}`} p={p} country={country} mode={tab} />
 
@@ -381,25 +382,85 @@ function CustomProviderDialog({ country, open, onClose, adapters }: { country: s
   );
 }
 
+const PAY_LABEL: Record<string, string> = {
+  NEEDS_REVIEW: "Needs review",
+  SUCCEEDED: "Paid",
+  CREATED: "Waiting for customer",
+  EXPIRED: "Link expired",
+  FAILED: "Could not create link",
+};
+
+function PaymentRow({ r }: { r: GatewayPaymentRow }) {
+  const attention = r.status === "NEEDS_REVIEW";
+  return (
+    <li className="flex flex-col gap-1 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <span className="font-medium tabular-nums text-foreground">{formatCurrency(fromMinorUnits(r.amountMinor, r.currency), r.currency)}</span>
+        <span className={`${PILL} ${attention ? "bg-destructive/10 text-destructive" : r.status === "SUCCEEDED" ? "bg-success/10 text-success" : "bg-secondary text-muted-foreground"}`}>
+          {attention && <AlertTriangle className="h-3.5 w-3.5" aria-hidden />}
+          {r.status === "SUCCEEDED" && <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />}
+          {PAY_LABEL[r.status]}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {r.provider} · {r.mode === "TEST" ? "Test payment, no real money" : "Live payment"} · <time dateTime={r.createdAt}>{new Date(r.createdAt).toLocaleString()}</time>
+      </p>
+      {r.note && <p className={`text-sm ${attention ? "text-foreground" : "text-muted-foreground"}`}>{r.note}</p>}
+    </li>
+  );
+}
+
+/** What needs a person comes first; the history sits below it. */
 function RecentPayments() {
   const q = useRecentGatewayPayments();
-  if (!q.data?.length) return null;
+  const rq = useRefundsToReview();
+  const badRefunds = rq.data ?? [];
+  if (q.isLoading) return <Skeleton className="h-24 w-full" />;
+  if (q.isError) return <p className="text-sm text-destructive" role="alert">Could not load recent payments. Try again shortly.</p>;
+  const rows = q.data ?? [];
+  const review = rows.filter((r) => r.status === "NEEDS_REVIEW");
   return (
-    <Card className="flex flex-col gap-3 p-5">
-      <h2 className="text-[18px] font-medium text-foreground">Recent online payments</h2>
-      <ul className="flex flex-col divide-y divide-border text-sm">
-        {q.data.map((r) => (
-          <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-            <span className="tabular-nums">{formatCurrency(fromMinorUnits(r.amountMinor, r.currency), r.currency)}</span>
-            <span className="text-muted-foreground">{r.provider} · {r.mode === "TEST" ? "Test (no real money)" : "Live"}</span>
-            <span className={r.status === "NEEDS_REVIEW" ? "font-medium text-destructive" : "text-foreground"}>
-              {r.status === "NEEDS_REVIEW" ? "Needs review" : r.status === "SUCCEEDED" ? "Paid" : r.status === "CREATED" ? "Waiting for customer" : r.status === "EXPIRED" ? "Expired" : "Failed"}
-            </span>
-            {r.note && <span className="w-full text-xs text-muted-foreground">{r.note}</span>}
-          </li>
-        ))}
-      </ul>
-    </Card>
+    <>
+      {badRefunds.length > 0 && (
+        <Card className="flex flex-col gap-2 border-destructive/40 p-5" role="region" aria-label="Refunds needing review">
+          <h2 className="flex items-center gap-2 text-[18px] font-medium text-foreground">
+            <AlertTriangle className="h-5 w-5 text-destructive" aria-hidden /> {badRefunds.length} refund{badRefunds.length > 1 ? "s" : ""} need{badRefunds.length > 1 ? "" : "s"} review
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Check each one in the provider dashboard before trying again. Refunding twice returns the customer&apos;s money twice.
+          </p>
+          <ul className="divide-y divide-border text-sm">
+            {badRefunds.map((r) => (
+              <li key={r.id} className="flex flex-col gap-1 py-3">
+                <span className="font-medium tabular-nums">{formatCurrency(fromMinorUnits(r.amountMinor, r.currency), r.currency)} · {r.provider}{r.providerRefundId ? ` · ${r.providerRefundId}` : ""}</span>
+                {r.note && <span className="text-muted-foreground">{r.note}</span>}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+      {review.length > 0 && (
+        <Card className="flex flex-col gap-2 border-destructive/40 p-5" role="region" aria-label="Payments needing review">
+          <h2 className="flex items-center gap-2 text-[18px] font-medium text-foreground">
+            <AlertTriangle className="h-5 w-5 text-destructive" aria-hidden /> {review.length} payment{review.length > 1 ? "s" : ""} need{review.length > 1 ? "" : "s"} review
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Money reached the gateway but the bill could not be closed, or the amount did not match. Nothing was applied automatically. Check it in the provider dashboard, then settle or refund the order.
+          </p>
+          <ul className="divide-y divide-border">{review.map((r) => <PaymentRow key={r.id} r={r} />)}</ul>
+        </Card>
+      )}
+      <Card className="flex flex-col gap-1 p-5">
+        <h2 className="text-[18px] font-medium text-foreground">Recent online payments</h2>
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No online payments yet. When a cashier creates a payment link from the POS checkout, it appears here with its status and whether it was a test.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">{rows.map((r) => <PaymentRow key={r.id} r={r} />)}</ul>
+        )}
+      </Card>
+    </>
   );
 }
 

@@ -75,6 +75,20 @@ public class MainActivity extends BridgeActivity {
                     runOnUiThread(MainActivity.this::recreate);
                 }
 
+                /**
+                 * Opens a payment page (or any https link) in the phone's own browser so the
+                 * customer pays outside the app and the app keeps its place. https only.
+                 */
+                @android.webkit.JavascriptInterface
+                public void openExternal(String url) {
+                    if (url == null || !url.startsWith("https://")) return;
+                    runOnUiThread(() -> {
+                        try {
+                            startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)));
+                        } catch (Throwable ignored) {}
+                    });
+                }
+
                 @android.webkit.JavascriptInterface
                 public void retry() {
                     // Pick the local or online address again, then reopen.
