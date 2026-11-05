@@ -1,7 +1,7 @@
 # Feature Checklist
 
 Cross-referenced against the actual codebase (`apps/backend`, `apps/web`,
-`apps/backend/prisma/schema.prisma`) as of 2026-08-14, not just roadmap
+`apps/backend/prisma/schema.prisma`) as of 2026-11-05, not just roadmap
 prose. This is the exhaustive taxonomy version of `ROADMAP.md` (which
 tracks the same ground phase-by-phase, engineering-oriented) — organized
 here by product category for public/roadmap use. Where a feature is
@@ -309,7 +309,7 @@ partially built, the note says what's missing.
 | Sales by hour/day/category/product/employee/payment method | Planned | Only aggregate summary + trend exist, not these breakdowns |
 | Restaurant KPIs (AOV, covers, table turnover, food cost %, etc.) | Planned | |
 | Full reports catalog, exports (CSV/PDF/Excel), scheduled email | Planned | Explicitly Phase 7, not started |
-| Sales forecasting / AI recommendations / anomaly detection | Planned | |
+| Sales forecasting / AI recommendations / anomaly detection | Partial | Weighted-moving-average demand forecast, inventory/purchase suggestions and menu/waste/churn analytics shipped; seasonality, holidays, accuracy tracking and anomaly alerts remain planned |
 
 ## 📈 Owner Dashboard
 
@@ -409,7 +409,11 @@ partially built, the note says what's missing.
 
 | Feature | Status | Note |
 |---|---|---|
-| Everything in this category | Planned | No AI/LLM integration anywhere in the codebase |
+| Demand, inventory, waste, menu and churn analytics | Shipped | Local statistical/rule-based models under `/v1/ai`; these are not presented as trained ML models |
+| Natural-language reports | Partial | Secured intent routing for demand, inventory, waste, menu and churn questions; LLM-backed conversational analysis remains planned |
+| Invoice OCR | Partial | Local extracted-text parser shipped; image OCR requires `AI_OCR_ENDPOINT` and `AI_OCR_API_KEY` |
+| AI usage quotas and cost logs | Shipped | Tenant-scoped quota checks and usage logging |
+| Predictive KDS, fraud detection, staff scheduling and recommendation engine | Planned | |
 
 ## 🔥 Advanced "Enterprise POS" Features
 
