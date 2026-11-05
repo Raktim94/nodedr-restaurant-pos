@@ -109,7 +109,17 @@ internal sealed class ServerSupervisor : IDisposable
         // upgrade to a newer version and re-copy automatically; deleting
         // %LOCALAPPDATA%\OrderRestro\server\server-runtime forces a
         // fresh copy if ever needed.
-        if (File.Exists(ServerPaths.NodeExePath)) return;
+        // The marker also records which package version made the copy: an
+        // MSIX upgrade changes the bundled payload (e.g. 1.0.5.0 added the
+        // VC++ runtime DLLs next to postgres.exe), and a stale copy from an
+        // older build is exactly what made Postgres fail to start after an
+        // update. Version mismatch -> redo the copy (data dir is untouched).
+        var stamp = Path.Combine(ServerPaths.DataDir, "runtime.version");
+        var pkgVersion = typeof(ServerSupervisor).Assembly.GetName().Version?.ToString() ?? "0";
+        var stampOk = File.Exists(stamp) && File.ReadAllText(stamp).Trim() == pkgVersion;
+        if (File.Exists(ServerPaths.NodeExePath) && stampOk) return;
+        LogStartup($"runtime copy needed (package {pkgVersion}, stamp ok: {stampOk})");
+        await StopStaleRuntimeAsync();
 
         // This build's package genuinely has no embedded-server payload —
         // either it was built without -IncludeEmbeddedServer (the default;
@@ -132,7 +142,12 @@ internal sealed class ServerSupervisor : IDisposable
         Report("Setting up (first launch only — this can take a minute)…");
         if (Directory.Exists(ServerPaths.RuntimeServerDir))
         {
-            Directory.Delete(ServerPaths.RuntimeServerDir, recursive: true);
+            for (var attempt = 0; ; attempt++)
+            {
+                try { Directory.Delete(ServerPaths.RuntimeServerDir, recursive: true); break; }
+                catch (IOException) when (attempt < 5) { await Task.Delay(1000, ct); }
+                catch (UnauthorizedAccessException) when (attempt < 5) { await Task.Delay(1000, ct); }
+            }
         }
         Directory.CreateDirectory(ServerPaths.RuntimeServerDir);
 
@@ -156,6 +171,32 @@ internal sealed class ServerSupervisor : IDisposable
         {
             throw new InvalidOperationException($"Could not copy the embedded server runtime to a writable location (robocopy exit {exitCode}) — see {ServerPaths.ServerLogDir}\\runtime-copy.log");
         }
+        File.WriteAllText(stamp, pkgVersion);
+    }
+
+    // An old runtime copy may still have its own postgres/node running from
+    // a previous launch; they hold file locks that block the re-copy.
+    private async Task StopStaleRuntimeAsync()
+    {
+        try
+        {
+            var pgCtl = Path.Combine(ServerPaths.PostgresBinDir, "pg_ctl.exe");
+            if (File.Exists(pgCtl) && Directory.Exists(ServerPaths.PgDataDir))
+            {
+                await RunToolAsync(pgCtl, $"stop -D \"{ServerPaths.PgDataDir}\" -m fast -w -t 20",
+                    ServerPaths.DataDir, env: null, "pg_ctl-stop-stale", CancellationToken.None);
+            }
+        }
+        catch (Exception ex) { LogStartup($"stale postgres stop failed (ignored): {ex.Message}"); }
+        foreach (var proc in Process.GetProcessesByName("node"))
+        {
+            try
+            {
+                if (proc.MainModule?.FileName?.StartsWith(ServerPaths.RuntimeServerDir, StringComparison.OrdinalIgnoreCase) == true)
+                    proc.Kill(entireProcessTree: true);
+            }
+            catch { }
+        }
     }
 
     // --- Postgres ---------------------------------------------------------
@@ -177,6 +218,15 @@ internal sealed class ServerSupervisor : IDisposable
             return;
         }
 
+        // A data dir without PG_VERSION is a half-finished initdb from an
+        // earlier failed start (initdb writes PG_VERSION first, so there is
+        // no real data in it); initdb refuses a non-empty directory, which
+        // would otherwise make every retry fail forever.
+        if (Directory.Exists(ServerPaths.PgDataDir) && Directory.EnumerateFileSystemEntries(ServerPaths.PgDataDir).Any())
+        {
+            LogStartup("clearing incomplete pgdata (no PG_VERSION) before initdb");
+            Directory.Delete(ServerPaths.PgDataDir, recursive: true);
+        }
         Directory.CreateDirectory(ServerPaths.PgDataDir);
         var pwFile = Path.Combine(Path.GetTempPath(), $"orderrestro-pg-{Guid.NewGuid():N}.txt");
         // Trust auth is fine here: Postgres is bound to 127.0.0.1 only,
