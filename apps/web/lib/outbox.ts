@@ -10,6 +10,10 @@ export interface OutboxItem {
   body: unknown;
   label: string;
   at: number;
+  /** A newer item with the same group replaces an older waiting one (e.g. a priority star toggled twice). */
+  group?: string;
+  /** What the update means, so a screen can show it as already done while it waits. */
+  meta?: { kind: "kot-status"; id: string; status: string } | { kind: "kot-priority"; id: string; isPriority: boolean };
 }
 
 const STORE = "orderrestro.outbox.v1";
@@ -39,9 +43,18 @@ export const outbox = {
     return () => void listeners.delete(fn);
   },
   add(item: Omit<OutboxItem, "key" | "at">) {
-    write([...read(), { ...item, key: crypto.randomUUID(), at: Date.now() }]);
+    const kept = item.group ? read().filter((x) => x.group !== item.group) : read();
+    write([...kept, { ...item, key: crypto.randomUUID(), at: Date.now() }]);
+  },
+  /** Updates the server turned down on the last send (e.g. the ticket moved on another screen). */
+  refused: () => lastRefused,
+  clearRefused() {
+    lastRefused = [];
+    listeners.forEach((l) => l());
   },
 };
+
+let lastRefused: string[] = [];
 
 /** A fetch that never reached the server (no WiFi, server off), as opposed to the server saying no. */
 export function isNetworkError(e: unknown) {
@@ -71,6 +84,10 @@ export async function flushOutbox(): Promise<{ sent: number; refused: string[] }
     }
   } finally {
     flushing = false;
+  }
+  if (refused.length > 0) {
+    lastRefused = [...lastRefused, ...refused].slice(-10);
+    listeners.forEach((l) => l());
   }
   return { sent, refused };
 }

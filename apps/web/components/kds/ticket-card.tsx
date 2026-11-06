@@ -1,7 +1,7 @@
 "use client";
 
 import { ApiError } from "@/lib/api";
-import { Flame, Globe, Printer, Star, Timer, X } from "lucide-react";
+import { CloudOff, Flame, Globe, Printer, Star, Timer, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import { Button } from "@/components/ui/button";
@@ -137,6 +137,12 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
         </div>
       </button>
 
+      {ticket.savedOnPhone && (
+        <p className="flex items-center gap-1.5 text-xs text-warning">
+          <CloudOff className="h-3 w-3" aria-hidden /> Saved on this phone - will be sent when the connection is back
+        </p>
+      )}
+
       {ticket.order.notes && (
         <p className="flex items-start gap-1 rounded-lg bg-warning/10 px-2 py-1.5 text-xs text-warning">
           <Flame className="mt-0.5 h-3 w-3 shrink-0" /> {ticket.order.notes}
@@ -178,6 +184,9 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
                         ? err.message
                         : "Could not update the ticket. Check the connection and try again.",
                     ),
+                  onSuccess: (res) => {
+                    if (res === null) toast.success("Saved on this phone - it will be sent when the connection is back");
+                  },
                 },
               )
             }
@@ -226,7 +235,9 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
                     ticket.printedCount > 0 ? "Reprint sent to the kitchen printer" : "Ticket sent to the kitchen printer",
                   ),
                 onError: (err) =>
-                  toast.error(err instanceof ApiError ? err.message : "Could not print the ticket"),
+                  toast.error(
+                    err instanceof ApiError ? err.message : "Could not reach the server - printing needs the connection",
+                  ),
               },
             )
           }

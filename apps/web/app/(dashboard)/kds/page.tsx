@@ -1,7 +1,11 @@
 "use client";
 
 import type { KotStatusDto } from "@nodedr-restaurant/types";
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { CloudOff } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { flushOutbox, outbox } from "@/lib/outbox";
+import { isNativeApp } from "@/lib/native";
 import { BranchNotice } from "@/components/layout/branch-notice";
 import { PerformanceWidget } from "@/components/kds/performance-widget";
 import { IncomingOrderCard } from "@/components/kds/incoming-order-card";
@@ -12,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useBranch } from "@/hooks/use-branch";
 import { useKdsSound } from "@/hooks/use-kds-sound";
-import { useKdsIncoming, useKdsStations, useKdsTickets, type KotTicket } from "@/hooks/use-kds";
+import { useKdsIncoming, useKdsStations, useKdsTickets, useKdsTicketsWithPending, type KotTicket } from "@/hooks/use-kds";
 import { useKdsStationPreference } from "@/hooks/use-kds-station";
 import { installAudioUnlock } from "@/lib/audio-unlock";
 import { resolveStation } from "@/lib/kds-station";
@@ -40,8 +44,12 @@ export default function KdsPage() {
   useKdsSound(branchId);
   useEffect(() => installAudioUnlock(), []);
 
-  const byStatus = (status: KotStatusDto): KotTicket[] =>
-    tickets.data?.filter((t) => t.status === status) ?? [];
+  const shown = useKdsTicketsWithPending(tickets.data);
+  const waiting = useSyncExternalStore(outbox.subscribe, outbox.count, () => 0);
+  const refused = useSyncExternalStore(outbox.subscribe, () => outbox.refused().join("\n"), () => "");
+  // Fetching failed but an earlier copy is on screen: say how old it is.
+  const showingSaved = tickets.isError && !!tickets.data;
+  const byStatus = (status: KotStatusDto): KotTicket[] => shown.filter((t) => t.status === status);
   const pendingOrders = incoming.data ?? [];
 
   return (
@@ -89,6 +97,37 @@ export default function KdsPage() {
 
       <BranchNotice />
 
+      {isNativeApp() && (showingSaved || waiting > 0) && (
+        <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
+          <CloudOff className="h-4 w-4 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1">
+            {showingSaved
+              ? `No connection. Showing tickets from ${new Date(tickets.dataUpdatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. You can keep moving tickets along; printing and rejecting need the connection.`
+              : "Sending saved changes…"}
+            {waiting > 0 ? ` ${waiting} change${waiting === 1 ? "" : "s"} saved on this phone.` : ""}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9"
+            onClick={() => void flushOutbox().then(() => tickets.refetch())}
+          >
+            Send now
+          </Button>
+        </div>
+      )}
+      {refused && (
+        <div role="alert" className="flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <span className="min-w-0 flex-1 whitespace-pre-line">
+            The server did not accept {refused.split("\n").length === 1 ? "a saved change" : "some saved changes"}:{"\n"}
+            {refused}
+          </span>
+          <Button type="button" variant="outline" className="h-9" onClick={() => outbox.clearRefused()}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+
       {pendingOrders.length > 0 && (
         <section aria-label="Incoming orders" className="flex flex-col gap-2">
           <h2 className="text-sm font-semibold text-foreground">
@@ -110,7 +149,7 @@ export default function KdsPage() {
 
       <PerformanceWidget branchId={branchId} />
 
-      {tickets.isError ? (
+      {tickets.isError && !tickets.data ? (
         <QueryError
           error={tickets.error}
           what="the kitchen tickets"

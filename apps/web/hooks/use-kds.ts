@@ -2,7 +2,10 @@
 
 import { KOT_NEXT_STATUS, type KotStatusDto } from "@nodedr-restaurant/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useSyncExternalStore } from "react";
 import { api } from "@/lib/api";
+import { isNativeApp } from "@/lib/native";
+import { isNetworkError, outbox } from "@/lib/outbox";
 
 export interface KotTicket {
   id: string;
@@ -33,6 +36,8 @@ export interface KotTicket {
       modifiers: { nameSnapshot: string }[];
     };
   }[];
+  /** A change made on this phone is waiting to be sent (set on the phone only). */
+  savedOnPhone?: boolean;
 }
 
 export function useKdsStations(branchId: string | null) {
@@ -57,11 +62,49 @@ export function useKdsTickets(branchId: string | null, stationId = "", enabled =
   });
 }
 
+const noPending: never[] = [];
+/**
+ * The tickets with the changes saved on this phone (not yet sent) laid over
+ * them, so the board shows what the cook just did even with no connection -
+ * and keeps showing it if a refresh lands before the changes are sent.
+ */
+export function useKdsTicketsWithPending(tickets: KotTicket[] | undefined) {
+  const version = useSyncExternalStore(outbox.subscribe, () => outbox.all().length + ":" + outbox.all().map((i) => i.key).join(), () => "");
+  return useMemo(() => {
+    const pending = new Map<string, { status?: KotStatusDto; isPriority?: boolean }>();
+    for (const i of version ? outbox.all() : noPending) {
+      if (i.meta?.kind === "kot-status") pending.set(i.meta.id, { ...pending.get(i.meta.id), status: i.meta.status as KotStatusDto });
+      if (i.meta?.kind === "kot-priority") pending.set(i.meta.id, { ...pending.get(i.meta.id), isPriority: i.meta.isPriority });
+    }
+    const list = (tickets ?? []).map((t) => {
+      const p = pending.get(t.id);
+      return p ? { ...t, ...(p.status ? { status: p.status } : {}), ...(p.isPriority !== undefined ? { isPriority: p.isPriority } : {}), savedOnPhone: true } : { ...t, savedOnPhone: false };
+    });
+    // A ticket served offline is done: it leaves the board like it would online.
+    return list.filter((t) => t.status !== "SERVED");
+  }, [tickets, version]);
+}
+
 export function useUpdateKotStatus(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: KotStatusDto }) =>
-      api.patch(`/kds/tickets/${id}/status?branchId=${branchId}`, { status }),
+    mutationFn: async ({ id, status }: { id: string; status: KotStatusDto }) => {
+      const path = `/kds/tickets/${id}/status?branchId=${branchId}`;
+      try {
+        return await api.patch(path, { status });
+      } catch (e) {
+        // No connection: keep the step on the phone and send it, in order, when the server is back.
+        if (!isNativeApp() || !isNetworkError(e)) throw e;
+        outbox.add({
+          method: "PATCH",
+          path,
+          body: { status },
+          label: `Ticket ${status.toLowerCase()}`,
+          meta: { kind: "kot-status", id, status },
+        });
+        return null;
+      }
+    },
     // Also on error: a 409 means the ticket moved on another screen, and the
     // board must show where it really is rather than the stale step.
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["kds"] }),
@@ -164,8 +207,23 @@ export function useKdsProgress(branchId: string | null) {
 export function useSetKotPriority(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, isPriority }: { id: string; isPriority: boolean }) =>
-      api.patch(`/kds/tickets/${id}/priority?branchId=${branchId}`, { isPriority }),
+    mutationFn: async ({ id, isPriority }: { id: string; isPriority: boolean }) => {
+      const path = `/kds/tickets/${id}/priority?branchId=${branchId}`;
+      try {
+        return await api.patch(path, { isPriority });
+      } catch (e) {
+        if (!isNativeApp() || !isNetworkError(e)) throw e;
+        outbox.add({
+          method: "PATCH",
+          path,
+          body: { isPriority },
+          label: isPriority ? "Ticket starred" : "Ticket unstarred",
+          group: `kot-priority:${id}`,
+          meta: { kind: "kot-priority", id, isPriority },
+        });
+        return null;
+      }
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["kds", "tickets", branchId] }),
   });
 }

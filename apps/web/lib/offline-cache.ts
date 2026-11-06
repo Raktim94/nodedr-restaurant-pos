@@ -18,6 +18,15 @@ interface Entry {
 // Not kept: anything that is a live feed or one-off, and the very large lists.
 // "auth" is never kept: a saved copy must not make a signed-out phone look signed in.
 const SKIP = new Set(["auth", "kds", "realtime", "reports", "print", "audit"]);
+// The kitchen board is the exception: tickets and stations are kept so the
+// kitchen can still read what is cooking when the connection drops.
+const KDS_KEEP = new Set(["tickets", "stations"]);
+
+function skipped(key: readonly unknown[]) {
+  const head = String(key[0]);
+  if (head === "kds") return !KDS_KEEP.has(String(key[1]));
+  return SKIP.has(head);
+}
 
 export function clearOfflineCache() {
   try {
@@ -52,7 +61,7 @@ export function persistOfflineCache(qc: QueryClient) {
       let size = 0;
       for (const q of qc.getQueryCache().getAll()) {
         if (q.state.status !== "success" || q.state.data === undefined) continue;
-        if (SKIP.has(String(q.queryKey[0]))) continue;
+        if (skipped(q.queryKey)) continue;
         const e: Entry = { k: q.queryKey as unknown[], d: q.state.data, t: q.state.dataUpdatedAt };
         const s = JSON.stringify(e).length;
         if (s > 400_000 || size + s > MAX_BYTES) continue;
