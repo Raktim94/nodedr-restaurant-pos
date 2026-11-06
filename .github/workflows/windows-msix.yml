@@ -522,10 +522,39 @@ jobs:
           $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name -ErrorAction SilentlyContinue
           if ($pkg) { Remove-AppxPackage -Package $pkg.PackageFullName }
 
+      - name: One-click installer works on a clean PC (untrusted cert -> Install-OrderRestro)
+        shell: powershell
+        # A real PC does not trust this build's self-signed certificate, so a
+        # plain double-click fails. Install-OrderRestro.cmd/.ps1 trusts it for
+        # app installs (Trusted People only) and installs. Start from a machine
+        # that trusts nothing: remove the certificate the build step added.
+        run: |
+          [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
+          $subject = $manifest.Package.Identity.Publisher
+          foreach ($store in 'Cert:\LocalMachine\Root','Cert:\LocalMachine\TrustedPeople','Cert:\CurrentUser\Root','Cert:\CurrentUser\TrustedPeople') {
+              Get-ChildItem $store -ErrorAction SilentlyContinue | Where-Object { $_.Subject -eq $subject } | Remove-Item -Force -ErrorAction SilentlyContinue
+          }
+          Copy-Item windows\msix\Install-OrderRestro.ps1, windows\msix\Install-OrderRestro.cmd windows\msix\out\ -Force
+
+          # Without the installer, Windows must refuse the package (proves the test is real).
+          $plain = $true
+          try { Add-AppxPackage -Path windows\msix\out\OrderRestro.msix -ErrorAction Stop } catch { $plain = $false; Write-Host "Plain install refused as expected: $($_.Exception.Message)" }
+          if ($plain) { throw "Plain install succeeded on a machine that trusts nothing - the test is not testing the certificate path" }
+
+          powershell -NoProfile -ExecutionPolicy Bypass -File windows\msix\out\Install-OrderRestro.ps1 -NoLaunch -NoPause
+          if ($LASTEXITCODE -ne 0) { throw "Install-OrderRestro.ps1 failed with exit code $LASTEXITCODE" }
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
+          if (-not $pkg) { throw "Package not installed after Install-OrderRestro.ps1" }
+          Write-Host "Installed via the one-click installer: $($pkg.PackageFullName)" -ForegroundColor Green
+          Remove-AppxPackage -Package $pkg.PackageFullName
+
       - name: Upload embedded-server MSIX artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: OrderRestro-embedded-server-msix-${{ github.sha }}
-          path: windows/msix/out/OrderRestro.msix
+          path: |
+            windows/msix/out/OrderRestro.msix
+            windows/msix/out/Install-OrderRestro.ps1
+            windows/msix/out/Install-OrderRestro.cmd
           if-no-files-found: warn
