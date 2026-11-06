@@ -6,8 +6,8 @@ description**, so each carries the words a restaurant owner actually types
 ("restaurant POS", "billing", "KOT", "kitchen display"). Only claims the
 product really supports are used.
 
-## Product name (reserved name stays `Nodedr OrderRestro`)
-Display title in the listing, if the name allows a suffix: `Nodedr OrderRestro - Restaurant POS & Billing`
+## Product name
+Reserved 2026-11-06 and selected in the listing: `Nodedr OrderRestro - Restaurant POS and Billing` (the original `Nodedr OrderRestro` stays reserved; the package DisplayName is unchanged).
 
 ## Short description (max 1000)
 Free restaurant POS and billing software: take dine-in, takeaway and delivery orders, print bills and KOT, run a kitchen display, manage tables, reservations and inventory. Works offline on your own PC.
@@ -51,14 +51,11 @@ Website: https://orderrestro.nodedr.com
 - Works offline, no subscription
 - Multi-branch restaurant management
 
-## Search terms (max 7, keep each short)
-restaurant pos
-restaurant billing
-kot kitchen display
-cafe pos
-food billing software
-table management
-restaurant software
+## Keywords (max 7, 40 chars each, 21 words total) - as entered
+restaurant pos software / restaurant management system / table management system / restaurant billing software / kitchen order management / kot kitchen display / cafe pos
+
+## Screenshot captions (all 7 set)
+Inventory x2, Menu, Customers, Kitchen display (KDS/KOT), Tables, Dashboard: each starts with "Restaurant ..." and names the feature.
 
 ## Category
 Business (sub-category: Business > Accounting & finance is NOT right; choose the general Business/Productivity option offered)
