@@ -13,7 +13,7 @@ export const upiPayLine = (snap) => (snap.restaurant.upiVpa ? snap.restaurant.up
 const ESC = 0x1b;
 const GS = 0x1d;
 
-class Writer {
+export class Writer {
   constructor(columns) {
     this.cols = columns;
     this.bytes = [ESC, 0x40]; // initialise

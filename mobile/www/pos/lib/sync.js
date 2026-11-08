@@ -43,6 +43,7 @@ function payload(sale) {
     soldAt: sale.soldAt,
     type: sale.type,
     tableLabel: sale.tableLabel || undefined,
+    note: sale.note || undefined,
     items: sale.items.map((i) => ({ menuItemId: i.menuItemId, quantity: i.quantity, unitPrice: i.price })),
     discountPercent: sale.discountPercent || undefined,
     discountFlat: sale.discountFlat || undefined,

@@ -3,11 +3,13 @@
 // whenever it can. Plain DOM + modules: nothing here needs a build step.
 import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
-import { kv, newId, nextLocalNumber, sales } from './lib/store.js';
+import { kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, sales, saveKotWithOrder } from './lib/store.js';
+import { KOT_NEXT, dayReport, kotDelta, markSent, minutesSince, newOrder, openOrders, saleNote, tableMap, tableTakenBy } from './lib/orders.js';
+import { escposKot, htmlKot } from './lib/kot.js';
 import { native, pickServer, reachable, savedServers } from './lib/net.js';
 import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
-import { changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, upsertDish } from './lib/local.js';
+import { addSection, addTable, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, upsertDish } from './lib/local.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -29,11 +31,18 @@ const S = {
   lastSync: null,
   note: null,
   unlocked: false,
+  orderId: null, // the open order the cart belongs to (saved as you go)
+  restored: false,
+  noteOpen: null, // dish id whose note box is open
+  editTables: false,
+  showDone: false,
 };
 
 const ICON = {
   sell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.6 12.4a2 2 0 0 0 2 1.6h8.1a2 2 0 0 0 2-1.5L21 8H6"/></svg>',
   sales: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6"/></svg>',
+  tables: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+  kitchen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13a4 4 0 1 1 2-7.5 4 4 0 0 1 8 0A4 4 0 1 1 18 13v7H6z"/><path d="M6 17h12"/></svg>',
   menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
   sync: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18.5 2v4h-4M5.5 22v-4h4"/></svg>',
 };
@@ -79,13 +88,152 @@ function saleFrom(localNumber, bill, payments, change) {
     soldAt: new Date().toISOString(),
     type: S.type,
     tableLabel: S.type === 'DINE_IN' ? S.table || '' : '',
-    items: cartLines().map((l) => ({ menuItemId: l.item.id, name: l.item.name, price: l.item.price, taxRate: l.item.taxRate, quantity: l.qty })),
+    items: cartLines().map((l) => ({ menuItemId: l.item.id, name: l.item.name, price: l.item.price, taxRate: l.item.taxRate, quantity: l.qty, ...(l.note ? { note: l.note } : {}) })),
+    orderId: S.orderId || undefined,
     discountPercent: S.discountPercent || 0,
     bill: { subtotal: bill.subtotal, discountAmount: bill.discountAmount, tax: bill.tax, total: bill.total },
     payments,
     change,
     status: 'pending',
   };
+}
+
+
+// ------------------------------------------------------------- open orders ---
+// The cart is an order that is saved as you go: crash, low battery or switching
+// to another table never loses it. Orders live on this phone (see Tables).
+let saveChain = Promise.resolve();
+let saveTimer;
+function persistSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => flushPersist(), 150);
+}
+function flushPersist() {
+  clearTimeout(saveTimer);
+  saveChain = saveChain.then(persistOrder).catch(() => toast('Could not save this order on the phone. Is the storage full?', 5000));
+  return saveChain;
+}
+async function persistOrder() {
+  const lines = [...S.cart.values()].filter((l) => l.qty > 0 || (l.sent || 0) > 0);
+  let o = S.orderId ? await orders.get(S.orderId) : null;
+  if (!lines.length) {
+    if (o && !(o.kotNumbers || []).length) await orders.del(o.id);
+    if (o && !(o.kotNumbers || []).length) S.orderId = null;
+    if (!S.orderId) await kv.del('currentOrderId');
+    return;
+  }
+  if (!o) {
+    S.orderId = S.orderId || newId();
+    o = newOrder({ id: S.orderId, number: await nextOrderNumber() });
+  }
+  o.type = S.type;
+  o.tableLabel = S.type === 'DINE_IN' ? S.table || '' : '';
+  o.discountPercent = S.discountPercent || 0;
+  o.updatedAt = new Date().toISOString();
+  o.items = lines.map((l) => ({ menuItemId: l.item.id, name: l.item.name, price: l.item.price, taxRate: l.item.taxRate, qty: l.qty, sent: l.sent || 0, note: l.note || '' }));
+  await orders.put(o);
+  await kv.set('currentOrderId', o.id);
+}
+function resetCart() {
+  S.cart = new Map();
+  S.orderId = null;
+  S.discountPercent = 0;
+  S.table = '';
+  S.type = 'TAKEAWAY';
+  S.noteOpen = null;
+  kv.del('currentOrderId');
+}
+function loadOrder(o) {
+  S.cart = new Map(o.items.map((l) => [l.menuItemId, { item: { id: l.menuItemId, name: l.name, price: l.price, taxRate: l.taxRate, sellOffline: true }, qty: l.qty, sent: l.sent || 0, note: l.note || '' }]));
+  S.orderId = o.id;
+  S.type = o.type;
+  S.table = o.tableLabel || '';
+  S.discountPercent = o.discountPercent || 0;
+  kv.set('currentOrderId', o.id);
+}
+async function restoreCurrent() {
+  S.restored = true;
+  if (S.orderId) return;
+  const id = await kv.get('currentOrderId');
+  const o = id && (await orders.get(id));
+  if (o && o.status === 'OPEN') loadOrder(o);
+}
+const orderBill = (o) =>
+  computeBill(
+    o.items.filter((l) => l.qty > 0).map((l) => ({ price: l.price, quantity: l.qty, taxRate: l.taxRate })),
+    { taxMode: S.snap.branch.taxMode, discountPercent: o.discountPercent || 0 },
+  );
+
+/** Move to another order (or a fresh one), keeping the current one saved. */
+async function switchTo(o, init) {
+  await flushPersist();
+  if (o) loadOrder(o);
+  else {
+    resetCart();
+    Object.assign(S, init || {});
+  }
+  S.view = 'sell';
+  render();
+}
+
+// -------------------------------------------------------------- kitchen (KOT) ---
+async function printKot(kot, { reprint = false } = {}) {
+  const np = plugins().NativePrinter;
+  const printer = savedPrinter();
+  if (!np || !printer) return 'none';
+  try {
+    await np.btPrint({ address: printer.address, data: toBase64(escposKot({ ...kot, reprint }, S.snap)) });
+    return 'printed';
+  } catch {
+    return 'failed';
+  }
+}
+
+async function sendToKitchen() {
+  await flushPersist();
+  if (!S.orderId) return toast('Add something to the order first.');
+  const o = await orders.get(S.orderId);
+  const d = kotDelta(o);
+  if (d.empty) return toast('The kitchen already has everything on this order.');
+  const tables = S.snap.floors.flatMap((f) => f.tables);
+  if (o.type === 'DINE_IN' && tables.length && !o.tableLabel) return toast('Choose the table first.');
+  const number = await nextKotNumber();
+  const kot = { id: newId(), number, orderId: o.id, orderNumber: o.number, at: new Date().toISOString(), type: o.type, tableLabel: o.tableLabel, add: d.add, cancel: d.cancel, status: 'NEW', print: 'none' };
+  markSent(o, number);
+  await saveKotWithOrder(kot, o); // one transaction: the ticket and "sent" are saved together
+  for (const l of S.cart.values()) l.sent = l.qty;
+  kot.print = await printKot(kot);
+  await kots.put(kot);
+  toast(kot.print === 'printed' ? `KOT ${number} printed` : kot.print === 'failed' ? `KOT ${number} saved, but the printer did not respond. Open Kitchen to print it again.` : `KOT ${number} is on the Kitchen screen. No printer chosen, so nothing was printed.`, 4200);
+}
+
+function cancelOrderSheet() {
+  openSheet(
+    `<header><h2>Cancel this order?</h2><button class="x" data-close aria-label="Close">&times;</button></header>
+     <div class="body"><label for="cr">Reason</label>
+     <select id="cr"><option>Guest left</option><option>Wrong order</option><option>Staff mistake</option><option>Out of stock</option><option>Other</option></select>
+     <p class="note mt" id="kw"></p></div>
+     <footer><button class="btn line" data-close>Keep it</button><button class="btn" id="yes" style="background:var(--bad)">Cancel order</button></footer>`,
+    async (p) => {
+      await flushPersist();
+      const o = S.orderId ? await orders.get(S.orderId) : null;
+      const sentTo = o && (o.kotNumbers || []).length;
+      p.querySelector('#kw').textContent = sentTo ? `The kitchen already has KOT ${o.kotNumbers.join(', ')}. Tell them to stop. Their tickets will be marked cancelled.` : 'Nothing was sent to the kitchen. The order is kept as a record, not deleted.';
+      p.querySelector('#yes').onclick = async () => {
+        if (o) {
+          o.status = 'VOID';
+          o.voidReason = p.querySelector('#cr').value;
+          o.voidedAt = new Date().toISOString();
+          await orders.put(o);
+          for (const k of await kots.all()) if (k.orderId === o.id && k.status !== 'SERVED' && k.status !== 'CANCELLED') await kots.put({ ...k, status: 'CANCELLED' });
+        }
+        resetCart();
+        closeSheet();
+        toast('Order cancelled');
+        render();
+      };
+    },
+  );
 }
 
 // ----------------------------------------------------------------- printing ---
@@ -426,6 +574,8 @@ function connectSheet(message) {
 function shell() {
   const tabs = [
     ['sell', 'Sell', ICON.sell],
+    ['tables', 'Tables', ICON.tables],
+    ['kitchen', 'Kitchen', ICON.kitchen],
     ...(S.snap.local ? [['menu', 'Menu', ICON.menu]] : []),
     ['sales', 'Sales', ICON.sales],
     ['sync', 'Sync', ICON.sync],
@@ -438,13 +588,17 @@ function shell() {
   <main class="view" id="view"></main>
   <div id="barwrap"></div>
   <nav class="nav" aria-label="Sections">
-    ${tabs.map(([k, label, icon]) => `<button data-tab="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${icon}<span>${label}${k === 'sales' && S.pending ? ` <span class="badge">${S.pending}</span>` : ''}</span></button>`).join('')}
+    ${tabs.map(([k, label, icon]) => `<button data-tab="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${icon}<span>${label}${k === 'sales' && S.pending ? ` <span class="badge">${S.pending}</span>` : ''}${k === 'kitchen' && S.kitchenOpen ? ` <span class="badge">${S.kitchenOpen}</span>` : ''}</span></button>`).join('')}
   </nav>`;
   document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => go(b.dataset.tab)));
 }
 function go(v) {
+  if (v !== S.view) S.note = null;
   S.view = v;
   render();
+}
+async function refreshKitchenBadge() {
+  S.kitchenOpen = (await kots.all()).filter((k) => k.status !== 'SERVED' && !k.dismissed).length;
 }
 async function refreshPending() {
   S.pending = (await sales.pending()).length;
@@ -452,9 +606,11 @@ async function refreshPending() {
 async function render() {
   if (!S.snap) return renderLogin();
   if (S.snap.local && !S.unlocked) return renderUnlock();
+  if (!S.restored) await restoreCurrent();
   await refreshPending();
+  await refreshKitchenBadge();
   shell();
-  ({ sell: viewSell, menu: viewMenu, sales: viewSales, sync: viewSync })[S.view]();
+  ({ sell: viewSell, tables: viewTables, kitchen: viewKitchen, menu: viewMenu, sales: viewSales, sync: viewSync })[S.view]();
 }
 
 // -------------------------------------------------------------------- sell ---
@@ -463,6 +619,7 @@ function viewSell() {
   const q = S.q.trim().toLowerCase();
   const shown = items.filter((i) => (S.category === 'all' || i.categoryId === S.category) && (!q || i.name.toLowerCase().includes(q)));
   $('view').innerHTML = `
+    ${S.orderId || S.table ? `<div class="note" role="status">${S.type === 'DINE_IN' ? `Dine in${S.table ? ` &middot; <b>${esc(S.table)}</b>` : ''}` : 'Takeaway'}${cartCount() ? ' &middot; saved automatically' : ''}</div>` : ''}
     <input class="search" id="q" type="search" placeholder="Search the menu" value="${esc(S.q)}" aria-label="Search the menu">
     <div class="chips" role="group" aria-label="Categories">
       <button class="chip" data-cat="all" aria-pressed="${S.category === 'all'}">All</button>
@@ -497,6 +654,7 @@ function viewSell() {
   renderBar();
 }
 function renderBar() {
+  persistSoon();
   const n = cartCount();
   $('barwrap').innerHTML = n
     ? `<div class="bar"><button class="btn" id="cartbtn"><span>View cart &middot; ${n} item${n > 1 ? 's' : ''}</span><span>${inr(billOf().total)}</span></button></div>`
@@ -506,8 +664,9 @@ function renderBar() {
 
 function openCart() {
   const draw = () => {
+    persistSoon();
     const lines = cartLines();
-    if (!lines.length) return closeSheet(), render();
+    if (!lines.length && ![...S.cart.values()].some((l) => l.sent > 0)) return closeSheet(), render();
     const bill = billOf();
     const tables = S.snap.floors.flatMap((f) => f.tables);
     $('sheet').firstElementChild.innerHTML = `
@@ -522,7 +681,8 @@ function openCart() {
           .map(
             (l) => `<div class="row"><div class="grow"><b>${esc(l.item.name)}</b><br><small>${inr(l.item.price)} each</small></div>
             <div class="qty"><button data-dec="${esc(l.item.id)}" aria-label="One less">&minus;</button><b>${l.qty}</b><button data-inc="${esc(l.item.id)}" aria-label="One more">+</button></div>
-            <b style="min-width:5.5rem;text-align:right">${inr(l.item.price * l.qty)}</b></div>`,
+            <b style="min-width:5.5rem;text-align:right">${inr(l.item.price * l.qty)}</b></div>
+            <div style="padding:.2rem 0 .5rem;border-bottom:1px solid var(--line)">${S.noteOpen === l.item.id ? `<input data-note="${esc(l.item.id)}" maxlength="80" value="${esc(l.note || '')}" placeholder="e.g. no onion, less spicy" aria-label="Note for ${esc(l.item.name)}">` : `<button class="chip" data-opennote="${esc(l.item.id)}">${l.note ? `Note: ${esc(l.note)}` : '+ Note'}</button>`}${l.sent ? ` <small class="mute">${l.sent} sent to kitchen</small>` : ''}</div>`,
           )
           .join('')}</div>
         <label for="dp">Discount %</label><input id="dp" type="number" inputmode="decimal" min="0" max="${esc(S.snap.restaurant.maxManualDiscountPercent)}" value="${S.discountPercent || ''}" placeholder="0">
@@ -532,13 +692,42 @@ function openCart() {
           ${bill.tax > 0 ? `<div class="tot mute"><span>${esc(S.snap.branch.taxLabel || 'Tax')} (included)</span><span>${inr(bill.tax)}</span></div>` : ''}
           <div class="tot big"><span>Total</span><span>${inr(bill.total)}</span></div>
         </div>
+        <div class="grid mt">
+          <button class="btn ghost" id="kot">Send to kitchen (KOT)</button>
+          <button class="btn ghost" id="hold">Hold order</button>
+        </div>
         <div class="mt">${printActions()}</div>
+        <button class="btn line block mt" id="void" style="color:var(--bad)">Cancel this order</button>
       </div>
-      <footer><button class="btn block" id="charge">Charge ${inr(bill.total)}</button></footer>`;
+      <footer><button class="btn block" id="charge" ${lines.length ? '' : 'disabled'}>Charge ${inr(bill.total)}</button></footer>`;
     const root = $('sheet').firstElementChild;
     root.querySelector('[data-close]').onclick = closeSheet;
     root.querySelectorAll('[data-type]').forEach((b) => (b.onclick = () => ((S.type = b.dataset.type), draw())));
-    root.querySelector('#tb') && (root.querySelector('#tb').onchange = (e) => (S.table = e.target.value));
+    root.querySelector('#tb') && (root.querySelector('#tb').onchange = async (e) => {
+      // One open order per table: never put two parties on one table by accident.
+      const clash = e.target.value && tableTakenBy(await orders.all(), e.target.value, S.orderId);
+      if (clash) {
+        toast(`${e.target.value} already has an open order (${clash.number}). Open it from Tables.`, 4000);
+        e.target.value = S.table;
+        return;
+      }
+      S.table = e.target.value;
+      persistSoon();
+    });
+    root.querySelectorAll('[data-opennote]').forEach((b) => (b.onclick = () => ((S.noteOpen = b.dataset.opennote), draw(), root.querySelector('[data-note]')?.focus())));
+    root.querySelectorAll('[data-note]').forEach((el) => {
+      el.oninput = () => (S.cart.get(el.dataset.note).note = el.value.trim());
+      el.onblur = () => ((S.noteOpen = null), draw());
+    });
+    root.querySelector('#kot').onclick = async () => (await sendToKitchen(), draw());
+    root.querySelector('#hold').onclick = async () => {
+      await flushPersist();
+      resetCart();
+      closeSheet();
+      toast('Order held. Find it under Tables.');
+      render();
+    };
+    root.querySelector('#void').onclick = cancelOrderSheet;
     root.querySelectorAll('[data-inc]').forEach((b) => (b.onclick = () => (S.cart.get(b.dataset.inc).qty++, draw())));
     root.querySelectorAll('[data-dec]').forEach((b) => (b.onclick = () => (S.cart.get(b.dataset.dec).qty--, draw())));
     root.querySelector('#dp').onchange = (e) => {
@@ -626,12 +815,14 @@ function openPay() {
   };
   async function complete(st, tenders) {
     if (!st.fullyPaid) return;
+    await flushPersist();
     const number = await nextLocalNumber();
     const sale = saleFrom(number, bill, st.rows.map((r) => ({ ...r })), st.change);
+    sale.note = saleNote(sale.items);
     await sales.put(sale);
-    S.cart.clear();
-    S.discountPercent = 0;
-    S.table = '';
+    const o = S.orderId ? await orders.get(S.orderId) : null;
+    if (o) await orders.put({ ...o, status: 'PAID', saleId: sale.id, paidAt: new Date().toISOString() }); // frees the table
+    resetCart();
     toast('Sale saved');
     openDone(sale);
     syncNow({ refreshMenu: false }).then(afterSync);
@@ -659,13 +850,180 @@ function openDone(sale) {
   );
 }
 
+// ------------------------------------------------------------------ tables ---
+async function viewTables() {
+  const os = await orders.all();
+  const taken = tableMap(os);
+  const open = openOrders(os).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+  const floors = S.snap.floors;
+  const local = !!S.snap.local;
+  const now = Date.now();
+  $('view').innerHTML = `
+    ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
+    <button class="btn block" id="takeaway">+ New takeaway order</button>
+    ${open.length ? `<h2 class="sec">Open orders</h2>${open
+      .map((o) => `<button class="row orow" data-resume="${esc(o.id)}"><div class="grow"><b>${o.type === 'DINE_IN' ? esc(o.tableLabel || 'Dine in (no table)') : 'Takeaway'}</b> <small>${esc(o.number)}</small><br><small>${o.items.reduce((n, l) => n + l.qty, 0)} items &middot; ${minutesSince(o.createdAt, now)} min${(o.kotNumbers || []).length ? ` &middot; KOT ${o.kotNumbers.join(', ')}` : ' &middot; not sent to kitchen'}${S.orderId === o.id ? ' &middot; <b>on screen</b>' : ''}</small></div><b>${inr(orderBill(o).total)}</b></button>`)
+      .join('')}` : ''}
+    <h2 class="sec">Tables</h2>
+    ${floors.length ? floors.map((f) => `<h3 class="floor">${esc(f.name)}${S.editTables && local ? ` <button class="mini" data-delsec="${esc(f.id)}" aria-label="Remove section ${esc(f.name)}">Remove</button>` : ''}</h3>
+      <div class="tables">${f.tables.map((t) => {
+        const o = taken.get(t.label);
+        return `<button class="tbl ${o ? 'busy' : ''}" data-tbl="${esc(t.label)}" aria-label="${esc(t.label)}, ${o ? `occupied, ${inr(orderBill(o).total)}, ${minutesSince(o.createdAt, now)} minutes` : `free, seats ${t.capacity}`}">
+          <b>${esc(t.label)}</b><small>${o ? `${inr(orderBill(o).total)} &middot; ${minutesSince(o.createdAt, now)}m` : `Free &middot; ${t.capacity} seats`}</small>
+          ${S.editTables && local ? `<span class="mini" data-deltbl="${esc(t.id)}" role="button" aria-label="Remove table ${esc(t.label)}">&times;</span>` : ''}</button>`;
+      }).join('') || '<p class="mute">No tables in this section.</p>'}
+        ${local ? `<button class="tbl add" data-addtbl="${esc(f.id)}"><b>+ Table</b></button>` : ''}</div>`).join('')
+      : `<div class="note">${local ? 'No tables yet. Add a section (for example Ground floor), then its tables.' : 'No tables are set up on the server. Add them in the full app, then sync.'}</div>`}
+    ${local ? `<div class="mt grid"><button class="btn ghost" id="addsec">+ Add section</button><button class="btn ghost" id="edt">${S.editTables ? 'Done editing' : 'Edit tables'}</button></div>` : ''}
+    <p class="mute mt">${local ? 'Tables and open orders are kept on this phone only. Another phone will not see them.' : 'Table status here is for this phone only. Other devices do not see these open orders until a sale is paid and synced.'}</p>`;
+  $('takeaway').onclick = () => switchTo(null, { type: 'TAKEAWAY' });
+  document.querySelectorAll('[data-resume]').forEach((b) => (b.onclick = async () => switchTo(await orders.get(b.dataset.resume))));
+  document.querySelectorAll('[data-tbl]').forEach(
+    (b) =>
+      (b.onclick = async (ev) => {
+        if (ev.target.dataset.deltbl) return;
+        const label = b.dataset.tbl;
+        const fresh = tableMap(await orders.all()).get(label);
+        if (fresh) return switchTo(fresh);
+        if (S.editTables) return;
+        switchTo(null, { type: 'DINE_IN', table: label });
+      }),
+  );
+  if (!local) return;
+  const fail = (e) => ((S.note = { kind: 'bad', text: e.message }), viewTables());
+  $('edt').onclick = () => ((S.editTables = !S.editTables), viewTables());
+  $('addsec').onclick = () =>
+    openSheet(`<header><h2>Add a section</h2><button class="x" data-close aria-label="Close">&times;</button></header><div class="body"><label for="sn">Name</label><input id="sn" placeholder="Ground floor, Terrace, Garden"></div><footer><button class="btn" id="ok">Add</button></footer>`, (p) => {
+      p.querySelector('#ok').onclick = async () => {
+        try {
+          S.snap = await addSection(S.snap, p.querySelector('#sn').value);
+          S.note = null;
+          closeSheet();
+          viewTables();
+        } catch (e) {
+          closeSheet();
+          fail(e);
+        }
+      };
+    });
+  document.querySelectorAll('[data-addtbl]').forEach(
+    (b) =>
+      (b.onclick = () =>
+        openSheet(`<header><h2>Add a table</h2><button class="x" data-close aria-label="Close">&times;</button></header><div class="body"><label for="tn">Table name or number</label><input id="tn" placeholder="T1"><label for="tc">Seats</label><input id="tc" type="number" inputmode="numeric" value="4"></div><footer><button class="btn" id="ok">Add</button></footer>`, (p) => {
+          p.querySelector('#ok').onclick = async () => {
+            try {
+              S.snap = await addTable(S.snap, b.dataset.addtbl, { label: p.querySelector('#tn').value, capacity: p.querySelector('#tc').value });
+              S.note = null;
+              closeSheet();
+              viewTables();
+            } catch (e) {
+              closeSheet();
+              fail(e);
+            }
+          };
+        })),
+  );
+  document.querySelectorAll('[data-deltbl]').forEach(
+    (b) =>
+      (b.onclick = async (ev) => {
+        ev.stopPropagation();
+        const t = S.snap.floors.flatMap((f) => f.tables).find((x) => x.id === b.dataset.deltbl);
+        if (tableMap(await orders.all()).has(t.label)) return fail(new Error(`${t.label} has an open order. Settle or cancel it first.`));
+        S.snap = await removeTable(S.snap, t.id);
+        S.note = null;
+        viewTables();
+      }),
+  );
+  document.querySelectorAll('[data-delsec]').forEach(
+    (b) =>
+      (b.onclick = async () => {
+        const f = S.snap.floors.find((x) => x.id === b.dataset.delsec);
+        const taken2 = tableMap(await orders.all());
+        if (f.tables.some((t) => taken2.has(t.label))) return fail(new Error('A table in this section has an open order. Settle or cancel it first.'));
+        S.snap = await removeSection(S.snap, f.id);
+        S.note = null;
+        viewTables();
+      }),
+  );
+}
+
+// ----------------------------------------------------------------- kitchen ---
+const KOT_LABEL = { NEW: 'New', PREPARING: 'Preparing', READY: 'Ready', SERVED: 'Served', CANCELLED: 'Cancelled' };
+const KOT_ACTION = { NEW: 'Start preparing', PREPARING: 'Mark ready', READY: 'Mark served' };
+async function viewKitchen() {
+  const all = (await kots.all()).sort((a, b) => (a.at < b.at ? -1 : 1));
+  const active = all.filter((k) => k.status !== 'SERVED' && !k.dismissed);
+  const done = all.filter((k) => k.status === 'SERVED' || k.dismissed).reverse().slice(0, 30);
+  const now = Date.now();
+  const card = (k) => {
+    const mins = minutesSince(k.at, now);
+    return `<article class="kot ${k.status === 'CANCELLED' ? 'cx' : mins >= 20 ? 'late' : ''}" aria-label="KOT ${k.number}">
+      <header><b>KOT ${k.number}</b> <span>${k.type === 'DINE_IN' ? esc(k.tableLabel || 'Dine in') : 'Takeaway'}</span><span class="grow"></span><span class="status ${k.status}">${KOT_LABEL[k.status]}</span> <small>${mins} min</small></header>
+      ${k.status === 'CANCELLED' ? '<div class="note bad">Order cancelled - stop making these.</div>' : ''}
+      ${k.add.map((l) => `<div class="kl"><b>${l.qty} &times; ${esc(l.name)}</b>${l.note ? `<br><small>&gt;&gt; ${esc(l.note)}</small>` : ''}</div>`).join('')}
+      ${k.cancel.map((l) => `<div class="kl cxl"><b>CANCEL ${l.qty} &times; ${esc(l.name)}</b></div>`).join('')}
+      <small class="mute">${k.print === 'printed' ? 'Printed' : k.print === 'failed' ? 'Printer did not respond - it may have partly printed. Check the paper before printing again.' : 'Not printed'}</small>
+      <div class="grid" style="margin-top:.5rem">
+        ${KOT_NEXT[k.status] ? `<button class="btn" data-next="${esc(k.id)}">${KOT_ACTION[k.status]}</button>` : `<button class="btn ghost" data-dismiss="${esc(k.id)}">Dismiss</button>`}
+        <button class="btn ghost" data-reprint="${esc(k.id)}">Print again</button>
+      </div></article>`;
+  };
+  $('view').innerHTML = `
+    ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
+    ${active.length ? active.map(card).join('') : '<div class="note">No tickets waiting. Send an order to the kitchen from the cart and it shows up here.</div>'}
+    ${done.length ? `<button class="btn line block mt" id="showdone">${S.showDone ? 'Hide' : 'Show'} finished tickets (${done.length})</button>${S.showDone ? done.map(card).join('') : ''}` : ''}
+    <p class="mute mt">This is the kitchen screen of this phone only. For a screen in the kitchen that shows orders from every phone, connect the OrderRestro server and use its Kitchen display.</p>`;
+  $('showdone') && ($('showdone').onclick = () => ((S.showDone = !S.showDone), viewKitchen()));
+  document.querySelectorAll('[data-next]').forEach(
+    (b) =>
+      (b.onclick = async () => {
+        const k = await kots.get(b.dataset.next);
+        k.status = KOT_NEXT[k.status] || k.status;
+        await kots.put(k);
+        render();
+      }),
+  );
+  document.querySelectorAll('[data-dismiss]').forEach((b) => (b.onclick = async () => ((await kots.put({ ...(await kots.get(b.dataset.dismiss)), dismissed: true })), render())));
+  document.querySelectorAll('[data-reprint]').forEach(
+    (b) =>
+      (b.onclick = async () => {
+        const k = await kots.get(b.dataset.reprint);
+        if (k.print === 'printed' && !confirm('This ticket already printed. Print it again? It will say REPRINT so the kitchen does not make it twice.')) return;
+        const np = plugins().NativePrinter;
+        if (!np) {
+          const w = window.open('', '_blank');
+          if (w) {
+            w.document.write(htmlKot({ ...k, reprint: k.print === 'printed' }));
+            w.document.close();
+            w.print();
+          }
+          return;
+        }
+        if (!savedPrinter()) await choosePrinter();
+        k.print = await printKot(k, { reprint: k.print === 'printed' });
+        await kots.put(k);
+        toast(k.print === 'printed' ? 'Printed' : 'The printer did not respond');
+        render();
+      }),
+  );
+}
+
 // ------------------------------------------------------------------- sales ---
 async function viewSales() {
   const all = await sales.all();
   const label = { pending: 'Waiting to sync', synced: 'Synced', refused: 'Needs attention', dismissed: 'Set aside' };
   const nAttention = all.filter((x) => x.status === 'refused').length;
   const nReview = all.filter((x) => x.review && x.review.length).length;
+  const rep = dayReport(all, await orders.all());
+  const reportCard = `<div class="card"><h2 style="font-size:1.05rem">Today on this phone</h2>
+    <div class="tot big"><span>${rep.count} sale${rep.count === 1 ? '' : 's'}</span><span>${inr(rep.total)}</span></div>
+    <dl class="kv">${Object.entries(rep.byMethod).filter(([, v]) => v).map(([m, v]) => `<dt>${{ CASH: 'Cash', UPI: 'UPI', CARD: 'Card', OTHER: 'Other' }[m]}</dt><dd>${inr(v)}</dd>`).join('')}
+      ${rep.tax ? `<dt>${esc(S.snap.branch.taxLabel || 'Tax')} included</dt><dd>${inr(rep.tax)}</dd>` : ''}${rep.discount ? `<dt>Discounts</dt><dd>${inr(rep.discount)}</dd>` : ''}
+      ${rep.voids ? `<dt>Cancelled orders</dt><dd>${rep.voids} (${inr(rep.voidValue)})</dd>` : ''}</dl>
+    ${rep.top.length ? `<p class="mute" style="margin:.5rem 0 0">Top: ${rep.top.map((t) => `${esc(t.name)} &times;${t.qty}`).join(', ')}</p>` : ''}
+    <p class="mute" style="margin:.5rem 0 0">Only sales taken on this phone, for today by the phone's clock.${S.snap.local ? '' : ' It is not the server total.'}${rep.notSynced ? ` ${rep.notSynced} not on the server yet.` : ''}</p></div>`;
   $('view').innerHTML = `
+    ${reportCard}
     ${S.pending ? `<div class="note warn" role="status">${S.pending} sale${S.pending > 1 ? 's' : ''} saved on this phone, not on the server yet.</div>` : ''}
     ${nAttention ? `<div class="note bad" role="status">${nAttention} sale${nAttention > 1 ? 's were' : ' was'} refused by the server and still need${nAttention > 1 ? '' : 's'} a decision. Open ${nAttention > 1 ? 'each' : 'it'} to retry or set aside.</div>` : ''}
     ${nReview ? `<div class="note warn" role="status">${nReview} sale${nReview > 1 ? 's were' : ' was'} recorded at a price that differs from the server's menu. Open to see which.</div>` : ''}
@@ -767,7 +1125,7 @@ async function viewSyncLocal() {
   $('chpw').onclick = () => passwordSheet();
   $('conn').onclick = () => connectSheet();
   $('pick').onclick = async () => (await choosePrinter(), viewSync());
-  $('lock').onclick = () => ((S.unlocked = false), (S.cart = new Map()), render());
+  $('lock').onclick = async () => (await flushPersist(), (S.unlocked = false), (S.cart = new Map()), (S.orderId = null), (S.restored = false), render());
 }
 
 async function viewSync() {
@@ -873,6 +1231,8 @@ async function start() {
 window.addEventListener('online', () => syncNow().then(afterSync));
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && S.snap && syncNow().then(afterSync));
 setInterval(() => S.snap && document.visibilityState === 'visible' && $('sheet').hidden && syncNow({ refreshMenu: false }).then(afterSync), 60000);
+
+setInterval(() => S.snap && S.view === 'kitchen' && document.visibilityState === 'visible' && $('sheet').hidden && render(), 30000);
 
 start().catch((e) => {
   $('app').innerHTML = `<div class="login"><div class="note bad">Could not start: ${esc(e.message)}</div></div>`;

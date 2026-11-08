@@ -25,6 +25,20 @@ Bills and kitchen tickets no longer depend on a printer plugged into the restaur
 
 iPhones cannot talk to Bluetooth thermal printers, so there it is AirPrint / PDF only.
 
+## Standalone POS on the phone (tables, KOT, kitchen)
+
+Without a server the phone keeps its own account, menu and sales (`www/pos/`). It now also has:
+
+- **Tables**: sections and tables (add/remove), free/occupied tiles with running total and minutes, open and held orders, one open order per table (a second order on a taken table is refused, never merged).
+- **Orders saved as you go**: the cart is an order saved to the phone after every change; a crash or restart brings it back. Hold, resume, per-dish notes, cancel with a reason (kept as a record).
+- **KOT**: "Send to kitchen" prints only what is new since the last ticket, and a CANCEL ticket if a sent dish was removed. The ticket and the order's "sent" state are saved in one transaction. Print failure is shown honestly and the ticket stays on the Kitchen screen for a retry; reprints are marked REPRINT.
+- **Kitchen screen** for this phone: New, Preparing, Ready, Served, with minutes waiting.
+- **Today** report on the Sales tab (sales, cash/UPI/card, tax, discounts, top dishes, cancelled orders).
+
+Open orders, tables and kitchen tickets are on that phone only; only paid sales go to the server (item notes travel in the sale note). A shared kitchen display and shared tables across phones need the server's own web app.
+
+Tests: `node --test www/pos/lib/*.test.mjs`.
+
 ## Build (Android)
 
 Needs JDK 21 and the Android SDK (platform 35, build-tools 35).
