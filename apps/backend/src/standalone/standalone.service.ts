@@ -273,7 +273,7 @@ export class StandaloneService {
           quantity: m.quantity,
           modifierIds: [],
         })),
-      } as never,
+      },
       {
         clientRequestId: sale.id,
         historical: { createdAt: new Date(sale.soldAt) },
@@ -295,7 +295,7 @@ export class StandaloneService {
               ? 'Offline sale discount'
               : undefined,
           requestId: sale.id,
-        } as never,
+        },
         mayExceedDiscountCap(user),
       );
     } catch (err) {
