@@ -3,13 +3,14 @@
 // whenever it can. Plain DOM + modules: nothing here needs a build step.
 import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
-import { kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, sales, saveKotWithOrder } from './lib/store.js';
+import { expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
+import { backupJson, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
 import { KOT_NEXT, dayReport, kotDelta, markSent, minutesSince, newOrder, openOrders, saleNote, tableMap, tableTakenBy } from './lib/orders.js';
 import { escposKot, htmlKot } from './lib/kot.js';
 import { native, pickServer, reachable, savedServers } from './lib/net.js';
 import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
-import { addSection, addTable, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, upsertDish } from './lib/local.js';
+import { addSection, addTable, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -66,10 +67,15 @@ function openSheet(html, onMount) {
   s.querySelector('[data-close]')?.addEventListener('click', closeSheet);
   onMount && onMount(s.firstElementChild);
 }
+let booksDirty = false; // a books sheet changed something: redraw the screen behind it when it closes
 function closeSheet() {
   const s = $('sheet');
   s.hidden = true;
   s.innerHTML = '';
+  if (booksDirty) {
+    booksDirty = false;
+    if (S.snap) render();
+  }
 }
 
 // ------------------------------------------------------------------- state ---
@@ -91,6 +97,7 @@ function saleFrom(localNumber, bill, payments, change) {
     items: cartLines().map((l) => ({ menuItemId: l.item.id, name: l.item.name, price: l.item.price, taxRate: l.item.taxRate, quantity: l.qty, ...(l.note ? { note: l.note } : {}) })),
     orderId: S.orderId || undefined,
     discountPercent: S.discountPercent || 0,
+    taxMode: S.snap.branch.taxMode || 'INCLUSIVE',
     bill: { subtotal: bill.subtotal, discountAmount: bill.discountAmount, tax: bill.tax, total: bill.total },
     payments,
     change,
@@ -455,7 +462,7 @@ function viewMenu() {
     <div class="mt">${
       items
         .map(
-          (i) => `<button class="row dishrow" data-edit="${esc(i.id)}"><div class="grow"><b>${esc(i.name)}</b><br><small>${esc(cat(i.categoryId))}${i.taxRate ? ` &middot; tax ${esc(i.taxRate)}%` : ''}</small></div><b>${inr(i.price)}</b></button>`,
+          (i) => `<button class="row dishrow" data-edit="${esc(i.id)}"><div class="grow"><b>${esc(i.name)}</b><br><small>${esc(cat(i.categoryId))}${i.taxRate ? ` &middot; tax ${esc(i.taxRate)}%` : ''}${i.soldOut ? ' &middot; <b>Sold out</b>' : i.stock != null ? ` &middot; ${i.stock} in stock` : ''}</small></div><b>${inr(i.price)}</b></button>`,
         )
         .join('') || '<p class="mute center mt">Your menu is empty. Tap Add a dish to start.</p>'
     }</div>`;
@@ -476,12 +483,15 @@ function dishSheet(item, message) {
        <input id="dc" list="cl" value="${esc(cur)}" placeholder="Starters, Drinks…"><datalist id="cl">${cats.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
        <label for="dt">Tax included in price (%)</label><input id="dt" type="number" inputmode="decimal" min="0" max="100" value="${item ? esc(item.taxRate) : 0}">
        <label class="chk"><input id="dv" type="checkbox" ${!item || item.isVeg ? 'checked' : ''}> Vegetarian</label>
+       <label for="dst">Stock <span class="mute">(optional)</span></label><input id="dst" type="number" inputmode="numeric" min="0" step="1" value="${item && item.stock != null ? esc(item.stock) : ''}" placeholder="Leave empty to not count">
+       <small class="mute">With a number, each sale takes one off and the dish switches itself off at 0.</small>
+       <label class="chk"><input id="dso" type="checkbox" ${item && item.soldOut ? 'checked' : ''}> Sold out for now</label>
      </div>
      <footer>${item ? '<button class="btn line" id="dd">Delete</button>' : ''}<button class="btn" id="ds">Save</button></footer>`,
     (p) => {
       p.querySelector('#ds').onclick = async () => {
         try {
-          S.snap = await upsertDish(S.snap, { id: item && item.id, name: $('dn').value, price: $('dpr').value, taxRate: $('dt').value, isVeg: $('dv').checked, categoryName: $('dc').value });
+          S.snap = await upsertDish(S.snap, { id: item && item.id, name: $('dn').value, price: $('dpr').value, taxRate: $('dt').value, isVeg: $('dv').checked, categoryName: $('dc').value, stock: $('dst').value, soldOut: $('dso').checked && !(item && item.stock === 0 && Number($('dst').value) > 0) });
           closeSheet();
           S.note = null;
           render();
@@ -626,10 +636,10 @@ function viewSell() {
       ${categories.map((c) => `<button class="chip" data-cat="${esc(c.id)}" aria-pressed="${S.category === c.id}">${esc(c.name)}</button>`).join('')}
     </div>
     <div class="grid">
-      ${shown.map((i) => `<button class="dish" data-add="${esc(i.id)}" ${i.sellOffline ? '' : 'disabled'}>
+      ${shown.map((i) => `<button class="dish" data-add="${esc(i.id)}" ${i.sellOffline && !i.soldOut ? '' : 'disabled'}>
           <b><span class="veg ${i.isVeg ? '' : 'nv'}"></span>${esc(i.name)}</b>
           <span>${inr(i.price)}${S.cart.get(i.id)?.qty ? ` &middot; <strong style="color:var(--brand)">&times;${S.cart.get(i.id).qty}</strong>` : ''}</span>
-          ${i.sellOffline ? '' : '<small>Needs options: use the full app</small>'}
+          ${i.soldOut ? '<small>Sold out</small>' : i.sellOffline ? (i.stock != null && i.stock <= 5 ? `<small>${i.stock} left</small>` : '') : '<small>Needs options: use the full app</small>'}
         </button>`).join('') || (S.snap.local && !S.snap.items.length ? '<p class="mute center mt">Your menu is empty. Open the Menu tab to add your dishes.</p>' : '<p class="mute center mt">Nothing matches.</p>')}
     </div>`;
   $('q').oninput = (e) => {
@@ -644,6 +654,7 @@ function viewSell() {
       (b.onclick = () => {
         const item = S.snap.items.find((i) => i.id === b.dataset.add);
         const line = S.cart.get(item.id) || { item, qty: 0 };
+        if (item.stock != null && line.qty >= item.stock) return toast(`Only ${item.stock} left in stock`);
         line.qty++;
         S.cart.set(item.id, line);
         viewSell();
@@ -820,6 +831,7 @@ function openPay() {
     const sale = saleFrom(number, bill, st.rows.map((r) => ({ ...r })), st.change);
     sale.note = saleNote(sale.items);
     await sales.put(sale);
+    if (S.snap.local) S.snap = await useStock(S.snap, sale.items);
     const o = S.orderId ? await orders.get(S.orderId) : null;
     if (o) await orders.put({ ...o, status: 'PAID', saleId: sale.id, paidAt: new Date().toISOString() }); // frees the table
     resetCart();
@@ -1015,15 +1027,19 @@ async function viewSales() {
   const nAttention = all.filter((x) => x.status === 'refused').length;
   const nReview = all.filter((x) => x.review && x.review.length).length;
   const rep = dayReport(all, await orders.all());
+  const rfs = await refunds.all();
+  const books = dayBooks({ sales: all, refunds: rfs, expenses: await expenses.all() });
   const reportCard = `<div class="card"><h2 style="font-size:1.05rem">Today on this phone</h2>
     <div class="tot big"><span>${rep.count} sale${rep.count === 1 ? '' : 's'}</span><span>${inr(rep.total)}</span></div>
     <dl class="kv">${Object.entries(rep.byMethod).filter(([, v]) => v).map(([m, v]) => `<dt>${{ CASH: 'Cash', UPI: 'UPI', CARD: 'Card', OTHER: 'Other' }[m]}</dt><dd>${inr(v)}</dd>`).join('')}
       ${rep.tax ? `<dt>${esc(S.snap.branch.taxLabel || 'Tax')} included</dt><dd>${inr(rep.tax)}</dd>` : ''}${rep.discount ? `<dt>Discounts</dt><dd>${inr(rep.discount)}</dd>` : ''}
+      ${books.refundTotal ? `<dt>Refunds</dt><dd>&minus;${inr(books.refundTotal)}</dd><dt>Net sales</dt><dd><b>${inr(books.net)}</b></dd>` : ''}${books.expenseTotal ? `<dt>Expenses</dt><dd>&minus;${inr(books.expenseTotal)}</dd>` : ''}
       ${rep.voids ? `<dt>Cancelled orders</dt><dd>${rep.voids} (${inr(rep.voidValue)})</dd>` : ''}</dl>
     ${rep.top.length ? `<p class="mute" style="margin:.5rem 0 0">Top: ${rep.top.map((t) => `${esc(t.name)} &times;${t.qty}`).join(', ')}</p>` : ''}
     <p class="mute" style="margin:.5rem 0 0">Only sales taken on this phone, for today by the phone's clock.${S.snap.local ? '' : ' It is not the server total.'}${rep.notSynced ? ` ${rep.notSynced} not on the server yet.` : ''}</p></div>`;
   $('view').innerHTML = `
     ${reportCard}
+    <button class="btn line block mt" id="books">Books &amp; backup: expenses, close the day, reports</button>
     ${S.pending ? `<div class="note warn" role="status">${S.pending} sale${S.pending > 1 ? 's' : ''} saved on this phone, not on the server yet.</div>` : ''}
     ${nAttention ? `<div class="note bad" role="status">${nAttention} sale${nAttention > 1 ? 's were' : ' was'} refused by the server and still need${nAttention > 1 ? '' : 's'} a decision. Open ${nAttention > 1 ? 'each' : 'it'} to retry or set aside.</div>` : ''}
     ${nReview ? `<div class="note warn" role="status">${nReview} sale${nReview > 1 ? 's were' : ' was'} recorded at a price that differs from the server's menu. Open to see which.</div>` : ''}
@@ -1031,11 +1047,12 @@ async function viewSales() {
       all
         .map(
           (s) => `<button class="row" style="width:100%;background:none;border:0;border-bottom:1px solid var(--line);text-align:left" data-sale="${esc(s.id)}">
-            <div class="grow"><b>${esc(s.localNumber)}</b>${s.serverOrderNumber ? ` <small>#${esc(s.serverOrderNumber)}</small>` : ''}<br><small>${esc(new Date(s.soldAt).toLocaleString())} &middot; ${s.items.reduce((n, i) => n + i.quantity, 0)} items</small></div>
+            <div class="grow"><b>${esc(s.localNumber)}</b>${s.serverOrderNumber ? ` <small>#${esc(s.serverOrderNumber)}</small>` : ''}${refundedTotal(s, rfs) ? ' <small style="color:var(--bad)">Refunded</small>' : ''}<br><small>${esc(new Date(s.soldAt).toLocaleString())} &middot; ${s.items.reduce((n, i) => n + i.quantity, 0)} items</small></div>
             <div style="text-align:right"><b>${inr(s.bill.total)}</b><br><span class="status ${s.status}">${label[s.status]}</span></div></button>`,
         )
         .join('') || '<p class="mute center mt">No sales on this phone yet.</p>'
     }</div>`;
+  $('books').onclick = booksMenu;
   document.querySelectorAll('[data-sale]').forEach(
     (b) =>
       (b.onclick = async () => {
@@ -1051,10 +1068,13 @@ async function viewSales() {
              ${s.review && s.review.length ? `<div class="note warn"><b>Recorded at the price shown on this phone</b><br>${s.review.map((r) => `${esc(r.name)}: charged ${inr(r.phonePrice)}, server menu now ${inr(r.serverPrice)}`).join('<br>')}<br><small>The customer paid what the phone showed, so the receipt was not changed. The server order carries a review note.</small></div>` : ''}
              ${s.items.map((i) => `<div class="tot"><span>${i.quantity} &times; ${esc(i.name)}</span><span>${inr(i.price * i.quantity)}</span></div>`).join('')}
              <div class="tot big mt"><span>Total</span><span>${inr(s.bill.total)}</span></div>
+             ${refundedTotal(s, rfs) ? `<div class="tot" style="color:var(--bad)"><span>Refunded</span><span>&minus;${inr(refundedTotal(s, rfs))}</span></div>${rfs.filter((r) => r.saleId === s.id).map((r) => `<small class="mute">${esc(new Date(r.at).toLocaleString())} &middot; ${esc(METHOD_LABEL[r.method] || r.method)} &middot; ${r.lines.map((l) => `${l.qty} &times; ${esc(l.name)}`).join(', ')}${r.reason ? ` &middot; ${esc(r.reason)}` : ''}</small>`).join('<br>')}` : ''}
+             ${S.snap.local && refundableLines(s, rfs).some((l) => l.left > 0) ? '<button class="btn line block mt" id="refund">Refund…</button>' : ''}
              <div class="mt">${printActions()}</div>
            </div>`,
           (p) => {
             bindPrint(p, s, false);
+            if (p.querySelector('#refund')) p.querySelector('#refund').onclick = () => refundSheet(s.id);
             const back = async () => (await refreshPending(), closeSheet(), render());
             if (p.querySelector('#retry')) p.querySelector('#retry').onclick = async () => ((await retrySale(s.id)), await back(), doSync());
             if (p.querySelector('#aside'))
@@ -1068,6 +1088,282 @@ async function viewSales() {
           },
         );
       }),
+  );
+}
+
+// ------------------------------------------------------------------- books ---
+// Refunds, expenses, closing the day, reports, export and backup. All of it is
+// kept on this phone; none of it is sent to a server (the server has no
+// endpoint for it), and the screens say so.
+const fmtDay = (key) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+const stamp = () => new Date().toISOString().slice(0, 10);
+const slug = () => String(S.snap.branch.name || 'orderrestro').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'orderrestro';
+const head = (title, back) => `<header><h2>${esc(title)}</h2><button class="x" data-close aria-label="Close">&times;</button></header>`;
+const METHOD_LABEL = { CASH: 'Cash', UPI: 'UPI', CARD: 'Card', OTHER: 'Other' };
+
+async function shareFile(name, mime, text) {
+  const np = plugins().NativePrinter;
+  if (np && np.shareFile) {
+    try {
+      await np.shareFile({ name, mime, text });
+      return true;
+    } catch (e) {
+      toast(e.message || 'Could not share the file', 4500);
+      return false;
+    }
+  }
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: mime }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    return true;
+  } catch {
+    toast('Could not save the file');
+    return false;
+  }
+}
+
+const allBooks = async () => ({ sales: await sales.all(), refunds: await refunds.all(), expenses: await expenses.all() });
+
+function booksMenu() {
+  openSheet(
+    `${head('Books & backup')}
+     <div class="body">
+       <button class="btn line block" data-b="expenses">Expenses (money paid out)</button>
+       <button class="btn line block mt" data-b="close">Close the day (count the cash)</button>
+       <button class="btn line block mt" data-b="report">Reports</button>
+       <button class="btn line block mt" data-b="csv">Share sales as a spreadsheet</button>
+       ${S.snap.local ? `<button class="btn line block mt" data-b="backup">Back up everything</button>
+       <button class="btn line block mt" data-b="restore">Restore from a backup</button>` : ''}
+       <p class="mute mt">Refunds, expenses and cash counts are kept on this phone. ${S.snap.local ? 'Back up often: if the phone is lost or its data cleared, a backup is the only copy.' : 'They are not sent to the server.'}</p>
+     </div>`,
+    (p) => {
+      const go = { expenses: expensesSheet, close: closeDaySheet, report: reportSheet, csv: shareCsv, backup: shareBackup, restore: restoreSheet };
+      p.querySelectorAll('[data-b]').forEach((b) => (b.onclick = () => go[b.dataset.b]()));
+    },
+  );
+}
+
+async function shareCsv() {
+  const b = await allBooks();
+  if (!b.sales.length) return toast('No sales to share yet');
+  await shareFile(`${slug()}-sales-${stamp()}.csv`, 'text/csv', salesCsv(b.sales, b.refunds));
+}
+
+async function shareBackup() {
+  const data = await readEverything();
+  await shareFile(`${slug()}-backup-${stamp()}.json`, 'application/json', backupJson(data));
+  await kv.set('lastBackupAt', Date.now());
+}
+
+function restoreSheet(message) {
+  openSheet(
+    `${head('Restore from a backup')}
+     <div class="body">
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       <div class="note warn">Restoring <b>replaces</b> the menu, sales, open orders, expenses and refunds on this phone with the ones in the file. Your password stays as it is.</div>
+       <label for="rf">Backup file</label><input id="rf" type="file" accept=".json,application/json">
+     </div>
+     <footer><button class="btn block" id="go">Restore</button></footer>`,
+    (p) => {
+      p.querySelector('#go').onclick = async () => {
+        const f = $('rf').files[0];
+        if (!f) return restoreSheet('Choose the backup file first.');
+        try {
+          const b = parseBackup(await f.text());
+          if (!confirm(`Replace everything on this phone with the backup from ${new Date(b.savedAt).toLocaleString()}? It has ${b.sales.length} sale${b.sales.length === 1 ? '' : 's'}.`)) return;
+          b.snapshot.local = true; // a backup restores a phone account, never a server menu
+          await replaceEverything(b);
+          booksDirty = true;
+          S.snap = b.snapshot;
+          S.cart = new Map();
+          S.orderId = null;
+          S.restored = false;
+          closeSheet();
+          toast('Backup restored');
+          render();
+        } catch (e) {
+          restoreSheet(e.message || 'Could not restore that file.');
+        }
+      };
+    },
+  );
+}
+
+// ---- expenses
+async function expensesSheet(message, draft = {}) {
+  const list = (await expenses.all()).sort((a, b) => (a.at < b.at ? 1 : -1));
+  const cats = [...new Set(list.map((e) => e.category).filter(Boolean))];
+  const todays = list.filter((e) => new Date(e.at).toDateString() === new Date().toDateString());
+  const sum = todays.reduce((n, e) => n + e.amount, 0);
+  openSheet(
+    `${head('Expenses')}
+     <div class="body">
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       <label for="ea">Amount (₹)</label><input id="ea" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(draft.amount || '')}">
+       <label for="en">What for</label><input id="en" value="${esc(draft.note || '')}" placeholder="Vegetables, gas, salary advance…">
+       <label for="ec">Category <span class="mute">(optional)</span></label><input id="ec" list="ecl" value="${esc(draft.category || '')}" placeholder="Groceries, Rent, Staff…"><datalist id="ecl">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
+       <label>Paid from</label><div class="seg" role="group" aria-label="Paid from"><button data-m="CASH" aria-pressed="${draft.method !== 'OTHER'}">Cash drawer</button><button data-m="OTHER" aria-pressed="${draft.method === 'OTHER'}">Bank / UPI / other</button></div>
+       <button class="btn block mt" id="add">Add expense</button>
+       <h3 style="margin:1.2rem 0 .3rem">Today: ${inr(sum)}</h3>
+       ${list.slice(0, 40).map((e) => `<div class="row"><div class="grow"><b>${esc(e.note)}</b><br><small>${esc(new Date(e.at).toLocaleString())}${e.category ? ` &middot; ${esc(e.category)}` : ''} &middot; ${e.method === 'CASH' ? 'Cash' : 'Other'}</small></div><div style="text-align:right"><b>${inr(e.amount)}</b><br><button class="btn line" data-del="${esc(e.id)}" style="min-height:36px;padding:.2rem .7rem">Delete</button></div></div>`).join('') || '<p class="mute center mt">No expenses yet.</p>'}
+       ${list.length ? '<button class="btn line block mt" id="csv">Share expenses as a spreadsheet</button>' : ''}
+     </div>`,
+    (p) => {
+      let method = draft.method === 'OTHER' ? 'OTHER' : 'CASH';
+      const grab = () => ({ amount: $('ea').value, note: $('en').value, category: $('ec').value, method });
+      p.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((method = b.dataset.m), p.querySelectorAll('[data-m]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))))));
+      p.querySelector('#add').onclick = async () => {
+        try {
+          await expenses.put(buildExpense({ id: newId(), ...grab() }));
+          booksDirty = true;
+          toast('Expense added');
+          expensesSheet();
+        } catch (e) {
+          expensesSheet(e.message, grab());
+        }
+      };
+      p.querySelectorAll('[data-del]').forEach(
+        (b) =>
+          (b.onclick = async () => {
+            if (!confirm('Delete this expense? It leaves the books.')) return;
+            await expenses.del(b.dataset.del);
+            booksDirty = true;
+            expensesSheet();
+          }),
+      );
+      const csv = p.querySelector('#csv');
+      if (csv) csv.onclick = () => shareFile(`${slug()}-expenses-${stamp()}.csv`, 'text/csv', expensesCsv(list));
+    },
+  );
+}
+
+// ---- close the day
+async function closeDaySheet(message, draft = {}) {
+  const day = today();
+  const b = await allBooks();
+  const float = draft.float != null ? draft.float : (await kv.get(`float:${day}`)) ?? '';
+  const books = dayBooks({ ...b, float: Number(float) || 0, day });
+  const done = await shifts.get(day);
+  const past = (await shifts.all()).sort((x, y) => (x.day < y.day ? 1 : -1)).slice(0, 7);
+  const line = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+  openSheet(
+    `${head('Close the day')}
+     <div class="body">
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       <label for="fl">Cash in the drawer when you opened (₹)</label><input id="fl" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(float)}" placeholder="0">
+       <dl class="kv mt">
+         ${line('Sales', `${books.sales} &middot; ${inr(books.gross)}`)}
+         ${books.refundTotal ? line('Refunds', `&minus;${inr(books.refundTotal)}`) : ''}
+         ${line('Net sales', `<b>${inr(books.net)}</b>`)}
+         ${Object.entries(books.byMethod).filter(([, v]) => v).map(([m, v]) => line(METHOD_LABEL[m], inr(v))).join('')}
+         ${books.expenseTotal ? line('Expenses', `&minus;${inr(books.expenseTotal)}`) : ''}
+         ${line('Left after expenses', `<b>${inr(books.profit)}</b>`)}
+       </dl>
+       <div class="tot big mt"><span>Cash that should be there</span><span>${inr(books.expectedCash)}</span></div>
+       <p class="mute" style="margin:.2rem 0 0">Opening cash + cash sales &minus; cash refunds &minus; cash expenses.</p>
+       <label for="cc">Cash you counted (₹)</label><input id="cc" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(draft.counted ?? (done ? done.countedCash : ''))}">
+       ${done ? `<div class="note warn">This day was closed at ${esc(new Date(done.closedAt).toLocaleTimeString())}. Closing again replaces that count.</div>` : ''}
+       <button class="btn block mt" id="close">${done ? 'Close again' : 'Close the day'}</button>
+       ${past.length ? `<h3 style="margin:1.2rem 0 .3rem">Recent days</h3>${past.map((d) => `<div class="row"><div class="grow"><b>${esc(fmtDay(d.day))}</b><br><small>Net ${inr(d.net)} &middot; counted ${inr(d.countedCash)}</small></div><b style="color:${d.difference < 0 ? 'var(--bad)' : d.difference > 0 ? 'var(--warn)' : 'var(--ok)'}">${d.difference === 0 ? 'Matches' : `${d.difference > 0 ? '+' : '&minus;'}${inr(Math.abs(d.difference))}`}</b></div>`).join('')}` : ''}
+     </div>`,
+    (p) => {
+      p.querySelector('#fl').onchange = async () => {
+        await kv.set(`float:${day}`, $('fl').value);
+        closeDaySheet(null, { float: $('fl').value, counted: $('cc').value });
+      };
+      p.querySelector('#close').onclick = async () => {
+        try {
+          await kv.set(`float:${day}`, $('fl').value);
+          const rec = closeDay({ books: dayBooks({ ...b, float: Number($('fl').value) || 0, day }), counted: $('cc').value });
+          await shifts.put(rec);
+          booksDirty = true;
+          const word = rec.difference === 0 ? 'The cash matches.' : rec.difference < 0 ? `Cash is short by ${inr(-rec.difference)}.` : `Cash is over by ${inr(rec.difference)}.`;
+          toast(`Day closed. ${word}`, 5000);
+          closeDaySheet();
+        } catch (e) {
+          closeDaySheet(e.message, { float: $('fl').value, counted: $('cc').value });
+        }
+      };
+    },
+  );
+}
+
+// ---- reports
+async function reportSheet(range = 7) {
+  const b = await allBooks();
+  const to = today();
+  const from = range === 1 ? to : daysAgo(range - 1);
+  const r = rangeBooks({ ...b, from, to });
+  openSheet(
+    `${head('Reports')}
+     <div class="body">
+       <div class="seg" role="group" aria-label="Period">${[[1, 'Today'], [7, '7 days'], [30, '30 days']].map(([n, l]) => `<button data-r="${n}" aria-pressed="${range === n}">${l}</button>`).join('')}</div>
+       <div class="tot big mt"><span>${r.sales} sale${r.sales === 1 ? '' : 's'}</span><span>${inr(r.gross)}</span></div>
+       <dl class="kv mt">
+         ${r.refundTotal ? `<dt>Refunds</dt><dd>&minus;${inr(r.refundTotal)}</dd>` : ''}
+         <dt>Net sales</dt><dd><b>${inr(r.net)}</b></dd>
+         ${r.expenseTotal ? `<dt>Expenses</dt><dd>&minus;${inr(r.expenseTotal)}</dd>` : ''}
+         <dt>Left after expenses</dt><dd><b>${inr(r.profit)}</b></dd>
+       </dl>
+       ${r.top.length ? `<h3 style="margin:1.2rem 0 .3rem">Best sellers</h3>${r.top.map((t) => `<div class="tot"><span>${esc(t.name)}</span><span>&times;${t.qty}</span></div>`).join('')}` : '<p class="mute center mt">No sales in this period.</p>'}
+       <p class="mute mt">Sales taken on this phone, by the phone's clock.</p>
+     </div>`,
+    (p) => p.querySelectorAll('[data-r]').forEach((x) => (x.onclick = () => reportSheet(Number(x.dataset.r)))),
+  );
+}
+
+// ---- refunds
+async function refundSheet(saleId, message, draft = {}) {
+  const sale = await sales.get(saleId);
+  const rs = await refunds.all();
+  const lines = refundableLines(sale, rs).filter((l) => l.left > 0);
+  const method = draft.method || (sale.payments[0] && sale.payments[0].method) || 'CASH';
+  const qty = draft.qty || {};
+  openSheet(
+    `${head(`Refund ${sale.localNumber}`)}
+     <div class="body">
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       ${lines.length ? lines.map((l) => `<div class="row"><div class="grow"><b>${esc(l.item.name)}</b><br><small>${inr(l.item.price)} &middot; up to ${l.left}</small></div>
+          <input type="number" inputmode="numeric" min="0" max="${l.left}" step="1" data-q="${l.index}" value="${esc(qty[l.index] ?? '')}" placeholder="0" aria-label="How many ${esc(l.item.name)} to refund" style="width:5rem"></div>`).join('') : '<p class="mute center">Everything on this sale is already refunded.</p>'}
+       <label>Paid back by</label><div class="seg" role="group" aria-label="Paid back by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button data-m="${m}" aria-pressed="${method === m}">${l}</button>`).join('')}</div>
+       <label for="rr">Reason <span class="mute">(optional)</span></label><input id="rr" value="${esc(draft.reason || '')}" placeholder="Wrong dish, cold food…">
+       <div class="tot big mt"><span>Pay back</span><span id="amt">${inr(0)}</span></div>
+       <p class="mute">Recorded in this phone's books and taken off the day's sales. ${S.snap.local ? 'Dishes are not put back into stock.' : ''}</p>
+     </div>
+     <footer><button class="btn block" id="go" ${lines.length ? '' : 'disabled'}>Refund</button></footer>`,
+    (p) => {
+      let m = method;
+      const picks = () => [...p.querySelectorAll('[data-q]')].map((i) => ({ index: Number(i.dataset.q), qty: Number(i.value) || 0 }));
+      const preview = () => {
+        try {
+          $('amt').textContent = inr(buildRefund({ id: 'x', sale, refunds: rs, picks: picks() }).amount);
+        } catch {
+          $('amt').textContent = inr(0);
+        }
+      };
+      p.querySelectorAll('[data-q]').forEach((i) => (i.oninput = preview));
+      p.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((m = b.dataset.m), p.querySelectorAll('[data-m]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))))));
+      p.querySelector('#go').onclick = async () => {
+        const keep = () => ({ method: m, reason: $('rr').value, qty: Object.fromEntries(picks().map((x) => [x.index, x.qty || ''])) });
+        try {
+          const r = buildRefund({ id: newId(), sale, refunds: rs, picks: picks(), method: m, reason: $('rr').value });
+          if (!confirm(`Pay back ${inr(r.amount)} by ${METHOD_LABEL[m]}?`)) return;
+          await refunds.put(r);
+          booksDirty = true;
+          toast(`Refunded ${inr(r.amount)}`);
+          closeSheet();
+          render();
+        } catch (e) {
+          refundSheet(saleId, e.message, keep());
+        }
+      };
+      preview();
+    },
   );
 }
 

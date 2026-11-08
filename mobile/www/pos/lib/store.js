@@ -7,7 +7,7 @@ let dbp;
 function open() {
   if (!dbp) {
     dbp = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB, 2);
+      const req = indexedDB.open(DB, 3);
       req.onupgradeneeded = () => {
         // Only add what is missing: a phone upgrading from v1 keeps its sales and settings untouched.
         const db = req.result;
@@ -19,6 +19,9 @@ function open() {
         }
         if (!db.objectStoreNames.contains('orders')) db.createObjectStore('orders', { keyPath: 'id' }); // open tabs, held orders, voids
         if (!db.objectStoreNames.contains('kots')) db.createObjectStore('kots', { keyPath: 'id' }); // kitchen tickets
+        if (!db.objectStoreNames.contains('refunds')) db.createObjectStore('refunds', { keyPath: 'id' }); // money paid back on a sale
+        if (!db.objectStoreNames.contains('expenses')) db.createObjectStore('expenses', { keyPath: 'id' }); // money paid out
+        if (!db.objectStoreNames.contains('shifts')) db.createObjectStore('shifts', { keyPath: 'day' }); // closed days (cash counted)
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -68,6 +71,58 @@ export const kots = {
   all: () => tx('kots', 'readonly', (s) => s.getAll()),
   clear: () => tx('kots', 'readwrite', (s) => s.clear()),
 };
+
+const plain = (name) => ({
+  put: (v) => tx(name, 'readwrite', (s) => s.put(v)),
+  get: (k) => tx(name, 'readonly', (s) => s.get(k)),
+  del: (k) => tx(name, 'readwrite', (s) => s.delete(k)),
+  all: () => tx(name, 'readonly', (s) => s.getAll()),
+  clear: () => tx(name, 'readwrite', (s) => s.clear()),
+});
+export const refunds = plain('refunds');
+export const expenses = plain('expenses');
+export const shifts = plain('shifts');
+
+const BACKUP_STORES = ['sales', 'orders', 'kots', 'refunds', 'expenses', 'shifts'];
+
+/** Everything on the phone except the account password, read in one consistent transaction. */
+export async function readEverything() {
+  const db = await open();
+  const out = {};
+  await new Promise((resolve, reject) => {
+    const t = db.transaction([...BACKUP_STORES, 'kv'], 'readonly');
+    for (const n of BACKUP_STORES) {
+      const r = t.objectStore(n).getAll();
+      r.onsuccess = () => (out[n] = r.result);
+    }
+    const k = t.objectStore('kv').get('snapshot');
+    k.onsuccess = () => (out.snapshot = k.result);
+    t.oncomplete = resolve;
+    t.onerror = t.onabort = () => reject(t.error);
+  });
+  return out;
+}
+
+/**
+ * Replace everything on the phone with a backup, all or nothing: one
+ * transaction, so a failure half way leaves the phone exactly as it was.
+ */
+export async function replaceEverything(b) {
+  const db = await open();
+  await new Promise((resolve, reject) => {
+    const t = db.transaction([...BACKUP_STORES, 'kv'], 'readwrite');
+    for (const n of BACKUP_STORES) {
+      const st = t.objectStore(n);
+      st.clear();
+      for (const row of b[n] || []) st.put(row);
+    }
+    t.objectStore('kv').put(b.snapshot, 'snapshot');
+    t.objectStore('kv').put(Date.now(), 'snapshotAt');
+    t.objectStore('kv').delete('currentOrderId');
+    t.oncomplete = resolve;
+    t.onerror = t.onabort = () => reject(t.error);
+  });
+}
 
 /**
  * Save a kitchen ticket and the order that now counts it as sent in ONE
