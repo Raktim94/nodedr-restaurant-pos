@@ -198,7 +198,7 @@ What to do about it:
    `validate-msix.ps1` fails loudly if this ever regresses to the
    placeholder.
 2. ~~`Identity/@Name`~~ — **done.** Set to the real Store-reserved package
-   identity `NODEDRINFOTECHLIMITED.NodedrOrderRestro` (Store ID `9NVPNLWW2FZ4`,
+   identity `NODEDRINFOTECHLIMITED.NodedrOrderRestro` (Store ID `9NRG9BVFCMN5`,
    Package Family Name `NODEDRINFOTECHLIMITED.NodedrOrderRestro_wsh4jzg5a6682`),
    from Partner Center's "View product identity" page.
 3. **Signing** — real Store submissions are signed automatically by the
