@@ -1,18 +1,23 @@
 # OrderRestro — Windows MSIX client
 
-A thin native shell (WinForms + WebView2) around the same web UI the
-Linux/Docker deployment already serves. It ships no server, no database, no
-Node.js/Docker/pnpm, and no bundled Chromium — this is not Electron.
+A native shell (WinForms + WebView2) around the same web UI the
+Linux/Docker deployment serves. It is not Electron and bundles no Chromium.
+On first launch it offers two choices (see `Launcher/FirstRunChoiceForm.cs`):
 
 ## What this is / isn't
 
-- **Is:** a client. On first launch it asks for the restaurant's own
-  OrderRestro server address (LAN IP, hostname, VPN address) and connects
-  to it — same as typing that address into a browser, but packaged as a
-  normal Windows app with a Start Menu entry, no URL bar, no browser tab
-  habits.
-- **Isn't:** a copy of the server. Backend/Postgres/Docker stay exactly
-  where they already run (a restaurant's own machine or VPS).
+- **Start on this computer** (embedded mode): the package carries the
+  server runtime. `ServerSupervisor.cs` starts PostgreSQL, the backend and
+  the web app as hidden child processes, applies migrations and opens the
+  UI when it is ready. Data lives under `%LOCALAPPDATA%\OrderRestro` (see
+  "Uninstalling" below). It works without internet once installed. Known
+  limits of this version: the internal ports are fixed (`ServerPaths.cs`),
+  and other devices can reach it only if this PC keeps the app running.
+- **Connect to my existing server** (client mode): asks for the address of
+  a running OrderRestro server and opens it, like a browser without the
+  URL bar. This mode needs the server to be reachable; it has no offline
+  mode. The two choices keep separate data and nothing is merged,
+  uploaded or deleted when you switch.
 - **Printing:** unchanged. The web app already prints receipts via
   `window.print()` (`apps/web/lib/print.ts`), which opens the standard OS
   print dialog. Inside WebView2 on Windows, that dialog IS the Windows
