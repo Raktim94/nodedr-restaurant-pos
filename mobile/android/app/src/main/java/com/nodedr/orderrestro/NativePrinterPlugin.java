@@ -153,6 +153,43 @@ public class NativePrinterPlugin extends Plugin {
     }
 
     /** Opens Android's print dialog (Save as PDF, any installed printer) for an HTML document. */
+    /**
+     * Hand a text file (a CSV of sales, a JSON backup) to Android's share sheet,
+     * so it can go to WhatsApp, Drive, email or "Save to device". The file is
+     * written to the app's own cache and shared through the FileProvider, so no
+     * storage permission is needed. Older exports are removed first.
+     */
+    @PluginMethod
+    public void shareFile(final PluginCall call) {
+        final String text = call.getString("text");
+        if (text == null) {
+            call.reject("There is nothing to share.");
+            return;
+        }
+        final String name = call.getString("name", "orderrestro.txt").replaceAll("[^A-Za-z0-9._-]", "_");
+        final String mime = call.getString("mime", "text/plain");
+        try {
+            java.io.File dir = new java.io.File(getContext().getCacheDir(), "exports");
+            if (!dir.exists() && !dir.mkdirs()) throw new java.io.IOException("cache folder");
+            java.io.File[] old = dir.listFiles();
+            if (old != null) for (java.io.File f : old) f.delete();
+            java.io.File file = new java.io.File(dir, name);
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(file)) {
+                out.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+            android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND);
+            send.setType(mime);
+            send.putExtra(android.content.Intent.EXTRA_STREAM, uri);
+            send.putExtra(android.content.Intent.EXTRA_SUBJECT, name);
+            send.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            getActivity().startActivity(android.content.Intent.createChooser(send, name));
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not share the file: " + e.getMessage());
+        }
+    }
+
     @PluginMethod
     public void printHtml(final PluginCall call) {
         final String html = call.getString("html");

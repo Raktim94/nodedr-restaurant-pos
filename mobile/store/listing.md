@@ -32,6 +32,15 @@ Works on the restaurant's own network, with no internet needed day to day. Your 
 
 Free. No ads. No tracking. Delete your account any time from the user menu.
 
+## What's new (1.23.0)
+- Refunds: pick the dishes to pay back on a sale (the discount is shared out fairly and you can never refund more than was paid)
+- Expenses: note money paid out, from the cash drawer or by bank or UPI
+- Close the day: enter the opening cash and the cash you counted; the app shows what should be there and any difference
+- Reports for today, 7 days and 30 days with best sellers
+- Stock counts and "sold out" for each dish; a counted dish switches itself off at 0
+- Share sales and expenses as a spreadsheet; back up everything on the phone and restore it later
+- Tables, held orders, kitchen tickets (KOT) and the kitchen screen work with no server
+
 ## What's new (1.19.2)
 - Change your phone-account password from the Sync tab
 - Forgot the password? Erase the phone account from the unlock screen and start fresh (asks you to type ERASE first)

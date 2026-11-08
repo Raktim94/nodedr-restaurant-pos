@@ -2,7 +2,7 @@
 // the phone (IndexedDB), so the app is usable before any server exists. Later
 // the owner connects a server; the sales taken here are then matched to the
 // server's dishes by name and sent (see remapSalesToServer).
-import { kv, kots, newId, orders, sales } from './store.js';
+import { expenses, kv, kots, newId, orders, refunds, sales, shifts } from './store.js';
 
 const enc = new TextEncoder();
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -59,7 +59,7 @@ export async function saveSnap(snap) {
 }
 
 /** Add or update a dish. Returns the updated snapshot. */
-export async function upsertDish(snap, { id, name, price, taxRate, isVeg, categoryName }) {
+export async function upsertDish(snap, { id, name, price, taxRate, isVeg, categoryName, stock, soldOut }) {
   name = String(name || '').trim();
   price = Number(price);
   taxRate = Number(taxRate || 0);
@@ -78,7 +78,14 @@ export async function upsertDish(snap, { id, name, price, taxRate, isVeg, catego
     }
     categoryId = c.id;
   }
-  const row = { id: id || `loc-${newId()}`, categoryId, name, price: Math.round(price * 100) / 100, taxRate, isVeg: !!isVeg, sellOffline: true };
+  const old = id && snap.items.find((i) => i.id === id);
+  // Stock: blank = not counted. A number counts down with every sale and switches the dish off at 0.
+  let count = null;
+  if (stock !== undefined && stock !== null && String(stock).trim() !== '') {
+    count = Number(stock);
+    if (!Number.isInteger(count) || count < 0 || count > 100000) throw new Error('Stock must be a whole number, or leave it empty.');
+  } else if (stock === undefined && old && old.stock != null) count = old.stock;
+  const row = { id: id || `loc-${newId()}`, categoryId, name, price: Math.round(price * 100) / 100, taxRate, isVeg: !!isVeg, sellOffline: true, stock: count, soldOut: (count != null && count <= 0) || (soldOut !== undefined ? !!soldOut : !!(old && old.soldOut)) };
   const at = snap.items.findIndex((i) => i.id === row.id);
   if (at >= 0) snap.items[at] = row;
   else snap.items.push(row);
@@ -133,6 +140,9 @@ export async function eraseLocalAccount() {
   await sales.clear();
   await orders.clear();
   await kots.clear();
+  await refunds.clear();
+  await expenses.clear();
+  await shifts.clear();
   for (const k of ['localAccount', 'snapshot', 'snapshotAt', 'branchId', 'localMenuBackup', 'serverBase']) await kv.del(k);
 }
 
@@ -168,4 +178,26 @@ export async function removeTable(snap, tableId) {
 export async function removeSection(snap, floorId) {
   snap.floors = snap.floors.filter((f) => f.id !== floorId);
   return saveSnap(snap);
+}
+
+/** Switch a dish off for today ("86") or back on, without deleting it. */
+export async function setSoldOut(snap, id, soldOut) {
+  const item = snap.items.find((i) => i.id === id);
+  if (!item) return snap;
+  item.soldOut = !!soldOut;
+  if (!soldOut && item.stock != null && item.stock <= 0) item.stock = null; // switched back on by hand: stop counting
+  return saveSnap(snap);
+}
+
+/** After a sale: take sold quantities off counted dishes; a dish that reaches 0 switches itself off. */
+export async function useStock(snap, lines) {
+  let changed = false;
+  for (const l of lines) {
+    const item = snap.items.find((i) => i.id === l.menuItemId);
+    if (!item || item.stock == null) continue;
+    item.stock = Math.max(0, item.stock - l.quantity);
+    if (item.stock === 0) item.soldOut = true;
+    changed = true;
+  }
+  return changed ? saveSnap(snap) : snap;
 }

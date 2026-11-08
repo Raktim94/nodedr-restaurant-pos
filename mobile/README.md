@@ -39,6 +39,21 @@ Open orders, tables and kitchen tickets are on that phone only; only paid sales 
 
 Tests: `node --test www/pos/lib/*.test.mjs`.
 
+## Standalone POS on the phone
+
+With no server the app opens its own POS (`www/pos/`): menu, selling, tables and held orders, kitchen tickets and the kitchen screen, Bluetooth and PDF printing, and sync to a server later. Everything is kept in the phone's IndexedDB (`lib/store.js`).
+
+Books (`lib/books.js`, unit tested in `lib/books.test.mjs`), all kept on the phone and never sent to a server:
+
+- **Refunds** on a sale, by dish and quantity. The sale total (after any discount) is shared across lines by tax-inclusive price; the last refund takes exactly what is left, so the total refunded never exceeds what was paid.
+- **Expenses**, from the cash drawer or other.
+- **Close the day**: opening cash + cash sales - cash refunds - cash expenses = expected cash, compared with the cash counted.
+- **Reports** for today, 7 and 30 days.
+- **Stock**: an optional count per dish; counted dishes count down with each sale and switch off at 0. "Sold out" can also be set by hand.
+- **Export and backup**: sales and expenses as CSV (formula characters are neutralised), the whole phone as one JSON backup that restores all-or-nothing and never contains the password. Files go out through Android's share sheet (`NativePrinter.shareFile`, via the FileProvider, no storage permission).
+
+Tests: `node --test www/pos/lib/*.test.mjs`.
+
 ## Build (Android)
 
 Needs JDK 21 and the Android SDK (platform 35, build-tools 35).
