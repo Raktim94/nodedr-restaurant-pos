@@ -46,6 +46,32 @@ export const offlineSalesSchema = z.object({
 export type OfflineSaleDto = z.infer<typeof offlineSaleSchema>;
 export type OfflineSalesDto = z.infer<typeof offlineSalesSchema>;
 
+/**
+ * Something the owner should look at, even though the sale was recorded: the
+ * customer paid what the phone showed, which no longer matches the server.
+ */
+export type SaleReviewFlag = {
+  type: 'PRICE_CHANGED';
+  menuItemId: string;
+  name: string;
+  phonePrice: number;
+  serverPrice: number;
+};
+
+/** Why a sale was not recorded. The phone keeps it and offers the right next step. */
+export type RefusalCode =
+  | 'ITEM_UNAVAILABLE' // a dish was removed or switched off on the server
+  | 'ALREADY_STARTED' // an earlier attempt left an unfinished order
+  | 'PRICE_CONFLICT' // the same dish at two prices inside one sale
+  | 'PAYMENT_REJECTED' // the server's checkout rules refused the payment or discount
+  | 'OTHER';
+
 export type OfflineSaleResult =
-  | { id: string; status: 'created' | 'duplicate'; orderId: string; orderNumber: string }
-  | { id: string; status: 'refused'; reason: string };
+  | {
+      id: string;
+      status: 'created' | 'duplicate';
+      orderId: string;
+      orderNumber: string;
+      review?: SaleReviewFlag[];
+    }
+  | { id: string; status: 'refused'; code: RefusalCode; reason: string };

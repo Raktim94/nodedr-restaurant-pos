@@ -12,7 +12,19 @@ import type {
   OfflineSaleDto,
   OfflineSaleResult,
   OfflineSalesDto,
+  RefusalCode,
+  SaleReviewFlag,
 } from './standalone.schema';
+
+/** A refusal the phone can explain and act on, as opposed to an unexpected failure. */
+class SaleRefused extends Error {
+  constructor(
+    readonly code: RefusalCode,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 // Owners and administrators are never capped; other roles need the explicit
 // discounts.unlimited grant (same rule as the checkout screen).
@@ -62,18 +74,26 @@ export class StandaloneService {
         where: { branchId },
         orderBy: { sortOrder: 'asc' },
         include: {
-          tables: { orderBy: { number: 'asc' }, select: { id: true, number: true, name: true, capacity: true } },
+          tables: {
+            orderBy: { number: 'asc' },
+            select: { id: true, number: true, name: true, capacity: true },
+          },
         },
       }),
       // Items that must have options chosen cannot be sold from the phone yet.
       this.prisma.menuItemModifierGroup.findMany({
         where: { modifierGroup: { branchId } },
-        select: { menuItemId: true, modifierGroup: { select: { isRequired: true, minSelect: true } } },
+        select: {
+          menuItemId: true,
+          modifierGroup: { select: { isRequired: true, minSelect: true } },
+        },
       }),
     ]);
     const needsOptions = new Set(
       groupLinks
-        .filter((l) => l.modifierGroup.isRequired || l.modifierGroup.minSelect > 0)
+        .filter(
+          (l) => l.modifierGroup.isRequired || l.modifierGroup.minSelect > 0,
+        )
         .map((l) => l.menuItemId),
     );
     const r = branch.restaurant;
@@ -133,11 +153,18 @@ export class StandaloneService {
     const results: OfflineSaleResult[] = [];
     for (const sale of body.sales) {
       try {
-        results.push(await this.recordSale(user, branchId, sale, body.deviceName));
+        results.push(
+          await this.recordSale(user, branchId, sale, body.deviceName),
+        );
       } catch (err) {
-        const reason = err instanceof Error ? err.message : 'Could not record this sale';
-        this.logger.warn(`Offline sale ${sale.id} refused: ${reason}`);
-        results.push({ id: sale.id, status: 'refused', reason });
+        const reason =
+          err instanceof Error ? err.message : 'Could not record this sale';
+        const code: RefusalCode =
+          err instanceof SaleRefused ? err.code : 'OTHER';
+        this.logger.warn(
+          `Offline sale ${sale.id} refused (${code}): ${reason}`,
+        );
+        results.push({ id: sale.id, status: 'refused', code, reason });
       }
     }
     return { results };
@@ -154,19 +181,33 @@ export class StandaloneService {
       select: { id: true, orderNumber: true, status: true },
     });
     if (existing && existing.status === 'PAID') {
-      return { id: sale.id, status: 'duplicate', orderId: existing.id, orderNumber: existing.orderNumber };
+      return {
+        id: sale.id,
+        status: 'duplicate',
+        orderId: existing.id,
+        orderNumber: existing.orderNumber,
+      };
     }
     if (existing) {
       // An earlier attempt left an unfinished order: do not settle it twice.
-      throw new Error('An earlier attempt of this sale did not finish; it needs a look in Orders.');
+      throw new SaleRefused(
+        'ALREADY_STARTED',
+        'An earlier attempt of this sale did not finish; it needs a look in Orders.',
+      );
     }
 
     // Merge repeated lines of the same dish so each can be matched to its price.
-    const lines = new Map<string, { menuItemId: string; quantity: number; unitPrice: number }>();
+    const lines = new Map<
+      string,
+      { menuItemId: string; quantity: number; unitPrice: number }
+    >();
     for (const l of sale.items) {
       const prev = lines.get(l.menuItemId);
       if (prev && prev.unitPrice !== l.unitPrice) {
-        throw new Error('The same dish was sold at two different prices in one sale.');
+        throw new SaleRefused(
+          'PRICE_CONFLICT',
+          'The same dish was sold at two different prices in one sale.',
+        );
       }
       lines.set(l.menuItemId, {
         menuItemId: l.menuItemId,
@@ -176,10 +217,47 @@ export class StandaloneService {
     }
     const merged = [...lines.values()];
 
+    // Conflicts with the server's current menu. A dish that is gone cannot be sold;
+    // a price that moved is recorded as the customer paid it, and flagged.
+    const current = await this.prisma.menuItem.findMany({
+      where: { branchId, id: { in: merged.map((m) => m.menuItemId) } },
+      select: { id: true, name: true, price: true, isActive: true },
+    });
+    const byId = new Map(current.map((c) => [c.id, c]));
+    const gone = merged.filter((m) => !byId.get(m.menuItemId)?.isActive);
+    if (gone.length) {
+      const names = gone
+        .map(
+          (m) => byId.get(m.menuItemId)?.name ?? 'a dish that no longer exists',
+        )
+        .join(', ');
+      throw new SaleRefused(
+        'ITEM_UNAVAILABLE',
+        `Not on the server's menu any more: ${names}.`,
+      );
+    }
+    const review: SaleReviewFlag[] = merged.flatMap((m) => {
+      const c = byId.get(m.menuItemId)!;
+      return Math.abs(Number(c.price) - m.unitPrice) > 0.005
+        ? [
+            {
+              type: 'PRICE_CHANGED' as const,
+              menuItemId: m.menuItemId,
+              name: c.name,
+              phonePrice: m.unitPrice,
+              serverPrice: Number(c.price),
+            },
+          ]
+        : [];
+    });
+
     const note = [
       `Offline sale ${sale.localNumber}${deviceName ? ` on ${deviceName}` : ''}`,
       sale.tableLabel ? `(${sale.tableLabel})` : '',
       sale.note ?? '',
+      review.length
+        ? `[Review: charged ${review.map((r) => `${r.name} ${r.phonePrice} (menu now ${r.serverPrice})`).join(', ')}]`
+        : '',
     ]
       .filter(Boolean)
       .join(' ');
@@ -196,7 +274,10 @@ export class StandaloneService {
           modifierIds: [],
         })),
       } as never,
-      { clientRequestId: sale.id, historical: { createdAt: new Date(sale.soldAt) } },
+      {
+        clientRequestId: sale.id,
+        historical: { createdAt: new Date(sale.soldAt) },
+      },
     );
 
     try {
@@ -209,28 +290,41 @@ export class StandaloneService {
           payments: sale.payments,
           discountPercent: sale.discountPercent,
           discountFlat: sale.discountFlat,
-          discountReason: sale.discountPercent || sale.discountFlat ? 'Offline sale discount' : undefined,
+          discountReason:
+            sale.discountPercent || sale.discountFlat
+              ? 'Offline sale discount'
+              : undefined,
           requestId: sale.id,
         } as never,
         mayExceedDiscountCap(user),
       );
     } catch (err) {
-      const reason = err instanceof Error ? err.message : 'Payment could not be recorded';
+      const reason =
+        err instanceof Error ? err.message : 'Payment could not be recorded';
       await this.prisma.order.updateMany({
         where: { id: order.id, status: 'OPEN' },
         data: {
           status: 'CANCELLED',
           cancelledAt: new Date(),
-          cancelReason: `Offline sale could not be settled: ${reason}`.slice(0, 250),
+          cancelReason: `Offline sale could not be settled: ${reason}`.slice(
+            0,
+            250,
+          ),
         },
       });
-      throw new Error(reason);
+      throw new SaleRefused('PAYMENT_REJECTED', reason);
     }
     const done = await this.prisma.order.findUniqueOrThrow({
       where: { id: order.id },
       select: { id: true, orderNumber: true },
     });
-    return { id: sale.id, status: 'created', orderId: done.id, orderNumber: done.orderNumber };
+    return {
+      id: sale.id,
+      status: 'created',
+      orderId: done.id,
+      orderNumber: done.orderNumber,
+      ...(review.length ? { review } : {}),
+    };
   }
 
   /**
@@ -251,11 +345,19 @@ export class StandaloneService {
       const sold = lines.find((l) => l.menuItemId === item.menuItemId);
       const raw = sold ? sold.unitPrice : Number(item.unitPriceSnapshot);
       const rate = Number(item.taxRateSnapshot);
-      const effective = toEffectiveInclusiveUnitPrice(raw, rate, branch.taxMode);
+      const effective = toEffectiveInclusiveUnitPrice(
+        raw,
+        rate,
+        branch.taxMode,
+      );
       return {
         item,
         raw,
-        line: priceLine({ quantity: item.quantity, unitPriceInclusive: effective, taxRatePercent: rate }),
+        line: priceLine({
+          quantity: item.quantity,
+          unitPriceInclusive: effective,
+          taxRatePercent: rate,
+        }),
       };
     });
     const totals = computeOrderTotals(priced.map((p) => p.line));
@@ -263,12 +365,19 @@ export class StandaloneService {
       ...priced.map((p) =>
         this.prisma.orderItem.update({
           where: { id: p.item.id },
-          data: { unitPriceSnapshot: round2(p.raw), lineTotal: p.line.lineTotal },
+          data: {
+            unitPriceSnapshot: round2(p.raw),
+            lineTotal: p.line.lineTotal,
+          },
         }),
       ),
       this.prisma.order.update({
         where: { id: orderId },
-        data: { subtotal: totals.subtotal, taxAmount: totals.taxAmount, totalAmount: totals.subtotal },
+        data: {
+          subtotal: totals.subtotal,
+          taxAmount: totals.taxAmount,
+          totalAmount: totals.subtotal,
+        },
       }),
     ]);
   }

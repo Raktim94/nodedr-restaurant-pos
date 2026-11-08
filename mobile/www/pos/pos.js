@@ -5,7 +5,8 @@ import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
 import { kv, newId, nextLocalNumber, sales } from './lib/store.js';
 import { native, pickServer, reachable, savedServers } from './lib/net.js';
-import { login, pullSnapshot, syncNow } from './lib/sync.js';
+import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
+import { checkAll } from './lib/net.js';
 import { changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, upsertDish } from './lib/local.js';
 
 const $ = (id) => document.getElementById(id);
@@ -661,9 +662,13 @@ function openDone(sale) {
 // ------------------------------------------------------------------- sales ---
 async function viewSales() {
   const all = await sales.all();
-  const label = { pending: 'Waiting to sync', synced: 'Synced', refused: 'Needs attention' };
+  const label = { pending: 'Waiting to sync', synced: 'Synced', refused: 'Needs attention', dismissed: 'Set aside' };
+  const nAttention = all.filter((x) => x.status === 'refused').length;
+  const nReview = all.filter((x) => x.review && x.review.length).length;
   $('view').innerHTML = `
     ${S.pending ? `<div class="note warn" role="status">${S.pending} sale${S.pending > 1 ? 's' : ''} saved on this phone, not on the server yet.</div>` : ''}
+    ${nAttention ? `<div class="note bad" role="status">${nAttention} sale${nAttention > 1 ? 's were' : ' was'} refused by the server and still need${nAttention > 1 ? '' : 's'} a decision. Open ${nAttention > 1 ? 'each' : 'it'} to retry or set aside.</div>` : ''}
+    ${nReview ? `<div class="note warn" role="status">${nReview} sale${nReview > 1 ? 's were' : ' was'} recorded at a price that differs from the server's menu. Open to see which.</div>` : ''}
     <div class="mt">${
       all
         .map(
@@ -681,15 +686,61 @@ async function viewSales() {
           `<header><h2>${esc(s.localNumber)}</h2><button class="x" data-close aria-label="Close">&times;</button></header>
            <div class="body">
              <p><span class="status ${s.status}">${label[s.status]}</span> ${s.serverOrderNumber ? `Server order #${esc(s.serverOrderNumber)}` : ''}</p>
-             ${s.status === 'refused' ? `<div class="note bad">${esc(s.refusedReason)}<br><small>The sale is kept here. Ask the owner to enter it from the full app.</small></div>` : ''}
+             ${s.status === 'refused' ? `<div class="note bad"><b>${esc(REFUSAL_TITLE[s.refusedCode] || REFUSAL_TITLE.OTHER)}</b><br>${esc(s.refusedReason)}<br><small>The sale is still on this phone and nothing was lost. ${esc(REFUSAL_HELP[s.refusedCode] || REFUSAL_HELP.OTHER)}</small></div>
+               <button class="btn block mt" id="retry">Try sending again</button>
+               <button class="btn line block mt" id="aside">Set aside (keep a copy here)</button>` : ''}
+             ${s.status === 'dismissed' ? `<div class="note">Set aside on ${esc(new Date(s.dismissedAt).toLocaleString())}. The server does not have this sale. It is kept here as a record.</div><button class="btn line block mt" id="retry">Try sending again</button>` : ''}
+             ${s.review && s.review.length ? `<div class="note warn"><b>Recorded at the price shown on this phone</b><br>${s.review.map((r) => `${esc(r.name)}: charged ${inr(r.phonePrice)}, server menu now ${inr(r.serverPrice)}`).join('<br>')}<br><small>The customer paid what the phone showed, so the receipt was not changed. The server order carries a review note.</small></div>` : ''}
              ${s.items.map((i) => `<div class="tot"><span>${i.quantity} &times; ${esc(i.name)}</span><span>${inr(i.price * i.quantity)}</span></div>`).join('')}
              <div class="tot big mt"><span>Total</span><span>${inr(s.bill.total)}</span></div>
              <div class="mt">${printActions()}</div>
            </div>`,
-          (p) => bindPrint(p, s, false),
+          (p) => {
+            bindPrint(p, s, false);
+            const back = async () => (await refreshPending(), closeSheet(), render());
+            if (p.querySelector('#retry')) p.querySelector('#retry').onclick = async () => ((await retrySale(s.id)), await back(), doSync());
+            if (p.querySelector('#aside'))
+              p.querySelector('#aside').onclick = async () => {
+                if (!confirm('Set this sale aside? It stays on this phone as a record but will not be sent to the server unless you try again.')) return;
+                s.status = 'dismissed';
+                s.dismissedAt = new Date().toISOString();
+                await sales.put(s);
+                await back();
+              };
+          },
         );
       }),
   );
+}
+
+const REFUSAL_TITLE = {
+  ITEM_UNAVAILABLE: 'A dish is no longer on the server menu',
+  ALREADY_STARTED: 'The server already has an unfinished copy',
+  PRICE_CONFLICT: 'Two prices for the same dish',
+  PAYMENT_REJECTED: 'The server did not accept the payment or discount',
+  OTHER: 'The server did not accept this sale',
+};
+const REFUSAL_HELP = {
+  ITEM_UNAVAILABLE: 'Ask the owner to switch the dish back on, then try again.',
+  ALREADY_STARTED: 'Ask the owner to check Orders for this sale, then try again or set it aside.',
+  PRICE_CONFLICT: 'Set it aside and enter it again from the full app.',
+  PAYMENT_REJECTED: 'Ask the owner to check the discount limit or payment, then try again.',
+  OTHER: 'Ask the owner, then try again or set it aside.',
+};
+
+/** Local and online server cards: reachability, version, speed and what the server supports. */
+async function serverCards() {
+  const r = await checkAll();
+  if (!r.rows.length) return '';
+  const cap = (c) => Object.entries(c || {}).filter(([, v]) => v).map(([k]) => k.replace(/([A-Z])/g, ' $1').toLowerCase()).join(', ');
+  return `<div class="card mt"><h2 style="font-size:1.05rem">Servers</h2>${r.rows
+    .map(
+      (x) => `<dl class="kv"><dt>${x.kind}</dt><dd>${esc(x.url)}</dd>
+        <dt>Status</dt><dd>${x.info ? `Reachable &middot; ${x.info.ms} ms${r.using && x.kind.toLowerCase() === r.using ? ' &middot; in use' : ''}` : 'Not reachable from here'}</dd>
+        ${x.info ? `<dt>Version</dt><dd>${esc(x.info.version)}${x.info.legacy ? ' (older server: update it to see more)' : ''}</dd><dt>Supports</dt><dd>${esc(cap(x.info.capabilities)) || '—'}</dd>` : ''}</dl>`,
+    )
+    .join('<hr style="border:0;border-top:1px solid var(--line)">')}
+    <p class="mute">The local address needs this phone on the restaurant WiFi. The online address works from anywhere.</p></div>`;
 }
 
 // -------------------------------------------------------------------- sync ---
@@ -726,6 +777,7 @@ async function viewSync() {
   const last = await kv.get('lastSync');
   const printer = savedPrinter();
   const device = (await kv.get('deviceName')) || 'Phone';
+  const servers = await serverCards();
   $('view').innerHTML = `
     ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
     <div class="card mt">
@@ -740,6 +792,7 @@ async function viewSync() {
       <button class="btn block mt" id="syncnow" ${S.syncing ? 'disabled' : ''}>${S.syncing ? 'Syncing…' : 'Sync now'}</button>
       <p class="mute center">Sync sends your sales and refreshes the menu and prices.</p>
     </div>
+    ${servers}
     <div class="card mt">
       <h2 style="font-size:1.05rem">Bluetooth printer</h2>
       <p class="mute">${printer ? `Printing on <b>${esc(printer.name)}</b>` : 'No printer chosen yet.'}</p>
@@ -787,7 +840,8 @@ function afterSync(r) {
   else if (r.error) S.note = { kind: 'bad', text: r.error };
   else if (r.online) {
     S.note = r.done ? { text: `${r.done} sale${r.done > 1 ? 's' : ''} sent to the server.` } : null;
-    if (r.refused) S.note = { kind: 'bad', text: `${r.refused} sale${r.refused > 1 ? 's were' : ' was'} refused by the server. Open Sales to see why.` };
+    if (r.reviewed) S.note = { kind: 'warn', text: `${r.reviewed} sale${r.reviewed > 1 ? 's were' : ' was'} recorded at a price that differs from the server menu. Open Sales to check.` };
+    if (r.refused) S.note = { kind: 'bad', text: `${r.refused} sale${r.refused > 1 ? 's were' : ' was'} refused by the server. Open Sales to retry or set aside.` };
   } else S.note = null;
   kv.get('snapshot').then((s) => s && (S.snap = s));
   if ($('sheet').hidden) render();

@@ -72,3 +72,41 @@ export async function pickServer(preferred) {
   }
   return null;
 }
+
+/**
+ * What the server says about itself: product, version, API level, capabilities.
+ * Returns null when nothing OrderRestro answers. `ms` is the round-trip time.
+ */
+export async function serverInfo(base, timeout = 4000) {
+  const t0 = Date.now();
+  try {
+    const r = await request(base, 'GET', '/api/v1/mobile/server-info', undefined, { timeout });
+    if (r.status === 200 && r.data && r.data.product === 'orderrestro') return { ...r.data, ms: Date.now() - t0, legacy: false };
+    // Servers older than this feature only have setup-status: still an OrderRestro server, but no capabilities.
+    if (await reachable(base, timeout)) return { product: 'orderrestro', version: 'unknown', apiVersion: 1, capabilities: {}, ms: Date.now() - t0, legacy: true };
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
+/** Check every saved address and report each one, so the user can see local and online separately. */
+export async function checkAll() {
+  const link = plugins().ServerLink;
+  let cur = {};
+  try {
+    cur = link ? await link.current() : {};
+  } catch {
+    /* no native link */
+  }
+  const rows = [
+    { kind: 'Local', url: cur.localUrl },
+    { kind: 'Online', url: cur.externalUrl },
+  ].filter((r) => r.url);
+  if (!rows.length) {
+    const base = await pickServer();
+    if (base) rows.push({ kind: /^https:/.test(base) ? 'Online' : 'Local', url: base });
+  }
+  const out = await Promise.all(rows.map(async (r) => ({ ...r, info: await serverInfo(r.url) })));
+  return { rows: out, using: cur.mode || '' };
+}
