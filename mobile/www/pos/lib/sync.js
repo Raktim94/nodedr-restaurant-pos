@@ -50,12 +50,22 @@ function payload(sale) {
   };
 }
 
+/** Put a refused sale back in the queue (e.g. after the owner restored the dish on the server). */
+export async function retrySale(id) {
+  const sale = await sales.get(id);
+  if (!sale || (sale.status !== 'refused' && sale.status !== 'dismissed')) return false;
+  sale.status = 'pending';
+  await sales.put(sale);
+  return true;
+}
+
 /** Send what is waiting. Returns how many were recorded, and how many need attention. */
 export async function pushSales(base) {
   const branchId = await kv.get('branchId');
   const device = (await kv.get('deviceName')) || 'Phone';
   let done = 0;
   let refused = 0;
+  let reviewed = 0;
   const waiting = (await sales.pending()).reverse(); // oldest first
   for (let i = 0; i < waiting.length; i += 20) {
     const batch = waiting.slice(i, i + 20);
@@ -71,9 +81,15 @@ export async function pushSales(base) {
       if (res.status === 'refused') {
         sale.status = 'refused';
         sale.refusedReason = res.reason;
+        sale.refusedCode = res.code || 'OTHER';
         refused++;
       } else {
+        // Recorded, but the menu moved since the phone last looked: keep what the owner should check.
+        sale.review = Array.isArray(res.review) && res.review.length ? res.review : undefined;
+        if (sale.review) reviewed++;
         sale.status = 'synced';
+        delete sale.refusedReason;
+        delete sale.refusedCode;
         sale.serverOrderNumber = res.orderNumber;
         sale.syncedAt = new Date().toISOString();
         done++;
@@ -81,7 +97,7 @@ export async function pushSales(base) {
       await sales.put(sale);
     }
   }
-  return { done, refused };
+  return { done, refused, reviewed };
 }
 
 let running = null;
@@ -99,6 +115,7 @@ export function syncNow({ refreshMenu = true } = {}) {
       const r = await pushSales(base);
       out.done = r.done;
       out.refused = r.refused;
+      out.reviewed = r.reviewed;
       if (refreshMenu) await pullSnapshot(base);
       await kv.set('lastSync', Date.now());
     } catch (e) {
