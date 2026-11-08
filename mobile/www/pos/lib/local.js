@@ -2,7 +2,7 @@
 // the phone (IndexedDB), so the app is usable before any server exists. Later
 // the owner connects a server; the sales taken here are then matched to the
 // server's dishes by name and sent (see remapSalesToServer).
-import { kv, newId, sales } from './store.js';
+import { kv, kots, newId, orders, sales } from './store.js';
 
 const enc = new TextEncoder();
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -131,5 +131,41 @@ export async function changeLocalPassword(current, next) {
 /** Forgot the password: wipe the phone account, its menu and its sales so a new one can be made. */
 export async function eraseLocalAccount() {
   await sales.clear();
+  await orders.clear();
+  await kots.clear();
   for (const k of ['localAccount', 'snapshot', 'snapshotAt', 'branchId', 'localMenuBackup', 'serverBase']) await kv.del(k);
+}
+
+// ---- sections and tables (phone-account mode; with a server they come from the server)
+const allTables = (snap) => snap.floors.flatMap((f) => f.tables);
+
+export async function addSection(snap, name) {
+  name = String(name || '').trim();
+  if (!name) throw new Error('Enter a name for the section, for example Ground floor.');
+  if (snap.floors.some((f) => f.name.toLowerCase() === name.toLowerCase())) throw new Error('A section with that name already exists.');
+  snap.floors.push({ id: `loc-${newId()}`, name, tables: [] });
+  return saveSnap(snap);
+}
+
+export async function addTable(snap, floorId, { label, capacity }) {
+  label = String(label || '').trim();
+  capacity = Number(capacity || 4);
+  if (!label) throw new Error('Enter a table name or number.');
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) throw new Error('Seats must be a whole number from 1 to 50.');
+  if (allTables(snap).some((t) => t.label.toLowerCase() === label.toLowerCase())) throw new Error('A table with that name already exists.');
+  const floor = snap.floors.find((f) => f.id === floorId);
+  if (!floor) throw new Error('Choose a section first.');
+  floor.tables.push({ id: `loc-${newId()}`, label, capacity });
+  return saveSnap(snap);
+}
+
+/** Removing a table never touches orders: the caller refuses while one is open on it. */
+export async function removeTable(snap, tableId) {
+  for (const f of snap.floors) f.tables = f.tables.filter((t) => t.id !== tableId);
+  return saveSnap(snap);
+}
+
+export async function removeSection(snap, floorId) {
+  snap.floors = snap.floors.filter((f) => f.id !== floorId);
+  return saveSnap(snap);
 }

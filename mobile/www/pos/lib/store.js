@@ -7,13 +7,18 @@ let dbp;
 function open() {
   if (!dbp) {
     dbp = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB, 1);
+      const req = indexedDB.open(DB, 2);
       req.onupgradeneeded = () => {
+        // Only add what is missing: a phone upgrading from v1 keeps its sales and settings untouched.
         const db = req.result;
-        db.createObjectStore('kv');
-        const s = db.createObjectStore('sales', { keyPath: 'id' });
-        s.createIndex('status', 'status');
-        s.createIndex('soldAt', 'soldAt');
+        if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+        if (!db.objectStoreNames.contains('sales')) {
+          const s = db.createObjectStore('sales', { keyPath: 'id' });
+          s.createIndex('status', 'status');
+          s.createIndex('soldAt', 'soldAt');
+        }
+        if (!db.objectStoreNames.contains('orders')) db.createObjectStore('orders', { keyPath: 'id' }); // open tabs, held orders, voids
+        if (!db.objectStoreNames.contains('kots')) db.createObjectStore('kots', { keyPath: 'id' }); // kitchen tickets
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -48,6 +53,58 @@ export const sales = {
   clear: () => tx('sales', 'readwrite', (s) => s.clear()),
   pending: () => sales.all().then((a) => a.filter((s) => s.status === 'pending')),
 };
+
+export const orders = {
+  put: (o) => tx('orders', 'readwrite', (s) => s.put(o)),
+  get: (id) => tx('orders', 'readonly', (s) => s.get(id)),
+  del: (id) => tx('orders', 'readwrite', (s) => s.delete(id)),
+  all: () => tx('orders', 'readonly', (s) => s.getAll()),
+  clear: () => tx('orders', 'readwrite', (s) => s.clear()),
+};
+
+export const kots = {
+  put: (k) => tx('kots', 'readwrite', (s) => s.put(k)),
+  get: (id) => tx('kots', 'readonly', (s) => s.get(id)),
+  all: () => tx('kots', 'readonly', (s) => s.getAll()),
+  clear: () => tx('kots', 'readwrite', (s) => s.clear()),
+};
+
+/**
+ * Save a kitchen ticket and the order that now counts it as sent in ONE
+ * transaction: a crash can never leave a ticket without the order knowing
+ * (which would print the same dishes twice) or the reverse (the kitchen never told).
+ */
+export function saveKotWithOrder(kot, order) {
+  return open().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const t = db.transaction(['kots', 'orders'], 'readwrite');
+        t.objectStore('kots').put(kot);
+        t.objectStore('orders').put(order);
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+        t.onabort = () => reject(t.error);
+      }),
+  );
+}
+
+/** ORD-YYMMDD-NNN, the name of an order while it is open or held. */
+export async function nextOrderNumber(now = new Date()) {
+  const d = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const key = `ordseq:${d}`;
+  const n = ((await kv.get(key)) || 0) + 1;
+  await kv.set(key, n);
+  return `ORD-${d}-${String(n).padStart(3, '0')}`;
+}
+
+/** Kitchen ticket number: 1, 2, 3 ... counting up through the day on this phone. */
+export async function nextKotNumber(now = new Date()) {
+  const d = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const key = `kotseq:${d}`;
+  const n = ((await kv.get(key)) || 0) + 1;
+  await kv.set(key, n);
+  return n;
+}
 
 /** OFF-YYMMDD-NNN, counting up through the day on this phone. */
 export async function nextLocalNumber(now = new Date()) {
