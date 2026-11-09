@@ -32,6 +32,11 @@ Works on the restaurant's own network, with no internet needed day to day. Your 
 
 Free. No ads. No tracking. Delete your account any time from the user menu.
 
+## What's new (1.25.0)
+- KOT: print it on a Bluetooth printer or open it as a PDF, and reprint the last one (marked REPRINT). The separate Kitchen screen is gone
+- The phone's Back button now works like other apps: it closes the open sheet, then returns to Sell, then leaves the app
+- A tidier home screen with a compact Get ready checklist and a clear empty-menu start
+
 ## What's new (1.24.0)
 - Table bookings: take a booking with name, guests, time and table; mark guests arrived, cancel or no-show. A booked table shows on the floor an hour before
 - A friendlier start: choose "Start on this phone" or "I have a restaurant server", then a short Get ready checklist (dishes, tables, printer, connect a server later)
