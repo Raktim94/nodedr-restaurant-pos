@@ -75,3 +75,73 @@ export type OfflineSaleResult =
       review?: SaleReviewFlag[];
     }
   | { id: string; status: 'refused'; code: RefusalCode; reason: string };
+
+// ---------------------------------------------------------------- bookings ---
+
+const reservationStatus = z.enum([
+  'RESERVED',
+  'CONFIRMED',
+  'ARRIVED',
+  'COMPLETED',
+  'CANCELLED',
+  'NO_SHOW',
+]);
+
+/**
+ * A booking as the phone holds it. The id is made on the phone and must start
+ * with "ph_": that prefix is how the server knows the phone may edit the
+ * details. Bookings made on the server can only have their status changed.
+ */
+export const phoneReservationSchema = z
+  .object({
+    id: z
+      .string()
+      .regex(/^ph_[A-Za-z0-9-]{8,60}$/, 'Booking id must look like ph_<uuid>')
+      .optional(),
+    serverId: z.string().min(8).max(64).optional(),
+    customerName: z.string().trim().min(1).max(100),
+    phone: z.string().trim().max(30).optional(),
+    guestCount: z.number().int().min(1).max(500),
+    reservedAt: z.string().datetime(),
+    durationMinutes: z.number().int().min(15).max(600).default(90),
+    tableId: z.string().max(64).optional(),
+    specialRequests: z.string().trim().max(300).optional(),
+    status: reservationStatus,
+    /** When the phone last changed this booking: the newer side wins. */
+    updatedAt: z.string().datetime(),
+  })
+  .strict()
+  .refine((r) => !!r.id !== !!r.serverId, {
+    message: 'Send either id (made on the phone) or serverId (made on the server)',
+  });
+
+export const reservationSyncSchema = z
+  .object({
+    deviceName: z.string().max(60).optional(),
+    reservations: z.array(phoneReservationSchema).min(1).max(100),
+  })
+  .strict();
+
+export type PhoneReservationDto = z.infer<typeof phoneReservationSchema>;
+export type ReservationSyncDto = z.infer<typeof reservationSyncSchema>;
+
+export type ReservationSyncResult = {
+  key: string; // the id or serverId the phone sent
+  status: 'saved' | 'server_newer' | 'refused';
+  reason?: string;
+  reservation?: PhoneReservationView;
+};
+
+export type PhoneReservationView = {
+  id: string;
+  mine: boolean; // made on a phone (the phone may edit its details)
+  customerName: string;
+  phone: string | null;
+  guestCount: number;
+  reservedAt: string;
+  durationMinutes: number;
+  tableId: string | null;
+  specialRequests: string | null;
+  status: z.infer<typeof reservationStatus>;
+  updatedAt: string;
+};

@@ -8,6 +8,7 @@ import {
   toEffectiveInclusiveUnitPrice,
 } from '../modules/orders/pricing';
 import { OrdersService } from '../modules/orders/orders.service';
+import { StandaloneReservationsService } from './standalone-reservations.service';
 import type {
   OfflineSaleDto,
   OfflineSaleResult,
@@ -43,6 +44,7 @@ export class StandaloneService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly orders: OrdersService,
+    private readonly bookings: StandaloneReservationsService,
   ) {}
 
   /** The menu, tables and settings a phone needs to sell with no connection. */
@@ -97,6 +99,10 @@ export class StandaloneService {
         .map((l) => l.menuItemId),
     );
     const r = branch.restaurant;
+    // Bookings only for staff who may manage them; everyone else gets none.
+    const reservations = user.permissions.includes('reservations.manage')
+      ? await this.bookings.forSnapshot(branchId)
+      : [];
     return {
       generatedAt: new Date().toISOString(),
       user: { id: user.id, name: user.name, permissions: user.permissions },
@@ -132,6 +138,7 @@ export class StandaloneService {
         // Combos and items with required options need the full app.
         sellOffline: !needsOptions.has(i.id) && !i.isCombo,
       })),
+      reservations,
       floors: floors.map((f) => ({
         id: f.id,
         name: f.name,

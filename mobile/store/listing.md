@@ -32,6 +32,11 @@ Works on the restaurant's own network, with no internet needed day to day. Your 
 
 Free. No ads. No tracking. Delete your account any time from the user menu.
 
+## What's new (1.24.0)
+- Table bookings: take a booking with name, guests, time and table; mark guests arrived, cancel or no-show. A booked table shows on the floor an hour before
+- A friendlier start: choose "Start on this phone" or "I have a restaurant server", then a short Get ready checklist (dishes, tables, printer, connect a server later)
+- Bookings sync both ways with your server, and the server's copy wins if both sides changed
+
 ## What's new (1.23.0)
 - Refunds: pick the dishes to pay back on a sale (the discount is shared out fairly and you can never refund more than was paid)
 - Expenses: note money paid out, from the cash drawer or by bank or UPI

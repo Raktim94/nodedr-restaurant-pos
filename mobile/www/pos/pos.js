@@ -3,10 +3,11 @@
 // whenever it can. Plain DOM + modules: nothing here needs a build step.
 import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
-import { expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
+import { reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
 import { backupJson, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
 import { KOT_NEXT, dayReport, kotDelta, markSent, minutesSince, newOrder, openOrders, saleNote, tableMap, tableTakenBy } from './lib/orders.js';
 import { escposKot, htmlKot } from './lib/kot.js';
+import { STATUS_LABEL, clashes, grouped, heldSoon, newBooking, setStatus } from './lib/reservations.js';
 import { native, pickServer, reachable, savedServers } from './lib/net.js';
 import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
@@ -36,6 +37,7 @@ const S = {
   restored: false,
   noteOpen: null, // dish id whose note box is open
   editTables: false,
+  tablesTab: 'floor', // 'floor' | 'bookings'
   showDone: false,
 };
 
@@ -341,7 +343,26 @@ function bindPrint(root, sale, provisional) {
 }
 
 // -------------------------------------------------------------- sign in ----
+function renderWelcome() {
+  $('app').innerHTML = `
+  <div class="login" id="welcome">
+    <img src="../assets/logo.png" alt="">
+    <h1 class="center">Welcome to OrderRestro</h1>
+    <p class="mute center">How do you want to start? You can change your mind later: nothing you do now is lost.</p>
+    <button class="btn block mt" id="w-phone" type="button">Start on this phone<br><small>Best if you have no server yet. Takes about a minute.</small></button>
+    <ul class="mute" style="margin:.5rem 0 1rem;padding-left:1.1rem">
+      <li>Menu, tables, bookings, kitchen tickets and sales all work with no internet.</li>
+      <li>Connect a server whenever you are ready: your sales and bookings are sent to it and the menu comes back.</li>
+    </ul>
+    <button class="btn line block" id="w-server" type="button">I already have a restaurant server<br><small>Sign in and download your menu.</small></button>
+  </div>`;
+  $('w-phone').onclick = () => renderSetup();
+  $('w-server').onclick = () => renderLogin();
+}
+
 async function renderLogin(message) {
+  if (!message && !(await hasLocalAccount()) && !(await savedServers()).length && !S.fromWelcome) return ((S.fromWelcome = true), renderWelcome());
+  S.fromWelcome = true;
   const servers = await savedServers();
   const last = (await kv.get('serverBase')) || servers[0] || '';
   $('app').innerHTML = `
@@ -411,8 +432,10 @@ function renderSetup(message, v = {}) {
     try {
       S.snap = await createLocalAccount({ ...vals, password: $('p').value, upiVpa: vals.upi });
       S.unlocked = true;
-      S.view = 'menu';
-      S.note = { text: 'Account created. Add your dishes here, then go to Sell.' };
+      S.view = 'sell';
+      S.setupDismissed = false;
+      await kv.del('setupDismissed');
+      S.note = null;
       render();
     } catch (e) {
       renderSetup(e.message, vals);
@@ -608,6 +631,7 @@ function go(v) {
   render();
 }
 async function refreshKitchenBadge() {
+  S.bookingsToday = (await reservations.all()).filter((b) => heldSoon(b, new Date(), 24 * 60) && new Date(b.reservedAt).toDateString() === new Date().toDateString() && b.status !== 'ARRIVED').length;
   S.kitchenOpen = (await kots.all()).filter((k) => k.status !== 'SERVED' && !k.dismissed).length;
 }
 async function refreshPending() {
@@ -624,11 +648,38 @@ async function render() {
 }
 
 // -------------------------------------------------------------------- sell ---
+function setupSteps() {
+  const snap = S.snap;
+  return [
+    { key: 'menu', done: snap.items.length > 0, title: 'Add your dishes', hint: 'Name, price and tax. You can change them any time.', go: 'menu' },
+    { key: 'tables', done: snap.floors.some((f) => f.tables.length > 0), title: 'Add your tables', hint: 'Optional. Skip it if you only sell takeaway.', go: 'tables' },
+    { key: 'printer', done: !!savedPrinter(), title: 'Choose a Bluetooth printer', hint: 'Optional. For bills and kitchen tickets.', go: 'sync' },
+    { key: 'server', done: false, title: 'Connect a server later', hint: 'Optional. Sales and bookings are sent to it, and the menu comes back.', go: 'sync', last: true },
+  ];
+}
+function setupCard() {
+  if (!S.snap.local || S.setupDismissed) return '';
+  const steps = setupSteps();
+  if (steps[0].done && steps[1].done && steps[2].done) return '';
+  return `<section class="card mt" aria-labelledby="setup-h"><h2 id="setup-h" style="font-size:1.05rem">Get ready to sell</h2>
+    <ol style="list-style:none;margin:.4rem 0;padding:0">${steps
+      .map((st, i) => `<li><button class="row" data-setup="${st.go}" style="width:100%;text-align:left" aria-label="${esc(st.title)}${st.done ? ', done' : ''}">
+        <span aria-hidden="true" style="font-weight:700;min-width:1.5rem">${st.done ? '&#10003;' : i + 1}</span><span class="grow"><b>${esc(st.title)}</b><br><small class="mute">${esc(st.hint)}</small></span></button></li>`)
+      .join('')}</ol>
+    <button class="btn line block" id="setup-hide">Hide this</button></section>`;
+}
+function bindSetup() {
+  document.querySelectorAll('[data-setup]').forEach((b) => (b.onclick = () => go(b.dataset.setup)));
+  const h = document.getElementById('setup-hide');
+  if (h) h.onclick = async () => ((S.setupDismissed = true), await kv.set('setupDismissed', 1), viewSell());
+}
+
 function viewSell() {
   const { categories, items } = S.snap;
   const q = S.q.trim().toLowerCase();
   const shown = items.filter((i) => (S.category === 'all' || i.categoryId === S.category) && (!q || i.name.toLowerCase().includes(q)));
   $('view').innerHTML = `
+    ${setupCard()}
     ${S.orderId || S.table ? `<div class="note" role="status">${S.type === 'DINE_IN' ? `Dine in${S.table ? ` &middot; <b>${esc(S.table)}</b>` : ''}` : 'Takeaway'}${cartCount() ? ' &middot; saved automatically' : ''}</div>` : ''}
     <input class="search" id="q" type="search" placeholder="Search the menu" value="${esc(S.q)}" aria-label="Search the menu">
     <div class="chips" role="group" aria-label="Categories">
@@ -642,6 +693,7 @@ function viewSell() {
           ${i.soldOut ? '<small>Sold out</small>' : i.sellOffline ? (i.stock != null && i.stock <= 5 ? `<small>${i.stock} left</small>` : '') : '<small>Needs options: use the full app</small>'}
         </button>`).join('') || (S.snap.local && !S.snap.items.length ? '<p class="mute center mt">Your menu is empty. Open the Menu tab to add your dishes.</p>' : '<p class="mute center mt">Nothing matches.</p>')}
     </div>`;
+  bindSetup();
   $('q').oninput = (e) => {
     S.q = e.target.value;
     viewSell();
@@ -862,15 +914,120 @@ function openDone(sale) {
   );
 }
 
+
+// ---------------------------------------------------------------- bookings ---
+const pad2 = (n) => String(n).padStart(2, '0');
+const localInput = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const whenText = (iso) => {
+  const d = new Date(iso);
+  const t = new Date();
+  const day = d.toDateString() === t.toDateString() ? 'Today' : d.toDateString() === new Date(t.getTime() + 864e5).toDateString() ? 'Tomorrow' : d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+  return `${day}, ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+};
+
+async function viewBookings() {
+  const all = await reservations.all();
+  const { upcoming, past } = grouped(all);
+  const tables = S.snap.floors.flatMap((f) => f.tables);
+  const row = (b) => `<div class="row orow" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;justify-content:space-between;gap:.5rem"><div class="grow"><b>${esc(b.customerName)}</b> &middot; ${b.guestCount} guest${b.guestCount === 1 ? '' : 's'}${b.tableLabel ? ` &middot; ${esc(b.tableLabel)}` : ''}<br><small>${esc(whenText(b.reservedAt))}${b.phone ? ` &middot; ${esc(b.phone)}` : ''}${b.specialRequests ? `<br>${esc(b.specialRequests)}` : ''}</small></div>
+        <span class="pill ${b.status === 'ARRIVED' ? 'on' : 'off'}" style="align-self:flex-start">${esc(STATUS_LABEL[b.status] || b.status)}</span></div>
+      ${b.dirty && !S.snap.local ? '<small class="mute">Not on the server yet</small>' : ''}${b.syncError ? `<small class="bad">${esc(b.syncError)}</small>` : ''}
+      ${['RESERVED', 'CONFIRMED', 'ARRIVED'].includes(b.status) ? `<div class="grid mt">
+        ${b.status === 'ARRIVED' ? `<button class="btn ghost" data-bs="${esc(b.id)}" data-to="COMPLETED">Done</button>` : `<button class="btn" data-seat="${esc(b.id)}">Guests arrived</button>`}
+        <button class="btn line" data-bs="${esc(b.id)}" data-to="CANCELLED">Cancel</button>
+        ${b.status !== 'ARRIVED' ? `<button class="btn line" data-bs="${esc(b.id)}" data-to="NO_SHOW">No-show</button>` : ''}</div>` : ''}</div>`;
+  $('view').innerHTML = `
+    ${tablesSeg()}
+    ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
+    <button class="btn block" id="newbk">+ New booking</button>
+    <h2 class="sec">Coming up</h2>
+    ${upcoming.map(row).join('') || '<p class="mute center">No bookings yet. Tap New booking when a guest calls.</p>'}
+    ${past.length ? `<h2 class="sec">Earlier</h2>${past.map(row).join('')}` : ''}
+    <p class="mute mt">${S.snap.local ? 'Bookings are kept on this phone. Connect a server later and they are sent to it.' : 'Bookings are shared with the server both ways. If the server was changed after you edited here, the server version is kept.'}</p>`;
+  bindSeg();
+  $('newbk').onclick = () => bookingSheet(tables);
+  document.querySelectorAll('[data-bs]').forEach(
+    (b) =>
+      (b.onclick = async () => {
+        const cur = await reservations.get(b.dataset.bs);
+        if (!cur) return;
+        if (b.dataset.to === 'CANCELLED' && !confirm(`Cancel the booking for ${cur.customerName}?`)) return;
+        await reservations.put(setStatus(cur, b.dataset.to));
+        syncNow({ refreshMenu: false }).then(afterSync);
+        viewBookings();
+      }),
+  );
+  document.querySelectorAll('[data-seat]').forEach(
+    (b) =>
+      (b.onclick = async () => {
+        const cur = await reservations.get(b.dataset.seat);
+        if (!cur) return;
+        await reservations.put(setStatus(cur, 'ARRIVED'));
+        syncNow({ refreshMenu: false }).then(afterSync);
+        if (cur.tableLabel) {
+          S.tablesTab = 'floor';
+          return switchTo(null, { type: 'DINE_IN', table: cur.tableLabel });
+        }
+        S.note = { text: `${cur.customerName} is seated. Pick a table under Floor to start their order.` };
+        viewBookings();
+      }),
+  );
+}
+
+function bookingSheet(tables) {
+  const soon = new Date(Date.now() + 3600e3);
+  soon.setMinutes(0, 0, 0);
+  openSheet(
+    `<header><h2>New booking</h2><button class="x" data-close aria-label="Close">&times;</button></header>
+    <div class="body">
+      <p id="bkerr" class="note bad" role="alert" hidden></p>
+      <label for="bn">Guest name</label><input id="bn" autocomplete="off" maxlength="100">
+      <label for="bp">Phone <span class="mute">(optional)</span></label><input id="bp" type="tel" inputmode="tel" autocomplete="off">
+      <label for="bg">Guests</label><input id="bg" type="number" inputmode="numeric" min="1" value="2">
+      <label for="ba">Date and time</label><input id="ba" type="datetime-local" value="${localInput(soon)}">
+      ${tables.length ? `<label for="bt">Table <span class="mute">(optional)</span></label><select id="bt"><option value="">Any table</option>${tables.map((t) => `<option>${esc(t.label)}</option>`).join('')}</select>` : ''}
+      <label for="bnote">Notes <span class="mute">(optional)</span></label><input id="bnote" maxlength="300" placeholder="Birthday, high chair…">
+    </div>
+    <footer><button class="btn" id="ok">Save booking</button></footer>`,
+    (p) => {
+      p.querySelector('#ok').onclick = async () => {
+        const err = p.querySelector('#bkerr');
+        try {
+          const b = newBooking({ id: newId(), name: p.querySelector('#bn').value, phone: p.querySelector('#bp').value, guests: p.querySelector('#bg').value, at: p.querySelector('#ba').value, tableLabel: p.querySelector('#bt') ? p.querySelector('#bt').value : '', notes: p.querySelector('#bnote').value });
+          const clash = clashes(await reservations.all(), b);
+          if (clash) throw new Error(`${b.tableLabel} is already booked for ${clash.customerName} at ${whenText(clash.reservedAt)}.`);
+          await reservations.put(b);
+          closeSheet();
+          S.note = { text: `Booked ${b.customerName} for ${whenText(b.reservedAt)}.` };
+          syncNow({ refreshMenu: false }).then(afterSync);
+          viewBookings();
+        } catch (e) {
+          err.textContent = e.message;
+          err.hidden = false;
+        }
+      };
+    },
+  );
+}
+
 // ------------------------------------------------------------------ tables ---
+const tablesSeg = () => `<div class="seg" role="tablist" aria-label="Tables or bookings"><button role="tab" data-seg="floor" aria-selected="${S.tablesTab === 'floor'}">Floor</button><button role="tab" data-seg="bookings" aria-selected="${S.tablesTab === 'bookings'}">Bookings${S.bookingsToday ? ` <span class="badge">${S.bookingsToday}</span>` : ''}</button></div>`;
+function bindSeg() {
+  document.querySelectorAll('[data-seg]').forEach((b) => (b.onclick = () => ((S.tablesTab = b.dataset.seg), viewTables())));
+}
+
 async function viewTables() {
+  if (S.tablesTab === 'bookings') return viewBookings();
   const os = await orders.all();
   const taken = tableMap(os);
+  const held = new Map((await reservations.all()).filter((b) => b.tableLabel && heldSoon(b)).map((b) => [b.tableLabel, b]));
   const open = openOrders(os).sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   const floors = S.snap.floors;
   const local = !!S.snap.local;
   const now = Date.now();
   $('view').innerHTML = `
+    ${tablesSeg()}
     ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
     <button class="btn block" id="takeaway">+ New takeaway order</button>
     ${open.length ? `<h2 class="sec">Open orders</h2>${open
@@ -880,8 +1037,9 @@ async function viewTables() {
     ${floors.length ? floors.map((f) => `<h3 class="floor">${esc(f.name)}${S.editTables && local ? ` <button class="mini" data-delsec="${esc(f.id)}" aria-label="Remove section ${esc(f.name)}">Remove</button>` : ''}</h3>
       <div class="tables">${f.tables.map((t) => {
         const o = taken.get(t.label);
-        return `<button class="tbl ${o ? 'busy' : ''}" data-tbl="${esc(t.label)}" aria-label="${esc(t.label)}, ${o ? `occupied, ${inr(orderBill(o).total)}, ${minutesSince(o.createdAt, now)} minutes` : `free, seats ${t.capacity}`}">
-          <b>${esc(t.label)}</b><small>${o ? `${inr(orderBill(o).total)} &middot; ${minutesSince(o.createdAt, now)}m` : `Free &middot; ${t.capacity} seats`}</small>
+        const hb = !o && held.get(t.label);
+        return `<button class="tbl ${o ? 'busy' : ''}" data-tbl="${esc(t.label)}" aria-label="${esc(t.label)}, ${o ? `occupied, ${inr(orderBill(o).total)}, ${minutesSince(o.createdAt, now)} minutes` : hb ? `booked for ${esc(hb.customerName)} at ${esc(whenText(hb.reservedAt))}` : `free, seats ${t.capacity}`}">
+          <b>${esc(t.label)}</b><small>${o ? `${inr(orderBill(o).total)} &middot; ${minutesSince(o.createdAt, now)}m` : hb ? `Booked ${new Date(hb.reservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : `Free &middot; ${t.capacity} seats`}</small>
           ${S.editTables && local ? `<span class="mini" data-deltbl="${esc(t.id)}" role="button" aria-label="Remove table ${esc(t.label)}">&times;</span>` : ''}</button>`;
       }).join('') || '<p class="mute">No tables in this section.</p>'}
         ${local ? `<button class="tbl add" data-addtbl="${esc(f.id)}"><b>+ Table</b></button>` : ''}</div>`).join('')
@@ -903,6 +1061,7 @@ async function viewTables() {
   );
   if (!local) return;
   const fail = (e) => ((S.note = { kind: 'bad', text: e.message }), viewTables());
+  bindSeg();
   $('edt').onclick = () => ((S.editTables = !S.editTables), viewTables());
   $('addsec').onclick = () =>
     openSheet(`<header><h2>Add a section</h2><button class="x" data-close aria-label="Close">&times;</button></header><div class="body"><label for="sn">Name</label><input id="sn" placeholder="Ground floor, Terrace, Garden"></div><footer><button class="btn" id="ok">Add</button></footer>`, (p) => {
@@ -1516,6 +1675,7 @@ async function doSync() {
 // ------------------------------------------------------------------- start ---
 async function start() {
   S.snap = await kv.get('snapshot');
+  S.setupDismissed = !!(await kv.get('setupDismissed'));
   if (!S.snap) return renderLogin();
   if (S.snap.local) return render();
   S.online = !!(await pickServer(await kv.get('serverBase')));

@@ -7,7 +7,7 @@ let dbp;
 function open() {
   if (!dbp) {
     dbp = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB, 3);
+      const req = indexedDB.open(DB, 4);
       req.onupgradeneeded = () => {
         // Only add what is missing: a phone upgrading from v1 keeps its sales and settings untouched.
         const db = req.result;
@@ -21,6 +21,7 @@ function open() {
         if (!db.objectStoreNames.contains('kots')) db.createObjectStore('kots', { keyPath: 'id' }); // kitchen tickets
         if (!db.objectStoreNames.contains('refunds')) db.createObjectStore('refunds', { keyPath: 'id' }); // money paid back on a sale
         if (!db.objectStoreNames.contains('expenses')) db.createObjectStore('expenses', { keyPath: 'id' }); // money paid out
+        if (!db.objectStoreNames.contains('reservations')) db.createObjectStore('reservations', { keyPath: 'id' }); // table bookings
         if (!db.objectStoreNames.contains('shifts')) db.createObjectStore('shifts', { keyPath: 'day' }); // closed days (cash counted)
       };
       req.onsuccess = () => resolve(req.result);
@@ -82,8 +83,9 @@ const plain = (name) => ({
 export const refunds = plain('refunds');
 export const expenses = plain('expenses');
 export const shifts = plain('shifts');
+export const reservations = plain('reservations');
 
-const BACKUP_STORES = ['sales', 'orders', 'kots', 'refunds', 'expenses', 'shifts'];
+const BACKUP_STORES = ['sales', 'orders', 'kots', 'refunds', 'expenses', 'shifts', 'reservations'];
 
 /** Everything on the phone except the account password, read in one consistent transaction. */
 export async function readEverything() {
