@@ -5,8 +5,15 @@ import { Auth } from '../common/decorators/auth.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../common/services/branch-access.service';
+import { Throttle } from '@nestjs/throttler';
+import { StandaloneReservationsService } from './standalone-reservations.service';
 import { StandaloneService } from './standalone.service';
-import { offlineSalesSchema, type OfflineSalesDto } from './standalone.schema';
+import {
+  offlineSalesSchema,
+  reservationSyncSchema,
+  type OfflineSalesDto,
+  type ReservationSyncDto,
+} from './standalone.schema';
 
 /**
  * Standalone mode of the phone app: the phone keeps a copy of the menu and
@@ -19,6 +26,7 @@ import { offlineSalesSchema, type OfflineSalesDto } from './standalone.schema';
 export class StandaloneController {
   constructor(
     private readonly standalone: StandaloneService,
+    private readonly bookings: StandaloneReservationsService,
     private readonly branchAccess: BranchAccessService,
   ) {}
 
@@ -44,5 +52,20 @@ export class StandaloneController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.standalone.syncSales(user, branchId, body as OfflineSalesDto);
+  }
+
+  // Two-way bookings: the phone sends what it made or changed; each result
+  // carries the server's copy, which the phone then keeps.
+  @Auth('reservations.manage')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @Post('reservations')
+  @UsePipes(new ZodValidationPipe(reservationSyncSchema))
+  async reservations(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.bookings.sync(branchId, body as ReservationSyncDto);
   }
 }
