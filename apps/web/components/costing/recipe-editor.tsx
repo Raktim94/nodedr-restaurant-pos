@@ -96,11 +96,7 @@ function Form({ branchId, view, ingredients }: { branchId: string | null; view: 
   const cleanOver: Overhead[] = overheads
     .filter((o) => num(o.amount) > 0)
     .map((o) => ({ kind: o.kind, amount: num(o.amount), basis: o.basis }));
-  const live = useMemo(
-    () => costRecipe({ lines: cleanLines, batchOutputQty: num(batch), overheads: cleanOver }, map),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [JSON.stringify(cleanLines), JSON.stringify(cleanOver), batch, map],
-  );
+  const live = costRecipe({ lines: cleanLines, batchOutputQty: num(batch), overheads: cleanOver }, map);
   const cost = mode === "RECIPE" ? live.costPerPortion : view.cost.costPerPortion;
   const badLines = lines.filter((l) => l.ingredientId && !(num(l.quantity) > 0));
 
@@ -453,7 +449,7 @@ function OptionRow({
   const [lines, setLines] = useState<Line[]>(option.lines.map((l) => ({ ingredientId: l.ingredientId, quantity: String(l.quantity), unit: l.unit ?? "" })));
   const clean = lines.filter((l) => l.ingredientId && Number.isFinite(num(l.quantity)) && num(l.quantity) !== 0)
     .map((l) => ({ ingredientId: l.ingredientId, quantity: num(l.quantity), unit: (l.unit || null) as CostUnit | null }));
-  const mc = useMemo(() => costModifierLines(clean, map), [JSON.stringify(clean), map]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mc = costModifierLines(clean, map);
   return (
     <div className="rounded-lg border border-border p-2">
       <button type="button" className="flex min-h-11 w-full items-center justify-between text-left text-sm" aria-expanded={open} onClick={() => setOpen((v) => !v)}>

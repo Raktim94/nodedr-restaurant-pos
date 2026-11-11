@@ -51,16 +51,30 @@ export interface DishCost {
   /** Present for RECIPE items: the full line-by-line breakdown. */
   recipeCost: RecipeCost | null;
   /** Present for STOCK_ITEM items (bottled drinks, prepared batches). */
-  stockItem: { ingredientId: string; name: string; unitCost: number | null; quantityPerSale: number; label: string } | null;
+  stockItem: {
+    ingredientId: string;
+    name: string;
+    unitCost: number | null;
+    quantityPerSale: number;
+    label: string;
+  } | null;
   overheadPerPortion: number;
   complete: boolean;
 }
 
-export function overheadPerPortion(overheads: readonly Overhead[], batchOutputQty: number): number {
+export function overheadPerPortion(
+  overheads: readonly Overhead[],
+  batchOutputQty: number,
+): number {
   let total = 0;
   for (const o of overheads) {
     if (!(o.amount > 0)) continue;
-    total += o.basis === 'PER_PORTION' ? o.amount : batchOutputQty > 0 ? o.amount / batchOutputQty : 0;
+    total +=
+      o.basis === 'PER_PORTION'
+        ? o.amount
+        : batchOutputQty > 0
+          ? o.amount / batchOutputQty
+          : 0;
   }
   return total;
 }
@@ -92,11 +106,15 @@ export function toCostIngredient(r: {
     purchaseUnit: (r.purchaseUnit as CostUnit | null) ?? null,
     purchasePrice: r.purchasePrice == null ? null : n(r.purchasePrice),
     yieldPercent: n(r.yieldPercent),
-    conversions: Array.isArray(r.conversions) ? (r.conversions as UnitConversion[]) : [],
+    conversions: Array.isArray(r.conversions)
+      ? (r.conversions as UnitConversion[])
+      : [],
     preparation: r.preparation
       ? {
           batchOutputQty: n(r.preparation.batchOutputQty),
-          overheads: Array.isArray(r.preparation.overheads) ? (r.preparation.overheads as unknown as Overhead[]) : [],
+          overheads: Array.isArray(r.preparation.overheads)
+            ? r.preparation.overheads
+            : [],
           lines: r.preparation.lines.map<CostLineInput>((l) => ({
             ingredientId: l.ingredientId,
             quantity: n(l.quantity),
@@ -115,7 +133,10 @@ export function toCostIngredient(r: {
 export class CostingCalcService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async loadIngredients(db: Db, branchId: string): Promise<Map<string, CostIngredient>> {
+  async loadIngredients(
+    db: Db,
+    branchId: string,
+  ): Promise<Map<string, CostIngredient>> {
     const rows = await db.ingredient.findMany({
       where: { branchId },
       include: { preparation: { include: { lines: true } } },
@@ -123,7 +144,10 @@ export class CostingCalcService {
     return new Map(rows.map((r) => [r.id, toCostIngredient(r)]));
   }
 
-  async loadDishContexts(db: Db, menuItemIds: string[]): Promise<Map<string, DishContext>> {
+  async loadDishContexts(
+    db: Db,
+    menuItemIds: string[],
+  ): Promise<Map<string, DishContext>> {
     if (menuItemIds.length === 0) return new Map();
     const rows = await db.menuItem.findMany({
       where: { id: { in: menuItemIds } },
@@ -144,19 +168,28 @@ export class CostingCalcService {
           stockQuantityPerSale: n(m.stockQuantityPerSale),
           recipe: {
             batchOutputQty: c ? n(c.batchOutputQty) : 1,
-            overheads: c && Array.isArray(c.overheads) ? (c.overheads as unknown as Overhead[]) : [],
+            overheads:
+              c && Array.isArray(c.overheads)
+                ? (c.overheads as unknown as Overhead[])
+                : [],
             lines: m.recipeLines.map<CostLineInput>((l) => ({
               ingredientId: l.ingredientId,
               quantity: n(l.quantity),
-              unit: l.unit as CostUnit | null,
+              unit: l.unit,
             })),
           },
           halfPortionRatio: c ? n(c.halfPortionRatio) : null,
           costing: c
             ? {
                 version: c.version,
-                targetMarginPercent: c.targetMarginPercent == null ? null : n(c.targetMarginPercent),
-                targetMarkupPercent: c.targetMarkupPercent == null ? null : n(c.targetMarkupPercent),
+                targetMarginPercent:
+                  c.targetMarginPercent == null
+                    ? null
+                    : n(c.targetMarginPercent),
+                targetMarkupPercent:
+                  c.targetMarkupPercent == null
+                    ? null
+                    : n(c.targetMarkupPercent),
                 alertDropPoints: n(c.alertDropPoints),
                 baselineCost: c.baselineCost == null ? null : n(c.baselineCost),
               }
@@ -168,18 +201,37 @@ export class CostingCalcService {
   }
 
   /** Cost of one FULL portion of a dish. Combos are priced from their components by the caller. */
-  dishCost(ctx: DishContext, ingredients: ReadonlyMap<string, CostIngredient>): DishCost {
-    const perPortionOverhead = overheadPerPortion(ctx.recipe.overheads ?? [], ctx.recipe.batchOutputQty);
+  dishCost(
+    ctx: DishContext,
+    ingredients: ReadonlyMap<string, CostIngredient>,
+  ): DishCost {
+    const perPortionOverhead = overheadPerPortion(
+      ctx.recipe.overheads ?? [],
+      ctx.recipe.batchOutputQty,
+    );
     if (ctx.tracking === 'DIRECT' && ctx.stockIngredientId) {
       const ing = ingredients.get(ctx.stockIngredientId);
       if (!ing) {
-        return { costPerPortion: null, source: 'STOCK_ITEM', recipeCost: null, stockItem: null, overheadPerPortion: perPortionOverhead, complete: false };
+        return {
+          costPerPortion: null,
+          source: 'STOCK_ITEM',
+          recipeCost: null,
+          stockItem: null,
+          overheadPerPortion: perPortionOverhead,
+          complete: false,
+        };
       }
       const uc = effectiveUnitCost(ing, ingredients);
       const unitCost = uc.usablePerStockUnit;
-      const cost = unitCost === null ? null : unitCost * ctx.stockQuantityPerSale + perPortionOverhead;
+      const cost =
+        unitCost === null
+          ? null
+          : unitCost * ctx.stockQuantityPerSale + perPortionOverhead;
       return {
-        costPerPortion: cost === null ? null : Math.round((cost + Number.EPSILON) * 10000) / 10000,
+        costPerPortion:
+          cost === null
+            ? null
+            : Math.round((cost + Number.EPSILON) * 10000) / 10000,
         source: 'STOCK_ITEM',
         recipeCost: null,
         stockItem: {
@@ -194,7 +246,14 @@ export class CostingCalcService {
       };
     }
     if (ctx.recipe.lines.length === 0) {
-      return { costPerPortion: null, source: 'NONE', recipeCost: null, stockItem: null, overheadPerPortion: perPortionOverhead, complete: false };
+      return {
+        costPerPortion: null,
+        source: 'NONE',
+        recipeCost: null,
+        stockItem: null,
+        overheadPerPortion: perPortionOverhead,
+        complete: false,
+      };
     }
     const rc = costRecipe(ctx.recipe, ingredients);
     return {
@@ -208,26 +267,44 @@ export class CostingCalcService {
   }
 
   async loadModifierLines(db: Db, modifierIds: string[]) {
-    if (modifierIds.length === 0) return new Map<string, { ingredientId: string; quantity: number; unit: CostUnit | null }[]>();
-    const rows = await db.modifierIngredient.findMany({ where: { modifierId: { in: modifierIds } } });
-    const out = new Map<string, { ingredientId: string; quantity: number; unit: CostUnit | null }[]>();
+    if (modifierIds.length === 0)
+      return new Map<
+        string,
+        { ingredientId: string; quantity: number; unit: CostUnit | null }[]
+      >();
+    const rows = await db.modifierIngredient.findMany({
+      where: { modifierId: { in: modifierIds } },
+    });
+    const out = new Map<
+      string,
+      { ingredientId: string; quantity: number; unit: CostUnit | null }[]
+    >();
     for (const r of rows) {
       const list = out.get(r.modifierId) ?? [];
-      list.push({ ingredientId: r.ingredientId, quantity: n(r.quantity), unit: r.unit as CostUnit | null });
+      list.push({
+        ingredientId: r.ingredientId,
+        quantity: n(r.quantity),
+        unit: r.unit,
+      });
       out.set(r.modifierId, list);
     }
     return out;
   }
 
   modifierCost(
-    lines: { ingredientId: string; quantity: number; unit?: CostUnit | null }[] | undefined,
+    lines:
+      | { ingredientId: string; quantity: number; unit?: CostUnit | null }[]
+      | undefined,
     ingredients: ReadonlyMap<string, CostIngredient>,
   ): ModifierCost {
     return costModifierLines(lines ?? [], ingredients);
   }
 
   /** Raw stock to take off the shelf for ONE full portion of a RECIPE dish (yield applied once). */
-  recipeNeedsPerPortion(ctx: DishContext, ingredients: ReadonlyMap<string, CostIngredient>) {
+  recipeNeedsPerPortion(
+    ctx: DishContext,
+    ingredients: ReadonlyMap<string, CostIngredient>,
+  ) {
     return stockNeedsForPortions(ctx.recipe, ingredients, 1).needs;
   }
 
@@ -239,15 +316,25 @@ export class CostingCalcService {
   async unitCostsForSale(
     db: Db,
     branchId: string,
-    lines: { menuItemId: string; portionRatio: number; modifierIds: string[] }[],
+    lines: {
+      menuItemId: string;
+      portionRatio: number;
+      modifierIds: string[];
+    }[],
   ): Promise<(number | null)[]> {
     const ids = [...new Set(lines.map((l) => l.menuItemId))];
-    const combos = await db.comboComponent.findMany({ where: { comboItemId: { in: ids } } });
-    const allIds = [...new Set([...ids, ...combos.map((c) => c.componentItemId)])];
+    const combos = await db.comboComponent.findMany({
+      where: { comboItemId: { in: ids } },
+    });
+    const allIds = [
+      ...new Set([...ids, ...combos.map((c) => c.componentItemId)]),
+    ];
     const [ingredients, ctxs, modLines] = await Promise.all([
       this.loadIngredients(db, branchId),
       this.loadDishContexts(db, allIds),
-      this.loadModifierLines(db, [...new Set(lines.flatMap((l) => l.modifierIds))]),
+      this.loadModifierLines(db, [
+        ...new Set(lines.flatMap((l) => l.modifierIds)),
+      ]),
     ]);
     const portionCost = (id: string): number | null => {
       const ctx = ctxs.get(id);
@@ -272,7 +359,9 @@ export class CostingCalcService {
         portionRatio: l.portionRatio,
         modifierCosts: l.modifierIds.map((mid) => {
           const ml = modLines.get(mid);
-          return ml && ml.length > 0 ? this.modifierCost(ml, ingredients).cost : 0;
+          return ml && ml.length > 0
+            ? this.modifierCost(ml, ingredients).cost
+            : 0;
         }),
       }),
     );

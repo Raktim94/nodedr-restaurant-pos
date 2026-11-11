@@ -11,7 +11,12 @@ import type {
   MenuItemTrackingDto,
 } from '@nodedr-restaurant/types';
 import { PrismaService } from '../../prisma/prisma.service';
-import { convertQty, costRecipe, type CostUnit, type UnitConversion } from '@nodedr-restaurant/types';
+import {
+  convertQty,
+  costRecipe,
+  type CostUnit,
+  type UnitConversion,
+} from '@nodedr-restaurant/types';
 import { round2 } from '../../common/money';
 import { CostingConflict } from './costing.service';
 import { StockService } from './stock.service';
@@ -62,14 +67,35 @@ export class InventoryService {
 
   private ingredientData(
     dto: Partial<IngredientDto>,
-    current?: { unit: string; purchaseUnit: string | null; purchaseQuantity: unknown; purchasePrice: unknown; conversions: unknown },
+    current?: {
+      unit: string;
+      purchaseUnit: string | null;
+      purchaseQuantity: unknown;
+      purchasePrice: unknown;
+      conversions: unknown;
+    },
   ) {
-    const { baseVersion: _baseVersion, conversions, ...rest } = dto;
+    const { conversions, ...rest } = dto;
+    delete (rest as { baseVersion?: number }).baseVersion; // a lock token, not a column
     const unit = (dto.unit ?? current?.unit) as CostUnit | undefined;
-    const qty = dto.purchaseQuantity !== undefined ? dto.purchaseQuantity : current?.purchaseQuantity == null ? null : Number(current.purchaseQuantity);
-    const price = dto.purchasePrice !== undefined ? dto.purchasePrice : current?.purchasePrice == null ? null : Number(current.purchasePrice);
-    const pUnit = (dto.purchaseUnit !== undefined ? dto.purchaseUnit : current?.purchaseUnit) as CostUnit | null | undefined;
-    const conv = (conversions ?? current?.conversions ?? []) as UnitConversion[];
+    const qty =
+      dto.purchaseQuantity !== undefined
+        ? dto.purchaseQuantity
+        : current?.purchaseQuantity == null
+          ? null
+          : Number(current.purchaseQuantity);
+    const price =
+      dto.purchasePrice !== undefined
+        ? dto.purchasePrice
+        : current?.purchasePrice == null
+          ? null
+          : Number(current.purchasePrice);
+    const pUnit = (
+      dto.purchaseUnit !== undefined ? dto.purchaseUnit : current?.purchaseUnit
+    ) as CostUnit | null | undefined;
+    const conv = (conversions ??
+      current?.conversions ??
+      []) as UnitConversion[];
     if (unit && qty != null && price != null) {
       // The purchase pack must be convertible to the stock unit, or the cost per unit is unknowable.
       if (convertQty(Number(qty), pUnit ?? unit, unit, unit, conv) === null) {
@@ -79,17 +105,26 @@ export class InventoryService {
       }
     }
     if ((qty != null) !== (price != null)) {
-      throw new BadRequestException('Enter both the purchase quantity and the purchase price, or neither');
+      throw new BadRequestException(
+        'Enter both the purchase quantity and the purchase price, or neither',
+      );
     }
     return {
       ...rest,
-      ...(conversions !== undefined ? { conversions: conversions as unknown as Prisma.InputJsonValue } : {}),
+      ...(conversions !== undefined
+        ? { conversions: conversions as unknown as Prisma.InputJsonValue }
+        : {}),
     };
   }
 
   createIngredient(branchId: string, dto: IngredientDto) {
     return this.prisma.ingredient.create({
-      data: { ...this.ingredientData(dto), name: dto.name, unit: dto.unit, branchId },
+      data: {
+        ...this.ingredientData(dto),
+        name: dto.name,
+        unit: dto.unit,
+        branchId,
+      },
     });
   }
 
@@ -100,15 +135,26 @@ export class InventoryService {
   ) {
     const current = await this.getIngredient(branchId, id);
     if (dto.baseVersion !== undefined && dto.baseVersion !== current.version) {
-      throw new CostingConflict('This ingredient was changed by someone else after you opened it.', current);
+      throw new CostingConflict(
+        'This ingredient was changed by someone else after you opened it.',
+        current,
+      );
     }
     if (dto.unit && dto.unit !== current.unit) {
       const used =
-        (await this.prisma.recipeIngredient.count({ where: { ingredientId: id } })) +
-        (await this.prisma.preparationLine.count({ where: { ingredientId: id } })) +
-        (await this.prisma.modifierIngredient.count({ where: { ingredientId: id } }));
+        (await this.prisma.recipeIngredient.count({
+          where: { ingredientId: id },
+        })) +
+        (await this.prisma.preparationLine.count({
+          where: { ingredientId: id },
+        })) +
+        (await this.prisma.modifierIngredient.count({
+          where: { ingredientId: id },
+        }));
       if (used > 0 || Number(current.currentStock) !== 0) {
-        throw new BadRequestException('The stock unit cannot change while the ingredient has stock or is used in recipes');
+        throw new BadRequestException(
+          'The stock unit cannot change while the ingredient has stock or is used in recipes',
+        );
       }
     }
     const data = this.ingredientData(dto, current);
@@ -200,7 +246,10 @@ export class InventoryService {
       where: { menuItemId },
       orderBy: { createdAt: 'asc' },
     });
-    const rc = costRecipe(ctx?.recipe ?? { lines: [], batchOutputQty: 1 }, ingredients);
+    const rc = costRecipe(
+      ctx?.recipe ?? { lines: [], batchOutputQty: 1 },
+      ingredients,
+    );
     const byIngredient = new Map(rc.lines.map((l) => [l.ingredientId, l]));
     const costed = lines.map((line) => {
       const l = byIngredient.get(line.ingredientId);
@@ -215,7 +264,10 @@ export class InventoryService {
         lineCost: round2(l?.lineCost ?? 0),
       };
     });
-    return { lines: costed, totalCost: round2(rc.costPerPortion ?? rc.batchCost) };
+    return {
+      lines: costed,
+      totalCost: round2(rc.costPerPortion ?? rc.batchCost),
+    };
   }
 
   async setRecipe(
@@ -418,7 +470,7 @@ export class InventoryService {
         await tx.orderItemCost.upsert({
           where: { orderItemId: l.orderItemId },
           update: {},
-          create: { orderItemId: l.orderItemId, unitCost: costs[i] as number },
+          create: { orderItemId: l.orderItemId, unitCost: costs[i] },
         });
       }
     }
@@ -463,20 +515,31 @@ export class InventoryService {
       ...new Set([...ids, ...combos.map((c) => c.componentItemId)]),
     ];
     // The order items themselves say which portion and options were sold, so callers only name them.
-    const orderItemIds = sale.map((l) => l.orderItemId).filter((x): x is string => !!x);
+    const orderItemIds = sale
+      .map((l) => l.orderItemId)
+      .filter((x): x is string => !!x);
     const soldItems = orderItemIds.length
       ? await tx.orderItem.findMany({
           where: { id: { in: orderItemIds } },
-          select: { id: true, portion: true, portionRatio: true, modifiers: { select: { modifierId: true } } },
+          select: {
+            id: true,
+            portion: true,
+            portionRatio: true,
+            modifiers: { select: { modifierId: true } },
+          },
         })
       : [];
     const soldById = new Map(soldItems.map((i) => [i.id, i]));
     const modifierIdsOf = (l: SaleLine) =>
-      l.modifierIds ?? soldById.get(l.orderItemId ?? '')?.modifiers.map((m) => m.modifierId) ?? [];
+      l.modifierIds ??
+      soldById.get(l.orderItemId ?? '')?.modifiers.map((m) => m.modifierId) ??
+      [];
     const [ctxs, ingredients, modLines] = await Promise.all([
       this.calc.loadDishContexts(tx, allIds),
       this.calc.loadIngredients(tx, branchId),
-      this.calc.loadModifierLines(tx, [...new Set(sale.flatMap(modifierIdsOf))]),
+      this.calc.loadModifierLines(tx, [
+        ...new Set(sale.flatMap(modifierIdsOf)),
+      ]),
     ]);
     const items = new Map<string, PlanItem>();
     for (const ctx of ctxs.values()) {
@@ -489,9 +552,10 @@ export class InventoryService {
         stockQuantityPerSale: ctx.stockQuantityPerSale,
         recipe:
           ctx.tracking === 'RECIPE'
-            ? this.calc
-                .recipeNeedsPerPortion(ctx, ingredients)
-                .map((x) => ({ ingredientId: x.ingredientId, quantity: x.rawStockQty }))
+            ? this.calc.recipeNeedsPerPortion(ctx, ingredients).map((x) => ({
+                ingredientId: x.ingredientId,
+                quantity: x.rawStockQty,
+              }))
             : [],
       });
     }
@@ -501,7 +565,9 @@ export class InventoryService {
       if (useFrozenRatio && sold) return Number(sold.portionRatio);
       const portion = l.portion ?? sold?.portion;
       const ctx = ctxs.get(l.menuItemId);
-      return portion === 'HALF' && ctx?.halfPortionRatio ? ctx.halfPortionRatio : 1;
+      return portion === 'HALF' && ctx?.halfPortionRatio
+        ? ctx.halfPortionRatio
+        : 1;
     });
     const planLines: PlanLine[] = sale.map((l, i) => ({
       menuItemId: l.menuItemId,
@@ -513,7 +579,10 @@ export class InventoryService {
         return this.calc
           .modifierCost(ml, ingredients)
           .lines.filter((x) => x.rawStockQty !== null)
-          .map((x) => ({ ingredientId: x.ingredientId, quantity: x.rawStockQty as number }));
+          .map((x) => ({
+            ingredientId: x.ingredientId,
+            quantity: x.rawStockQty as number,
+          }));
       }),
     }));
     return {

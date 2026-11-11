@@ -110,7 +110,7 @@ function Editor({ branchId, prep, onDone }: { branchId: string | null; prep: Pre
   const options = (bundle?.ingredients ?? []).filter((i) => i.id !== prep?.id);
   const clean = lines.filter((l) => l.ingredientId && num(l.quantity) > 0).map((l) => ({ ingredientId: l.ingredientId, quantity: num(l.quantity), unit: (l.unit || null) as CostUnit | null }));
   const cleanOver: Overhead[] = over.filter((o) => num(o.amount) > 0).map((o) => ({ kind: o.kind, amount: num(o.amount), basis: o.basis }));
-  const live = useMemo(() => costRecipe({ lines: clean, batchOutputQty: num(out), overheads: cleanOver }, map), [JSON.stringify(clean), JSON.stringify(cleanOver), out, map]); // eslint-disable-line react-hooks/exhaustive-deps
+  const live = costRecipe({ lines: clean, batchOutputQty: num(out), overheads: cleanOver }, map);
 
   const submit = () => {
     if (!name.trim()) return toast.error("Give it a name");
