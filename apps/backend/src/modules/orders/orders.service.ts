@@ -23,7 +23,7 @@ import {
 import { AuditService } from '../../audit/audit.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
-import { InventoryService } from '../inventory/inventory.service';
+import { InventoryService, type SaleLine } from '../inventory/inventory.service';
 import { MarketingService } from '../marketing/marketing.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { resolveProfile } from './escpos/encoder';
@@ -412,6 +412,7 @@ export class OrdersService {
               quantity: line.cartItem.quantity,
               lineTotal: line.priced.lineTotal,
               kitchenNote: line.cartItem.kitchenNote,
+              portion: line.cartItem.portion ?? null,
               modifiers: {
                 create: line.selectedModifiers.map((m) => ({
                   modifier: { connect: { id: m.id } },
@@ -573,6 +574,7 @@ export class OrdersService {
               quantity: line.cartItem.quantity,
               lineTotal: line.priced.lineTotal,
               kitchenNote: line.cartItem.kitchenNote,
+              portion: line.cartItem.portion ?? null,
               modifiers: {
                 create: line.selectedModifiers.map((m) => ({
                   modifier: { connect: { id: m.id } },
@@ -1719,6 +1721,7 @@ export class OrdersService {
           userId,
           orderId,
           order.items.map((item) => ({
+            orderItemId: item.id,
             menuItemId: item.menuItemId,
             quantity: item.quantity,
           })),
@@ -1959,7 +1962,7 @@ export class OrdersService {
           include: { stockReturns: true },
         });
         const byId = new Map(items.map((i) => [i.id, i]));
-        const lines: { menuItemId: string; quantity: number }[] = [];
+        const lines: SaleLine[] = [];
         for (const ret of dto.returnedItems) {
           const item = byId.get(ret.orderItemId);
           if (!item) {
@@ -1984,7 +1987,11 @@ export class OrdersService {
             },
           });
           item.stockReturns.push({ quantity: ret.quantity } as never);
-          lines.push({ menuItemId: item.menuItemId, quantity: ret.quantity });
+          lines.push({
+            orderItemId: item.id,
+            menuItemId: item.menuItemId,
+            quantity: ret.quantity,
+          });
         }
         await this.inventory.restoreForReturn(
           tx,

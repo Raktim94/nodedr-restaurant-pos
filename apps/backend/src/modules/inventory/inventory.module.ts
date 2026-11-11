@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../../audit/audit.module';
 import { BranchAccessService } from '../../common/services/branch-access.service';
+import { CostingCalcService } from './costing-calc.service';
+import { CostingController } from './costing.controller';
+import { CostingService } from './costing.service';
 import { GoodsReceiptsService } from './goods-receipts.service';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
@@ -15,9 +18,11 @@ import { WasteService } from './waste.service';
 
 @Module({
   imports: [AuditModule],
-  controllers: [InventoryController, TransfersController],
+  controllers: [InventoryController, TransfersController, CostingController],
   providers: [
     InventoryService,
+    CostingCalcService,
+    CostingService,
     PurchaseOrdersService,
     GoodsReceiptsService,
     WasteService,
@@ -28,6 +33,6 @@ import { WasteService } from './waste.service';
     SupplierInvoicesService,
     BranchAccessService,
   ],
-  exports: [InventoryService],
+  exports: [InventoryService, CostingCalcService, CostingService],
 })
 export class InventoryModule {}
