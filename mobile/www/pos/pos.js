@@ -11,6 +11,7 @@ import { STATUS_LABEL, clashes, grouped, heldSoon, newBooking, setStatus } from 
 import { native, pickServer, reachable, savedServers } from './lib/net.js';
 import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
+import { UNITS, acknowledge, analyseDish, conflicts, emptyBook, ingredientMap, pendingRecipes, removeIngredient, resolveConflict, saveIngredient, saveRecipe } from './lib/costbook.js';
 import { addSection, addTable, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
 
 const $ = (id) => document.getElementById(id);
@@ -536,6 +537,7 @@ function viewMenu() {
   $('view').innerHTML = `
     ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
     <button class="btn block" id="add">Add a dish</button>
+    <button class="btn line block mt" id="costs">Recipes &amp; costs</button>
     <div class="mt">${
       items
         .map(
@@ -544,6 +546,7 @@ function viewMenu() {
         .join('') || '<p class="mute center mt">Your menu is empty. Tap Add a dish to start.</p>'
     }</div>`;
   $('add').onclick = () => dishSheet();
+  $('costs').onclick = () => costListSheet();
   document.querySelectorAll('[data-edit]').forEach((b) => (b.onclick = () => dishSheet(S.snap.items.find((i) => i.id === b.dataset.edit))));
 }
 
@@ -1639,9 +1642,11 @@ async function viewSync() {
     </div>
     <div class="card mt">
       <button class="btn line block" id="full">Open the full app (needs the server)</button>
+      ${mayCost() ? '<button class="btn line block mt" id="costs">Recipes &amp; costs</button>' : ''}
       <button class="btn line block mt" id="out">${S.hasPhoneAccount ? 'Disconnect and go back to my phone account' : 'Sign out of standalone mode'}</button>
     </div>`;
   $('syncnow').onclick = doSync;
+  if ($('costs')) $('costs').onclick = () => costListSheet();
   $('pick').onclick = async () => (await choosePrinter(), viewSync());
   $('full').onclick = async () => {
     const link = plugins().ServerLink;
@@ -1696,6 +1701,211 @@ async function doSync() {
     S.note = { kind: 'warn', text: 'No connection to the server right now. Your sales are safe on this phone.' };
     render();
   }
+}
+
+
+// ------------------------------------------------------- recipes & costs ---
+// Cost of a dish from its ingredients, computed on the phone with the same engine as the server, so it
+// works with no connection. Phone-account mode edits ingredients and may apply a suggested price to the
+// phone's own menu; server mode edits recipes (queued and sent on sync, conflicts held for you to settle).
+const mayCost = () => !!S.snap && (S.snap.local || (S.snap.user.permissions || []).includes('inventory.manage'));
+const getBook = async () => (await kv.get('costbook')) || emptyBook();
+const putBook = (b) => kv.set('costbook', b);
+const unitOpts = (sel) => UNITS.map((u) => `<option value="${u}" ${u === sel ? 'selected' : ''}>${u.toLowerCase()}</option>`).join('');
+const pct = (n) => (n == null ? '—' : `${n}%`);
+
+async function costListSheet(message) {
+  const book = await getBook();
+  const rows = S.snap.items.map((i) => ({ i, a: analyseDish(book, i) }));
+  const waiting = pendingRecipes(book).length;
+  const held = conflicts(book);
+  openSheet(
+    `${head('Recipes & costs')}
+     <div class="body">
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       ${held.length ? `<div class="note warn" role="alert">${held.length} recipe${held.length > 1 ? 's were' : ' was'} changed on the server while you were offline. Open ${held.length > 1 ? 'them' : 'it'} to choose which version to keep.</div>` : ''}
+       ${!S.snap.local && waiting ? `<div class="note">${waiting} recipe change${waiting > 1 ? 's' : ''} waiting to be sent. They go when you sync.</div>` : ''}
+       ${S.snap.local ? '<button class="btn line block" id="ings">Ingredients and what they cost</button>' : `<p class="mute">${book.ingredients.length} ingredients${book.fetchedAt ? ` · saved ${esc(new Date(book.fetchedAt).toLocaleString())}` : ' · not downloaded yet. Sync once while online.'}</p>`}
+       <div class="mt">${
+         rows
+           .map(({ i, a }) => `<button class="row dishrow" data-d="${esc(i.id)}"><div class="grow"><b>${esc(i.name)}</b>${book.recipes[i.id] && book.recipes[i.id].conflict ? ' <span class="badge">conflict</span>' : ''}<br><small>${a.hasRecipe ? (a.cost.costPerPortion === null ? 'Some ingredients have no price' : `Costs ${inr(a.cost.costPerPortion)} &middot; margin ${pct(a.profit && a.profit.grossMarginPercent)}${a.alert && a.alert.level !== 'OK' && a.alert.level !== 'UNKNOWN' ? ` &middot; <b>${esc(a.alert.message)}</b>` : ''}`) : 'No recipe yet'}</small></div><b>${inr(i.price)}</b></button>`)
+           .join('') || '<p class="mute center mt">Add dishes to the menu first.</p>'
+       }</div>
+     </div>`,
+    (p) => {
+      const ing = p.querySelector('#ings');
+      if (ing) ing.onclick = () => ingredientsSheet();
+      p.querySelectorAll('[data-d]').forEach((b) => (b.onclick = () => dishCostSheet(b.dataset.d)));
+    },
+  );
+}
+
+async function ingredientsSheet(message) {
+  const book = await getBook();
+  openSheet(
+    `${head('Ingredients')}
+     <div class="body">
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       <button class="btn block" id="new">Add an ingredient</button>
+       <div class="mt">${
+         book.ingredients
+           .map((i) => `<button class="row dishrow" data-i="${esc(i.id)}"><div class="grow"><b>${esc(i.name)}</b><br><small>${i.purchasePrice != null ? `${inr(i.purchasePrice)} for ${esc(i.purchaseQuantity)} ${esc((i.purchaseUnit || i.unit).toLowerCase())}` : 'No price yet'} &middot; usable ${esc(i.yieldPercent ?? 100)}%</small></div></button>`)
+           .join('') || '<p class="mute center mt">No ingredients yet.</p>'
+       }</div>
+       <button class="btn line block mt" id="back">Back to recipes</button>
+     </div>`,
+    (p) => {
+      p.querySelector('#new').onclick = () => ingredientSheet();
+      p.querySelector('#back').onclick = () => costListSheet();
+      p.querySelectorAll('[data-i]').forEach((b) => (b.onclick = () => ingredientSheet(b.dataset.i)));
+    },
+  );
+}
+
+async function ingredientSheet(id, message, draft) {
+  const book = await getBook();
+  const cur = id ? book.ingredients.find((i) => i.id === id) : null;
+  const d = draft || (cur ? { name: cur.name, unit: cur.unit, purchaseQuantity: cur.purchaseQuantity ?? '', purchaseUnit: cur.purchaseUnit || cur.unit, purchasePrice: cur.purchasePrice ?? '', yieldPercent: cur.yieldPercent ?? 100, per: (cur.conversions && cur.conversions[0] && cur.conversions[0].per) || '', cunit: (cur.conversions && cur.conversions[0] && cur.conversions[0].unit) || 'G' } : { unit: 'KG', purchaseUnit: 'KG', yieldPercent: 100, cunit: 'G' });
+  openSheet(
+    `${head(cur ? 'Edit ingredient' : 'Add an ingredient')}
+     <div class="body">
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       <label for="in">Name</label><input id="in" value="${esc(d.name || '')}">
+       <label for="iu">Unit you count it in</label><select id="iu">${unitOpts(d.unit)}</select>
+       <label>What you paid</label>
+       <div style="display:grid;grid-template-columns:1fr 6rem 1fr;gap:.4rem"><input id="iq" type="number" inputmode="decimal" min="0" step="any" placeholder="Bought" aria-label="Quantity bought" value="${esc(d.purchaseQuantity ?? '')}"><select id="ipu" aria-label="Unit bought">${unitOpts(d.purchaseUnit)}</select><input id="ip" type="number" inputmode="decimal" min="0" step="any" placeholder="Price ₹" aria-label="Price" value="${esc(d.purchasePrice ?? '')}"></div>
+       <label for="iy">Usable after trimming (%)</label><input id="iy" type="number" inputmode="decimal" min="1" max="100" value="${esc(d.yieldPercent ?? 100)}">
+       <small class="mute">80 means you pay for 1.25 kg to get 1 kg usable. Counted once, here.</small>
+       <label>Unit bridge <span class="mute">(only to mix weight and volume)</span></label>
+       <div style="display:grid;grid-template-columns:auto 1fr 6rem;gap:.4rem;align-items:center"><span>1 unit =</span><input id="ic" type="number" inputmode="decimal" min="0" step="any" aria-label="Amount" value="${esc(d.per ?? '')}"><select id="icu" aria-label="Bridge unit">${unitOpts(d.cunit)}</select></div>
+     </div>
+     <footer>${cur ? '<button class="btn line" id="id">Delete</button>' : ''}<button class="btn" id="is">Save</button></footer>`,
+    (p) => {
+      const grab = () => ({ name: $('in').value, unit: $('iu').value, purchaseQuantity: $('iq').value, purchaseUnit: $('ipu').value, purchasePrice: $('ip').value, yieldPercent: $('iy').value, per: $('ic').value, cunit: $('icu').value });
+      p.querySelector('#is').onclick = async () => {
+        const g = grab();
+        try {
+          const b = saveIngredient(await getBook(), { ...g, conversions: g.per ? [{ unit: g.cunit, per: g.per }] : [] }, id, newId());
+          await putBook(b);
+          ingredientsSheet();
+        } catch (e) {
+          ingredientSheet(id, e.message, g);
+        }
+      };
+      const del = p.querySelector('#id');
+      if (del) del.onclick = async () => {
+        try {
+          await putBook(removeIngredient(await getBook(), id));
+          ingredientsSheet();
+        } catch (e) {
+          ingredientSheet(id, e.message, grab());
+        }
+      };
+    },
+  );
+}
+
+async function dishCostSheet(dishId, message, draft) {
+  const book = await getBook();
+  const dish = S.snap.items.find((i) => i.id === dishId);
+  if (!dish) return costListSheet();
+  const saved = book.recipes[dishId];
+  const r = draft || saved || { lines: [], batchOutputQty: 1, overheads: [], targetMarginPercent: '', targetMarkupPercent: '' };
+  const a = analyseDish(book, dish, saved && !draft ? saved : r.lines.some((l) => l.ingredientId && Number(l.quantity) > 0) ? { ...r, lines: r.lines.filter((l) => l.ingredientId && Number(l.quantity) > 0), batchOutputQty: Number(r.batchOutputQty) || 0 } : undefined);
+  const mp = ingredientMap(book);
+  const lineHtml = (l, i) => `<div class="card" style="padding:.6rem;margin-top:.5rem">
+      <select data-l="${i}" data-k="ingredientId" aria-label="Ingredient"><option value="">Choose ingredient…</option>${book.ingredients.map((x) => `<option value="${esc(x.id)}" ${x.id === l.ingredientId ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+      <div style="display:grid;grid-template-columns:1fr 6rem auto;gap:.4rem;margin-top:.4rem"><input data-l="${i}" data-k="quantity" type="number" inputmode="decimal" min="0" step="any" placeholder="Quantity" aria-label="Quantity" value="${esc(l.quantity ?? '')}"><select data-l="${i}" data-k="unit" aria-label="Unit"><option value="">${esc(((mp.get(l.ingredientId) || {}).unit || 'unit').toLowerCase())}</option>${UNITS.map((u) => `<option value="${u}" ${u === l.unit ? 'selected' : ''}>${u.toLowerCase()}</option>`).join('')}</select><button class="btn line" data-rm="${i}" aria-label="Remove line" style="min-height:44px">&times;</button></div></div>`;
+  const over = r.overheads || [];
+  openSheet(
+    `${head(dish.name)}
+     <div class="body">
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       ${saved && saved.conflict ? `<div class="note warn" role="alert"><b>Changed on the server while you were offline.</b><br>Keep your version (sent on top of theirs) or take theirs.<div class="seg mt"><button class="btn line" id="ckm">Keep mine</button><button class="btn line" id="cks">Take theirs</button></div></div>` : ''}
+       ${saved && saved.error ? `<div class="note bad" role="alert">${esc(saved.error)}</div>` : ''}
+       ${a.alert && (a.alert.level === 'WATCH' || a.alert.level === 'LOSS') ? `<div class="note warn" role="alert"><b>${esc(a.alert.message)}</b><br><small>Margin was ${pct(a.alert.baselineMarginPercent)}, now ${pct(a.alert.currentMarginPercent)}. Your price has not been changed.</small><br><button class="btn line mt" id="ack">Price is fine, stop warning</button></div>` : ''}
+       <label>Ingredients <span class="mute">(usable amount for the whole batch)</span></label>
+       <div id="lines">${r.lines.map(lineHtml).join('')}</div>
+       <button class="btn line block mt" id="addl">Add ingredient</button>
+       <label for="rb">Portions per batch</label><input id="rb" type="number" inputmode="decimal" min="0" step="any" value="${esc(r.batchOutputQty ?? 1)}">
+       <label>Packaging, labour, energy <span class="mute">(optional)</span></label>
+       <div id="oh">${over.map((o, i) => `<div style="display:grid;grid-template-columns:1fr 5rem 7rem auto;gap:.3rem;margin-top:.3rem"><select data-o="${i}" data-k="kind" aria-label="Kind">${['PACKAGING', 'LABOUR', 'ENERGY', 'OTHER'].map((k) => `<option value="${k}" ${k === o.kind ? 'selected' : ''}>${k.toLowerCase()}</option>`).join('')}</select><input data-o="${i}" data-k="amount" type="number" inputmode="decimal" min="0" step="any" aria-label="Amount" value="${esc(o.amount ?? '')}"><select data-o="${i}" data-k="basis" aria-label="Applies"><option value="PER_BATCH" ${o.basis === 'PER_BATCH' ? 'selected' : ''}>per batch</option><option value="PER_PORTION" ${o.basis === 'PER_PORTION' ? 'selected' : ''}>per portion</option></select><button class="btn line" data-orm="${i}" aria-label="Remove" style="min-height:44px">&times;</button></div>`).join('')}</div>
+       <button class="btn line block mt" id="addo">Add a cost</button>
+       <div class="card mt" aria-live="polite">${
+         !a.hasRecipe ? '<p class="mute">Add ingredients to see the cost.</p>' : `<dl class="kv"><dt>Ingredients (batch)</dt><dd>${inr(a.cost.ingredientCost)}</dd>${a.cost.yieldLossCost > 0 ? `<dt>&nbsp;&nbsp;of which trimming loss</dt><dd>${inr(a.cost.yieldLossCost)}</dd>` : ''}<dt>Other costs (batch)</dt><dd>${inr(a.cost.overheadCost)}</dd><dt>Batch cost</dt><dd><b>${inr(a.cost.batchCost)}</b></dd><dt>Cost per portion</dt><dd><b>${a.cost.costPerPortion === null ? '—' : inr(a.cost.costPerPortion)}</b></dd></dl>${a.cost.complete ? '' : `<p class="note bad mt">Incomplete: ${esc((a.cost.issues[0] || {}).message || 'fix the lines')}. No price suggestion until every line is priced.</p>`}`
+       }</div>
+       ${a.profit ? `<div class="card mt"><dl class="kv"><dt>Selling price</dt><dd>${inr(dish.price)}</dd><dt>Revenue before tax</dt><dd>${inr(a.profit.netRevenue)}</dd><dt>Gross profit</dt><dd>${inr(a.profit.grossProfit)}</dd><dt>Food cost</dt><dd>${pct(a.profit.foodCostPercent)}</dd><dt>Gross margin</dt><dd>${pct(a.profit.grossMarginPercent)}</dd></dl></div>` : ''}
+       <div class="card mt"><b>Suggested price</b>
+         <div class="seg mt" role="group" aria-label="Pricing method"><button data-m="MARGIN" aria-pressed="true">Target margin</button><button data-m="MARKUP" aria-pressed="false">Markup on cost</button></div>
+         <input id="sp" type="number" inputmode="decimal" min="0" step="any" aria-label="Percent" placeholder="%" value="${esc(r.targetMarginPercent ?? '')}" class="mt">
+         <small class="mute" id="sh">Margin price = cost ÷ (1 − margin%).</small>
+         <div id="sr" class="mt"></div></div>
+     </div>
+     <footer><button class="btn" id="rs">Save recipe</button></footer>`,
+    (p) => {
+      const grab = () => {
+        const lines = [...p.querySelectorAll('#lines .card')].map((c) => ({ ingredientId: c.querySelector('[data-k=ingredientId]').value, quantity: c.querySelector('[data-k=quantity]').value, unit: c.querySelector('[data-k=unit]').value || null }));
+        const overheads = [...p.querySelectorAll('#oh > div')].map((c) => ({ kind: c.querySelector('[data-k=kind]').value, amount: c.querySelector('[data-k=amount]').value, basis: c.querySelector('[data-k=basis]').value }));
+        return { lines, overheads, batchOutputQty: $('rb').value, targetMarginPercent: r.targetMarginPercent ?? '', targetMarkupPercent: r.targetMarkupPercent ?? '' };
+      };
+      p.querySelector('#addl').onclick = () => dishCostSheet(dishId, null, { ...grab(), lines: [...grab().lines, { ingredientId: '', quantity: '', unit: null }] });
+      p.querySelector('#addo').onclick = () => dishCostSheet(dishId, null, { ...grab(), overheads: [...grab().overheads, { kind: 'PACKAGING', amount: '', basis: 'PER_PORTION' }] });
+      p.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => dishCostSheet(dishId, null, { ...grab(), lines: grab().lines.filter((_, i) => i !== Number(b.dataset.rm)) })));
+      p.querySelectorAll('[data-orm]').forEach((b) => (b.onclick = () => dishCostSheet(dishId, null, { ...grab(), overheads: grab().overheads.filter((_, i) => i !== Number(b.dataset.orm)) })));
+      p.querySelectorAll('#lines select, #lines input, #oh select, #oh input, #rb').forEach((x) => (x.onchange = () => dishCostSheet(dishId, null, grab())));
+      // suggestion
+      let method = 'MARGIN';
+      const showSuggestion = () => {
+        const v = $('sp').value;
+        const sg = a.hasRecipe && a.cost.costPerPortion !== null && v !== '' ? a.sug(method, v) : null;
+        $('sh').textContent = method === 'MARGIN' ? 'Margin price = cost ÷ (1 − margin%). 60% margin means 60% of the price (before tax) is profit.' : 'Markup price = cost × (1 + markup%). 60% markup adds 60% of the cost on top.';
+        $('sr').innerHTML = sg
+          ? `<b>${inr(sg.priceBeforeTax)}</b> <small class="mute">before tax</small>${Number(dish.taxRate) > 0 ? `<br><small class="mute">Enter as ${inr(sg.listedPrice)} (includes ${esc(dish.taxRate)}% tax)</small>` : ''}${S.snap.local ? `<br><button class="btn line mt" id="ap">Use this price</button><small class="mute"><br>Your price is only changed if you press this.</small>` : '<br><small class="mute">Change the price from the dashboard. Your menu price is never changed here.</small>'}`
+          : '<small class="mute">Needs a fully priced cost and a valid percentage (margin under 100%).</small>';
+        const ap = $('ap');
+        if (ap) ap.onclick = async () => {
+          if (!confirm(`Change the price of ${dish.name} from ${inr(dish.price)} to ${inr(sg.listedPrice)}?`)) return;
+          const cat = (S.snap.categories.find((c) => c.id === dish.categoryId) || {}).name || '';
+          S.snap = await upsertDish(S.snap, { id: dish.id, name: dish.name, price: sg.listedPrice, taxRate: dish.taxRate, isVeg: dish.isVeg, categoryName: cat, stock: dish.stock, soldOut: !!dish.soldOut });
+          const b = acknowledge(await getBook(), dishId, S.snap.items.find((i) => i.id === dishId));
+          await putBook(b);
+          toast('Price updated');
+          dishCostSheet(dishId);
+        };
+      };
+      p.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => {
+        method = b.dataset.m;
+        p.querySelectorAll('[data-m]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+        $('sp').value = method === 'MARGIN' ? (r.targetMarginPercent ?? '') : (r.targetMarkupPercent ?? '');
+        showSuggestion();
+      }));
+      $('sp').oninput = () => {
+        r[method === 'MARGIN' ? 'targetMarginPercent' : 'targetMarkupPercent'] = $('sp').value;
+        showSuggestion();
+      };
+      showSuggestion();
+      p.querySelector('#rs').onclick = async () => {
+        const g = grab();
+        g.targetMarginPercent = r.targetMarginPercent ?? '';
+        g.targetMarkupPercent = r.targetMarkupPercent ?? '';
+        try {
+          await putBook(saveRecipe(await getBook(), dishId, g));
+          booksDirty = true;
+          toast('Recipe saved');
+          dishCostSheet(dishId);
+          if (!S.snap.local) syncNow({ refreshMenu: false }).then(afterSync);
+        } catch (e) {
+          dishCostSheet(dishId, e.message, g);
+        }
+      };
+      const ack = p.querySelector('#ack');
+      if (ack) ack.onclick = async () => (await putBook(acknowledge(await getBook(), dishId, dish)), dishCostSheet(dishId));
+      const km = p.querySelector('#ckm');
+      if (km) km.onclick = async () => (await putBook(resolveConflict(await getBook(), dishId, 'mine')), dishCostSheet(dishId));
+      const ks = p.querySelector('#cks');
+      if (ks) ks.onclick = async () => (await putBook(resolveConflict(await getBook(), dishId, 'server')), dishCostSheet(dishId));
+    },
+  );
 }
 
 // ------------------------------------------------------------------- start ---

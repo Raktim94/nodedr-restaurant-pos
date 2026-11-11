@@ -19,6 +19,7 @@ import {
   menuItemSchema,
   modifierGroupSchema,
   setComboComponentsSchema,
+  permissionSatisfied,
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { Auth } from '../../common/decorators/auth.decorator';
@@ -38,6 +39,32 @@ const bulkPriceSchema = z.object({
   roundToWhole: z.boolean().default(true),
   preview: z.boolean().default(false),
 });
+
+// What a dish costs to make is private to the people who run inventory or read financials. The menu
+// list is open to every role that can take orders, so the cost figure is removed from what they
+// receive and they cannot overwrite it through the menu form either.
+const canSeeCost = (user: SessionUser) =>
+  permissionSatisfied(user.permissions, 'inventory.manage') ||
+  permissionSatisfied(user.permissions, 'reports.financial.view');
+
+function hideCost<T>(user: SessionUser, value: T): T {
+  if (canSeeCost(user)) return value;
+  const strip = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(strip);
+    if (v && typeof v === 'object' && 'costPrice' in (v as object)) {
+      const { costPrice: _hidden, ...rest } = v as Record<string, unknown>;
+      return rest;
+    }
+    return v;
+  };
+  return strip(value) as T;
+}
+
+function withoutCostUnlessAllowed(user: SessionUser, body: unknown): unknown {
+  if (canSeeCost(user) || !body || typeof body !== 'object') return body;
+  const { costPrice: _ignored, ...rest } = body as Record<string, unknown>;
+  return rest;
+}
 
 @ApiTags('menu')
 @Controller('v1/menu')
@@ -131,7 +158,7 @@ export class MenuController {
     @Query('categoryId') categoryId?: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.menuService.listItems(branchId, categoryId);
+    return hideCost(user, await this.menuService.listItems(branchId, categoryId));
   }
 
   @Auth('menu.view')
@@ -142,7 +169,7 @@ export class MenuController {
     @Param('id') id: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.menuService.getItem(branchId, id);
+    return hideCost(user, await this.menuService.getItem(branchId, id));
   }
 
   @Auth('menu.manage')
@@ -154,7 +181,10 @@ export class MenuController {
     @Body() body: unknown,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.menuService.createItem(branchId, body as never);
+    return hideCost(
+      user,
+      await this.menuService.createItem(branchId, withoutCostUnlessAllowed(user, body) as never),
+    );
   }
 
   @Auth('menu.manage')
@@ -193,7 +223,15 @@ export class MenuController {
     @Body() body: unknown,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.menuService.updateItem(branchId, id, user.id, body as never);
+    return hideCost(
+      user,
+      await this.menuService.updateItem(
+        branchId,
+        id,
+        user.id,
+        withoutCostUnlessAllowed(user, body) as never,
+      ),
+    );
   }
 
   @Auth('menu.manage')

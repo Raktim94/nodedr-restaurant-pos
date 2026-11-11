@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { paymentMethodSchema } from "./orders";
+import { costUnitSchema, ingredientCostingSchema } from "./costing-schemas";
 
 export const ingredientUnitSchema = z.enum([
   "KG",
@@ -13,13 +14,18 @@ export const ingredientUnitSchema = z.enum([
 ]);
 export type IngredientUnit = z.infer<typeof ingredientUnitSchema>;
 
-export const ingredientSchema = z.object({
-  name: z.string().min(1),
-  sku: z.string().optional(),
-  unit: ingredientUnitSchema,
-  reorderLevel: z.coerce.number().nonnegative().default(0),
-  isActive: z.boolean().default(true),
-});
+export const ingredientSchema = z
+  .object({
+    name: z.string().min(1),
+    sku: z.string().optional(),
+    unit: ingredientUnitSchema,
+    reorderLevel: z.coerce.number().nonnegative().default(0),
+    isActive: z.boolean().default(true),
+    /** Optimistic-lock token for edits made offline: the version the edit started from. */
+    baseVersion: z.coerce.number().int().min(1).optional(),
+  })
+  // Recipe costing: purchase cost, usable yield and unit bridges (all optional).
+  .extend(ingredientCostingSchema.shape);
 export type IngredientDto = z.infer<typeof ingredientSchema>;
 
 export const stockAdjustmentSchema = z.object({
@@ -31,6 +37,8 @@ export type StockAdjustmentDto = z.infer<typeof stockAdjustmentSchema>;
 export const recipeLineSchema = z.object({
   ingredientId: z.string(),
   quantity: z.coerce.number().positive(),
+  /** Unit of `quantity`; omitted = the ingredient's own stock unit. */
+  unit: costUnitSchema.nullable().optional(),
 });
 export type RecipeLineDto = z.infer<typeof recipeLineSchema>;
 

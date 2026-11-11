@@ -201,6 +201,10 @@ model Branch {
   notifications      Notification[]
   integrationApiKeys IntegrationApiKey[]
 
+  menuItemCostings MenuItemCosting[]
+  preparations     Preparation[]
+  productionRuns   ProductionRun[]
+
   @@index([restaurantId])
   @@map("branches")
 }
@@ -701,12 +705,29 @@ model Ingredient {
   currentStock Decimal @default(0) @db.Decimal(12, 3)
   costPerUnit  Decimal @default(0) @db.Decimal(12, 4) // weighted-average cost
 
+  // Recipe costing (additive; defaults keep every existing ingredient behaving as before).
+  // kind PREPARED = a sauce/dough/spice mix made in-house by `preparation`; it is stocked and
+  // consumed like any ingredient, so production consumes raw stock and sales consume this stock.
+  kind             IngredientKind       @default(PURCHASED)
+  costMethod       IngredientCostMethod @default(AVERAGE)
+  purchaseQuantity Decimal?             @db.Decimal(12, 3)
+  purchaseUnit     IngredientUnit?
+  purchasePrice    Decimal?             @db.Decimal(12, 2)
+  // Usable yield: % of the purchased quantity left after trimming. The ONE place wastage lives.
+  yieldPercent     Decimal              @default(100) @db.Decimal(5, 2)
+  // Ingredient-specific unit bridges, e.g. [{"unit":"G","per":920}] = 1 stock unit is 920 g.
+  conversions      Json                 @default("[]")
+  version          Int                  @default(1)
+
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  preparation        Preparation?
+  preparationLines   PreparationLine[]
+  modifierLines      ModifierIngredient[]
   recipeLines        RecipeIngredient[]
-  directMenuItems    MenuItem[]          @relation("DirectStockItem")
+  directMenuItems    MenuItem[]           @relation("DirectStockItem")
   purchaseOrderItems PurchaseOrderItem[]
   goodsReceiptItems  GoodsReceiptItem[]
   stockBatches       StockBatch[]
@@ -728,13 +749,131 @@ model RecipeIngredient {
   ingredientId String
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
 
-  quantity  Decimal  @db.Decimal(12, 3) // in ingredient.unit
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  quantity  Decimal         @db.Decimal(12, 3) // USABLE quantity per recipe batch, in `unit`
+  // null = the ingredient's own stock unit (every pre-costing row)
+  unit      IngredientUnit?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 
   @@unique([menuItemId, ingredientId])
   @@index([menuItemId])
   @@map("recipe_ingredients")
+}
+
+enum IngredientKind {
+  PURCHASED
+  PREPARED
+}
+
+// AVERAGE = reuse the weighted-average inventory valuation (falls back to the manual purchase
+// cost until the first goods receipt); MANUAL = purchase quantity/unit/price entered by hand;
+// RECIPE = a prepared item priced live from its own recipe.
+enum IngredientCostMethod {
+  AVERAGE
+  MANUAL
+  RECIPE
+}
+
+// Costing setup for a finished menu item. `lines` are the existing RecipeIngredient rows;
+// quantities are per BATCH and batchOutputQty is the portions one batch makes.
+model MenuItemCosting {
+  id         String   @id @default(cuid())
+  branchId   String
+  branch     Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  menuItemId String   @unique
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  batchOutputQty      Decimal   @default(1) @db.Decimal(12, 3)
+  overheads           Json      @default("[]") // [{kind,label,amount,basis}]
+  halfPortionRatio    Decimal   @default(0.5) @db.Decimal(5, 3)
+  targetMarginPercent Decimal?  @db.Decimal(5, 2)
+  targetMarkupPercent Decimal?  @db.Decimal(7, 2)
+  alertDropPoints     Decimal   @default(5) @db.Decimal(5, 2)
+  // Cost per portion when the price was last reviewed; margin warnings compare against it.
+  baselineCost        Decimal?  @db.Decimal(12, 4)
+  baselineAt          DateTime?
+  version             Int       @default(1)
+  updatedById         String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([branchId])
+  @@map("menu_item_costings")
+}
+
+// An option's effect on stock and cost ("extra cheese" adds 30 g; "no onion" removes 20 g).
+model ModifierIngredient {
+  id           String          @id @default(cuid())
+  modifierId   String
+  modifier     Modifier        @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   Ingredient      @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  quantity     Decimal         @db.Decimal(12, 3) // signed; usable quantity per portion
+  unit         IngredientUnit?
+
+  @@unique([modifierId, ingredientId])
+  @@index([modifierId])
+  @@map("modifier_ingredients")
+}
+
+// A reusable in-house preparation (sauce, dough, spice mix). Its output is a PREPARED ingredient.
+model Preparation {
+  id                 String     @id @default(cuid())
+  branchId           String
+  branch             Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  outputIngredientId String     @unique
+  outputIngredient   Ingredient @relation(fields: [outputIngredientId], references: [id], onDelete: Cascade)
+
+  batchOutputQty Decimal  @db.Decimal(12, 3) // in the output ingredient's unit
+  overheads      Json     @default("[]")
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  lines          PreparationLine[]
+  productionRuns ProductionRun[]
+
+  @@index([branchId])
+  @@map("preparations")
+}
+
+model PreparationLine {
+  id            String          @id @default(cuid())
+  preparationId String
+  preparation   Preparation     @relation(fields: [preparationId], references: [id], onDelete: Cascade)
+  ingredientId  String
+  ingredient    Ingredient      @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  quantity      Decimal         @db.Decimal(12, 3) // usable quantity per batch
+  unit          IngredientUnit?
+
+  @@unique([preparationId, ingredientId])
+  @@index([preparationId])
+  @@map("preparation_lines")
+}
+
+// One batch (or several) actually cooked. Consumes raw stock, receives finished stock at the
+// run's real cost. The (branchId, idempotencyKey) pair makes a retried/offline-synced run safe.
+model ProductionRun {
+  id            String      @id @default(cuid())
+  branchId      String
+  branch        Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  preparationId String
+  preparation   Preparation @relation(fields: [preparationId], references: [id], onDelete: Restrict)
+
+  idempotencyKey String
+  batches        Decimal  @db.Decimal(12, 3)
+  outputQty      Decimal  @db.Decimal(12, 3)
+  ingredientCost Decimal  @db.Decimal(12, 4)
+  overheadCost   Decimal  @db.Decimal(12, 4)
+  totalCost      Decimal  @db.Decimal(12, 4)
+  unitCost       Decimal  @db.Decimal(12, 4)
+  note           String?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  @@unique([branchId, idempotencyKey])
+  @@index([preparationId, createdAt])
+  @@map("production_runs")
 }
 
 model Supplier {
@@ -1046,6 +1185,7 @@ model StockBatch {
 }
 
 enum StockMovementType {
+  PRODUCTION // finished output of a production run, received into stock
   RECEIPT
   WASTE
   ADJUSTMENT
@@ -1175,6 +1315,7 @@ model MenuItem {
   comboComponents ComboComponent[]        @relation("ComboParent")
   usedInCombos    ComboComponent[]        @relation("ComboChild")
   recipeLines     RecipeIngredient[]
+  costing         MenuItemCosting?
 
   @@index([branchId, categoryId])
   @@map("menu_items")
@@ -1210,6 +1351,7 @@ model Modifier {
   sortOrder       Int      @default(0)
 
   orderItemModifiers OrderItemModifier[]
+  ingredientLines    ModifierIngredient[]
 
   @@index([groupId])
   @@map("modifiers")
@@ -1535,12 +1677,31 @@ model OrderItem {
   kitchenNote String?
   status      KotItemStatus @default(NEW)
 
+  // Recipe costing. portionRatio: share of a full portion's stock this line uses (Half = the
+  // item's halfPortionRatio, else 1), frozen when the sale was paid. The production COST of the
+  // line lives in OrderItemCost, a separate table, because order rows are returned to waiters,
+  // kiosks and customers and a cost must never travel with them.
+  portion      String? // HALF | FULL | CUSTOM as ordered; null for plain items
+  portionRatio Decimal @default(1) @db.Decimal(5, 3)
+  cost         OrderItemCost?
+
   modifiers    OrderItemModifier[]
   kotItems     KotItem[]
   stockReturns OrderItemStockReturn[]
 
   @@index([orderId])
   @@map("order_items")
+}
+
+// Production cost of ONE unit of an order line (incl. chosen options), frozen at payment so later
+// purchase-price changes never rewrite history. Read only by costing and reports.
+model OrderItemCost {
+  orderItemId String    @id
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  unitCost    Decimal   @db.Decimal(12, 4)
+  createdAt   DateTime  @default(now())
+
+  @@map("order_item_costs")
 }
 
 model OrderItemModifier {
