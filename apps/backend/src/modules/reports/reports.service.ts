@@ -3,11 +3,7 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import {
-  permissionSatisfied,
-  profitability,
-  type TaxModeCost,
-} from '@nodedr-restaurant/types';
+import { permissionSatisfied, profitability } from '@nodedr-restaurant/types';
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { localDate, localMinuteAndDay, zonedRange } from '../../common/time';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -360,25 +356,39 @@ export class ReportsService {
           where: { id: branchId },
           select: { taxMode: true },
         });
-        const taxMode = branch.taxMode as TaxModeCost;
+        const taxMode = branch.taxMode;
         const items = await this.prisma.menuItem.findMany({
           where: { branchId, isActive: true, isCombo: false },
           select: { id: true, name: true, price: true, taxRatePercent: true },
         });
         const [ingredients, ctxs, sold] = await Promise.all([
           this.costing.loadIngredients(this.prisma, branchId),
-          this.costing.loadDishContexts(this.prisma, items.map((i) => i.id)),
+          this.costing.loadDishContexts(
+            this.prisma,
+            items.map((i) => i.id),
+          ),
           this.prisma.orderItem.findMany({
             where: {
               order: { branchId, status: 'PAID', billedAt: range },
               status: { not: 'CANCELLED' },
             },
-            select: { menuItemId: true, quantity: true, cost: { select: { unitCost: true } } },
+            select: {
+              menuItemId: true,
+              quantity: true,
+              cost: { select: { unitCost: true } },
+            },
           }),
         ]);
-        const units = new Map<string, { qty: number; frozenCost: number; frozenQty: number }>();
+        const units = new Map<
+          string,
+          { qty: number; frozenCost: number; frozenQty: number }
+        >();
         for (const o of sold) {
-          const u = units.get(o.menuItemId) ?? { qty: 0, frozenCost: 0, frozenQty: 0 };
+          const u = units.get(o.menuItemId) ?? {
+            qty: 0,
+            frozenCost: 0,
+            frozenQty: 0,
+          };
           u.qty += o.quantity;
           if (o.cost) {
             u.frozenCost += Number(o.cost.unitCost) * o.quantity;
@@ -391,7 +401,8 @@ export class ReportsService {
             const ctx = ctxs.get(i.id);
             if (!ctx) return [];
             const dish = this.costing.dishCost(ctx, ingredients);
-            if (dish.source === 'NONE' || dish.costPerPortion === null) return [];
+            if (dish.source === 'NONE' || dish.costPerPortion === null)
+              return [];
             const cost = dish.costPerPortion;
             const p = profitability({
               cost,
@@ -399,7 +410,11 @@ export class ReportsService {
               taxRatePercent: Number(i.taxRatePercent),
               taxMode,
             });
-            const u = units.get(i.id) ?? { qty: 0, frozenCost: 0, frozenQty: 0 };
+            const u = units.get(i.id) ?? {
+              qty: 0,
+              frozenCost: 0,
+              frozenQty: 0,
+            };
             // Units sold before costing existed have no frozen cost: price them at today's cost.
             const soldCost = u.frozenCost + (u.qty - u.frozenQty) * cost;
             const soldRevenue = u.qty * p.netRevenue;

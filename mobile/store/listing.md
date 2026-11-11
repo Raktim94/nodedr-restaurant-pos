@@ -32,6 +32,11 @@ Works on the restaurant's own network, with no internet needed day to day. Your 
 
 Free. No ads. No tracking. Delete your account any time from the user menu.
 
+## What's new (1.26.0)
+- Recipes & costs: work out what each dish costs from its ingredients, with trimming loss, batch size and packaging/labour/energy, even with no connection
+- Margin and markup price ideas (before tax) - your price only changes if you press Use this price
+- Costs follow the same figures as the server; recipe edits made offline are sent when you sync, and changes made meanwhile on the server are held for you to choose
+
 ## What's new (1.25.0)
 - KOT: print it on a Bluetooth printer or open it as a PDF, and reprint the last one (marked REPRINT). The separate Kitchen screen is gone
 - The phone's Back button now works like other apps: it closes the open sheet, then returns to Sell, then leaves the app

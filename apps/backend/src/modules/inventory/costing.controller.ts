@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, UsePipes } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  UsePipes,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
   applyPriceSchema,
@@ -37,19 +47,29 @@ export class CostingController {
 
   @Auth('inventory.manage')
   @Get('overview')
-  async overview(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string) {
+  async overview(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     return this.costing.overview(await this.scope(user, branchId));
   }
 
   @Auth('inventory.manage')
   @Get('bundle')
-  async bundle(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string) {
+  async bundle(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     return this.costing.bundle(await this.scope(user, branchId));
   }
 
   @Auth('inventory.manage')
   @Get('menu-items/:id')
-  async getItem(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async getItem(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     return this.costing.getMenuItem(await this.scope(user, branchId), id);
   }
 
@@ -62,13 +82,26 @@ export class CostingController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    return this.costing.saveMenuItem(await this.scope(user, branchId), user.id, id, body as MenuItemCostingDto);
+    return this.costing.saveMenuItem(
+      await this.scope(user, branchId),
+      user.id,
+      id,
+      body as MenuItemCostingDto,
+    );
   }
 
   @Auth('inventory.manage')
   @Post('menu-items/:id/acknowledge')
-  async acknowledge(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
-    return this.costing.acknowledge(await this.scope(user, branchId), user.id, id);
+  async acknowledge(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    return this.costing.acknowledge(
+      await this.scope(user, branchId),
+      user.id,
+      id,
+    );
   }
 
   @Auth('inventory.manage')
@@ -80,7 +113,12 @@ export class CostingController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    return this.costing.applyPrice(await this.scope(user, branchId), user, id, body as ApplyPriceDto);
+    return this.costing.applyPrice(
+      await this.scope(user, branchId),
+      user,
+      id,
+      body as ApplyPriceDto,
+    );
   }
 
   @Auth('inventory.manage')
@@ -92,28 +130,47 @@ export class CostingController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    return this.costing.setModifier(await this.scope(user, branchId), id, body as ModifierCostingDto);
+    return this.costing.setModifier(
+      await this.scope(user, branchId),
+      id,
+      body as ModifierCostingDto,
+    );
   }
 
   // --- Preparations ---------------------------------------------------------------
 
   @Auth('inventory.manage')
   @Get('preparations')
-  async listPreparations(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string) {
+  async listPreparations(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     return this.costing.listPreparations(await this.scope(user, branchId));
   }
 
   @Auth('inventory.manage')
   @Get('preparations/:id')
-  async getPreparation(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async getPreparation(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     return this.costing.getPreparation(await this.scope(user, branchId), id);
   }
 
   @Auth('inventory.manage')
   @Post('preparations')
   @UsePipes(new ZodValidationPipe(preparationSchema))
-  async createPreparation(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
-    return this.costing.createPreparation(await this.scope(user, branchId), user.id, body as PreparationDto);
+  async createPreparation(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    return this.costing.createPreparation(
+      await this.scope(user, branchId),
+      user.id,
+      body as PreparationDto,
+    );
   }
 
   @Auth('inventory.manage')
@@ -125,13 +182,26 @@ export class CostingController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    return this.costing.updatePreparation(await this.scope(user, branchId), user.id, id, body as PreparationDto);
+    return this.costing.updatePreparation(
+      await this.scope(user, branchId),
+      user.id,
+      id,
+      body as PreparationDto,
+    );
   }
 
   @Auth('inventory.manage')
   @Delete('preparations/:id')
-  async deletePreparation(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
-    return this.costing.deletePreparation(await this.scope(user, branchId), user.id, id);
+  async deletePreparation(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    return this.costing.deletePreparation(
+      await this.scope(user, branchId),
+      user.id,
+      id,
+    );
   }
 
   @Auth('inventory.manage')
@@ -143,6 +213,11 @@ export class CostingController {
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
-    return this.costing.produce(await this.scope(user, branchId), user.id, id, body as ProductionRunDto);
+    return this.costing.produce(
+      await this.scope(user, branchId),
+      user.id,
+      id,
+      body as ProductionRunDto,
+    );
   }
 }

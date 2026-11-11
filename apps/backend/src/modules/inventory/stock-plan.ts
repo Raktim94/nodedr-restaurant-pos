@@ -62,7 +62,8 @@ export function planStockUsage(
 
   for (const line of lines) {
     if (line.quantity <= 0) continue;
-    const ratio = line.portionRatio && line.portionRatio > 0 ? line.portionRatio : 1;
+    const ratio =
+      line.portionRatio && line.portionRatio > 0 ? line.portionRatio : 1;
     // This line's own needs. Clamped at zero per ingredient before joining the order total, so a
     // "no onion" option can never cancel the onion another line really uses.
     const own = new Map<string, number>();
@@ -73,7 +74,11 @@ export function planStockUsage(
     const leaves: { id: string; sold: number; ratio: number }[] = [];
     if (top?.isCombo) {
       for (const c of componentsByCombo.get(top.id) ?? []) {
-        leaves.push({ id: c.componentItemId, sold: c.quantity * line.quantity, ratio: 1 });
+        leaves.push({
+          id: c.componentItemId,
+          sold: c.quantity * line.quantity,
+          ratio: 1,
+        });
       }
     } else {
       leaves.push({ id: line.menuItemId, sold: line.quantity, ratio });
@@ -82,25 +87,42 @@ export function planStockUsage(
     for (const leaf of leaves) {
       const item = items.get(leaf.id);
       if (!item) {
-        skipped.push({ menuItemId: leaf.id, name: leaf.id, reason: 'UNKNOWN_ITEM' });
+        skipped.push({
+          menuItemId: leaf.id,
+          name: leaf.id,
+          reason: 'UNKNOWN_ITEM',
+        });
         continue;
       }
       if (item.tracking === 'NONE') continue;
       if (item.tracking === 'DIRECT') {
         if (!item.stockIngredientId || item.stockQuantityPerSale <= 0) {
-          skipped.push({ menuItemId: leaf.id, name: item.name, reason: 'NO_STOCK_ITEM' });
+          skipped.push({
+            menuItemId: leaf.id,
+            name: item.name,
+            reason: 'NO_STOCK_ITEM',
+          });
           continue;
         }
-        addOwn(item.stockIngredientId, item.stockQuantityPerSale * leaf.sold * leaf.ratio);
+        addOwn(
+          item.stockIngredientId,
+          item.stockQuantityPerSale * leaf.sold * leaf.ratio,
+        );
         continue;
       }
       if (item.recipe.length === 0) {
-        skipped.push({ menuItemId: leaf.id, name: item.name, reason: 'NO_RECIPE' });
+        skipped.push({
+          menuItemId: leaf.id,
+          name: item.name,
+          reason: 'NO_RECIPE',
+        });
         continue;
       }
-      for (const r of item.recipe) addOwn(r.ingredientId, r.quantity * leaf.sold * leaf.ratio);
+      for (const r of item.recipe)
+        addOwn(r.ingredientId, r.quantity * leaf.sold * leaf.ratio);
     }
-    for (const e of line.extras ?? []) addOwn(e.ingredientId, e.quantity * line.quantity);
+    for (const e of line.extras ?? [])
+      addOwn(e.ingredientId, e.quantity * line.quantity);
 
     for (const [ingredientId, q] of own) if (q > 0) need(ingredientId, q);
   }
