@@ -68,6 +68,7 @@ run('Manufacturing journal (e2e)', () => {
     await prisma.rolePermission.create({ data: { roleId: role.id, permissionId: perm.id } });
     draftOnly = await mk(role.id, 'draftonly');
 
+    await owner.patch(`/api/v1/inventory/manufacturing/settings${q}`).send({ enabled: false }).expect(200); // start from a known state
     id.rice = await item('Rice', 'KG');
     id.dal = await item('Dal', 'KG');
     id.nocost = await item('Salt', 'KG');
