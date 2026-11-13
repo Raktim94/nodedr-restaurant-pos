@@ -233,6 +233,9 @@ export class TablesService {
         );
       }
     }
+    if (status === 'AVAILABLE') {
+      await this.prisma.tableSession.updateMany({ where: { tableId: id, status: 'ACTIVE' }, data: { status: 'CLOSED', closedAt: new Date(), closedReason: 'Table set free' } });
+    }
     const table = await this.prisma.table.update({
       where: { id },
       data: {

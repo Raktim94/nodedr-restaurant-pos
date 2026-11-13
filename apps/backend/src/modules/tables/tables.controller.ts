@@ -29,12 +29,14 @@ import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
+import { TableSessionsService } from './table-sessions.service';
 import { TablesService } from './tables.service';
 
 @ApiTags('tables')
 @Controller('v1/tables')
 export class TablesController {
   constructor(
+    private readonly sessions: TableSessionsService,
     private readonly tablesService: TablesService,
     private readonly branchAccess: BranchAccessService,
   ) {}
@@ -154,6 +156,29 @@ export class TablesController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.tablesService.updateTables(branchId, body as never);
+  }
+
+  // ---- live table sessions (guest ordering codes) ---------------------------------------------
+
+  @Auth('table.session')
+  @Get('sessions')
+  async listSessions(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.sessions.list(branchId);
+  }
+
+  @Auth('table.session')
+  @Post(':id/session')
+  async openSession(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: { hours?: number }) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.sessions.open(branchId, id, user.id, Number(body?.hours) || undefined);
+  }
+
+  @Auth('table.session')
+  @Delete(':id/session')
+  async closeSession(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.sessions.close(branchId, id, user.id);
   }
 
   @Auth('tables.manage')

@@ -864,6 +864,8 @@ export class OrdersService {
         where: { id: tableId },
         data: { status: 'AVAILABLE', statusSince: new Date() },
       });
+      // The next guests at this table need a fresh code: the old code and every phone that held it stop working.
+      await tx.tableSession.updateMany({ where: { tableId, status: 'ACTIVE' }, data: { status: 'CLOSED', closedAt: new Date(), closedReason: 'Table cleared' } });
     }
   }
 
