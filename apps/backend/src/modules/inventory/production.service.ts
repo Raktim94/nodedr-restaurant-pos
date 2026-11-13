@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,7 +11,13 @@ import { AuditService } from '../../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { toCsv } from '../reports/csv';
 import { StockService } from './stock.service';
+import { costBatch } from './manufacturing-calc';
 import { toBaseQuantity, type StockUnit } from './units';
+
+/** What the caller is allowed to do beyond recording: set by the controller from the signed-in user's permissions. */
+export interface PostOpts {
+  canPrice?: boolean;
+}
 
 type Tx = Prisma.TransactionClient;
 const Dec = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -22,6 +29,7 @@ interface ResolvedLine {
   enteredQuantity: Prisma.Decimal;
   enteredUnit: StockUnit;
   quantity: Prisma.Decimal; // in the item's stock unit
+  rate: Prisma.Decimal | null; // costing only: per STOCK unit, as typed (null = use the item's average cost)
   baseUnit: StockUnit;
   currentStock: Prisma.Decimal;
 }
@@ -99,6 +107,7 @@ export class ProductionService {
         enteredQuantity: entered,
         enteredUnit: l.unit as StockUnit,
         quantity: qty,
+        rate: l.rate !== undefined && l.rate !== '' ? Dec(l.rate) : null,
         baseUnit: ing.unit as StockUnit,
         currentStock: Dec(ing.currentStock),
       };
@@ -139,7 +148,7 @@ export class ProductionService {
 
   // ---- create / update draft -----------------------------------------------------------------
 
-  async create(branchId: string, userId: string, dto: ProductionEntryDto) {
+  async create(branchId: string, userId: string, dto: ProductionEntryDto, opts: PostOpts = {}) {
     if (dto.idempotencyKey) {
       const existing = await this.prisma.productionEntry.findUnique({
         where: { branchId_idempotencyKey: { branchId, idempotencyKey: dto.idempotencyKey } },
@@ -149,8 +158,8 @@ export class ProductionService {
     }
     try {
       const id = await this.prisma.$transaction(async (tx) => {
-        const entry = await this.createInTx(tx, branchId, userId, dto);
-        if (dto.post) await this.postInTx(tx, branchId, userId, entry.id, dto.deviceId);
+        const entry = await this.createInTx(tx, branchId, userId, dto, undefined, opts);
+        if (dto.post) await this.postInTx(tx, branchId, userId, entry.id, dto.deviceId, opts);
         return entry.id;
       });
       return this.get(branchId, id);
@@ -173,8 +182,10 @@ export class ProductionService {
     userId: string,
     dto: Omit<ProductionEntryDto, 'post'>,
     correctsEntryId?: string,
+    opts: PostOpts = {},
   ) {
     const lines = await this.resolveLines(tx, branchId, dto.inputs, dto.outputs);
+    const fin = await this.costingFields(tx, branchId, dto, lines, opts);
     const producedAt = dto.producedAt ?? new Date();
     const entryNo = await this.nextEntryNo(tx, branchId, producedAt);
     return tx.productionEntry.create({
@@ -191,6 +202,10 @@ export class ProductionService {
         deviceId: dto.deviceId,
         correctsEntryId,
         createdById: userId,
+        manufacturedOn: dto.manufacturedOn,
+        expiryDate: dto.expiryDate,
+        ...fin.entry,
+        costs: { create: fin.costs },
         lines: {
           create: lines.map((l) => ({
             role: l.role,
@@ -198,13 +213,39 @@ export class ProductionService {
             enteredQuantity: l.enteredQuantity,
             enteredUnit: l.enteredUnit,
             quantity: l.quantity,
+            unitRate: l.role === 'INPUT' ? l.rate : null,
           })),
         },
       },
     });
   }
 
-  async updateDraft(branchId: string, userId: string, id: string, dto: Omit<ProductionEntryDto, 'post'>) {
+  /** Validates the costing part of a draft and returns what to store. Nothing is calculated or frozen until posting. */
+  private async costingFields(tx: Tx, branchId: string, dto: Omit<ProductionEntryDto, 'post'>, lines: ResolvedLine[], opts: PostOpts) {
+    const none = { entry: {}, costs: [] as { category: string; description: string | null; amount: Prisma.Decimal; included: boolean }[] };
+    const c = dto.costing;
+    if (!c || !c.enabled) return none;
+    const branch = await tx.branch.findUniqueOrThrow({ where: { id: branchId }, select: { restaurant: { select: { manufacturingEnabled: true } } } });
+    if (!branch.restaurant.manufacturingEnabled) throw new BadRequestException('Manufacturing costing is switched off for this restaurant. An admin can turn it on in Settings.');
+    const outputs = lines.filter((l) => l.role === 'OUTPUT');
+    if (outputs.length !== 1) throw new BadRequestException('A costed batch makes exactly one finished product. Record co-products as separate batches.');
+    // Shape and numbers are checked here too (not only at posting) so a bad draft cannot be saved.
+    costBatch({ lines: lines.filter((l) => l.role === 'INPUT').map((l) => ({ key: l.ingredientId, name: l.name, quantity: l.quantity, rate: l.rate ?? 0 })), costs: c.costs.map((x) => ({ ...x })), outputQty: outputs[0].quantity });
+    const costs = c.costs.map((x) => ({ category: x.category.trim(), description: x.description?.trim() || null, amount: Dec(x.amount), included: x.included }));
+    const entry: Record<string, unknown> = { costed: true };
+    if (c.menuPrice) {
+      if (!opts.canPrice) throw new ForbiddenException('You can record production, but changing a menu price needs the menu price permission.');
+      const np = Dec(c.menuPrice.newPrice);
+      if (!np.isFinite() || np.lte(0) || np.decimalPlaces() > 2) throw new BadRequestException('The new menu price must be more than zero, with at most 2 decimals');
+      const mi = await tx.menuItem.findFirst({ where: { id: c.menuPrice.menuItemId, branchId } });
+      if (!mi) throw new NotFoundException('Menu item not found');
+      if (mi.stockIngredientId !== outputs[0].ingredientId) throw new BadRequestException('That menu item is not the finished product of this batch. Link it under Menu > Stock when sold first.');
+      Object.assign(entry, { priceMenuItemId: mi.id, proposedPrice: np, expectedPrice: Dec(c.menuPrice.expectedCurrentPrice) });
+    }
+    return { entry, costs };
+  }
+
+  async updateDraft(branchId: string, userId: string, id: string, dto: Omit<ProductionEntryDto, 'post'>, opts: PostOpts = {}) {
     await this.prisma.$transaction(async (tx) => {
       const entry = await tx.productionEntry.findFirst({ where: { id, branchId } });
       if (!entry) throw new NotFoundException('Production entry not found');
@@ -212,10 +253,17 @@ export class ProductionService {
         throw new BadRequestException('Only a draft can be edited. Reverse a posted entry and record a correction instead.');
       }
       const lines = await this.resolveLines(tx, branchId, dto.inputs, dto.outputs);
+      const fin = await this.costingFields(tx, branchId, dto, lines, opts);
       await tx.productionLine.deleteMany({ where: { entryId: id } });
+      await tx.productionCost.deleteMany({ where: { entryId: id } });
       await tx.productionEntry.update({
         where: { id },
         data: {
+          costed: false, priceMenuItemId: null, proposedPrice: null, expectedPrice: null,
+          manufacturedOn: dto.manufacturedOn,
+          expiryDate: dto.expiryDate,
+          ...fin.entry,
+          costs: { create: fin.costs },
           producedAt: dto.producedAt ?? entry.producedAt,
           shift: dto.shift,
           location: dto.location,
@@ -229,6 +277,7 @@ export class ProductionService {
               enteredQuantity: l.enteredQuantity,
               enteredUnit: l.enteredUnit,
               quantity: l.quantity,
+              unitRate: l.role === 'INPUT' ? l.rate : null,
             })),
           },
         },
@@ -246,12 +295,12 @@ export class ProductionService {
 
   // ---- post ------------------------------------------------------------------------------------
 
-  async post(branchId: string, userId: string, id: string, deviceId?: string) {
-    await this.prisma.$transaction((tx) => this.postInTx(tx, branchId, userId, id, deviceId));
+  async post(branchId: string, userId: string, id: string, deviceId?: string, opts: PostOpts = {}) {
+    await this.prisma.$transaction((tx) => this.postInTx(tx, branchId, userId, id, deviceId, opts));
     return this.get(branchId, id);
   }
 
-  private async postInTx(tx: Tx, branchId: string, userId: string, id: string, deviceId?: string) {
+  private async postInTx(tx: Tx, branchId: string, userId: string, id: string, deviceId?: string, opts: PostOpts = {}) {
     // The conditional update is the guard: a second post of the same draft changes nothing and fails.
     const claimed = await tx.productionEntry.updateMany({
       where: { id, branchId, status: 'DRAFT' },
@@ -262,13 +311,39 @@ export class ProductionService {
       if (!e) throw new NotFoundException('Production entry not found');
       throw new ConflictException(`This entry is already ${e.status.toLowerCase()}`);
     }
-    const entry = await tx.productionEntry.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+    const entry = await tx.productionEntry.findUniqueOrThrow({ where: { id }, include: { lines: true, costs: true } });
     const ids = [...new Set(entry.lines.map((l) => l.ingredientId))].sort();
     // Lock in a fixed order so two batches sharing an ingredient cannot deadlock.
     for (const ingredientId of ids) {
       await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${ingredientId} FOR UPDATE`;
     }
     const refs = { productionEntryId: id, deviceId };
+
+    // Costing is decided and FROZEN here: the rate used is the typed one, or the item's average cost right now.
+    // Recipes and ingredient prices changing later never touch these numbers.
+    let cost: ReturnType<typeof costBatch> | null = null;
+    if (entry.costed) {
+      const ings = new Map((await tx.ingredient.findMany({ where: { id: { in: ids } } })).map((i) => [i.id, i]));
+      const inputs = entry.lines.filter((x) => x.role === 'INPUT');
+      const out = entry.lines.find((x) => x.role === 'OUTPUT')!;
+      cost = costBatch({
+        lines: inputs.map((l) => {
+          const ing = ings.get(l.ingredientId)!;
+          const rate = l.unitRate ?? (Dec(ing.costPerUnit).gt(0) ? Dec(ing.costPerUnit) : null);
+          if (rate === null) throw new BadRequestException(`${ing.name} has no cost yet. Type its cost rate on the batch, or receive it with a cost first.`);
+          return { key: l.id, name: ing.name, quantity: l.quantity, rate };
+        }),
+        costs: entry.costs.map((c) => ({ category: c.category, description: c.description, amount: c.amount, included: c.included })),
+        outputQty: out.quantity,
+      });
+      for (const cl of cost.lines) {
+        await tx.productionLine.update({ where: { id: cl.key }, data: { unitRate: cl.rate, lineCost: cl.lineCost } });
+      }
+      await tx.productionEntry.update({
+        where: { id },
+        data: { ingredientCost: cost.ingredientCost, additionalCost: cost.additionalCost, totalCost: cost.totalCost, unitCost: cost.unitCost },
+      });
+    }
     const note = `Production ${entry.entryNo}`;
 
     for (const l of entry.lines.filter((x) => x.role === 'INPUT')) {
@@ -289,7 +364,7 @@ export class ProductionService {
           batchNumber: entry.batchRef || entry.entryNo,
           quantityReceived: l.quantity,
           quantityRemaining: l.quantity,
-          unitCost: 0, // no cost is invented for produced stock
+          unitCost: cost ? cost.unitCost : 0, // an uncosted batch invents no cost
         },
       });
       await tx.stockMovement.create({
@@ -304,9 +379,44 @@ export class ProductionService {
           ...refs,
         },
       });
+      // Costed output also moves the finished item's weighted-average cost.
+      const oldStock = Dec(ing.currentStock);
+      const newAvg = cost
+        ? oldStock.lte(0)
+          ? cost.unitCost
+          : oldStock.mul(ing.costPerUnit).plus(l.quantity.mul(cost.unitCost)).div(oldStock.plus(l.quantity)).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP)
+        : null;
       await tx.ingredient.update({
         where: { id: l.ingredientId },
-        data: { currentStock: Dec(ing.currentStock).plus(l.quantity) },
+        data: { currentStock: oldStock.plus(l.quantity), ...(newAvg ? { costPerUnit: newAvg } : {}) },
+      });
+    }
+
+    // The menu selling price, if the user chose to change it: same transaction, so stock and price succeed or fail together.
+    if (entry.costed && entry.priceMenuItemId && entry.proposedPrice) {
+      if (!opts.canPrice) throw new ForbiddenException('Changing a menu price needs the menu price permission.');
+      await tx.$queryRaw`SELECT id FROM menu_items WHERE id = ${entry.priceMenuItemId} FOR UPDATE`;
+      const mi = await tx.menuItem.findFirst({ where: { id: entry.priceMenuItemId, branchId } });
+      if (!mi) throw new NotFoundException('The menu item no longer exists');
+      if (entry.expectedPrice && !Dec(mi.price).equals(entry.expectedPrice)) {
+        // Someone changed the price after this form was opened: nothing is posted, the user reviews the latest price.
+        throw new ConflictException({
+          message: `The menu price changed to ${Dec(mi.price).toFixed(2)} (the form showed ${Dec(entry.expectedPrice).toFixed(2)}). Review the latest price and try again. Nothing was posted.`,
+          code: 'PRICE_CONFLICT',
+          currentPrice: Dec(mi.price).toFixed(2),
+        });
+      }
+      const change = await tx.menuPriceChange.create({
+        data: { branchId, menuItemId: mi.id, oldPrice: mi.price, newPrice: entry.proposedPrice, changedById: userId, productionEntryId: id, unitCostAtChange: cost?.unitCost ?? null },
+      });
+      await tx.menuItem.update({ where: { id: mi.id }, data: { price: entry.proposedPrice } });
+      await tx.productionEntry.update({ where: { id }, data: { priceChangeId: change.id } });
+      await this.audit.record({
+        userId,
+        action: 'menu.price_changed',
+        entity: 'MenuItem',
+        entityId: mi.id,
+        metadata: { priceBefore: Number(mi.price), priceAfter: Number(entry.proposedPrice), productionEntry: entry.entryNo },
       });
     }
     await this.audit.record({
@@ -401,12 +511,12 @@ export class ProductionService {
   }
 
   /** Reverse the posted entry and post a replacement in one transaction, linked both ways. */
-  async correct(branchId: string, userId: string, id: string, dto: CorrectProductionDto) {
+  async correct(branchId: string, userId: string, id: string, dto: CorrectProductionDto, opts: PostOpts = {}) {
     const { reason, ...rest } = dto;
     const newId = await this.prisma.$transaction(async (tx) => {
       await this.voidInTx(tx, branchId, userId, id, `Corrected: ${reason}`);
-      const created = await this.createInTx(tx, branchId, userId, rest, id);
-      await this.postInTx(tx, branchId, userId, created.id, dto.deviceId);
+      const created = await this.createInTx(tx, branchId, userId, rest, id, opts);
+      await this.postInTx(tx, branchId, userId, created.id, dto.deviceId, opts);
       return created.id;
     });
     return this.get(branchId, newId);

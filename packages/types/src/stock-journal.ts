@@ -9,7 +9,31 @@ export const productionLineSchema = z.object({
   ingredientId: z.string().min(1),
   quantity: qty,
   unit: ingredientUnitSchema,
+  // Costing only: the cost rate per STOCK unit of the item for this batch. Omitted = the item's current average cost.
+  rate: z.union([z.string().trim().min(1), z.number()]).transform(String).optional(),
 });
+
+export const extraCostSchema = z.object({
+  category: z.string().trim().min(1, "Choose or type a category").max(60),
+  description: z.string().trim().max(120).optional(),
+  amount: z.union([z.string().trim().min(1), z.number()]).transform(String),
+  // true = counted in the finished product's cost; false = only recorded.
+  included: z.boolean().default(true),
+});
+
+export const menuPriceProposalSchema = z.object({
+  menuItemId: z.string().min(1),
+  newPrice: z.union([z.string().trim().min(1), z.number()]).transform(String),
+  // The price the form was showing. If the menu price has changed since, posting is refused so it can be reviewed.
+  expectedCurrentPrice: z.union([z.string().trim().min(1), z.number()]).transform(String),
+});
+
+export const costingSchema = z.object({
+  enabled: z.boolean().default(true),
+  costs: z.array(extraCostSchema).max(30).default([]),
+  menuPrice: menuPriceProposalSchema.optional(),
+});
+export type CostingDto = z.infer<typeof costingSchema>;
 export type ProductionLineDto = z.infer<typeof productionLineSchema>;
 
 export const productionEntrySchema = z.object({
@@ -22,6 +46,9 @@ export const productionEntrySchema = z.object({
   inputs: z.array(productionLineSchema).min(1, "Add at least one ingredient used"),
   outputs: z.array(productionLineSchema).min(1, "Add the finished quantity produced"),
   /** Stable key made on the device so a retried upload cannot post twice. */
+  manufacturedOn: z.coerce.date().optional(),
+  expiryDate: z.coerce.date().optional(),
+  costing: costingSchema.optional(),
   idempotencyKey: z.string().trim().min(8).max(120).optional(),
   deviceId: z.string().trim().max(120).optional(),
   /** true = post straight away, false/omitted = save as a draft. */
@@ -69,6 +96,8 @@ export const stockReceiptSchema = z.object({
   ingredientId: z.string().min(1),
   quantity: qty,
   unit: ingredientUnitSchema,
+  // Cost per STOCK unit of this delivery. Keeps the item's average cost, which batch costing starts from.
+  unitCost: z.union([z.string().trim().min(1), z.number()]).transform(String).optional(),
   receivedAt: z.coerce.date().optional(),
   supplierId: z.string().optional(),
   reference: z.string().trim().max(120).optional(),

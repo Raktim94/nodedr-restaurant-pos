@@ -42,6 +42,11 @@ export const PERMISSIONS = [
   { key: "system.update", label: "Manage App Updates", category: "Admin" },
   { key: "production.record", label: "Record Daily Production & Food Waste", category: "Inventory" },
   { key: "production.void", label: "Reverse Production & Approve Food Waste", category: "Inventory" },
+  { key: "production.post", label: "Post Production Batches (drafting needs only Record)", category: "Inventory" },
+  { key: "production.report", label: "View Manufacturing Reports", category: "Inventory" },
+  { key: "menu.price", label: "Change Menu Selling Prices from the Stock Journal", category: "Menu" },
+  { key: "table.session", label: "Open & Close Table Sessions (guest ordering codes)", category: "Tables" },
+  { key: "ratings.view", label: "View Customer Ratings", category: "CRM" },
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]["key"];
@@ -52,7 +57,7 @@ export const PERMISSION_IMPLIES: Partial<Record<PermissionKey, PermissionKey[]>>
   "menu.manage": ["menu.view"],
   "tables.manage": ["tables.view"],
   // Whoever manages inventory may also record and reverse production.
-  "inventory.manage": ["production.record", "production.void"],
+  "inventory.manage": ["production.record", "production.void", "production.post", "production.report"],
 };
 
 /** True when `held` satisfies `required`, directly or through PERMISSION_IMPLIES. */
@@ -97,17 +102,18 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
     "inventory.manage", "reports.access", "kds.manage",
     "reservations.manage", "customers.manage", "refunds.process",
     "attendance.manage", "delivery.manage", "staff.manage", "accounting.manage", "marketing.manage", "operations.manage",
+    "menu.price", "table.session", "ratings.view",
   ],
   CASHIER: [
-    "orders.create", "orders.edit", "orders.accept", "bills.print", "discounts.apply",
+    "table.session", "orders.create", "orders.edit", "orders.accept", "bills.print", "discounts.apply",
     "sales.view", "customers.manage", "dashboard.sales.view",
     "menu.view", "tables.view",
   ],
   // Waiters read the menu and floor plan and run orders; they cannot edit
   // either, and have no revenue access.
-  WAITER: ["orders.create", "orders.edit", "orders.accept", "tables.view", "menu.view", "bills.print"],
-  KITCHEN_STAFF: ["kds.manage", "orders.accept", "production.record"],
-  CHEF: ["kds.manage", "orders.accept", "menu.manage", "menu.view", "production.record"],
+  WAITER: ["table.session", "orders.create", "orders.edit", "orders.accept", "tables.view", "menu.view", "bills.print"],
+  KITCHEN_STAFF: ["kds.manage", "orders.accept", "production.record", "production.post"],
+  CHEF: ["kds.manage", "orders.accept", "menu.manage", "menu.view", "production.record", "production.post"],
   BARTENDER: ["orders.create", "orders.accept", "kds.manage", "menu.view", "tables.view"],
   DELIVERY_STAFF: ["orders.edit", "delivery.manage", "delivery.rider"],
   ACCOUNTANT: ["sales.view", "dashboard.sales.view", "reports.access", "reports.financial.view", "data.export", "accounting.manage"],
