@@ -1,3 +1,4 @@
+import { round2 } from './payroll.calc';
 import { computePayroll, daysInclusive, daysInMonthOf } from './payroll.calc';
 
 describe('payroll maths', () => {
@@ -140,5 +141,89 @@ describe('netWithAdjustments', () => {
     expect(() =>
       netWithAdjustments(base, { ...none, advanceRecovery: 40000 }),
     ).toThrow(/more than the pay/);
+  });
+});
+
+import { monthSlices, workedHours } from './payroll.calc';
+
+describe('payroll boundaries', () => {
+  const H = 3_600_000;
+  const t = (iso: string) => Date.parse(iso);
+
+  it('prices each calendar month by its own length', () => {
+    // 15 Jan to 13 Feb: 17/31 + 13/28 of a month, not 30/31
+    const [line] = computePayroll('2026-01-15', '2026-02-13', 0, [
+      { userId: 'a', payType: 'MONTHLY', rate: 31000, hoursWorked: 0, unpaidLeaveDays: 0 },
+    ]);
+    expect(line.basePay).toBe(round2((31000 * 17) / 31 + (31000 * 13) / 28));
+    expect(monthSlices('2026-01-15', '2026-02-13')).toEqual([
+      { key: '2026-01', days: 17, monthDays: 31 },
+      { key: '2026-02', days: 13, monthDays: 28 },
+    ]);
+  });
+
+  it('a whole calendar month is exactly the rate in every month, leap year included', () => {
+    for (const [a, b] of [['2026-02-01', '2026-02-28'], ['2028-02-01', '2028-02-29'], ['2026-04-01', '2026-04-30'], ['2026-12-01', '2026-12-31']]) {
+      const [l] = computePayroll(a, b, 0, [{ userId: 'a', payType: 'MONTHLY', rate: 30000, hoursWorked: 0, unpaidLeaveDays: 0 }]);
+      expect(l.basePay).toBe(30000);
+    }
+  });
+
+  it('prices unpaid leave by the month the leave day is in', () => {
+    const [l] = computePayroll('2026-02-01', '2026-03-31', 0, [
+      { userId: 'a', payType: 'MONTHLY', rate: 28000, hoursWorked: 0, unpaidLeaveDays: 2, unpaidLeaveByMonth: { '2026-02': 1, '2026-03': 1 } },
+    ]);
+    expect(l.unpaidLeaveDeduction).toBe(round2(28000 / 28 + 28000 / 31));
+  });
+
+  it('merges duplicate and overlapping attendance so a minute is paid once', () => {
+    const rows = [
+      { start: t('2026-03-02T09:00:00Z'), end: t('2026-03-02T17:00:00Z') },
+      { start: t('2026-03-02T09:00:00Z'), end: t('2026-03-02T17:00:00Z') }, // same row twice
+      { start: t('2026-03-02T16:00:00Z'), end: t('2026-03-02T18:00:00Z') }, // overlaps the end
+    ];
+    const w = workedHours(rows, t('2026-03-02T00:00:00Z'), t('2026-03-03T00:00:00Z'));
+    expect(w.hours).toBe(9);
+    expect(w.overlaps).toBe(2);
+  });
+
+  it('clips a night shift to the period and drops rows that are outside it', () => {
+    const from = t('2026-03-01T00:00:00Z');
+    const to = t('2026-03-02T00:00:00Z');
+    const w = workedHours(
+      [
+        { start: t('2026-02-28T22:00:00Z'), end: t('2026-03-01T06:00:00Z') }, // 6 h inside
+        { start: t('2026-03-02T01:00:00Z'), end: t('2026-03-02T05:00:00Z') }, // outside
+      ],
+      from,
+      to,
+    );
+    expect(w.hours).toBe(6);
+  });
+
+  it('missing attendance means zero hours, not scheduled hours', () => {
+    const [l] = computePayroll('2026-03-01', '2026-03-31', 0, [
+      { userId: 'a', payType: 'HOURLY', rate: 200, hoursWorked: workedHours([], 0, 9e15).hours, unpaidLeaveDays: 0 },
+    ]);
+    expect(l.basePay).toBe(0);
+    expect(l.netPay).toBe(0);
+  });
+
+  it('rounds half-up to 2 dp and the tip pool still sums exactly', () => {
+    const out = computePayroll('2026-03-01', '2026-03-31', 100, [
+      { userId: 'a', payType: 'HOURLY', rate: 100.005, hoursWorked: 1, unpaidLeaveDays: 0 },
+      { userId: 'b', payType: 'HOURLY', rate: 10, hoursWorked: 1, unpaidLeaveDays: 0 },
+      { userId: 'c', payType: 'HOURLY', rate: 10, hoursWorked: 1, unpaidLeaveDays: 0 },
+    ]);
+    expect(out.reduce((s, l) => s + l.tipShare, 0)).toBeCloseTo(100, 10);
+    expect(out[0].basePay).toBe(100.01);
+  });
+
+  it('zero rate and zero hours give zero, never negative', () => {
+    const [l] = computePayroll('2026-03-01', '2026-03-31', 0, [
+      { userId: 'a', payType: 'MONTHLY', rate: 0, hoursWorked: 0, unpaidLeaveDays: 3 },
+    ]);
+    expect(l.netPay).toBe(0);
+    expect(H).toBe(3_600_000);
   });
 });

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,7 +14,8 @@ import type {
 import { localDate, zonedRange } from '../../common/time';
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { computePayroll, netWithAdjustments, round2 } from './payroll.calc';
+import { toCsv } from '../reports/csv';
+import { computePayroll, netWithAdjustments, round2, workedHours } from './payroll.calc';
 
 const dayStart = (d: string) => new Date(`${d}T00:00:00.000Z`);
 const USER = { select: { id: true, name: true } } as const;
@@ -245,16 +247,39 @@ export class HrService {
         clockInAt: { lt: zoned.lt },
       },
     });
-    const hours = new Map<string, number>();
+    // Overlapping or duplicate rows (a double tap, two devices) are merged so no minute is paid twice.
+    const byUser = new Map<string, { start: number; end: number }[]>();
     for (const r of records) {
-      const start = Math.max(r.clockInAt.getTime(), zoned.gte.getTime());
-      const end = Math.min(r.clockOutAt!.getTime(), zoned.lt.getTime());
-      if (end > start)
-        hours.set(
-          r.userId,
-          (hours.get(r.userId) ?? 0) + (end - start) / 3_600_000,
+      const list = byUser.get(r.userId) ?? [];
+      list.push({ start: r.clockInAt.getTime(), end: r.clockOutAt!.getTime() });
+      byUser.set(r.userId, list);
+    }
+    const hours = new Map<string, number>();
+    const warnings: string[] = [];
+    const names = new Map(
+      (
+        await this.prisma.user.findMany({
+          where: { id: { in: links.map((l) => l.user.id) } },
+          select: { id: true, name: true },
+        })
+      ).map((u) => [u.id, u.name]),
+    );
+    for (const [uid, rows] of byUser) {
+      const w = workedHours(rows, zoned.gte.getTime(), zoned.lt.getTime());
+      hours.set(uid, w.hours);
+      if (w.overlaps > 0)
+        warnings.push(
+          `${names.get(uid) ?? uid}: ${w.overlaps} overlapping attendance record(s) were merged, so that time is paid once.`,
         );
     }
+    const open = await this.prisma.attendance.findMany({
+      where: { branchId, clockOutAt: null, clockInAt: { lt: zoned.lt } },
+      select: { userId: true, clockInAt: true },
+    });
+    for (const o of open)
+      warnings.push(
+        `${names.get(o.userId) ?? o.userId} has no clock-out since ${o.clockInAt.toISOString()}; that shift is NOT counted. Fix the attendance record and build the run again.`,
+      );
 
     const leaves = await this.prisma.leaveRequest.findMany({
       where: {
@@ -266,16 +291,17 @@ export class HrService {
       },
     });
     const unpaidDays = new Map<string, number>();
+    const unpaidByMonth = new Map<string, Record<string, number>>();
     for (const l of leaves) {
       const s = Math.max(l.startDate.getTime(), from.getTime());
       const e = Math.min(l.endDate.getTime(), dayStart(periodEnd).getTime());
-      if (e >= s)
-        unpaidDays.set(
-          l.userId,
-          (unpaidDays.get(l.userId) ?? 0) +
-            Math.round((e - s) / 86_400_000) +
-            1,
-        );
+      for (let t = s; e >= s && t <= e; t += 86_400_000) {
+        const month = new Date(t).toISOString().slice(0, 7);
+        unpaidDays.set(l.userId, (unpaidDays.get(l.userId) ?? 0) + 1);
+        const m = unpaidByMonth.get(l.userId) ?? {};
+        m[month] = (m[month] ?? 0) + 1;
+        unpaidByMonth.set(l.userId, m);
+      }
     }
 
     const tips = await this.prisma.order.aggregate({
@@ -294,6 +320,7 @@ export class HrService {
         rate: Number(l.user.payProfile!.rate),
         hoursWorked: hours.get(l.user.id) ?? 0,
         unpaidLeaveDays: unpaidDays.get(l.user.id) ?? 0,
+        unpaidLeaveByMonth: unpaidByMonth.get(l.user.id),
       })),
     );
 
@@ -313,7 +340,7 @@ export class HrService {
         throw new BadRequestException(
           'A payroll run already covers part of this period',
         );
-      return tx.payrollRun.create({
+      const created = await tx.payrollRun.create({
         data: {
           branchId,
           periodStart: from,
@@ -324,6 +351,7 @@ export class HrService {
         },
         include: { lines: { include: { user: USER } } },
       });
+      return { ...created, warnings };
     });
   }
 
@@ -403,7 +431,9 @@ export class HrService {
     id: string,
     userId: string,
     dto: PayrollPayDto,
+    actor?: { id: string; permissions: readonly string[] },
   ) {
+    if (actor) this.assertNotOwnPayroll(await this.getRun(branchId, id), actor);
     const res = await this.prisma.payrollRun.updateMany({
       where: { id, branchId, status: 'FINALIZED' },
       data: {
@@ -468,8 +498,52 @@ export class HrService {
     };
   }
 
-  async finalizeRun(branchId: string, id: string) {
+  /**
+   * Separation of duties: someone who is paid on a run may not approve or pay it, unless they can manage
+   * roles (the owner/administrator, who set the pay in the first place).
+   */
+  assertNotOwnPayroll(
+    run: { lines: { userId: string }[] },
+    actor: { id: string; permissions: readonly string[] },
+  ) {
+    if (
+      run.lines.some((l) => l.userId === actor.id) &&
+      !actor.permissions.includes('roles.manage')
+    )
+      throw new ForbiddenException(
+        'You are paid on this payroll, so someone else must approve and pay it.',
+      );
+  }
+
+  /** FINALIZED -> DRAFT so a mistake can be corrected before payment. Never after payment. */
+  async reopenRun(branchId: string, id: string) {
+    const res = await this.prisma.payrollRun.updateMany({
+      where: { id, branchId, status: 'FINALIZED' },
+      data: { status: 'DRAFT', finalizedAt: null },
+    });
+    if (res.count === 0)
+      throw new BadRequestException(
+        'Only a finalized, unpaid payroll can be reopened. A paid payroll is corrected by an adjustment in the next run.',
+      );
+    return this.getRun(branchId, id);
+  }
+
+  async runCsv(branchId: string, id: string) {
     const run = await this.getRun(branchId, id);
+    const p = (d: Date) => d.toISOString().slice(0, 10);
+    return toCsv(
+      ['Employee', 'Period', 'Status', 'Hours', 'Base pay', 'Tip share', 'Allowances', 'Bonus', 'Unpaid leave', 'Advance recovery', 'Other deductions', 'Net pay', 'Note'],
+      run.lines.map((l) => [
+        l.user.name, `${p(run.periodStart)} to ${p(run.periodEnd)}`, run.status,
+        Number(l.hoursWorked), Number(l.basePay), Number(l.tipShare), Number(l.allowances), Number(l.bonus),
+        Number(l.unpaidLeaveDeduction), Number(l.advanceRecovery), Number(l.otherDeductions), Number(l.netPay), l.adjustmentNote,
+      ]),
+    );
+  }
+
+  async finalizeRun(branchId: string, id: string, actor?: { id: string; permissions: readonly string[] }) {
+    const run = await this.getRun(branchId, id);
+    if (actor) this.assertNotOwnPayroll(run, actor);
     if (run.status !== 'DRAFT')
       throw new BadRequestException('Already finalized');
     return this.prisma.payrollRun.update({
