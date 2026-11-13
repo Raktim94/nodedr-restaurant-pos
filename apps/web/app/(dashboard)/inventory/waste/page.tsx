@@ -57,7 +57,7 @@ export default function WastePage() {
       </div>
       <InventoryTabs />
 
-      <Card className="grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-7">
+      <Card className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-7">
         <div className="flex flex-col gap-1.5"><Label htmlFor="w-from">From</Label><Input id="w-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
         <div className="flex flex-col gap-1.5"><Label htmlFor="w-to">To</Label><Input id="w-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         <div className="flex flex-col gap-1.5"><Label htmlFor="w-i">Item</Label>
