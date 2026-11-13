@@ -34,7 +34,7 @@ const features = [
     icon: Package,
     title: "Inventory & procurement",
     description:
-      "Ingredients, weighted-average recipe costing, purchase orders, goods receipt with batch/lot tracking, and FIFO waste logging.",
+      "Stock items, a stock journal, daily production from actual quantities, purchase orders, goods receipt with batch/lot tracking, and food waste tracking.",
   },
   {
     icon: Gift,
