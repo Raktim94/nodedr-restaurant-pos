@@ -23,7 +23,7 @@ services:
       - nodedr-restaurant-pos
 
   backend:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.29.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-backend:1.31.0
     container_name: nodedr-restaurant-pos-backend
     hostname: nodedr-restaurant-pos-backend
     restart: unless-stopped
@@ -85,7 +85,7 @@ services:
             en_US: Auto-generated login security key. Created automatically on first launch — leave it alone.
 
   web:
-    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.29.0
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-web:1.31.0
     container_name: nodedr-restaurant-pos-web
     hostname: nodedr-restaurant-pos-web
     restart: unless-stopped
