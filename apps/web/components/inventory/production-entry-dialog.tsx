@@ -133,12 +133,12 @@ export function ProductionEntryDialog({
   const lineRow = (set: typeof setInputs, rows: Row[], r: Row, list: typeof raw, label: string) => {
     const unitOptions = byId.get(r.ingredientId)?.units ?? [];
     return (
-      <div key={r.key} className="grid grid-cols-[1fr_6.5rem_5.5rem_2rem] items-center gap-2">
-        <select aria-label={`${label} item`} className={selectClass} value={r.ingredientId} onChange={(e) => pick(set, r.key, e.target.value)}>
+      <div key={r.key} className="grid grid-cols-[1fr_5.5rem_2rem] items-center gap-2 rounded-lg border border-border p-2 sm:grid-cols-[1fr_6.5rem_5.5rem_2rem] sm:border-0 sm:p-0">
+        <select aria-label={`${label} item`} className={`${selectClass} col-span-3 sm:col-span-1`} value={r.ingredientId} onChange={(e) => pick(set, r.key, e.target.value)}>
           <option value="">Choose…</option>
           {list.map((i) => (<option key={i.id} value={i.id}>{i.name}</option>))}
         </select>
-        <Input aria-label={`${label} quantity`} inputMode="decimal" placeholder={r.hint ? `last: ${r.hint}` : "Qty"} value={r.quantity} onChange={(e) => setRow(set, r.key, { quantity: e.target.value })} />
+        <Input aria-label={`${label} quantity`} className="col-span-1" inputMode="decimal" placeholder={r.hint ? `last: ${r.hint}` : "Qty"} value={r.quantity} onChange={(e) => setRow(set, r.key, { quantity: e.target.value })} />
         <select aria-label={`${label} unit`} className={selectClass} value={r.unit} onChange={(e) => setRow(set, r.key, { unit: e.target.value as IngredientUnit })}>
           {unitOptions.map((u) => (<option key={u} value={u}>{u}</option>))}
         </select>
@@ -183,7 +183,7 @@ export function ProductionEntryDialog({
             </section>
 
             <section className="grid grid-cols-2 gap-3" aria-label="Details">
-              <div className="flex flex-col gap-1.5">
+              <div className="col-span-2 flex flex-col gap-1.5 sm:col-span-1">
                 <Label htmlFor="p-when">Date and time</Label>
                 <Input id="p-when" type="datetime-local" value={producedAt} onChange={(e) => setProducedAt(e.target.value)} />
               </div>

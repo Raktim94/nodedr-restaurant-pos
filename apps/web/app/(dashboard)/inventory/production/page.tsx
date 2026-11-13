@@ -73,7 +73,7 @@ export default function ProductionPage() {
 
       <InventoryTabs />
 
-      <Card className="grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
+      <Card className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
         <div className="flex flex-col gap-1.5"><Label htmlFor="f-from">From</Label><Input id="f-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
         <div className="flex flex-col gap-1.5"><Label htmlFor="f-to">To</Label><Input id="f-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         <div className="flex flex-col gap-1.5">

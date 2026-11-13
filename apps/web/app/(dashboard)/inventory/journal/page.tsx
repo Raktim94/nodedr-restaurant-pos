@@ -72,7 +72,7 @@ export default function JournalPage() {
       </div>
       <InventoryTabs />
 
-      <Card className="grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5">
+      <Card className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="j-item">Item</Label>
           <select id="j-item" className={selectClass} value={ingredientId} onChange={(e) => setIngredientId(e.target.value)}>
