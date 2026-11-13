@@ -16,6 +16,6 @@ for i in $(seq 1 90); do
 done
 docker exec $N-backend sh -c 'mkdir -p /data/uploads'
 for f in ads/*.png; do docker cp "$f" $N-backend:/data/uploads/"$(basename "$f")"; done
-cat seed-demo.mjs | docker exec -i $N-backend sh -c 'cd /app && node --input-type=module -'
+cat seed-demo.mjs | docker exec -i $N-backend node --input-type=module -
 docker start $N-web >/dev/null
 echo "$(date -Is) demo reset"
