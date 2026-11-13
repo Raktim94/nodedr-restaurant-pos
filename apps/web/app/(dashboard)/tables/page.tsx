@@ -2,6 +2,7 @@
 
 import { LayoutGrid, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { CreateTablesDialog, ManageTablesDialog } from "@/components/tables/bulk-tables-dialogs";
 import { AddFloorDialog } from "@/components/tables/add-floor-dialog";
 import { EditableTableTile } from "@/components/tables/editable-table-tile";
 import { RenameFloorDialog } from "@/components/tables/rename-floor-dialog";
@@ -139,6 +140,8 @@ export default function TablesPage() {
                     <Plus className="h-4 w-4" />
                     Add table
                   </Button>
+                  <CreateTablesDialog branchId={branchId} floorId={activeFloor?.id ?? floors[0].id} floorName={activeFloor?.name ?? floors[0].name} existing={(activeFloor ?? floors[0]).tables.map((t) => t.number)} />
+                  {(activeFloor ?? floors[0]).tables.length > 0 && <ManageTablesDialog branchId={branchId} tables={(activeFloor ?? floors[0]).tables} floorName={activeFloor?.name ?? floors[0].name} />}
                 </>
               )}
             </div>

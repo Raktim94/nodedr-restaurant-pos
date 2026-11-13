@@ -45,7 +45,7 @@ export function TableEditorDialog({
   const [number, setNumber] = useState(table?.number ?? "");
   const [name, setName] = useState(table?.name ?? "");
   const [capacity, setCapacity] = useState(String(table?.capacity ?? 4));
-  const [shape, setShape] = useState<"square" | "round" | "rect">(table?.shape ?? "square");
+  const [shape, setShape] = useState<"square" | "round" | "rect" | "booth" | "counter" | "other">(table?.shape ?? "square");
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkStart, setBulkStart] = useState("1");
   const [bulkCount, setBulkCount] = useState("5");
@@ -243,6 +243,9 @@ export function TableEditorDialog({
                   <SelectItem value="square">Square</SelectItem>
                   <SelectItem value="round">Round</SelectItem>
                   <SelectItem value="rect">Rectangle</SelectItem>
+                  <SelectItem value="booth">Booth</SelectItem>
+                  <SelectItem value="counter">Counter / bar seat</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>
             </div>
