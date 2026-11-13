@@ -15,6 +15,7 @@ import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useBranch } from "@/hooks/use-branch";
 import {
   useManagedOrders,
+  useReleaseOrder,
   type ManagedOrder,
   type OrderChannel,
   type OrderTab,
@@ -234,6 +235,8 @@ function OrderRow({
   const name = order.guestName ?? order.customer?.name ?? "Walk-in guest";
   const summary = order.items.map((i) => `${i.quantity}× ${i.nameSnapshot}`).join(", ");
   const rejected = order.acceptance === "REJECTED";
+  const { branchId } = useBranch();
+  const release = useReleaseOrder(branchId);
   return (
     <div
       className={cn(
@@ -263,6 +266,15 @@ function OrderRow({
           <TypeBadge type={order.type} />
           {order.acceptance === "PENDING" && (
             <Badge className="font-normal">Needs action</Badge>
+          )}
+          {order.status === "OPEN" && order.payIntent === "CASH" && (
+            <Badge variant="outline" className="border-warning font-normal text-warning">Cash due at register</Badge>
+          )}
+          {order.status === "OPEN" && order.heldForPayment && (
+            <>
+              <Badge variant="outline" className="border-warning font-normal text-warning">Waiting for online payment</Badge>
+              <Button size="xs" variant="outline" disabled={release.isPending} onClick={(e) => { e.stopPropagation(); release.mutate(order.id); }}>Send to kitchen anyway</Button>
+            </>
           )}
           {rejected && <Badge variant="secondary" className="font-normal">Rejected</Badge>}
           {!rejected && order.status === "CANCELLED" && (

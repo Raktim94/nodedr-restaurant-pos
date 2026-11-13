@@ -80,7 +80,7 @@ export class DisplayService {
   // ---- what the customer screen reads (public, by token) ------------------------------------------
 
   async publicView(tok: string) {
-    const t = await this.prisma.displayTerminal.findUnique({ where: { token: tok } });
+    const t = await this.prisma.displayTerminal.findUnique({ where: { token: tok }, include: { branch: { select: { restaurant: { select: { currency: true } } } } } });
     if (!t || !t.isActive) throw new NotFoundException('This screen is not set up or has been switched off');
     // lastSeenAt is a heartbeat for the staff list; skip the write if it is fresh to keep the poll cheap.
     if (!t.lastSeenAt || Date.now() - t.lastSeenAt.getTime() > 10_000) {
@@ -97,6 +97,7 @@ export class DisplayService {
       state: t.state ?? { kind: 'idle' },
       stateAt: t.stateAt ? t.stateAt.getTime() : null,
       serverTime: Date.now(),
+      currency: t.branch.restaurant.currency,
       ads,
     };
   }

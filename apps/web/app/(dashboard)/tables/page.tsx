@@ -143,6 +143,7 @@ export default function TablesPage() {
                     <Plus className="h-4 w-4" />
                     Add table
                   </Button>
+                  <a href="/tables/cards" className="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-[0.8rem] hover:bg-muted">Table cards (QR + NFC)</a>
                   <CreateTablesDialog branchId={branchId} floorId={activeFloor?.id ?? floors[0].id} floorName={activeFloor?.name ?? floors[0].name} existing={(activeFloor ?? floors[0]).tables.map((t) => t.number)} />
                   <div className="w-full"><LayoutsBar branchId={branchId} floor={activeFloor ?? floors[0]} /></div>
                   {(activeFloor ?? floors[0]).tables.length > 0 && <ManageTablesDialog branchId={branchId} tables={(activeFloor ?? floors[0]).tables} floorName={activeFloor?.name ?? floors[0].name} />}

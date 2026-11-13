@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ContactDetailsDialog } from "@/components/contact-details-dialog";
 import { ReasonDialog } from "@/components/orders/reason-dialog";
+import { useCallBuzzer } from "@/hooks/use-paging";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import {
   NEXT_STATUS,
@@ -63,6 +64,7 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const reject = useRejectKot(branchId);
+  const callBuzzer = useCallBuzzer(branchId);
   const { data: me } = useCurrentUser();
   // Rejecting before cooking starts is for anyone on the kitchen screen; food
   // already on the stove is a manager's call (the server enforces the same).
@@ -170,6 +172,29 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
       </div>
 
       <div className="flex flex-col gap-2">
+        {ticket.status === "READY" && ticket.order.table && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={callBuzzer.isPending}
+            onClick={() =>
+              callBuzzer.mutate(
+                { orderId: ticket.orderId },
+                {
+                  onSuccess: (r) =>
+                    r.call.state === "FAILED"
+                      ? toast.error(`The buzzer could not be reached (${r.call.error ?? "no answer"}). Call the guest by name.`)
+                      : r.deviceOnline === false
+                        ? toast.error("The buzzer looks offline. The call is queued; call the guest by name too.")
+                        : toast.success(r.duplicate ? "Already paging this table" : `Paging table ${ticket.order.table?.number}`),
+                  onError: (e) => toast.error(e instanceof Error ? e.message : "Could not page the table"),
+                },
+              )
+            }
+          >
+            Call buzzer
+          </Button>
+        )}
         {nextStatus && (
           <Button
             className="h-12 w-full text-base"

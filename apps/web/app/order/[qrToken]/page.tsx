@@ -1,7 +1,7 @@
 "use client";
 
 import { BellRing, CheckCircle2, Leaf, Minus, Plus, Receipt, UtensilsCrossed } from "lucide-react";
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { ModifierPickerDialog } from "@/components/pos/modifier-picker-dialog";
@@ -46,9 +46,16 @@ interface CartLine {
 
 interface PublicStatus {
   order: {
+    id: string;
     orderNumber: string;
     status: string;
     acceptance: string;
+    paid: boolean;
+    payIntent: "CASH" | "ONLINE" | null;
+    heldForPayment: boolean;
+    kitchen: "WAITING_PAYMENT" | "SENT" | "NEW" | "PREPARING" | "READY" | "SERVED";
+    lastPayment: "CREATED" | "SUCCEEDED" | "FAILED" | "EXPIRED" | "NEEDS_REVIEW" | null;
+    paged: boolean;
     items: { id: string; nameSnapshot: string; quantity: number; status: string }[];
   } | null;
   openRequests: ("WAITER" | "BILL")[];
@@ -73,6 +80,7 @@ interface PublicMenuResponse {
   branchName: string;
   tableName: string;
   categories: PublicMenuCategory[];
+  payments?: { cash: boolean; online: boolean };
 }
 
 export default function PublicMenuPage({
@@ -88,6 +96,10 @@ export default function PublicMenuPage({
   const queryClient = useQueryClient();
   const [placed, setPlaced] = useState<{ orderNumber: string } | null>(null);
   const [guestName, setGuestName] = useState("");
+  const [payChoice, setPayChoice] = useState<"CASH" | "ONLINE">("CASH");
+  const [payError, setPayError] = useState<string | null>(null);
+  // One key per basket + payment choice, kept across retries so a double tap or a dropped connection cannot make a second order.
+  const attempt = useRef<{ sig: string; key: string } | null>(null);
   const [nameDraft, setNameDraft] = useState("");
 
   // Read any name saved earlier this session after mount, not in the state
@@ -131,20 +143,37 @@ export default function PublicMenuPage({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] }),
   });
 
+  const startOnlinePayment = async (orderId: string) => {
+    setPayError(null);
+    try {
+      const pay = await api.post<{ checkoutUrl: string | null }>(`/public/menu/${qrToken}/orders/${orderId}/pay-online`, { origin: window.location.origin });
+      if (!pay.checkoutUrl) throw new Error("no link");
+      window.location.href = pay.checkoutUrl;
+    } catch (e) {
+      setPayError(e instanceof ApiError ? e.message : "We could not open the payment page. You can try again or pay at the register.");
+      void queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] });
+    }
+  };
+
+  const payAtRegister = useMutation({
+    mutationFn: (orderId: string) => api.post(`/public/menu/${qrToken}/orders/${orderId}/pay-cash`),
+    onSuccess: () => { setPayError(null); void queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] }); },
+    onError: (e) => setPayError(e instanceof ApiError ? e.message : "Could not change that. Please ask the staff."),
+  });
+
   const placeOrder = useMutation({
-    mutationFn: () =>
-      api.post<{ orderNumber: string }>(`/public/menu/${qrToken}/order`, {
-        guestName,
-        items: cart.map((l) => ({
-          menuItemId: l.menuItemId,
-          quantity: l.quantity,
-          modifierIds: l.modifierIds,
-        })),
-      }),
-    onSuccess: (order) => {
+    mutationFn: () => {
+      const items = cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds }));
+      const sig = JSON.stringify([items, payChoice, guestName]);
+      if (!attempt.current || attempt.current.sig !== sig) attempt.current = { sig, key: crypto.randomUUID() };
+      return api.post<{ id: string; orderNumber: string }>(`/public/menu/${qrToken}/order`, { guestName, items, payment: payChoice, idempotencyKey: attempt.current.key });
+    },
+    onSuccess: async (order) => {
+      attempt.current = null;
       setPlaced(order);
       setCart([]);
       queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] });
+      if (payChoice === "ONLINE") await startOnlinePayment(order.id);
     },
   });
 
@@ -364,6 +393,34 @@ export default function PublicMenuPage({
                 Your order #{status.order.orderNumber}
                 {status.order.acceptance === "PENDING" && " — waiting for the restaurant to confirm"}
               </p>
+              {status.order.paged && (
+                <p role="alert" className="mt-2 rounded-xl bg-success/15 px-3 py-2 text-sm font-semibold text-foreground">Your food is ready. Please collect it now.</p>
+              )}
+              <p className="mt-2 text-sm text-foreground" data-testid="order-state">
+                {status.order.paid
+                  ? "Paid. "
+                  : status.order.payIntent === "CASH"
+                    ? "Not paid yet: please pay at the register and tell them your order number. "
+                    : status.order.heldForPayment
+                      ? "Waiting for your payment. "
+                      : ""}
+                {{ WAITING_PAYMENT: "The kitchen will start as soon as the payment is confirmed.", SENT: "Sent to the kitchen.", NEW: "The kitchen has your order.", PREPARING: "Being prepared.", READY: "Ready, please collect it.", SERVED: "Served. Enjoy!" }[status.order.kitchen]}
+              </p>
+              {!status.order.paid && status.order.payIntent === "ONLINE" && (
+                <div className="mt-3 flex flex-col gap-2">
+                  {(status.order.lastPayment === "FAILED" || status.order.lastPayment === "EXPIRED") && (
+                    <p role="alert" className="text-sm text-destructive">Your payment did not go through. You have not been charged for it.</p>
+                  )}
+                  {status.order.lastPayment === "NEEDS_REVIEW" && (
+                    <p role="alert" className="text-sm text-destructive">We received a payment but could not match it to your order. Please ask the staff.</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => void startOnlinePayment(status.order!.id)}>{status.order.lastPayment === "FAILED" || status.order.lastPayment === "EXPIRED" ? "Try paying again" : "Pay now"}</Button>
+                    <Button size="sm" variant="outline" disabled={payAtRegister.isPending} onClick={() => payAtRegister.mutate(status.order!.id)}>Pay at the register instead</Button>
+                  </div>
+                  {payError && <p role="alert" className="text-sm text-destructive">{payError}</p>}
+                </div>
+              )}
               <ul className="mt-2 flex flex-col gap-1 text-sm text-muted-foreground">
                 {status.order.items.map((i) => (
                   <li key={i.id} className="flex justify-between gap-3">
@@ -421,6 +478,17 @@ export default function PublicMenuPage({
 
       {cartCount > 0 && (
         <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background px-5 py-4 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
+          {data?.payments?.online && (
+            <fieldset className="mx-auto mb-3 flex max-w-lg gap-2" aria-label="How will you pay?">
+              {([["CASH", "Pay at the register"], ["ONLINE", "Pay now on my phone"]] as const).map(([v, label]) => (
+                <label key={v} className={`flex-1 cursor-pointer rounded-xl border px-3 py-2 text-center text-sm ${payChoice === v ? "border-primary bg-primary/10 font-medium" : "border-border"}`}>
+                  <input type="radio" name="pay" className="sr-only" checked={payChoice === v} onChange={() => setPayChoice(v)} />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {!data?.payments?.online && <p className="mx-auto mb-2 max-w-lg text-center text-xs text-muted-foreground">You will pay at the register.</p>}
           <div className="mx-auto flex max-w-lg items-center gap-3">
             <Button
               className="h-12 flex-1"
