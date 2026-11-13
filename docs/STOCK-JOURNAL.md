@@ -1,0 +1,67 @@
+# Stock journal and daily production
+
+Quantity tracking only. Nothing here works out what a serving costs, and no screen shows a per-unit cost.
+
+## What it does
+
+* **Stock items** are raw materials (`PURCHASED`) or finished products (`PREPARED`), each with one stock unit,
+  an optional category, storage location, minimum stock and a list of extra units
+  (`1 PACK = 25000 G`). KG/G, L/ML and PIECE/DOZEN convert on their own.
+* **Stock journal** (`Inventory > Stock journal`) is the existing `StockMovement` ledger read in one place:
+  receipts, production use, production output, waste, sales, adjustments, reversals. Lines are only appended.
+  Filter by item, type and date; export CSV.
+* **Production** (`Inventory > Production`): choose the finished product, type what was actually used and what was
+  actually made, review, post. Posting is one database transaction: every deduction and the finished addition
+  happen together or not at all. A posted entry is never edited; a manager reverses it (reason required) or posts a
+  correction that reverses the old entry and links to it.
+* **Waste** (`Inventory > Waste`): item, quantity, reason, shift. If the loss is already inside a production entry
+  (the batch simply made less) tick that and stock is not touched a second time.
+
+## Worked example
+
+Receive 25 kg rice and 10.5 kg urad dal. Make a morning batch:
+
+| | entered | stock after |
+|---|---|---|
+| Rice | 6 KG | 19 KG |
+| Urad dal | 2000 G (stored as 2 KG) | 8.5 KG |
+| Idli (finished) | 120 PIECE | 120 PIECE |
+
+The journal shows three lines linked to entry `PR-20261113-001`: `-6 KG`, `-2 KG`, `+120 PIECE`. If the count was
+118, a manager chooses *Correct*: the old entry is reversed (three `REVERSAL` lines), a new entry for 118 is posted,
+and both point at each other.
+
+## Rules the code enforces
+
+* Stock never goes below zero in these flows. There is no negative-stock override.
+* Quantities are exact decimals (3 places). `0.1 kg + 0.2 kg` is `0.3 kg`. A quantity that would need more than 3
+  decimals after conversion is refused, not rounded.
+* A unit that cannot be converted (KG for a PIECE item) is refused.
+* A retried upload with the same `idempotencyKey` returns the first result and posts nothing twice.
+* A batch whose finished product has already been sold or wasted cannot be reversed; record an adjustment.
+* Only finished products can be produced; an ingredient cannot be both used and produced in one entry.
+* Large waste: an item can carry `wasteApprovalQty`. A cook entering more is recorded as *Needs review* (stock
+  has already left, because the food is in the bin); a manager approves, or rejects, which reverses it.
+
+## Permissions
+
+`production.record` (chef, kitchen staff, and anyone with `inventory.manage`) records production and waste.
+`production.void` (inventory managers, owners) reverses, corrects, approves or rejects. Existing restaurants get
+`production.record` for chefs and kitchen staff when the server starts.
+
+## API (all under `/api/v1/inventory`, `?branchId=`)
+
+`GET journal`, `GET journal/export.csv`, `POST journal/receipts`, `POST journal/adjustments`,
+`GET production/items`, `POST production/preview`, `POST|GET production`, `GET production/:id`,
+`POST production/:id/post|void|correct`, `GET production/report`, `GET production/export.csv`,
+`GET|POST waste/entries`, `POST waste/entries/:id/approve|reject|reverse`, `GET waste/report`, `GET waste/export.csv`.
+
+## Old recipe-costing screen
+
+Version 1.26.0 added a recipe-costing calculator (yield, overheads, margin, cost per portion). It is removed from the
+screens, the API and the phone app. Its database tables (`menu_item_costings`, `preparations`, `preparation_lines`,
+`production_runs`, `modifier_ingredients`, `order_item_costs`, and the extra ingredient columns) were **not dropped**:
+the migration `20261111000000_recipe_costing` stays, so a server that already ran it keeps its rows. There is no
+screen or export for those rows any more; read them with SQL if an audit needs them.
+The older optional "deduct these ingredients when a dish is sold" setting on a menu item is a different feature and is
+unchanged.
