@@ -215,6 +215,11 @@ export function ManufacturingBatchDialog({ branchId, open, onOpenChange }: { bra
 
           {step === 3 && pv && (
             <div className="flex flex-col gap-5">
+              {pv.missingRates.length > 0 && (
+                <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                  No cost is known for: <b>{pv.missingRates.join(", ")}</b>. A cost is never guessed. Go back and type a cost rate for each, or receive the item with a cost first.
+                </div>
+              )}
               <section aria-label="Production cost" className="rounded-xl border border-border p-4">
                 <h3 className="text-sm font-semibold">Production cost (what this batch cost)</h3>
                 <dl className="mt-2 flex flex-col gap-1.5 text-sm">
@@ -279,7 +284,7 @@ export function ManufacturingBatchDialog({ branchId, open, onOpenChange }: { bra
           {step < 4 ? (
             <div className="flex items-center gap-3">
               <Button type="button" variant="outline" className="h-12 flex-1" disabled={busy} onClick={() => (step === 0 ? onOpenChange(false) : go(step - 1))}>{step === 0 ? "Cancel" : "Back"}</Button>
-              <Button type="button" className="h-12 flex-[2]" disabled={busy} onClick={next}>{preview.isPending ? "Working it out…" : "Next"}</Button>
+              <Button type="button" className="h-12 flex-[2]" disabled={busy || (step === 3 && (!pv || pv.missingRates.length > 0))} onClick={next}>{preview.isPending ? "Working it out…" : "Next"}</Button>
             </div>
           ) : (
             <div className="flex flex-col gap-3">
