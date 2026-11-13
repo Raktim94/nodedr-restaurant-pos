@@ -97,7 +97,7 @@ export default function WastePage() {
                   <TableCell className="whitespace-nowrap text-muted-foreground">{new Date(w.occurredAt).toLocaleString()}{w.shift ? ` · ${w.shift}` : ""}</TableCell>
                   <TableCell className="font-medium">{w.ingredient.name}<span className="block text-xs text-muted-foreground">{w.kind === "FINISHED" ? "Finished food" : "Ingredient"}</span></TableCell>
                   <TableCell className="text-right tabular-nums">{w.enteredQuantity} {w.enteredUnit}</TableCell>
-                  <TableCell>{WASTE_REASONS.find((r) => r.value === w.reason)?.label}{w.includedInProduction && <span className="block text-xs text-muted-foreground">Already in production</span>}{w.note && <span className="block text-xs text-muted-foreground">{w.note}</span>}</TableCell>
+                  <TableCell>{WASTE_REASONS.find((r) => r.value === w.reason)?.label}{w.includedInProduction && <span className="block text-xs text-muted-foreground">Already in production</span>}{w.note && <span className="block text-xs text-muted-foreground">{w.note}</span>}{w.photoUrl && <a href={w.photoUrl} target="_blank" rel="noreferrer" className="block text-xs underline">View photo</a>}</TableCell>
                   <TableCell><Badge variant={w.status === "PENDING_APPROVAL" ? "default" : "outline"}>{STATUS[w.status]}</Badge>{w.reverseReason && <span className="block text-xs text-muted-foreground">{w.reverseReason}</span>}</TableCell>
                   <TableCell className="text-muted-foreground">{w.createdByName}</TableCell>
                   {canReview && (

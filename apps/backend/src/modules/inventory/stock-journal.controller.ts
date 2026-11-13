@@ -1,4 +1,6 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, UsePipes } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, UploadedFile, UseInterceptors, UsePipes } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { assertValidImageSignature, imageUploadOptions } from '../../common/upload/image-upload.config';
 import { ApiTags } from '@nestjs/swagger';
 import {
   correctProductionSchema,
@@ -274,6 +276,15 @@ export class StockJournalController {
   async wasteCsv(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
     await this.access(u, branchId);
     return this.waste.exportCsv(branchId, wasteFilters(q));
+  }
+
+  @Auth('production.record')
+  @Post('waste/photo')
+  @UseInterceptors(FileInterceptor('file', imageUploadOptions))
+  wastePhoto(@UploadedFile() file?: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file uploaded');
+    assertValidImageSignature(file.path);
+    return { url: `/api/uploads/${file.filename}` };
   }
 
   @Auth('production.record')
