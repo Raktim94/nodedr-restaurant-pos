@@ -142,7 +142,17 @@ export class AuthService {
       await this.twoFactor.verifyLogin(user, dto.totp);
     }
 
-    return this.issueSession(user);
+    // A phone that was removed by the owner cannot sign in again until it is allowed back.
+    if (dto.deviceId) {
+      const d = await this.prisma.posDevice.findUnique({
+        where: { restaurantId_deviceId: { restaurantId: user.restaurantId, deviceId: dto.deviceId } },
+        select: { revokedAt: true },
+      });
+      if (d?.revokedAt) {
+        throw new ForbiddenException({ message: 'This phone was removed by the owner.', code: 'DEVICE_REVOKED' });
+      }
+    }
+    return this.issueSession(user, dto.deviceId);
   }
 
   /** Phone-number login: compare real digits, then the password, against every active match. */
@@ -282,9 +292,11 @@ export class AuthService {
 
   private async issueSession(
     user: Parameters<AuthService['toSessionUser']>[0],
+    deviceId?: string,
   ) {
     const sessionUser = this.toSessionUser(user);
-    const token = await this.jwt.signAsync({ sub: user.id });
+    // `did` binds the session to one phone: JwtStrategy refuses it once that phone is removed.
+    const token = await this.jwt.signAsync(deviceId ? { sub: user.id, did: deviceId } : { sub: user.id });
     return { token, user: sessionUser };
   }
 }

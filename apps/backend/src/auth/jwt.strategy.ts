@@ -11,6 +11,8 @@ import { PrismaService } from '../prisma/prisma.service';
 
 interface JwtPayload {
   sub: string;
+  /** Set when the session was created by a phone: that phone's id. */
+  did?: string;
 }
 
 const cookieExtractor = (req: {
@@ -40,6 +42,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Session no longer valid');
+    }
+
+    if (payload.did) {
+      const device = await this.prisma.posDevice.findUnique({
+        where: { restaurantId_deviceId: { restaurantId: user.restaurantId, deviceId: payload.did } },
+        select: { revokedAt: true },
+      });
+      if (device?.revokedAt) {
+        throw new UnauthorizedException({ message: 'This phone was removed by the owner.', code: 'DEVICE_REVOKED' });
+      }
     }
 
     return {
