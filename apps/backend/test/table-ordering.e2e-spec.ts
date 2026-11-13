@@ -25,7 +25,7 @@ run('Table ordering, paging and customer display (e2e)', () => {
   let guest: ReturnType<typeof request.agent>;
   let floorId: string;
   let itemId: string;
-  const tables: Record<string, { id: string; qr: string }> = {};
+  const tables: Record<string, { id: string; qr: string; tok?: string }> = {};
   let hook: Server;
   const hits: { sig?: string; body: string }[] = [];
 
@@ -33,9 +33,12 @@ run('Table ordering, paging and customer display (e2e)', () => {
     const t = (await owner.post(`/api/v1/tables${q}`).send({ floorId, number: `${n}-${tag}`, capacity: 2 }).expect(201)).body;
     const qr = (await owner.post(`/api/v1/tables/${t.id}/qr-token${q}`).expect(201)).body.qrToken as string;
     tables[n] = { id: t.id, qr };
+    // like a real guest: staff open the table, the guest enters the code staff give them
+    const code = (await owner.post(`/api/v1/tables/${t.id}/session${q}`).send({}).expect(201)).body.code as string;
+    tables[n].tok = (await guest.post(`/api/v1/public/menu/${qr}/session`).send({ code }).expect(201)).body.token as string;
   };
   const order = (n: string, extra: object = {}, items = 1) =>
-    guest.post(`/api/v1/public/menu/${tables[n].qr}/order`).send({ guestName: 'Asha', items: [{ menuItemId: itemId, quantity: items, modifierIds: [] }], ...extra });
+    guest.post(`/api/v1/public/menu/${tables[n].qr}/order`).set('x-table-session', tables[n].tok ?? '').send({ guestName: 'Asha', items: [{ menuItemId: itemId, quantity: items, modifierIds: [] }], ...extra });
   const kotCount = (orderId: string) => prisma.kot.count({ where: { orderId } });
 
   beforeAll(async () => {

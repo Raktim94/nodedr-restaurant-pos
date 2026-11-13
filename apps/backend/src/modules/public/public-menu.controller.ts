@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UsePipes } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, UsePipes } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import {
@@ -28,9 +28,9 @@ export class PublicMenuController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('menu/:qrToken/order')
   @UsePipes(new ZodValidationPipe(publicOrderSchema))
-  createOrder(@Param('qrToken') qrToken: string, @Body() body: unknown) {
+  createOrder(@Param('qrToken') qrToken: string, @Body() body: unknown, @Headers('x-table-session') sessionToken?: string) {
     const { items, guestName, payment, idempotencyKey } = body as { items: never; guestName: string; payment?: 'CASH' | 'ONLINE'; idempotencyKey?: string };
-    return this.publicMenuService.createOrder(qrToken, items, guestName, { payment, idempotencyKey });
+    return this.publicMenuService.createOrder(qrToken, items, guestName, { payment, idempotencyKey, sessionToken });
   }
 
   // Starts the guest's online payment (Stripe or whichever gateway is on). The amount is the server's bill.
@@ -46,6 +46,18 @@ export class PublicMenuController {
     return this.publicMenuService.switchToCash(qrToken, orderId);
   }
 
+  // Wrong codes are also counted per session on the server (locks after 8); this is the outer rate limit.
+  @Throttle({ default: { limit: 12, ttl: 60_000 } })
+  @Post('menu/:qrToken/session')
+  joinSession(@Param('qrToken') qrToken: string, @Body() body: { code?: string }) {
+    return this.publicMenuService.joinSession(qrToken, typeof body?.code === 'string' ? body.code.slice(0, 20) : '');
+  }
+
+  @Get('menu/:qrToken/session')
+  sessionState(@Param('qrToken') qrToken: string, @Headers('x-table-session') sessionToken?: string) {
+    return this.publicMenuService.sessionState(qrToken, sessionToken);
+  }
+
   @Get('menu/:qrToken/status')
   getStatus(@Param('qrToken') qrToken: string) {
     return this.publicMenuService.getStatus(qrToken);
@@ -54,10 +66,11 @@ export class PublicMenuController {
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
   @Post('menu/:qrToken/request')
   @UsePipes(new ZodValidationPipe(publicRequestSchema))
-  createRequest(@Param('qrToken') qrToken: string, @Body() body: unknown) {
+  createRequest(@Param('qrToken') qrToken: string, @Body() body: unknown, @Headers('x-table-session') sessionToken?: string) {
     return this.publicMenuService.createRequest(
       qrToken,
       (body as { type: 'WAITER' | 'BILL' }).type,
+      sessionToken,
     );
   }
 }

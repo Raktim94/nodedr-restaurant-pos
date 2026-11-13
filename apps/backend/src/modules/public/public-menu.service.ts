@@ -7,6 +7,8 @@ import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { GatewayPaymentsService } from '../../payment-gateways/gateway-payments.service';
 import { PaymentGatewaysService } from '../../payment-gateways/payment-gateways.service';
 import { OrdersService } from '../orders/orders.service';
+import { RatingsService } from '../ratings/ratings.service';
+import { TableSessionsService } from '../tables/table-sessions.service';
 
 @Injectable()
 export class PublicMenuService {
@@ -17,12 +19,14 @@ export class PublicMenuService {
     private readonly realtime: RealtimeGateway,
     private readonly gateways: PaymentGatewaysService,
     private readonly gatewayPayments: GatewayPaymentsService,
+    private readonly sessions: TableSessionsService,
+    private readonly ratings: RatingsService,
   ) {}
 
   private async resolveTable(qrToken: string) {
     const table = await this.prisma.table.findUnique({
       where: { qrToken },
-      include: { floor: { include: { branch: true } } },
+      include: { floor: { include: { branch: { include: { restaurant: true } } } } },
     });
     if (!table) throw new NotFoundException('This QR code is not recognized');
     return table;
@@ -39,6 +43,8 @@ export class PublicMenuService {
       tableName: table.name ?? `Table ${table.number}`,
       categories,
       payments: { cash: true, online },
+      // The table QR only says WHICH table. Ordering needs the live table code that staff open (see TableSessionsService).
+      session: { required: branch.restaurant.requireTableSession },
     };
   }
 
@@ -95,15 +101,17 @@ export class PublicMenuService {
     qrToken: string,
     items: CartItemDto[],
     guestName: string,
-    opts: { payment?: 'CASH' | 'ONLINE'; idempotencyKey?: string } = {},
+    opts: { payment?: 'CASH' | 'ONLINE'; idempotencyKey?: string; sessionToken?: string } = {},
   ) {
     const table = await this.resolveTable(qrToken);
     const branchId = table.floor.branchId;
+    // Dine-in ordering needs a live session grant; a photographed or shared static QR is not enough.
+    if (table.floor.branch.restaurant.requireTableSession) await this.sessions.assertGrant(table.id, opts.sessionToken);
 
     // The same basket sent again (double tap, flaky connection) returns the same order.
     if (opts.idempotencyKey) {
       const seen = await this.prisma.publicOrderKey.findUnique({ where: { branchId_key: { branchId, key: opts.idempotencyKey } } });
-      if (seen) return { ...(await this.ordersService.getOrder(branchId, seen.orderId)), duplicate: true };
+      if (seen) return { ...(await this.ordersService.getOrder(branchId, seen.orderId)), duplicate: true, ratingToken: this.ratings.issue(seen.orderId) };
     }
     if (opts.payment === 'ONLINE' && !(await this.gateways.active(table.floor.branch.restaurantId))) {
       throw new BadRequestException('Paying on your phone is not available here. Please choose cash at the register.');
@@ -118,7 +126,8 @@ export class PublicMenuService {
         if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')) throw e;
       }
     }
-    return result;
+    // The way to rate THIS order later, made by the server and handed only to the phone that placed it.
+    return { ...result, ratingToken: this.ratings.issue(result.id) };
   }
 
   private async createOrAdd(
@@ -157,6 +166,17 @@ export class PublicMenuService {
     const order = await this.prisma.order.findFirst({ where: { id: orderId, tableId: table.id, status: 'OPEN' } });
     if (!order) throw new NotFoundException('That order is not open at this table');
     return { table, order };
+  }
+
+  /** The guest trades the staff's code for a grant, or the page asks whether its saved grant is still good. */
+  async joinSession(qrToken: string, code: string) {
+    const table = await this.resolveTable(qrToken);
+    return this.sessions.join(table.id, code);
+  }
+
+  async sessionState(qrToken: string, token?: string) {
+    const table = await this.resolveTable(qrToken);
+    return { required: table.floor.branch.restaurant.requireTableSession, ...(await this.sessions.publicState(table.id, token)) };
   }
 
   /** Start (or restart after a failure) the guest's online payment. The amount always comes from the server bill. */
@@ -233,8 +253,9 @@ export class PublicMenuService {
   }
 
   /** "Call waiter" / "Bring the bill". One open request per type per table. */
-  async createRequest(qrToken: string, type: 'WAITER' | 'BILL') {
+  async createRequest(qrToken: string, type: 'WAITER' | 'BILL', sessionToken?: string) {
     const table = await this.resolveTable(qrToken);
+    if (table.floor.branch.restaurant.requireTableSession) await this.sessions.assertGrant(table.id, sessionToken);
     const branchId = table.floor.branchId;
     const existing = await this.prisma.tableRequest.findFirst({
       where: { tableId: table.id, type, resolvedAt: null },

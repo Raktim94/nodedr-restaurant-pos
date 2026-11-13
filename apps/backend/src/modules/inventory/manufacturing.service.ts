@@ -36,9 +36,9 @@ export class ManufacturingService {
   }
 
   /** Turning it off keeps every record; it only hides the entry points and refuses new costed batches. */
-  async setEnabled(restaurantId: string, enabled: boolean) {
-    await this.prisma.restaurant.update({ where: { id: restaurantId }, data: { manufacturingEnabled: enabled } });
-    return { enabled };
+  async setEnabled(restaurantId: string, v: { enabled?: boolean; requireTableSession?: boolean }) {
+    const r = await this.prisma.restaurant.update({ where: { id: restaurantId }, data: { ...(v.enabled !== undefined ? { manufacturingEnabled: v.enabled } : {}), ...(v.requireTableSession !== undefined ? { requireTableSession: v.requireTableSession } : {}) }, select: { manufacturingEnabled: true, requireTableSession: true } });
+    return { enabled: r.manufacturingEnabled, requireTableSession: r.requireTableSession };
   }
 
   // ---- preview (writes nothing; recomputed from quantities and rates on the server) -----------------

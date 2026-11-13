@@ -326,8 +326,8 @@ export class StockJournalController {
 
   @Auth('settings.manage')
   @Patch('manufacturing/settings')
-  async setMfg(@CurrentUser() u: SessionUser, @Body(new ZodValidationPipe(z.object({ enabled: z.boolean() }))) body: { enabled: boolean }) {
-    return this.mfg.setEnabled(u.restaurantId, body.enabled);
+  async setMfg(@CurrentUser() u: SessionUser, @Body(new ZodValidationPipe(z.object({ enabled: z.boolean().optional(), requireTableSession: z.boolean().optional() }))) body: { enabled?: boolean; requireTableSession?: boolean }) {
+    return this.mfg.setEnabled(u.restaurantId, body);
   }
 
   @Auth('production.record')
