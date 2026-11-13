@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, UploadedFile, UseInterceptors, UsePipes } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, UploadedFile, UseInterceptors, UsePipes } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { assertValidImageSignature, imageUploadOptions } from '../../common/upload/image-upload.config';
 import { ApiTags } from '@nestjs/swagger';
@@ -33,6 +33,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { allowedUnits, type StockUnit } from './units';
 import { ProductionService, type ProductionFilters } from './production.service';
 import { StockJournalService } from './stock-journal.service';
+import { ManufacturingService } from './manufacturing.service';
 import { StockLocationsService } from './stock-locations.service';
 import { WasteEntriesService, type WasteFilters } from './waste-entries.service';
 
@@ -62,12 +63,17 @@ export class StockJournalController {
     private readonly production: ProductionService,
     private readonly waste: WasteEntriesService,
     private readonly locations: StockLocationsService,
+    private readonly mfg: ManufacturingService,
     private readonly prisma: PrismaService,
     private readonly branchAccess: BranchAccessService,
   ) {}
 
   private access(u: SessionUser, branchId: string) {
     return this.branchAccess.assertAccess(u.restaurantId, branchId);
+  }
+
+  private opts(u: SessionUser) {
+    return { canPrice: permissionSatisfied(u.permissions, 'menu.price') };
   }
 
   // ---- stock journal (the ledger) ------------------------------------------------------------
@@ -257,7 +263,10 @@ export class StockJournalController {
   @UsePipes(new ZodValidationPipe(productionEntrySchema))
   async createProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
     await this.access(u, branchId);
-    return this.production.create(branchId, u.id, body as ProductionEntryDto);
+    const dto = body as ProductionEntryDto;
+    // Drafting needs production.record; posting needs production.post; changing a menu price needs menu.price.
+    if (dto.post && !permissionSatisfied(u.permissions, 'production.post')) throw new ForbiddenException('You can save a draft, but posting needs the post permission.');
+    return this.production.create(branchId, u.id, dto, this.opts(u));
   }
 
   @Auth('production.record')
@@ -272,7 +281,7 @@ export class StockJournalController {
   @UsePipes(new ZodValidationPipe(productionEntrySchema.omit({ post: true })))
   async updateProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: unknown) {
     await this.access(u, branchId);
-    return this.production.updateDraft(branchId, u.id, id, body as never);
+    return this.production.updateDraft(branchId, u.id, id, body as never, this.opts(u));
   }
 
   @Auth('production.record')
@@ -282,11 +291,11 @@ export class StockJournalController {
     return this.production.deleteDraft(branchId, id);
   }
 
-  @Auth('production.record')
+  @Auth('production.post')
   @Post('production/:id/post')
   async postProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
     await this.access(u, branchId);
-    return this.production.post(branchId, u.id, id);
+    return this.production.post(branchId, u.id, id, undefined, this.opts(u));
   }
 
   @Auth('production.void')
@@ -303,7 +312,52 @@ export class StockJournalController {
     @Body(new ZodValidationPipe(correctProductionSchema)) body: CorrectProductionDto,
   ) {
     await this.access(u, branchId);
-    return this.production.correct(branchId, u.id, id, body);
+    return this.production.correct(branchId, u.id, id, body, this.opts(u));
+  }
+
+  // ---- manufacturing (costed production) --------------------------------------------------------
+
+  @Auth('production.record')
+  @Get('manufacturing/settings')
+  async mfgSettings(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+    await this.access(u, branchId);
+    return { ...(await this.mfg.settings(u.restaurantId, branchId)), canPost: permissionSatisfied(u.permissions, 'production.post'), canPrice: permissionSatisfied(u.permissions, 'menu.price'), canReport: permissionSatisfied(u.permissions, 'production.report') };
+  }
+
+  @Auth('settings.manage')
+  @Patch('manufacturing/settings')
+  async setMfg(@CurrentUser() u: SessionUser, @Body(new ZodValidationPipe(z.object({ enabled: z.boolean() }))) body: { enabled: boolean }) {
+    return this.mfg.setEnabled(u.restaurantId, body.enabled);
+  }
+
+  @Auth('production.record')
+  @Post('manufacturing/preview')
+  @UsePipes(new ZodValidationPipe(previewSchema.extend({ costing: productionEntrySchema.shape.costing })))
+  async mfgPreview(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+    await this.access(u, branchId);
+    return this.mfg.preview(branchId, body as never);
+  }
+
+  @Auth('production.record')
+  @Get('manufacturing/prefill/:ingredientId')
+  async mfgPrefill(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('ingredientId') ingredientId: string, @Query('quantity') quantity?: string) {
+    await this.access(u, branchId);
+    return this.mfg.prefill(branchId, ingredientId, quantity ?? '1');
+  }
+
+  @Auth('production.report')
+  @Get('manufacturing/report')
+  async mfgReport(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+    await this.access(u, branchId);
+    return this.mfg.report(branchId, { from: date(q.from), to: date(q.to), itemId: q.itemId || undefined, status: q.status || undefined });
+  }
+
+  @Auth('production.report')
+  @Get('manufacturing/report.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async mfgCsv(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+    await this.access(u, branchId);
+    return this.mfg.csv(branchId, q.section ?? 'batches', { from: date(q.from), to: date(q.to), itemId: q.itemId || undefined });
   }
 
   // ---- waste ------------------------------------------------------------------------------------

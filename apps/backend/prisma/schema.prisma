@@ -69,6 +69,10 @@ model Restaurant {
   // Referral rewards. Off until the owner turns it on. Both rewards are paid
   // only after the referred customer's first qualifying (paid) purchase.
   referralEnabled        Boolean @default(false)
+  // Manufacturing journal: production batches with costs, the POS card, and cost reports. Off until an admin turns it on.
+  manufacturingEnabled   Boolean @default(false)
+  // Dine-in orders from the table QR need the live table-session code that staff open (default on).
+  requireTableSession    Boolean @default(true)
   referralSharerPoints   Int     @default(15)
   referralReferredPoints Int     @default(10)
   // Food value (bill subtotal) the referred customer's first purchase must reach for the rewards to pay.
@@ -2999,6 +3003,22 @@ model ProductionEntry {
   idempotencyKey String?
   deviceId       String?
 
+  // Manufacturing costing, frozen when the batch is posted. null when the batch was recorded without costing.
+  costed          Boolean  @default(false)
+  ingredientCost  Decimal? @db.Decimal(14, 4)
+  additionalCost  Decimal? @db.Decimal(14, 4)
+  totalCost       Decimal? @db.Decimal(14, 4)
+  unitCost        Decimal? @db.Decimal(14, 4) // cost per finished unit of the primary output
+  manufacturedOn  DateTime?
+  expiryDate      DateTime?
+  // Menu selling price proposed from this batch (applied only at posting, by someone allowed to).
+  priceMenuItemId String?
+  proposedPrice   Decimal? @db.Decimal(12, 2)
+  expectedPrice   Decimal? @db.Decimal(12, 2)
+  priceChangeId   String?
+
+  costs ProductionCost[]
+
   correctsEntryId String?
   correctsEntry   ProductionEntry?  @relation("ProductionCorrection", fields: [correctsEntryId], references: [id], onDelete: SetNull)
   correctedBy     ProductionEntry[] @relation("ProductionCorrection")
@@ -3031,6 +3051,9 @@ model ProductionLine {
   enteredQuantity Decimal        @db.Decimal(12, 3)
   enteredUnit     IngredientUnit
   quantity        Decimal        @db.Decimal(12, 3)
+  // Costing: the rate per STOCK unit used for this batch and the resulting line cost (frozen at posting).
+  unitRate        Decimal?       @db.Decimal(14, 4)
+  lineCost        Decimal?       @db.Decimal(16, 4)
 
   @@index([entryId])
   @@index([ingredientId])
@@ -3315,4 +3338,95 @@ model DisplayAd {
 
   @@index([branchId, isActive])
   @@map("display_ads")
+}
+
+// A non-ingredient cost of one production batch (labour, packaging, fuel...). included = counted in the finished
+// product's cost; an excluded line is only recorded.
+model ProductionCost {
+  id          String          @id @default(cuid())
+  entryId     String
+  entry       ProductionEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  category    String
+  description String?
+  amount      Decimal         @db.Decimal(14, 2)
+  included    Boolean         @default(true)
+
+  @@index([entryId])
+  @@map("production_costs")
+}
+
+// Every change of a menu selling price made from the Stock Journal (other changes stay in the audit log).
+model MenuPriceChange {
+  id                String   @id @default(cuid())
+  branchId          String
+  menuItemId        String
+  oldPrice          Decimal  @db.Decimal(12, 2)
+  newPrice          Decimal  @db.Decimal(12, 2)
+  changedById       String
+  changedAt         DateTime @default(now())
+  source            String   @default("STOCK_JOURNAL")
+  productionEntryId String?
+  unitCostAtChange  Decimal? @db.Decimal(14, 4)
+
+  @@index([branchId, changedAt])
+  @@index([menuItemId, changedAt])
+  @@map("menu_price_changes")
+}
+
+// ---------------------------------------------------------------------------
+// Live table sessions: the printed QR locates the table, the session code proves someone is there
+// ---------------------------------------------------------------------------
+
+enum TableSessionStatus {
+  ACTIVE
+  CLOSED
+}
+
+model TableSession {
+  id           String             @id @default(cuid())
+  branchId     String
+  tableId      String
+  status       TableSessionStatus @default(ACTIVE)
+  // sha256 of the short code (the code itself is shown to staff once and never stored)
+  codeHash     String
+  openedById   String
+  openedAt     DateTime           @default(now())
+  expiresAt    DateTime
+  closedAt     DateTime?
+  closedReason String?
+  failedTries  Int                @default(0)
+  lockedUntil  DateTime?
+
+  grants TableSessionGrant[]
+
+  @@index([tableId, status])
+  @@map("table_sessions")
+}
+
+// What a guest's phone holds after entering the code: a random bearer, stored only as a hash, bound to one session.
+model TableSessionGrant {
+  id        String       @id @default(cuid())
+  sessionId String
+  session   TableSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  tokenHash String       @unique
+  createdAt DateTime     @default(now())
+
+  @@index([sessionId])
+  @@map("table_session_grants")
+}
+
+// ---------------------------------------------------------------------------
+// Customer ratings (one per completed order)
+// ---------------------------------------------------------------------------
+
+model OrderRating {
+  id        String   @id @default(cuid())
+  branchId  String
+  orderId   String   @unique
+  stars     Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@index([branchId, createdAt])
+  @@map("order_ratings")
 }

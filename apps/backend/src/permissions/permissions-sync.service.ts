@@ -18,6 +18,11 @@ const ALWAYS_FULL_ACCESS_ROLES = ['OWNER', 'ADMINISTRATOR'] as const;
 const GRANT_WHEN_CREATED: Record<string, string[]> = {
   'delivery.rider': ['DELIVERY_STAFF'],
   'production.record': ['KITCHEN_STAFF', 'CHEF'],
+  'production.post': ['KITCHEN_STAFF', 'CHEF', 'RESTAURANT_MANAGER', 'INVENTORY_MANAGER'],
+  'production.report': ['RESTAURANT_MANAGER', 'INVENTORY_MANAGER'],
+  'menu.price': ['RESTAURANT_MANAGER'],
+  'table.session': ['RESTAURANT_MANAGER', 'CASHIER', 'WAITER'],
+  'ratings.view': ['RESTAURANT_MANAGER'],
 };
 
 @Injectable()
