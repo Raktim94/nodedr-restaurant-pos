@@ -118,7 +118,9 @@ run('Stock journal, production and waste (e2e)', () => {
     id.entry = res.body.id;
     expect(res.body.status).toBe('POSTED');
     expect(res.body.entryNo).toMatch(/^PR-\d{8}-\d{3}$/);
-    expect(JSON.stringify(res.body)).not.toMatch(/cost/i); // quantity tracking only
+    // a quantity-only batch carries no cost at all: not costed, no figures
+    expect(res.body.costed).toBe(false);
+    expect([res.body.totalCost, res.body.unitCost, res.body.ingredientCost]).toEqual([null, null, null]);
     expect(await stock(id.rice)).toBe('19');
     expect(await stock(id.dal)).toBe('8.5');
     expect(await stock(id.idli)).toBe('120');
