@@ -132,6 +132,8 @@ export interface OrderDetail {
   status: string;
   channel: OrderChannel;
   acceptance: AcceptanceStatus;
+  payIntent?: "CASH" | "ONLINE" | null;
+  heldForPayment?: boolean;
   tableId: string | null;
   guestName: string | null;
   guestCount: number | null;
@@ -199,6 +201,8 @@ export interface ManagedOrder {
   status: string;
   channel: OrderChannel;
   acceptance: AcceptanceStatus;
+  payIntent?: "CASH" | "ONLINE" | null;
+  heldForPayment?: boolean;
   guestName: string | null;
   deliveryAddress?: string | null;
   deliveryPincode?: string | null;
@@ -375,5 +379,14 @@ export function useDeleteOrders(branchId: string | null) {
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["reports"] });
     },
+  });
+}
+
+/** Table self-order waiting for an online payment: send it to the kitchen anyway (staff decision, audited). */
+export function useReleaseOrder(branchId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => api.post<{ released: boolean }>(`/orders/${orderId}/release?branchId=${branchId}`),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["orders"] }); void qc.invalidateQueries({ queryKey: ["managed-orders"] }); },
   });
 }
