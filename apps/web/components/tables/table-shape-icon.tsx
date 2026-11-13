@@ -41,7 +41,8 @@ export function TableShapeIcon({
   capacity: number;
   className?: string;
 }) {
-  const s: TableShape = shape === "round" || shape === "rect" ? shape : "square";
+  // booth and counter seats are drawn as a rectangle; "other" as a square
+  const s: TableShape = shape === "round" ? "round" : shape === "rect" || shape === "booth" || shape === "counter" ? "rect" : "square";
   const seats = seatPositions(s, capacity);
 
   return (

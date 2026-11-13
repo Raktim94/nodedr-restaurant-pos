@@ -1087,6 +1087,7 @@ export class McpToolsBuilder {
               numbers: args.stringArray('numbers'),
               capacity: args.optionalNumber('capacity') ?? 4,
               shape: shape as never,
+              columns: 5,
             }),
           );
         },

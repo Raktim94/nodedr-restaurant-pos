@@ -12,6 +12,8 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import {
   bulkTableCreateSchema,
+  bulkTableDeleteSchema,
+  bulkTableUpdateSchema,
   floorSchema,
   floorUpdateSchema,
   tableSchema,
@@ -100,6 +102,30 @@ export class TablesController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.tablesService.createTables(branchId, body as never);
+  }
+
+  @Auth('tables.manage')
+  @Patch('bulk')
+  @UsePipes(new ZodValidationPipe(bulkTableUpdateSchema))
+  async updateTables(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.updateTables(branchId, body as never);
+  }
+
+  @Auth('tables.manage')
+  @Post('bulk-delete')
+  @UsePipes(new ZodValidationPipe(bulkTableDeleteSchema))
+  async deleteTables(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.deleteTables(branchId, body as never);
   }
 
   @Auth('tables.manage')

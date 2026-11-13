@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import type {
   BulkTableCreateDto,
+  BulkTableDeleteDto,
+  BulkTableUpdateDto,
   FloorDto,
   FloorUpdateDto,
   TableDto,
@@ -85,8 +87,10 @@ export class TablesService {
             capacity: dto.capacity,
             shape: dto.shape,
             color: dto.color,
-            posX: 20 + (index % 5) * 100,
-            posY: 20 + Math.floor(index / 5) * 100,
+            width: dto.width ?? 80,
+            height: dto.height ?? 80,
+            posX: 20 + (index % dto.columns) * ((dto.width ?? 80) + 20),
+            posY: 20 + Math.floor(index / dto.columns) * ((dto.height ?? 80) + 20),
           },
         }),
       ),
@@ -157,11 +161,66 @@ export class TablesService {
     return table;
   }
 
+  /** Tables that still have a live order or a booking cannot go; says which and what to do. */
+  private async blockers(ids: string[]) {
+    const [orders, bookings] = await Promise.all([
+      this.prisma.order.findMany({
+        where: { tableId: { in: ids }, status: { in: ['OPEN', 'BILLED'] } },
+        select: { tableId: true },
+      }),
+      this.prisma.reservation.findMany({
+        where: { tableId: { in: ids }, status: { in: ['RESERVED', 'CONFIRMED', 'ARRIVED'] } },
+        select: { tableId: true },
+      }),
+    ]);
+    const busy = new Set([...orders, ...bookings].map((r) => r.tableId as string));
+    return busy;
+  }
+
   async deleteTable(branchId: string, id: string) {
     await this.assertTableInBranch(branchId, id);
+    if ((await this.blockers([id])).size > 0) {
+      throw new ConflictException(
+        'This table has an open order or an upcoming booking. Move the order to another table, close the bill or cancel the booking first.',
+      );
+    }
     await this.prisma.table.delete({ where: { id } });
     this.realtime.emitToBranch(branchId, 'table.deleted', { id });
     return { ok: true };
+  }
+
+  async updateTables(branchId: string, dto: BulkTableUpdateDto) {
+    const tables = await this.prisma.table.findMany({
+      where: { id: { in: dto.ids }, floor: { branchId } },
+      select: { id: true },
+    });
+    if (tables.length !== new Set(dto.ids).size)
+      throw new NotFoundException('One of the selected tables was not found');
+    const { ids, ...data } = dto;
+    await this.prisma.table.updateMany({ where: { id: { in: ids } }, data });
+    const updated = await this.prisma.table.findMany({ where: { id: { in: ids } } });
+    updated.forEach((t) => this.realtime.emitToBranch(branchId, 'table.updated', t));
+    return updated;
+  }
+
+  /** All or nothing: if any selected table is in use nothing is deleted. */
+  async deleteTables(branchId: string, dto: BulkTableDeleteDto) {
+    const tables = await this.prisma.table.findMany({
+      where: { id: { in: dto.ids }, floor: { branchId } },
+      select: { id: true, number: true },
+    });
+    if (tables.length !== new Set(dto.ids).size)
+      throw new NotFoundException('One of the selected tables was not found');
+    const busy = await this.blockers(dto.ids);
+    if (busy.size > 0) {
+      const names = tables.filter((t) => busy.has(t.id)).map((t) => t.number).join(', ');
+      throw new ConflictException(
+        `Table ${names} ${busy.size > 1 ? 'have' : 'has'} an open order or an upcoming booking, so nothing was deleted. Close or move those first.`,
+      );
+    }
+    await this.prisma.table.deleteMany({ where: { id: { in: dto.ids } } });
+    dto.ids.forEach((id) => this.realtime.emitToBranch(branchId, 'table.deleted', { id }));
+    return { deleted: dto.ids.length };
   }
 
   async rotateQrToken(branchId: string, id: string) {

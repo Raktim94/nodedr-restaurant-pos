@@ -2,6 +2,7 @@
 
 import type {
   BulkTableCreateDto,
+  BulkTableUpdateDto,
   TableDto,
   TableLayoutUpdateDto,
   TableStatusDto,
@@ -23,7 +24,7 @@ export interface RestaurantTable {
   width: number;
   height: number;
   rotation: number;
-  shape: "square" | "round" | "rect";
+  shape: "square" | "round" | "rect" | "booth" | "counter" | "other";
   qrToken: string | null;
   assignedWaiter: { id: string; name: string } | null;
 }
@@ -72,7 +73,7 @@ export function useCreateTable(branchId: string | null) {
 export function useBulkCreateTables(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (dto: BulkTableCreateDto) => api.post(`/tables/bulk?branchId=${branchId}`, dto),
+    mutationFn: (dto: Omit<BulkTableCreateDto, "columns"> & { columns?: number }) => api.post(`/tables/bulk?branchId=${branchId}`, dto),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["floors", branchId] }),
   });
 }
@@ -116,6 +117,22 @@ export function useRotateQrToken(branchId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.post<RestaurantTable>(`/tables/${id}/qr-token?branchId=${branchId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["floors", branchId] }),
+  });
+}
+
+export function useBulkUpdateTables(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: BulkTableUpdateDto) => api.patch(`/tables/bulk?branchId=${branchId}`, dto),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["floors", branchId] }),
+  });
+}
+
+export function useBulkDeleteTables(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: string[]) => api.post(`/tables/bulk-delete?branchId=${branchId}`, { ids }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["floors", branchId] }),
   });
 }
