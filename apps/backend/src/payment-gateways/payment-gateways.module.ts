@@ -17,5 +17,6 @@ import { PaymentGatewaysService } from './payment-gateways.service';
     GatewayPaymentsPublicController,
   ],
   providers: [PaymentGatewaysService, GatewayPaymentsService],
+  exports: [PaymentGatewaysService, GatewayPaymentsService],
 })
 export class PaymentGatewaysModule {}

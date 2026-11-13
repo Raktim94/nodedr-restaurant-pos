@@ -44,6 +44,8 @@ import { RolesModule } from './roles/roles.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PushModule } from './push/push.module';
 import { DevicesModule } from './devices/devices.module';
+import { DisplayModule } from './modules/display/display.module';
+import { PagingModule } from './modules/paging/paging.module';
 import { StandaloneModule } from './standalone/standalone.module';
 import { BackupModule } from './backup/backup.module';
 import { IntegrationsModule } from './integrations/integrations.module';
@@ -96,6 +98,8 @@ import { VerifactuModule } from './modules/verifactu/verifactu.module';
     PushModule,
     StandaloneModule,
     DevicesModule,
+    DisplayModule,
+    PagingModule,
     BackupModule,
     IntegrationsModule,
     McpModule,

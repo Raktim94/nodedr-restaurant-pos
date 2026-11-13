@@ -267,6 +267,19 @@ export class OrdersController {
     return this.ordersService.addItems(branchId, id, items);
   }
 
+  // Staff decide to send a table order to the kitchen without waiting for the online payment (the guest is
+  // paying at the register, or staff take the risk). Audited.
+  @Auth('orders.edit')
+  @Post(':id/release')
+  async release(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return { released: await this.ordersService.releaseHeldOrder(branchId, id) };
+  }
+
   @Auth('orders.accept')
   @Post(':id/accept')
   async accept(
