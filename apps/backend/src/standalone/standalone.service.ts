@@ -73,10 +73,11 @@ export class StandaloneService {
         },
       }),
       this.prisma.floor.findMany({
-        where: { branchId },
+        where: { branchId, isActive: true },
         orderBy: { sortOrder: 'asc' },
         include: {
           tables: {
+            where: { hidden: false },
             orderBy: { number: 'asc' },
             select: { id: true, number: true, name: true, capacity: true },
           },
