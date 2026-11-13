@@ -37,6 +37,9 @@ export const leaveDecisionSchema = z.object({
 export const staffPaySchema = z.object({
   payType: z.enum(["MONTHLY", "HOURLY"]),
   rate: z.coerce.number().min(0),
+  // HOURLY only: hours in one day beyond this are overtime. Omit for no overtime rule.
+  overtimeAfterHours: z.coerce.number().positive().max(24).nullable().optional(),
+  overtimeMultiplier: z.coerce.number().min(1).max(5).optional(),
 });
 export type StaffPayDto = z.infer<typeof staffPaySchema>;
 

@@ -25,6 +25,8 @@ export interface PayRow {
   name: string;
   payType: "MONTHLY" | "HOURLY" | null;
   rate: number | null;
+  overtimeAfterHours?: number | null;
+  overtimeMultiplier?: number;
 }
 export interface PayrollRunRow {
   id: string;
@@ -135,8 +137,13 @@ export function useHrActions(branchId: string | null) {
       onSuccess: done,
     }),
     setPay: useMutation({
-      mutationFn: (v: { userId: string; payType: "MONTHLY" | "HOURLY"; rate: number }) =>
-        api.put(`/hr/pay/${v.userId}?${q(branchId)}`, { payType: v.payType, rate: v.rate }),
+      mutationFn: (v: { userId: string; payType: "MONTHLY" | "HOURLY"; rate: number; overtimeAfterHours?: number | null; overtimeMultiplier?: number }) =>
+        api.put(`/hr/pay/${v.userId}?${q(branchId)}`, {
+          payType: v.payType,
+          rate: v.rate,
+          overtimeAfterHours: v.payType === "HOURLY" ? (v.overtimeAfterHours ?? null) : null,
+          overtimeMultiplier: v.overtimeMultiplier,
+        }),
       onSuccess: done,
     }),
     createRun: useMutation({
@@ -178,6 +185,9 @@ export interface SalarySlip {
   paymentMethod: string | null;
   employee: string;
   hoursWorked: number;
+  overtimeHours?: number;
+  overtimePay?: number;
+  calculation?: { formula?: string[]; timezone?: string; builtAt?: string } | null;
   earnings: { basePay: number; tipShare: number; allowances: number; bonus: number };
   deductions: { unpaidLeave: number; advanceRecovery: number; other: number };
   netPay: number;

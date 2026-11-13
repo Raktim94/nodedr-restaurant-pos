@@ -15,7 +15,7 @@ import { localDate, zonedRange } from '../../common/time';
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { toCsv } from '../reports/csv';
-import { computePayroll, netWithAdjustments, round2, workedHours } from './payroll.calc';
+import { computePayroll, netWithAdjustments, round2, workedByDay } from './payroll.calc';
 
 const dayStart = (d: string) => new Date(`${d}T00:00:00.000Z`);
 const USER = { select: { id: true, name: true } } as const;
@@ -177,6 +177,9 @@ export class HrService {
       name: l.user.name,
       payType: l.user.payProfile?.payType ?? null,
       rate: l.user.payProfile ? Number(l.user.payProfile.rate) : null,
+      overtimeAfterHours:
+        l.user.payProfile?.overtimeAfterHours == null ? null : Number(l.user.payProfile.overtimeAfterHours),
+      overtimeMultiplier: l.user.payProfile ? Number(l.user.payProfile.overtimeMultiplier) : 1.5,
     }));
   }
 
@@ -184,8 +187,13 @@ export class HrService {
     await this.assertStaffInBranch(branchId, userId);
     return this.prisma.staffPay.upsert({
       where: { userId },
-      create: { userId, payType: dto.payType, rate: dto.rate },
-      update: { payType: dto.payType, rate: dto.rate },
+      create: { userId, payType: dto.payType, rate: dto.rate, overtimeAfterHours: dto.overtimeAfterHours ?? null, overtimeMultiplier: dto.overtimeMultiplier ?? 1.5 },
+      update: {
+        payType: dto.payType,
+        rate: dto.rate,
+        overtimeAfterHours: dto.overtimeAfterHours ?? null,
+        ...(dto.overtimeMultiplier != null ? { overtimeMultiplier: dto.overtimeMultiplier } : {}),
+      },
     });
   }
 
@@ -248,13 +256,14 @@ export class HrService {
       },
     });
     // Overlapping or duplicate rows (a double tap, two devices) are merged so no minute is paid twice.
-    const byUser = new Map<string, { start: number; end: number }[]>();
+    const byUser = new Map<string, { start: number; end: number; breakMinutes: number }[]>();
     for (const r of records) {
       const list = byUser.get(r.userId) ?? [];
-      list.push({ start: r.clockInAt.getTime(), end: r.clockOutAt!.getTime() });
+      list.push({ start: r.clockInAt.getTime(), end: r.clockOutAt!.getTime(), breakMinutes: r.breakMinutes });
       byUser.set(r.userId, list);
     }
     const hours = new Map<string, number>();
+    const daily = new Map<string, number[]>();
     const warnings: string[] = [];
     const names = new Map(
       (
@@ -265,8 +274,9 @@ export class HrService {
       ).map((u) => [u.id, u.name]),
     );
     for (const [uid, rows] of byUser) {
-      const w = workedHours(rows, zoned.gte.getTime(), zoned.lt.getTime());
+      const w = workedByDay(rows, zoned.gte.getTime(), zoned.lt.getTime(), (ms) => localDate(new Date(ms), tz));
       hours.set(uid, w.hours);
+      daily.set(uid, w.days);
       if (w.overlaps > 0)
         warnings.push(
           `${names.get(uid) ?? uid}: ${w.overlaps} overlapping attendance record(s) were merged, so that time is paid once.`,
@@ -319,6 +329,10 @@ export class HrService {
         payType: l.user.payProfile!.payType,
         rate: Number(l.user.payProfile!.rate),
         hoursWorked: hours.get(l.user.id) ?? 0,
+        dailyHours: daily.get(l.user.id) ?? [],
+        overtimeAfterHours:
+          l.user.payProfile!.overtimeAfterHours == null ? null : Number(l.user.payProfile!.overtimeAfterHours),
+        overtimeMultiplier: Number(l.user.payProfile!.overtimeMultiplier),
         unpaidLeaveDays: unpaidDays.get(l.user.id) ?? 0,
         unpaidLeaveByMonth: unpaidByMonth.get(l.user.id),
       })),
@@ -347,7 +361,18 @@ export class HrService {
           periodEnd: dayStart(periodEnd),
           tipPool,
           totalNet: round2(lines.reduce((s, l) => s + l.netPay, 0)),
-          lines: { create: lines },
+          lines: {
+            create: lines.map(({ formula, ...l }) => ({
+              ...l,
+              calcInputs: {
+                formula,
+                periodStart,
+                periodEnd,
+                timezone: tz,
+                builtAt: new Date().toISOString(),
+              },
+            })),
+          },
         },
         include: { lines: { include: { user: USER } } },
       });
@@ -482,6 +507,9 @@ export class HrService {
       paymentMethod: run.paymentMethod,
       employee: line.user.name,
       hoursWorked: Number(line.hoursWorked),
+      overtimeHours: Number(line.overtimeHours),
+      overtimePay: Number(line.overtimePay),
+      calculation: line.calcInputs,
       earnings: {
         basePay: Number(line.basePay),
         tipShare: Number(line.tipShare),
