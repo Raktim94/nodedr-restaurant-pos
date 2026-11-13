@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
 import { useIngredients } from "@/hooks/use-inventory";
-import { type StockTakeResult, useStockItems, useStockTake } from "@/hooks/use-stock-journal";
+import { type StockTakeResult, usePlaceMatrix, useStockItems, useStockTake } from "@/hooks/use-stock-journal";
 import { ApiError } from "@/lib/api";
 import { rank, STOCK_CATEGORIES, STORAGE_AREAS } from "@/lib/restaurant-stock";
 import { toast } from "@/lib/toast";
@@ -22,6 +22,8 @@ export default function StockTakePage() {
   const { data: ingredients, isLoading } = useIngredients(branchId);
   const { data: units } = useStockItems(branchId);
   const take = useStockTake(branchId);
+  const { data: matrix } = usePlaceMatrix(branchId);
+  const places = matrix?.locations ?? [];
   const [area, setArea] = useState("");
   const [blind, setBlind] = useState(false);
   const [note, setNote] = useState("");
@@ -31,9 +33,12 @@ export default function StockTakePage() {
   const [key, setKey] = useState(() => `web-${crypto.randomUUID()}`);
 
   const items = useMemo(() => (ingredients ?? []).filter((i) => i.isActive !== false), [ingredients]);
-  const areas = [...new Set(items.map((i) => i.storageLocation).filter((x): x is string => !!x))].sort((a, b) => rank(STORAGE_AREAS, a) - rank(STORAGE_AREAS, b));
+  // Places the restaurant has set up (with their own balances) win; otherwise the labels on the items.
+  const areas = places.length ? places.map((p) => p.name) : [...new Set(items.map((i) => i.storageLocation).filter((x): x is string => !!x))].sort((a, b) => rank(STORAGE_AREAS, a) - rank(STORAGE_AREAS, b));
+  const place = places.find((p) => p.name === area);
+  const placeLevel = (id: string) => (place ? matrix?.items.find((m) => m.id === id)?.levels[place.id] : undefined);
   const shown = items
-    .filter((i) => !area || i.storageLocation === area)
+    .filter((i) => !area || place || i.storageLocation === area)
     .sort((a, b) => rank(STOCK_CATEGORIES, a.category) - rank(STOCK_CATEGORIES, b.category) || (a.category ?? "").localeCompare(b.category ?? "") || a.name.localeCompare(b.name));
   const unitsOf = (id: string) => units?.find((u) => u.id === id)?.units ?? [];
   const filled = Object.entries(counts).filter(([, c]) => c.v.trim() !== "");
@@ -88,7 +93,8 @@ export default function StockTakePage() {
         <ul className="flex flex-col gap-2">
           {shown.map((i, idx) => {
             const c = counts[i.id] ?? { v: "", u: "" as const };
-            const diff = c.v.trim() !== "" && c.u === "" ? Number(c.v) - Number(i.currentStock) : null;
+            const sys = place ? Number(placeLevel(i.id) ?? 0) : Number(i.currentStock);
+            const diff = c.v.trim() !== "" && c.u === "" ? Number(c.v) - sys : null;
             const header = idx === 0 || shown[idx - 1].category !== i.category;
             return (
               <li key={i.id}>
@@ -96,7 +102,7 @@ export default function StockTakePage() {
                 <div className="grid grid-cols-[1fr_6rem_5rem] items-center gap-2 rounded-lg border border-border p-2 sm:grid-cols-[1fr_8rem_6rem_7rem]">
                   <div className="col-span-3 sm:col-span-1">
                     <p className="font-medium">{i.name}</p>
-                    <p className="text-xs text-muted-foreground">{i.storageLocation ?? "No storage area"}{blind ? "" : ` · system: ${i.currentStock} ${i.unit}`}</p>
+                    <p className="text-xs text-muted-foreground">{i.storageLocation ?? "No storage area"}{blind ? "" : ` · ${place ? `recorded here: ${placeLevel(i.id) ?? 0}` : `system: ${i.currentStock}`} ${i.unit}`}</p>
                   </div>
                   <Input aria-label={`Counted ${i.name}`} inputMode="decimal" placeholder="Counted" value={c.v} onChange={(e) => setCounts({ ...counts, [i.id]: { ...c, v: e.target.value } })} />
                   <select aria-label={`Unit for ${i.name}`} className={selectClass} value={c.u || i.unit} onChange={(e) => setCounts({ ...counts, [i.id]: { ...c, u: e.target.value === i.unit ? "" : (e.target.value as IngredientUnit) } })}>

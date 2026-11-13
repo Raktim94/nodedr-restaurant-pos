@@ -249,3 +249,24 @@ export function useStockTake(branchId: string | null) {
     onSuccess: () => { refresh(); },
   });
 }
+
+export interface StockPlace { id: string; name: string; isActive: boolean }
+export interface PlaceMatrix {
+  locations: StockPlace[];
+  items: { id: string; name: string; unit: IngredientUnit; kind: string; category: string | null; total: string; levels: Record<string, string>; unassigned: string; needsRecount: boolean }[];
+}
+export const usePlaceMatrix = (branchId: string | null) =>
+  useQuery({ queryKey: ["places", branchId], queryFn: () => api.get<PlaceMatrix>(`/inventory/locations/matrix?${qs(branchId)}`), enabled: !!branchId });
+export const usePlaces = (branchId: string | null) =>
+  useQuery({ queryKey: ["places-list", branchId], queryFn: () => api.get<StockPlace[]>(`/inventory/locations?${qs(branchId)}`), enabled: !!branchId });
+export const usePlaceTransfers = (branchId: string | null) =>
+  useQuery({ queryKey: ["place-transfers", branchId], queryFn: () => api.get<{ id: string; createdAt: string; quantity: string; item?: { name: string; unit: string }; from: string; to: string; by: string | null; note: string | null }[]>(`/inventory/locations/transfers?${qs(branchId)}`), enabled: !!branchId });
+export function usePlaceActions(branchId: string | null) {
+  const qc = useQueryClient();
+  const done = () => { for (const k of ["places", "places-list", "place-transfers", "ingredients", "stock-items"]) void qc.invalidateQueries({ queryKey: [k] }); };
+  return {
+    create: useMutation({ mutationFn: (name: string) => api.post(`/inventory/locations?${qs(branchId)}`, { name }), onSuccess: done }),
+    update: useMutation({ mutationFn: (v: { id: string; name?: string; isActive?: boolean }) => api.patch(`/inventory/locations/${v.id}?${qs(branchId)}`, { name: v.name, isActive: v.isActive }), onSuccess: done }),
+    transfer: useMutation({ mutationFn: (v: { ingredientId: string; fromLocationId: string | null; toLocationId: string; quantity: string; unit: IngredientUnit; note?: string }) => api.post(`/inventory/locations/transfers?${qs(branchId)}`, { ...v, idempotencyKey: `web-${crypto.randomUUID()}` }), onSuccess: done }),
+  };
+}

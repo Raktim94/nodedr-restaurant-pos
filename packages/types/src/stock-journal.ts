@@ -104,3 +104,23 @@ export const stockTakeSchema = z.object({
   deviceId: z.string().trim().max(120).optional(),
 });
 export type StockTakeDto = z.infer<typeof stockTakeSchema>;
+
+export const stockLocationSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  isActive: z.boolean().optional(),
+  sortOrder: z.coerce.number().int().min(0).max(1000).optional(),
+});
+export type StockLocationDto = z.infer<typeof stockLocationSchema>;
+
+export const locationTransferSchema = z
+  .object({
+    ingredientId: z.string().min(1),
+    fromLocationId: z.string().min(1).nullable().optional(), // null / omitted = the unassigned part
+    toLocationId: z.string().min(1),
+    quantity: qty,
+    unit: ingredientUnitSchema,
+    note: z.string().trim().max(300).optional(),
+    idempotencyKey: z.string().trim().min(8).max(120).optional(),
+  })
+  .refine((v) => (v.fromLocationId ?? null) !== v.toLocationId, { message: "Choose two different places", path: ["toLocationId"] });
+export type LocationTransferDto = z.infer<typeof locationTransferSchema>;

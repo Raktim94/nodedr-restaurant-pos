@@ -86,6 +86,10 @@ export class StockJournalService {
       const items = await tx.ingredient.findMany({ where: { id: { in: ids }, branchId } });
       if (items.length !== ids.length) throw new NotFoundException('A counted item was not found');
       const byId = new Map(items.map((i) => [i.id, i]));
+      // When the sheet is for a place the restaurant has set up, the count is compared with what was
+      // recorded IN that place, and the place's level is set to the count; the item's total moves by the difference.
+      const place = dto.area ? await tx.stockLocation.findFirst({ where: { branchId, name: dto.area, isActive: true } }) : null;
+      const placeLevels = place ? new Map((await tx.stockLevel.findMany({ where: { locationId: place.id, ingredientId: { in: ids } } })).map((l) => [l.ingredientId, l.quantity])) : null;
       const take = await tx.stockTake.create({
         data: { branchId, takenAt: dto.takenAt ?? new Date(), area: dto.area, note: dto.note, idempotencyKey: dto.idempotencyKey, deviceId: dto.deviceId, createdById: userId, lines: [] },
       });
@@ -94,17 +98,18 @@ export class StockJournalService {
         const ing = byId.get(l.ingredientId)!;
         const counted = Dec(l.counted).isZero() ? Dec(0) : toBaseQuantity(l.counted, l.unit as StockUnit, ing.unit as StockUnit, ing.conversions, ing.name);
         if (Dec(l.counted).isNegative()) throw new BadRequestException(`${ing.name}: a count cannot be negative`);
-        const expected = Dec(ing.currentStock);
+        const expected = placeLevels ? Dec(placeLevels.get(ing.id) ?? 0) : Dec(ing.currentStock);
         const diff = counted.minus(expected);
         out.push({ ingredientId: ing.id, name: ing.name, unit: ing.unit, expected: expected.toString(), counted: counted.toString(), difference: diff.toString() });
         if (diff.isZero()) continue;
+        if (place) await tx.stockLevel.upsert({ where: { ingredientId_locationId: { ingredientId: ing.id, locationId: place.id } }, create: { ingredientId: ing.id, locationId: place.id, quantity: counted }, update: { quantity: counted } });
         const note = `Stock take: counted ${counted.toString()}, system had ${expected.toString()}${dto.area ? ` (${dto.area})` : ''}`;
         if (diff.isNegative()) {
           await this.stock.consumeStock(tx, branchId, ing.id, diff.abs(), { type: 'ADJUSTMENT', note, userId, allowNegative: false, refs: { deviceId: dto.deviceId } });
         } else {
           const batch = await tx.stockBatch.create({ data: { branchId, ingredientId: ing.id, batchNumber: 'COUNT', quantityReceived: diff, quantityRemaining: diff, unitCost: 0 } });
           await tx.stockMovement.create({ data: { branchId, ingredientId: ing.id, batchId: batch.id, type: 'ADJUSTMENT', quantity: diff, note, createdById: userId, deviceId: dto.deviceId } });
-          await tx.ingredient.update({ where: { id: ing.id }, data: { currentStock: expected.plus(diff) } });
+          await tx.ingredient.update({ where: { id: ing.id }, data: { currentStock: Dec(ing.currentStock).plus(diff) } });
         }
       }
       await this.audit.record({ userId, action: 'stock.take', entity: 'StockTake', entityId: take.id, metadata: { items: out.length, changed: out.filter((o) => o.difference !== '0').length } });
