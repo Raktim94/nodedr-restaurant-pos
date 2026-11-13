@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { selectClass } from "@/components/inventory/production-entry-dialog";
 import { useCreateIngredient } from "@/hooks/use-inventory";
 import { ApiError } from "@/lib/api";
+import { STOCK_CATEGORIES, STORAGE_AREAS } from "@/lib/restaurant-stock";
 
 const UNITS: IngredientUnit[] = ["KG", "G", "L", "ML", "PIECE", "DOZEN", "PACK", "BOX"];
 
@@ -25,13 +26,14 @@ export function AddIngredientDialog({ branchId }: { branchId: string | null }) {
   const [location, setLocation] = useState("");
   const [reorderLevel, setReorderLevel] = useState("0");
   const [approvalQty, setApprovalQty] = useState("");
+  const [par, setPar] = useState("");
   const [convs, setConvs] = useState<Conv[]>([]);
   const [error, setError] = useState<string | null>(null);
   const createIngredient = useCreateIngredient(branchId);
 
   const reset = () => {
     setName(""); setKind("PURCHASED"); setUnit("KG"); setCategory(""); setSku(""); setLocation("");
-    setReorderLevel("0"); setApprovalQty(""); setConvs([]); setError(null);
+    setReorderLevel("0"); setApprovalQty(""); setPar(""); setConvs([]); setError(null);
   };
 
   const onSubmit = (e: React.FormEvent) => {
@@ -48,6 +50,7 @@ export function AddIngredientDialog({ branchId }: { branchId: string | null }) {
         storageLocation: location || null,
         reorderLevel: Number(reorderLevel) || 0,
         wasteApprovalQty: approvalQty ? Number(approvalQty) : null,
+        parLevel: par ? Number(par) : null,
         conversions: convs.map((c) => ({ unit: c.unit, per: Number(c.per) })),
         isActive: true,
       },
@@ -88,7 +91,12 @@ export function AddIngredientDialog({ branchId }: { branchId: string | null }) {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="i-cat">Category</Label>
-              <Input id="i-cat" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Grains" />
+              <Input id="i-cat" list="i-cat-list" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Vegetables" />
+              <datalist id="i-cat-list">{STOCK_CATEGORIES.map((c) => (<option key={c} value={c} />))}</datalist>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="i-par">Order up to (par)</Label>
+              <Input id="i-par" inputMode="decimal" value={par} onChange={(e) => setPar(e.target.value)} placeholder="blank = 2x minimum" />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="i-sku">SKU / barcode</Label>
@@ -96,7 +104,8 @@ export function AddIngredientDialog({ branchId }: { branchId: string | null }) {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="i-loc">Storage location</Label>
-              <Input id="i-loc" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Dry store" />
+              <Input id="i-loc" list="i-loc-list" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Dry store" />
+              <datalist id="i-loc-list">{STORAGE_AREAS.map((c) => (<option key={c} value={c} />))}</datalist>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="i-appr">Waste needs approval above</Label>

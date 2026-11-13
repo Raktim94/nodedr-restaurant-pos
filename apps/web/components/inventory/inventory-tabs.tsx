@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 
 const TABS = [
   { label: "Stock items", href: "/inventory" },
+  { label: "Stock take", href: "/inventory/stock-take" },
+  { label: "Shopping list", href: "/inventory/shopping-list" },
   { label: "Stock journal", href: "/inventory/journal" },
   { label: "Production", href: "/inventory/production" },
   { label: "Suppliers", href: "/inventory/suppliers" },
