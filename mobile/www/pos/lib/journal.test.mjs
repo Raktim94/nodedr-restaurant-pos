@@ -60,3 +60,46 @@ test('a removed phone and an expired sign-in stop the sync and keep the events',
   await assert.rejects(pushEvents('b', 'x', async () => ({ status: 401, data: {} }), s), AuthExpired);
   assert.equal((await s.get(e.id)).status, 'pending');
 });
+
+import { bodyFor, shiftState } from './journal.js';
+
+test('attendance is sent with the time it really happened and the branch in the body', async () => {
+  const s = memory();
+  const e = await queueEvent('attendance', { type: 'IN', at: '2026-11-13T04:00:00.000Z' }, { userId: 'u', deviceId: 'phone-1234', store: s });
+  const b = bodyFor(e, 'br1');
+  assert.equal(b.type, 'IN');
+  assert.equal(b.at, '2026-11-13T04:00:00.000Z');
+  assert.equal(b.branchId, 'br1');
+  assert.equal(b.idempotencyKey, e.id);
+  const sent = [];
+  await pushEvents('b', 'br1', async (_b, _m, path, body) => (sent.push({ path, body }), { status: 201, data: {} }), s);
+  assert.equal(sent[0].path, '/api/v1/attendance/events'); // no ?branchId on this route
+});
+
+test('a stock receipt goes to the journal receipts route with its key', async () => {
+  const s = memory();
+  const e = await queueEvent('receipt', { ingredientId: 'i1', quantity: '25', unit: 'KG', reference: 'INV-9' }, { userId: 'u', deviceId: 'phone-1234', store: s });
+  const sent = [];
+  await pushEvents('b', 'br1', async (_b, _m, path, body) => (sent.push({ path, body }), { status: 201, data: {} }), s);
+  assert.match(sent[0].path, /inventory\/journal\/receipts\?branchId=br1/);
+  assert.equal(sent[0].body.idempotencyKey, e.id);
+});
+
+test('the phone knows whether this person is on shift, from what it has recorded', async () => {
+  const s = memory();
+  assert.deepEqual(shiftState(await s.all()), { on: false });
+  await queueEvent('attendance', { type: 'IN', at: '2026-11-13T04:00:00.000Z' }, { userId: 'u', deviceId: 'phone-1234', now: new Date('2026-11-13T04:00:00Z'), store: s });
+  assert.equal(shiftState(await s.all()).on, true);
+  await queueEvent('attendance', { type: 'OUT', at: '2026-11-13T12:00:00.000Z' }, { userId: 'u', deviceId: 'phone-1234', now: new Date('2026-11-13T12:00:00Z'), store: s });
+  assert.equal(shiftState(await s.all()).on, false);
+});
+
+test('a clash (already clocked in) is kept for the person to read, with the server words', async () => {
+  const s = memory();
+  const e = await queueEvent('attendance', { type: 'IN', at: '2026-11-13T04:00:00.000Z' }, { userId: 'u', deviceId: 'phone-1234', store: s });
+  await pushEvents('b', 'br1', async () => ({ status: 409, data: { message: 'Already clocked in since 2026-11-13T03:00:00.000Z' } }), s);
+  const got = await s.get(e.id);
+  assert.equal(got.status, 'failed');
+  assert.match(got.error, /Already clocked in/);
+  assert.equal(shiftState(await s.all()).on, false); // a refused clock-in does not count as being on shift
+});

@@ -32,6 +32,11 @@ Works on the restaurant's own network, with no internet needed day to day. Your 
 
 Free. No ads. No tracking. Delete your account any time from the user menu.
 
+## What's new (1.29.0)
+- Shift: clock in and out on the phone, with or without a connection, with the unpaid break
+- Kitchen: receive stock on the phone; production, waste and receipts are sent once when you are online
+- Each phone signs in on its own, and the owner can remove a lost phone at once
+
 ## What's new (1.27.0)
 - Kitchen: record daily production (what was really used, what was really made) and food waste on the phone, with or without a connection; they are sent when you are online and never twice
 - The recipe-cost calculator from 1.26 is gone: production now tracks quantities only

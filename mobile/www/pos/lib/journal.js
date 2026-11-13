@@ -25,7 +25,28 @@ export async function queueEvent(kind, payload, { userId, deviceId, now = new Da
 const PATH = {
   production: '/api/v1/inventory/production',
   waste: '/api/v1/inventory/waste/entries',
+  receipt: '/api/v1/inventory/journal/receipts',
+  attendance: '/api/v1/attendance/events',
 };
+
+/** What the server wants for each kind. Production is posted straight away; attendance names its branch in the body. */
+export function bodyFor(ev, branchId) {
+  const body = { ...ev.payload, idempotencyKey: ev.id, deviceId: ev.deviceId };
+  if (ev.kind === 'production') body.post = true;
+  if (ev.kind === 'attendance') {
+    body.branchId = branchId;
+    body.at = ev.payload.at || ev.createdAt;
+    delete body.deviceId; // the attendance route does not take one
+  }
+  return body;
+}
+
+/** The person's own shift as the phone knows it: on shift since..., or off. */
+export function shiftState(all) {
+  const mine = all.filter((e) => e.kind === 'attendance').sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const last = mine.find((e) => e.status !== 'failed');
+  return last && last.payload.type === 'IN' ? { on: true, since: last.payload.at || last.createdAt } : { on: false };
+}
 
 export class AuthExpired extends Error {}
 export class DeviceRevoked extends Error {}
@@ -43,11 +64,10 @@ export async function pushEvents(base, branchId, send, store = events) {
   let failed = 0;
   const waiting = (await store.all()).filter((e) => e.status === 'pending').sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
   for (const ev of waiting) {
-    const body = { ...ev.payload, idempotencyKey: ev.id, deviceId: ev.deviceId };
-    if (ev.kind === 'production') body.post = true;
+    const body = bodyFor(ev, branchId);
     let r;
     try {
-      r = await send(base, 'POST', `${PATH[ev.kind]}?branchId=${encodeURIComponent(branchId)}`, body);
+      r = await send(base, 'POST', `${PATH[ev.kind]}${ev.kind === 'attendance' ? '' : `?branchId=${encodeURIComponent(branchId)}`}`, body);
     } catch {
       break; // offline: keep everything, try again later
     }

@@ -39,8 +39,11 @@ and both point at each other.
   each difference becomes an adjustment in the journal. Tick *Blind count* to hide the system quantity while counting.
 * **Shopping list**: every item at or under its minimum, with `par - in stock` to buy (par defaults to twice the
   minimum). Print it or download CSV. The same page lists stock to use first (expiring within 7 days).
-* Storage areas and categories are labels on the item, not separate balances: a store with a walk-in fridge and a dry
-  store has one stock figure per item. Per-area balances and transfers between them are not built.
+* **Areas** (`Inventory > Areas`): set up the places stock is kept. Each item still has ONE total, which sales,
+  production, waste and receipts move. A place records how much of that total is there; the rest shows as
+  *Unassigned*. *Move stock* shifts quantity between places without changing the total. A Stock take on a place
+  compares with, and replaces, what is recorded in that place. If sales have used more than was unassigned, the
+  item shows *Recount* rather than guessing where the stock came from.
 
 ## Rules the code enforces
 
@@ -76,3 +79,11 @@ the migration `20261111000000_recipe_costing` stays, so a server that already ra
 screen or export for those rows any more; read them with SQL if an audit needs them.
 The older optional "deduct these ingredients when a dish is sold" setting on a menu item is a different feature and is
 unchanged.
+
+## Phones and the local network
+
+The restaurant's OrderRestro server is the hub. If it is on the same Wi-Fi as the phones, the phones reach it by its
+local address first and need no internet: sales, shifts, production, waste and receipts all sync over the LAN.
+Phones do not talk to each other directly; a phone with no route to the server keeps everything and sends it later.
+Each phone signs in with its own device id (`did` in its session); removing it under Settings > Phones ends that
+session immediately.
