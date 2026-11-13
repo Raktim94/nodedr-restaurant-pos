@@ -27,7 +27,10 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 
 <p align="center">
   <a href="https://orderrestro.nodedr.com/"><img src="https://img.shields.io/badge/Go%20to%20the%20OrderRestro%20website-orderrestro.nodedr.com-E0234E?style=for-the-badge" alt="Go to the OrderRestro website"></a>
+  <a href="https://orderrestro-demo.nodedr.com/demo"><img src="https://img.shields.io/badge/Live%20demo-no%20sign--up%2C%20no%20password-2EA44F?style=for-the-badge" alt="Open the live demo: no sign-up, no password"></a>
 </p>
+
+> **Try it now:** [orderrestro-demo.nodedr.com/demo](https://orderrestro-demo.nodedr.com/demo) opens a working restaurant with sample data in one click. No sign-up, no password. It resets every 3 hours, and a few admin features are switched off in the public demo.
 
 <p align="center">
   <img src="docs/assets/hero-animated.svg" alt="Nodedr OrderRestro: animated overview with an illustrative sample screen" width="100%">
@@ -143,16 +146,16 @@ by phase.
 | | Module | Status |
 |---|---|---|
 | 1 | POS & Billing — dine-in/takeaway, bill merge, multi-region tax (India GST, US Sales Tax, EU VAT, Spain IVA), discounts, gift cards, tips, payments, refunds; equal split is display-only and split tender is pending | ✅ core · 🚧 split billing/payment |
-| 2 | Table & Reservation Management — visual floor plan, booking, waitlist, QR table ordering, table transfer | ✅ |
+| 2 | Table & Reservation Management — visual floor plan with saved layouts, bulk table tools, booking, waitlist, **QR / NFC table ordering protected by a live table code staff open (a photo of the QR cannot order)**, table transfer, paging buzzers | ✅ |
 | 3 | Kitchen Management (KDS) — display, KOTs, multi-station routing, prep tracking, performance reporting | ✅ |
 | 4 | Menu Management — categories, modifier groups, combos, seasonal menus, availability scheduling | ✅ |
-| 5 | Inventory & Store Management — ingredients, recipe costing, POs, suppliers, GRN, waste, batch/lot | ✅ |
+| 5 | Inventory & Store Management — stock journal, **daily production and manufacturing costs (actual quantities, extra costs, cost per unit, optional menu-price change with history and reports)**, stock take, shopping list, expiry, stock areas and transfers, POs, suppliers, GRN, food waste, batch/lot | ✅ |
 | 6 | Procurement — vendor quotations, purchase requests/orders, invoices, supplier payments, and supplier performance | ✅ core · 🚧 returns, price variance, reorder suggestions |
 | 7 | CRM — profiles, loyalty points, **referral rewards (share a dish or link, points for both sides, redeem at checkout)**, memberships, gift vouchers, feedback, visit history | ✅ |
-| 8 | Staff Management — accounts & roles, attendance (clock in/out), shift scheduling with clash checks, leave, payroll from clocked hours, tip pool split by hours | ✅ |
+| 8 | Staff Management — accounts & roles, attendance (clock in/out, also offline on the phone), shift scheduling, leave, payroll from clocked hours with breaks, overtime, late/absence rules and a worked-out payslip, tip pool split by hours | ✅ |
 | 9 | Accounting — expenses, nightly cash close with variance, profit & loss, balance sheet, budgets vs actual, bank-statement reconciliation, tax summary by rate | ✅ |
 | 10 | Delivery Management — zones by pincode, fee/minimum/ETA, driver assignment, status flow | ✅ · 🚧 live GPS, 3rd-party platforms |
-| 11 | Online Ordering — QR table ordering with modifiers, call waiter, request bill, click & collect, scheduled orders | ✅ |
+| 11 | Online Ordering — QR table ordering with modifiers, pay at the register or on the phone (held from the kitchen until paid), no duplicate orders, call waiter, request bill, **customer ratings after a paid order**, click & collect, scheduled orders | ✅ |
 | 12 | Branch Management — branch switcher, cross-branch overview, branch-to-branch stock transfers | ✅ |
 | 13 | Analytics — live dashboard plus 18 reports (peak hours, food cost & margins, retention…) with print, CSV, Excel and PDF export, and scheduled report emails | ✅ |
 | 14 | Marketing — coupons, happy-hour discounts, email (your SMTP) / SMS / WhatsApp campaigns with opt-out | ✅ |
@@ -182,6 +185,14 @@ pricing) and staff account management (create/deactivate staff, assign
 roles) under **Settings** in the sidebar, photo upload on menu items, and
 an English/Spanish/French language switcher on the guest-facing QR
 ordering page and staff sidebar.
+
+### What's new (1.31)
+
+- **Manufacturing costs.** Record a production batch from what was really used and made, add labour/packaging/fuel, and see the cost per finished unit. Posting is one transaction; history never changes when prices change later. Optionally set the menu selling price from the same screen (separate permission, conflict-safe, with price history). Reports by day, item, ingredient, cost category, and price changes. Mobile-first five-step flow.
+- **Live table sessions.** The printed QR (or NFC card) only shows the menu. Staff open the table and give guests a short code; orders need it, and it dies when the bill is paid or staff reset it.
+- **Customer ratings** tied to a paid order, one per order, with an admin view.
+- **Customer-facing screen with adverts**, **paging buzzers**, a **hardware simulator**, saved **floor layouts**, **stock areas**, **stock take** and **shopping list**, and phones that work **offline** for sales, production, waste, stock receipts and clock in/out.
+- **Collapsible navigation**, and a **public live demo**.
 
 ## Why OrderRestro
 

@@ -12,6 +12,7 @@ import { BrandFooter } from "./brand-footer";
 import { BranchSwitcher } from "./branch-switcher";
 import { LanguageSwitcher } from "./language-switcher";
 import { Logo } from "./logo";
+import { DemoBanner } from "@/components/demo/demo-banner";
 import { MobileBottomNav } from "./mobile-bottom-nav";
 import { SidebarNav } from "./sidebar-nav";
 import { UserMenu } from "./user-menu";
@@ -74,7 +75,9 @@ export function AppShell({
   const { data: shellDisplay } = useDisplaySettings(shellBranch);
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background">
+      <DemoBanner />
+      <div className="flex min-h-0 flex-1">
       {/* Desktop sidebar */}
       <aside id="app-sidebar" aria-label="Main navigation" className={`hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none lg:flex ${collapsed ? "w-[4.5rem]" : "w-64"}`}>
         <div className={`flex h-16 items-center gap-2 ${collapsed ? "justify-center px-2" : "px-5"}`}>
@@ -142,6 +145,7 @@ export function AppShell({
         <EntityDialogHost />
       </div>
       <MobileBottomNav user={user} onMore={() => setMobileOpen(true)} />
+      </div>
     </div>
   );
 }

@@ -79,6 +79,8 @@ export class PagingService {
   }
 
   private async checkInput(branchId: string, dto: Partial<BuzzerInput>) {
+    // The public demo must never make the server call an address a visitor typed in.
+    if (process.env.DEMO_MODE === 'true' && (dto.driver ?? 'SIMULATED') === 'WEBHOOK') throw new BadRequestException('Webhook buzzers are switched off in the public demo. Use the polling type and the Simulator.');
     if (dto.tableId) {
       const t = await this.prisma.table.findFirst({ where: { id: dto.tableId, floor: { branchId } } });
       if (!t) throw new NotFoundException('Table not found');

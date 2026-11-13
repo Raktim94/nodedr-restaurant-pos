@@ -78,6 +78,15 @@ export class AuthController {
     return { user };
   }
 
+  // Public demo only: no password. 404 unless the server runs in DEMO_MODE.
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('demo-login')
+  async demoLogin(@Res({ passthrough: true }) res: Response) {
+    const { token, user } = await this.authService.demoLogin();
+    this.setSessionCookie(res, token);
+    return { user };
+  }
+
   // Much tighter than login: a PIN is a short numeric secret (4-8 digits,
   // as low as 10,000 possibilities) rather than a full password, so the
   // app-wide throttle alone (300 req/min/IP) would let an attacker exhaust
