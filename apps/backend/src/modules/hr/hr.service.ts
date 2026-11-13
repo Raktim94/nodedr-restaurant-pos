@@ -15,7 +15,7 @@ import { localDate, zonedRange } from '../../common/time';
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { toCsv } from '../reports/csv';
-import { computePayroll, netWithAdjustments, round2, workedByDay } from './payroll.calc';
+import { computePayroll, lateAndAbsence, netWithAdjustments, round2, workedByDay, type LateAbsence } from './payroll.calc';
 
 const dayStart = (d: string) => new Date(`${d}T00:00:00.000Z`);
 const USER = { select: { id: true, name: true } } as const;
@@ -180,6 +180,8 @@ export class HrService {
       overtimeAfterHours:
         l.user.payProfile?.overtimeAfterHours == null ? null : Number(l.user.payProfile.overtimeAfterHours),
       overtimeMultiplier: l.user.payProfile ? Number(l.user.payProfile.overtimeMultiplier) : 1.5,
+      lateGraceMinutes: l.user.payProfile?.lateGraceMinutes ?? null,
+      deductAbsence: l.user.payProfile?.deductAbsence ?? false,
     }));
   }
 
@@ -187,11 +189,13 @@ export class HrService {
     await this.assertStaffInBranch(branchId, userId);
     return this.prisma.staffPay.upsert({
       where: { userId },
-      create: { userId, payType: dto.payType, rate: dto.rate, overtimeAfterHours: dto.overtimeAfterHours ?? null, overtimeMultiplier: dto.overtimeMultiplier ?? 1.5 },
+      create: { userId, payType: dto.payType, rate: dto.rate, lateGraceMinutes: dto.lateGraceMinutes ?? null, deductAbsence: dto.deductAbsence ?? false, overtimeAfterHours: dto.overtimeAfterHours ?? null, overtimeMultiplier: dto.overtimeMultiplier ?? 1.5 },
       update: {
         payType: dto.payType,
         rate: dto.rate,
         overtimeAfterHours: dto.overtimeAfterHours ?? null,
+        lateGraceMinutes: dto.lateGraceMinutes ?? null,
+        deductAbsence: dto.deductAbsence ?? false,
         ...(dto.overtimeMultiplier != null ? { overtimeMultiplier: dto.overtimeMultiplier } : {}),
       },
     });
@@ -320,6 +324,44 @@ export class HrService {
     });
     const tipPool = round2(Number(tips._sum.tipAmount ?? 0));
 
+    // Late and absence, only for MONTHLY staff whose pay profile switches it on and who have a rota.
+    const lateBy = new Map<string, LateAbsence>();
+    const ruled = links.filter(
+      (l) => l.user.payProfile!.payType === 'MONTHLY' && (l.user.payProfile!.lateGraceMinutes != null || l.user.payProfile!.deductAbsence),
+    );
+    if (ruled.length > 0) {
+      const ids = ruled.map((l) => l.user.id);
+      const [rota, clocks, approved] = await Promise.all([
+        this.prisma.shift.findMany({ where: { branchId, userId: { in: ids }, startsAt: { gte: zoned.gte, lt: zoned.lt } } }),
+        this.prisma.attendance.findMany({
+          where: { branchId, userId: { in: ids }, clockInAt: { lt: zoned.lt }, OR: [{ clockOutAt: null }, { clockOutAt: { gt: new Date(zoned.gte.getTime() - 86_400_000) } }] },
+        }),
+        this.prisma.leaveRequest.findMany({ where: { branchId, userId: { in: ids }, status: 'APPROVED', startDate: { lte: dayStart(periodEnd) }, endDate: { gte: from } } }),
+      ]);
+      for (const l of ruled) {
+        const prof = l.user.payProfile!;
+        const leaveDates = new Set<string>();
+        for (const lv of approved.filter((x) => x.userId === l.user.id))
+          for (let t = lv.startDate.getTime(); t <= lv.endDate.getTime(); t += 86_400_000) leaveDates.add(new Date(t).toISOString().slice(0, 10));
+        lateBy.set(
+          l.user.id,
+          lateAndAbsence(
+            rota.filter((x) => x.userId === l.user.id).map((x) => ({ start: x.startsAt.getTime(), end: x.endsAt.getTime(), date: localDate(x.startsAt, tz) })),
+            clocks.filter((c) => c.userId === l.user.id).map((c) => ({ start: c.clockInAt.getTime(), end: c.clockOutAt ? c.clockOutAt.getTime() : null })),
+            leaveDates,
+            {
+              graceMinutes: prof.lateGraceMinutes,
+              deductAbsence: prof.deductAbsence,
+              dayRate: (date) => {
+                const [y, m] = date.split('-').map(Number);
+                return Number(prof.rate) / new Date(Date.UTC(y, m, 0)).getUTCDate();
+              },
+            },
+          ),
+        );
+      }
+    }
+
     const lines = computePayroll(
       periodStart,
       periodEnd,
@@ -330,6 +372,7 @@ export class HrService {
         rate: Number(l.user.payProfile!.rate),
         hoursWorked: hours.get(l.user.id) ?? 0,
         dailyHours: daily.get(l.user.id) ?? [],
+        late: lateBy.get(l.user.id),
         overtimeAfterHours:
           l.user.payProfile!.overtimeAfterHours == null ? null : Number(l.user.payProfile!.overtimeAfterHours),
         overtimeMultiplier: Number(l.user.payProfile!.overtimeMultiplier),
@@ -417,7 +460,7 @@ export class HrService {
           {
             basePay: Number(line.basePay),
             tipShare: Number(line.tipShare),
-            unpaidLeaveDeduction: Number(line.unpaidLeaveDeduction),
+            unpaidLeaveDeduction: Number(line.unpaidLeaveDeduction) + Number(line.lateDeduction) + Number(line.absenceDeduction),
           },
           next,
         );
@@ -518,6 +561,8 @@ export class HrService {
       },
       deductions: {
         unpaidLeave: Number(line.unpaidLeaveDeduction),
+        late: Number(line.lateDeduction),
+        absence: Number(line.absenceDeduction),
         advanceRecovery: Number(line.advanceRecovery),
         other: Number(line.otherDeductions),
       },
@@ -560,11 +605,11 @@ export class HrService {
     const run = await this.getRun(branchId, id);
     const p = (d: Date) => d.toISOString().slice(0, 10);
     return toCsv(
-      ['Employee', 'Period', 'Status', 'Hours', 'Base pay', 'Tip share', 'Allowances', 'Bonus', 'Unpaid leave', 'Advance recovery', 'Other deductions', 'Net pay', 'Note'],
+      ['Employee', 'Period', 'Status', 'Hours', 'Base pay', 'Tip share', 'Allowances', 'Bonus', 'Unpaid leave', 'Late', 'Absence', 'Advance recovery', 'Other deductions', 'Net pay', 'Note'],
       run.lines.map((l) => [
         l.user.name, `${p(run.periodStart)} to ${p(run.periodEnd)}`, run.status,
         Number(l.hoursWorked), Number(l.basePay), Number(l.tipShare), Number(l.allowances), Number(l.bonus),
-        Number(l.unpaidLeaveDeduction), Number(l.advanceRecovery), Number(l.otherDeductions), Number(l.netPay), l.adjustmentNote,
+        Number(l.unpaidLeaveDeduction), Number(l.lateDeduction), Number(l.absenceDeduction), Number(l.advanceRecovery), Number(l.otherDeductions), Number(l.netPay), l.adjustmentNote,
       ]),
     );
   }

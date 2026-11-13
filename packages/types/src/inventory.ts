@@ -34,6 +34,8 @@ export const ingredientSchema = z
     conversions: z.array(unitConversionSchema).max(8).default([]),
     // A waste entry larger than this (in the stock unit) waits for a manager. null = never.
     wasteApprovalQty: z.coerce.number().positive().nullable().optional(),
+    // Stock to order back up to; blank = twice the minimum.
+    parLevel: z.coerce.number().positive().nullable().optional(),
   })
   .superRefine((v, ctx) => {
     const seen = new Set<string>();

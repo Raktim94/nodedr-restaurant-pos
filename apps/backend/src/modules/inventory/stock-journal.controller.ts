@@ -5,6 +5,8 @@ import {
   decisionSchema,
   journalAdjustmentSchema,
   stockReceiptSchema,
+  stockTakeSchema,
+  type StockTakeDto,
   type JournalAdjustmentDto,
   type StockReceiptDto,
   permissionSatisfied,
@@ -88,6 +90,43 @@ export class StockJournalController {
     return this.journal.exportCsv(branchId, {
       from: date(q.from), to: date(q.to), ingredientId: q.ingredientId || undefined, type: q.type || undefined,
     });
+  }
+
+  @Auth('inventory.manage')
+  @Post('journal/stock-takes')
+  @UsePipes(new ZodValidationPipe(stockTakeSchema))
+  async stockTake(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+    await this.access(u, branchId);
+    return this.journal.stockTake(branchId, u.id, body as StockTakeDto);
+  }
+
+  @Auth('inventory.manage')
+  @Get('journal/stock-takes')
+  async stockTakes(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+    await this.access(u, branchId);
+    return this.journal.listStockTakes(branchId);
+  }
+
+  @Auth('inventory.manage')
+  @Get('journal/expiring')
+  async expiring(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query('days') days?: string) {
+    await this.access(u, branchId);
+    return this.journal.expiring(branchId, Math.min(60, Math.max(0, Number(days) || 7)));
+  }
+
+  @Auth('inventory.manage')
+  @Get('journal/reorder')
+  async reorder(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+    await this.access(u, branchId);
+    return this.journal.reorderList(branchId);
+  }
+
+  @Auth('inventory.manage')
+  @Get('journal/reorder.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async reorderCsv(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+    await this.access(u, branchId);
+    return this.journal.reorderCsv(branchId);
   }
 
   @Auth('inventory.manage')

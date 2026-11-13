@@ -89,3 +89,17 @@ export const journalAdjustmentSchema = z.object({
   deviceId: z.string().trim().max(120).optional(),
 });
 export type JournalAdjustmentDto = z.infer<typeof journalAdjustmentSchema>;
+
+// A shelf count. `counted` may be 0. Items left out of the sheet are not touched.
+export const stockTakeSchema = z.object({
+  area: z.string().trim().max(80).optional(),
+  note: z.string().trim().max(500).optional(),
+  takenAt: z.coerce.date().optional(),
+  lines: z
+    .array(z.object({ ingredientId: z.string().min(1), counted: qty, unit: ingredientUnitSchema }))
+    .min(1, "Count at least one item")
+    .max(500),
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
+  deviceId: z.string().trim().max(120).optional(),
+});
+export type StockTakeDto = z.infer<typeof stockTakeSchema>;

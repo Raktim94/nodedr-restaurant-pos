@@ -20,6 +20,68 @@ export interface PayInput {
   dailyHours?: number[];
   overtimeAfterHours?: number | null;
   overtimeMultiplier?: number;
+  /** Computed by lateAndAbsence() for MONTHLY staff on a rota. */
+  late?: LateAbsence;
+}
+
+export interface LateAbsence {
+  lateMinutes: number;
+  lateDeduction: number;
+  absentDays: number;
+  absenceDeduction: number;
+  notes: string[];
+}
+
+export interface RotaShift {
+  start: number;
+  end: number;
+  date: string; // local YYYY-MM-DD the shift belongs to
+}
+export interface ClockRow {
+  start: number;
+  end: number | null;
+}
+
+/**
+ * Late and absence for one person with a rota. Late: clock-in after start + grace, deducted as
+ * dayRate x lateMinutes / shiftMinutes. Absent: a rostered shift with no attendance touching it and no
+ * approved leave that day costs one day's pay, only when deductAbsence is on. `dayRate(date)` is the
+ * person's rate / days in that date's month.
+ */
+export function lateAndAbsence(
+  shifts: RotaShift[],
+  clocks: ClockRow[],
+  leaveDates: Set<string>,
+  opts: { graceMinutes: number | null; deductAbsence: boolean; dayRate: (date: string) => number },
+): LateAbsence {
+  const out: LateAbsence = { lateMinutes: 0, lateDeduction: 0, absentDays: 0, absenceDeduction: 0, notes: [] };
+  for (const sh of shifts) {
+    const len = (sh.end - sh.start) / 60_000;
+    if (len <= 0) continue;
+    // the attendance row that covers this shift's start-to-end window (clocked in before it ends)
+    const touching = clocks
+      .filter((c) => c.start < sh.end && (c.end === null || c.end > sh.start))
+      .sort((a, b) => a.start - b.start)[0];
+    if (!touching) {
+      if (opts.deductAbsence && !leaveDates.has(sh.date)) {
+        const d = round2(opts.dayRate(sh.date));
+        out.absentDays += 1;
+        out.absenceDeduction = round2(out.absenceDeduction + d);
+        out.notes.push(`${sh.date}: rostered, no clock-in, no leave -> absent, 1 day = ${d}`);
+      }
+      continue;
+    }
+    if (opts.graceMinutes != null) {
+      const late = Math.floor((touching.start - sh.start) / 60_000) - opts.graceMinutes;
+      if (late > 0) {
+        const d = round2((opts.dayRate(sh.date) * (touching.start - sh.start) / 60_000) / len);
+        out.lateMinutes += Math.floor((touching.start - sh.start) / 60_000);
+        out.lateDeduction = round2(out.lateDeduction + d);
+        out.notes.push(`${sh.date}: ${Math.floor((touching.start - sh.start) / 60_000)} min late (grace ${opts.graceMinutes}) -> ${d}`);
+      }
+    }
+  }
+  return out;
 }
 
 /** Calendar months touched by a period, with how many of the period's days fall in each. */
@@ -118,6 +180,10 @@ export interface PayLineResult {
   tipShare: number;
   unpaidLeaveDeduction: number;
   netPay: number;
+  lateMinutes: number;
+  lateDeduction: number;
+  absentDays: number;
+  absenceDeduction: number;
   overtimeHours: number;
   overtimePay: number;
   /** Plain-language lines showing exactly how the base pay was reached. */
@@ -213,6 +279,7 @@ export function computePayroll(
         }, 0),
       );
     }
+    formula.push(...(p.late?.notes ?? []));
     const tipShare = tips.get(p.userId) ?? 0;
     return {
       userId: p.userId,
@@ -220,7 +287,13 @@ export function computePayroll(
       basePay,
       tipShare,
       unpaidLeaveDeduction: deduction,
-      netPay: round2(basePay - deduction + tipShare),
+      netPay: round2(
+        basePay - deduction - (p.late?.lateDeduction ?? 0) - (p.late?.absenceDeduction ?? 0) + tipShare,
+      ),
+      lateMinutes: p.late?.lateMinutes ?? 0,
+      lateDeduction: p.late?.lateDeduction ?? 0,
+      absentDays: p.late?.absentDays ?? 0,
+      absenceDeduction: p.late?.absenceDeduction ?? 0,
       overtimeHours,
       overtimePay,
       formula,

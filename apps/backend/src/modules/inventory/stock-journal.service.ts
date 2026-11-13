@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { JournalAdjustmentDto, StockReceiptDto } from '@nodedr-restaurant/types';
+import type { JournalAdjustmentDto, StockReceiptDto, StockTakeDto } from '@nodedr-restaurant/types';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
@@ -68,6 +68,98 @@ export class StockJournalService {
       await this.audit.record({ userId, action: 'stock.receive', entity: 'Ingredient', entityId: ing.id, metadata: { qty: qty.toString(), reference: dto.reference } });
       return tx.stockBatch.findUniqueOrThrow({ where: { id: batch.id }, include: { stockMovements: true } });
     });
+  }
+
+  // ---- stock take (the shelf count) ------------------------------------------------------
+
+  async stockTake(branchId: string, userId: string, dto: StockTakeDto) {
+    if (dto.idempotencyKey) {
+      const dup = await this.prisma.stockTake.findUnique({
+        where: { branchId_idempotencyKey: { branchId, idempotencyKey: dto.idempotencyKey } },
+      });
+      if (dup) return dup;
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const ids = [...new Set(dto.lines.map((l) => l.ingredientId))].sort();
+      if (ids.length !== dto.lines.length) throw new BadRequestException('An item is on the sheet twice');
+      for (const id of ids) await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${id} FOR UPDATE`;
+      const items = await tx.ingredient.findMany({ where: { id: { in: ids }, branchId } });
+      if (items.length !== ids.length) throw new NotFoundException('A counted item was not found');
+      const byId = new Map(items.map((i) => [i.id, i]));
+      const take = await tx.stockTake.create({
+        data: { branchId, takenAt: dto.takenAt ?? new Date(), area: dto.area, note: dto.note, idempotencyKey: dto.idempotencyKey, deviceId: dto.deviceId, createdById: userId, lines: [] },
+      });
+      const out: { ingredientId: string; name: string; unit: string; expected: string; counted: string; difference: string }[] = [];
+      for (const l of dto.lines) {
+        const ing = byId.get(l.ingredientId)!;
+        const counted = Dec(l.counted).isZero() ? Dec(0) : toBaseQuantity(l.counted, l.unit as StockUnit, ing.unit as StockUnit, ing.conversions, ing.name);
+        if (Dec(l.counted).isNegative()) throw new BadRequestException(`${ing.name}: a count cannot be negative`);
+        const expected = Dec(ing.currentStock);
+        const diff = counted.minus(expected);
+        out.push({ ingredientId: ing.id, name: ing.name, unit: ing.unit, expected: expected.toString(), counted: counted.toString(), difference: diff.toString() });
+        if (diff.isZero()) continue;
+        const note = `Stock take: counted ${counted.toString()}, system had ${expected.toString()}${dto.area ? ` (${dto.area})` : ''}`;
+        if (diff.isNegative()) {
+          await this.stock.consumeStock(tx, branchId, ing.id, diff.abs(), { type: 'ADJUSTMENT', note, userId, allowNegative: false, refs: { deviceId: dto.deviceId } });
+        } else {
+          const batch = await tx.stockBatch.create({ data: { branchId, ingredientId: ing.id, batchNumber: 'COUNT', quantityReceived: diff, quantityRemaining: diff, unitCost: 0 } });
+          await tx.stockMovement.create({ data: { branchId, ingredientId: ing.id, batchId: batch.id, type: 'ADJUSTMENT', quantity: diff, note, createdById: userId, deviceId: dto.deviceId } });
+          await tx.ingredient.update({ where: { id: ing.id }, data: { currentStock: expected.plus(diff) } });
+        }
+      }
+      await this.audit.record({ userId, action: 'stock.take', entity: 'StockTake', entityId: take.id, metadata: { items: out.length, changed: out.filter((o) => o.difference !== '0').length } });
+      return tx.stockTake.update({ where: { id: take.id }, data: { lines: out } });
+    });
+  }
+
+  listStockTakes(branchId: string) {
+    return this.prisma.stockTake.findMany({ where: { branchId }, orderBy: { takenAt: 'desc' }, take: 30 });
+  }
+
+  // ---- what a kitchen needs to look at every morning ----------------------------------------
+
+  /** Stock that will go off soon (or already has), oldest first, so it is used first. */
+  async expiring(branchId: string, days: number) {
+    const until = new Date(Date.now() + days * 86_400_000);
+    const rows = await this.prisma.stockBatch.findMany({
+      where: { branchId, quantityRemaining: { gt: 0 }, expiryDate: { not: null, lte: until } },
+      include: { ingredient: { select: { id: true, name: true, unit: true, storageLocation: true } } },
+      orderBy: { expiryDate: 'asc' },
+      take: 200,
+    });
+    const now = Date.now();
+    return rows.map((b) => ({
+      batchId: b.id,
+      ingredientId: b.ingredientId,
+      name: b.ingredient.name,
+      unit: b.ingredient.unit,
+      storageLocation: b.ingredient.storageLocation,
+      quantity: b.quantityRemaining.toString(),
+      expiryDate: b.expiryDate,
+      expired: b.expiryDate!.getTime() < now,
+      daysLeft: Math.ceil((b.expiryDate!.getTime() - now) / 86_400_000),
+    }));
+  }
+
+  /** Items at or under their minimum, with how much to buy to get back to the par level. */
+  async reorderList(branchId: string) {
+    const items = await this.prisma.ingredient.findMany({
+      where: { branchId, isActive: true, kind: 'PURCHASED' },
+      select: { id: true, name: true, unit: true, category: true, currentStock: true, reorderLevel: true, parLevel: true, storageLocation: true },
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    });
+    return items
+      .filter((i) => Dec(i.reorderLevel).gt(0) && Dec(i.currentStock).lte(i.reorderLevel))
+      .map((i) => {
+        const par = i.parLevel ? Dec(i.parLevel) : Dec(i.reorderLevel).mul(2);
+        const need = par.minus(i.currentStock);
+        return { id: i.id, name: i.name, unit: i.unit, category: i.category, storageLocation: i.storageLocation, inStock: i.currentStock.toString(), minimum: i.reorderLevel.toString(), par: par.toString(), toBuy: (need.isNegative() ? Dec(0) : need).toString() };
+      });
+  }
+
+  async reorderCsv(branchId: string) {
+    const rows = await this.reorderList(branchId);
+    return toCsv(['Item', 'Category', 'Storage', 'In stock', 'Minimum', 'Bring up to', 'To buy', 'Unit'], rows.map((r) => [r.name, r.category, r.storageLocation, r.inStock, r.minimum, r.par, r.toBuy, r.unit]));
   }
 
   /** Signed correction, reason mandatory, never below zero. */

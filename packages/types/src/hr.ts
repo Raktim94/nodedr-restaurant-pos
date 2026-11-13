@@ -40,6 +40,10 @@ export const staffPaySchema = z.object({
   // HOURLY only: hours in one day beyond this are overtime. Omit for no overtime rule.
   overtimeAfterHours: z.coerce.number().positive().max(24).nullable().optional(),
   overtimeMultiplier: z.coerce.number().min(1).max(5).optional(),
+  // MONTHLY with a rota: grace in minutes before lateness is deducted (omit = off), and whether a rostered
+  // day with no clock-in and no approved leave costs a day's pay.
+  lateGraceMinutes: z.coerce.number().int().min(0).max(240).nullable().optional(),
+  deductAbsence: z.boolean().optional(),
 });
 export type StaffPayDto = z.infer<typeof staffPaySchema>;
 

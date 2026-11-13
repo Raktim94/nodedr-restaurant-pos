@@ -264,6 +264,49 @@ run('Stock journal, production and waste (e2e)', () => {
     expect(m).toHaveLength(1);
   });
 
+  it('a stock take books only the differences, keeps who counted, and is safe to resend', async () => {
+    const sheet = {
+      area: 'Dry store',
+      lines: [
+        { ingredientId: id.rice, counted: '11.5', unit: 'KG' },   // system had 11 -> +0.5
+        { ingredientId: id.dal, counted: '6000', unit: 'G' },     // system 8.5 -> -2.5
+        { ingredientId: id.oil, counted: '0.3', unit: 'L' },      // same as system -> no movement
+      ],
+      idempotencyKey: `count-${randomUUID()}`,
+    };
+    const rice0 = Number(await stock(id.rice));
+    const dal0 = Number(await stock(id.dal));
+    const first = (await owner.post(`/api/v1/inventory/journal/stock-takes${q}`).send(sheet).expect(201)).body;
+    const diffs = Object.fromEntries(first.lines.map((l: { name: string; difference: string }) => [l.name.split('-')[0], l.difference]));
+    expect(Number(diffs.Rice)).toBeCloseTo(11.5 - rice0, 6);
+    expect(Number(diffs['Urad dal'])).toBeCloseTo(6 - dal0, 6);
+    expect(Number(diffs.Oil)).toBe(0);
+    expect(Number(await stock(id.rice))).toBeCloseTo(11.5, 6);
+    expect(Number(await stock(id.dal))).toBeCloseTo(6, 6);
+    await owner.post(`/api/v1/inventory/journal/stock-takes${q}`).send(sheet).expect(201); // resend
+    expect(Number(await stock(id.dal))).toBeCloseTo(6, 6);
+    const adj = (await journal('&type=ADJUSTMENT')).filter((m) => m.ingredient.id === id.oil);
+    expect(adj.length).toBe(0);
+    // counting more than the system never goes negative; a negative count is refused
+    expect((await owner.post(`/api/v1/inventory/journal/stock-takes${q}`).send({ lines: [{ ingredientId: id.rice, counted: '-1', unit: 'KG' }] })).status).toBe(400);
+    expect((await chef.post(`/api/v1/inventory/journal/stock-takes${q}`).send(sheet)).status).toBe(403);
+  });
+
+  it('shows what expires soon and a shopping list up to the par level', async () => {
+    const soon = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    const fresh = await item('Paneer', 'KG', { reorderLevel: 5, parLevel: 20 });
+    await owner.post(`/api/v1/inventory/journal/receipts${q}`).send({ ingredientId: fresh, quantity: '3', unit: 'KG', expiryDate: soon }).expect(201);
+    const exp = (await owner.get(`/api/v1/inventory/journal/expiring${q}&days=7`).expect(200)).body as { ingredientId: string; daysLeft: number }[];
+    const row = exp.find((e) => e.ingredientId === fresh)!;
+    expect(row.daysLeft).toBeLessThanOrEqual(2);
+    const list = (await owner.get(`/api/v1/inventory/journal/reorder${q}`).expect(200)).body as { id: string; toBuy: string; par: string }[];
+    const need = list.find((r) => r.id === fresh)!;
+    expect(Number(need.par)).toBe(20);
+    expect(Number(need.toBuy)).toBe(17); // 20 - 3 in stock
+    const csv = await owner.get(`/api/v1/inventory/journal/reorder.csv${q}`).expect(200);
+    expect(csv.text).toContain('Paneer');
+  });
+
   it('reports and exports: daily production, and the journal as CSV', async () => {
     const rep = (await owner.get(`/api/v1/inventory/production/report${q}&productId=${id.idli}`).expect(200)).body;
     const idliRow = rep.produced.find((p: { ingredientId: string }) => p.ingredientId === id.idli);
