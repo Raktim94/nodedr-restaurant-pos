@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { SessionUser } from '@nodedr-restaurant/types';
+import { permissionSatisfied, type SessionUser } from '@nodedr-restaurant/types';
+import { allowedUnits, type StockUnit } from '../modules/inventory/units';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   computeOrderTotals,
@@ -104,8 +105,27 @@ export class StandaloneService {
     const reservations = user.permissions.includes('reservations.manage')
       ? await this.bookings.forSnapshot(branchId)
       : [];
+    // Stock items for the Kitchen tab, only for staff who may record production and waste.
+    const canKitchen = permissionSatisfied(user.permissions, 'production.record');
+    const stockItems = canKitchen
+      ? (
+          await this.prisma.ingredient.findMany({
+            where: { branchId, isActive: true },
+            orderBy: [{ kind: 'asc' }, { name: 'asc' }],
+            select: { id: true, name: true, unit: true, kind: true, conversions: true },
+          })
+        ).map((i) => ({
+          id: i.id,
+          name: i.name,
+          unit: i.unit,
+          kind: i.kind,
+          units: allowedUnits(i.unit as StockUnit, i.conversions),
+        }))
+      : undefined;
     return {
       generatedAt: new Date().toISOString(),
+      stockItems,
+      canVoid: permissionSatisfied(user.permissions, 'production.void'),
       user: { id: user.id, name: user.name, permissions: user.permissions },
       restaurant: {
         name: r.name,

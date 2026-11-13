@@ -4,6 +4,7 @@
 import { kv, reservations, sales } from './store.js';
 import { mergeFromServer, toPayload } from './reservations.js';
 import { pickServer, request } from './net.js';
+import { counts, pushEvents, DeviceRevoked, AuthExpired as EventAuthExpired } from './journal.js';
 
 export class AuthExpired extends Error {}
 
@@ -161,6 +162,18 @@ export function syncNow({ refreshMenu = true } = {}) {
       if (!base) return out;
       out.online = true;
       const r = await pushSales(base);
+      try {
+        const ev = await pushEvents(base, await kv.get('branchId'), request);
+        out.events = ev.done;
+        out.eventsFailed = ev.failed;
+      } catch (e) {
+        if (e instanceof DeviceRevoked) {
+          out.revoked = true;
+          return out;
+        }
+        if (e instanceof EventAuthExpired) throw new AuthExpired();
+        throw e;
+      }
       out.done = r.done;
       out.refused = r.refused;
       out.reviewed = r.reviewed;
@@ -169,6 +182,7 @@ export function syncNow({ refreshMenu = true } = {}) {
       out.bookings = b.sent;
       out.bookingsNewer = b.newer;
       await kv.set('lastSync', Date.now());
+      await heartbeat(base, true, out.error);
     } catch (e) {
       if (e instanceof AuthExpired) out.authExpired = true;
       else out.error = e.message;
@@ -178,4 +192,26 @@ export function syncNow({ refreshMenu = true } = {}) {
     return out;
   })();
   return running;
+}
+
+/** Tell the server this phone exists, how many things are waiting on it, and that it just synced. Never blocks selling. */
+export async function heartbeat(base, synced = false, lastError) {
+  try {
+    const c = await counts();
+    const sa = (await sales.all()).filter((s) => s.status === 'pending').length;
+    const refused = (await sales.all()).filter((s) => s.status === 'refused').length;
+    const r = await request(base, 'POST', '/api/v1/pos-devices/heartbeat', {
+      deviceId: await kv.get('deviceId'),
+      name: (await kv.get('deviceName')) || 'Phone',
+      platform: (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform() || 'web').toUpperCase().slice(0, 20),
+      appVersion: window.__APP_VERSION__ || undefined,
+      pending: sa + c.pending,
+      failed: refused + c.failed,
+      lastError: lastError || undefined,
+      synced,
+    });
+    return r.status === 403 || (r.status === 401 && r.data && r.data.code === 'DEVICE_REVOKED') ? 'revoked' : 'ok';
+  } catch {
+    return 'offline';
+  }
 }

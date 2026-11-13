@@ -252,6 +252,18 @@ run('Stock journal, production and waste (e2e)', () => {
     expect(JSON.stringify(v.body)).toMatch(/already been sold or wasted/);
   });
 
+  it('a phone replaying the same waste event twice records it once', async () => {
+    const key = `phone-${randomUUID()}`;
+    const body = { ingredientId: id.sambar, quantity: '1', unit: 'L', reason: 'SPOILED', idempotencyKey: key, deviceId: 'phone-9' };
+    const before = await stock(id.sambar);
+    const a = await owner.post(`/api/v1/inventory/waste/entries${q}`).send(body).expect(201);
+    const b = await owner.post(`/api/v1/inventory/waste/entries${q}`).send(body).expect(201);
+    expect(b.body.id).toBe(a.body.id);
+    expect(Number(await stock(id.sambar))).toBe(Number(before) - 1);
+    const m = await journal(`&wasteEntryId=${a.body.id}`);
+    expect(m).toHaveLength(1);
+  });
+
   it('reports and exports: daily production, and the journal as CSV', async () => {
     const rep = (await owner.get(`/api/v1/inventory/production/report${q}&productId=${id.idli}`).expect(200)).body;
     const idliRow = rep.produced.find((p: { ingredientId: string }) => p.ingredientId === id.idli);
