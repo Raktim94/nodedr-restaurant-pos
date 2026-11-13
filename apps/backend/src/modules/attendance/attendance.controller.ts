@@ -25,6 +25,14 @@ const clockOutSchema = z.object({
   // Unpaid break taken during the shift, in minutes.
   breakMinutes: z.coerce.number().int().min(0).max(480).optional(),
 });
+const eventSchema = z.object({
+  type: z.enum(['IN', 'OUT']),
+  at: z.coerce.date(),
+  branchId: z.string().min(1),
+  idempotencyKey: z.string().trim().min(8).max(120),
+  breakMinutes: z.coerce.number().int().min(0).max(480).optional(),
+  note: z.string().trim().max(200).optional(),
+});
 const correctionSchema = z
   .object({
     clockInAt: z.coerce.date().optional(),
@@ -69,6 +77,17 @@ export class AttendanceController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, body.branchId);
     return this.attendance.clockIn(user.id, body.branchId, body.note);
+  }
+
+  // A clock-in/out recorded on a phone while offline, sent later with the time it really happened.
+  @Auth()
+  @Post('events')
+  async event(
+    @CurrentUser() user: SessionUser,
+    @Body(new ZodValidationPipe(eventSchema)) body: z.infer<typeof eventSchema>,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, body.branchId);
+    return this.attendance.recordEvent(user.id, user.restaurantId, body);
   }
 
   @Auth()

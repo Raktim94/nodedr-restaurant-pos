@@ -6,6 +6,8 @@ export const loginSchema = z.object({
   password: z.string().min(4).max(200),
   // Authenticator code or recovery code, once two-factor auth is on.
   totp: z.string().trim().min(6).max(20).optional(),
+  // The phone app sends its own id so the session belongs to that phone and ends when the owner removes it.
+  deviceId: z.string().trim().min(8).max(120).optional(),
 });
 export type LoginDto = z.infer<typeof loginSchema>;
 

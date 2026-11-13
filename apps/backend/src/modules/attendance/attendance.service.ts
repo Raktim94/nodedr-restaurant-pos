@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -26,6 +27,61 @@ export class AttendanceService {
       where: { userId, clockOutAt: null },
       include: WITH_USER,
       orderBy: { clockInAt: 'desc' },
+    });
+  }
+
+  /**
+   * A clock-in or clock-out that happened on a phone with no connection. It carries the time it really
+   * happened and its own key: a resend returns the same record, a clash (already clocked in, overlapping
+   * another shift, inside an approved payroll) is refused with the reason so the phone can show it.
+   */
+  async recordEvent(
+    userId: string,
+    restaurantId: string,
+    dto: { type: 'IN' | 'OUT'; at: Date; branchId: string; idempotencyKey: string; breakMinutes?: number; note?: string },
+  ) {
+    const branch = await this.prisma.branch.findFirst({ where: { id: dto.branchId, restaurantId }, select: { id: true } });
+    if (!branch) throw new NotFoundException('Branch not found');
+    const now = Date.now();
+    if (dto.at.getTime() > now + 120_000) throw new BadRequestException('That time is in the future');
+    if (dto.at.getTime() < now - 14 * 86_400_000) throw new BadRequestException('That is more than 14 days ago. Ask a manager to add it.');
+    const field = dto.type === 'IN' ? 'clockInKey' : 'clockOutKey';
+    const dup = await this.prisma.attendance.findFirst({ where: { userId, [field]: dto.idempotencyKey }, include: WITH_USER });
+    if (dup) return dup;
+
+    const locked = await this.prisma.payrollRun.findFirst({
+      where: {
+        branchId: dto.branchId,
+        status: { in: ['FINALIZED', 'PAID'] },
+        periodStart: { lte: dto.at },
+        periodEnd: { gte: new Date(dto.at.getTime() - 86_400_000) },
+      },
+    });
+    if (locked) throw new BadRequestException('That day is in a payroll that is already finalized. Ask a manager.');
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'clockin:' + userId}))`;
+      if (dto.type === 'IN') {
+        const open = await tx.attendance.findFirst({ where: { userId, clockOutAt: null } });
+        if (open) throw new ConflictException(`Already clocked in since ${open.clockInAt.toISOString()}`);
+        const overlap = await tx.attendance.findFirst({
+          where: { userId, clockInAt: { lte: dto.at }, clockOutAt: { gt: dto.at } },
+        });
+        if (overlap) throw new ConflictException('That time falls inside another shift you already have');
+        return tx.attendance.create({
+          data: { userId, branchId: dto.branchId, clockInAt: dto.at, note: dto.note, clockInKey: dto.idempotencyKey },
+          include: WITH_USER,
+        });
+      }
+      const open = await tx.attendance.findFirst({ where: { userId, clockOutAt: null }, orderBy: { clockInAt: 'desc' } });
+      if (!open) throw new ConflictException('Not clocked in, so there is nothing to clock out of');
+      if (dto.at <= open.clockInAt) throw new BadRequestException('Clock-out must be after clock-in');
+      if (dto.at.getTime() - open.clockInAt.getTime() > 24 * 3_600_000) throw new BadRequestException('A shift cannot be longer than 24 hours. Ask a manager to correct it.');
+      return tx.attendance.update({
+        where: { id: open.id },
+        data: { clockOutAt: dto.at, clockOutKey: dto.idempotencyKey, ...(dto.breakMinutes != null ? { breakMinutes: dto.breakMinutes } : {}), ...(dto.note ? { note: dto.note } : {}) },
+        include: WITH_USER,
+      });
     });
   }
 

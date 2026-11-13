@@ -1996,7 +1996,12 @@ model Attendance {
   note       String?
   // Unpaid break taken inside this shift, taken off the paid hours.
   breakMinutes Int @default(0)
+  // Keys of the offline events that made this record, so a resent clock-in / clock-out changes nothing twice.
+  clockInKey   String?
+  clockOutKey  String?
 
+  @@unique([userId, clockInKey])
+  @@unique([userId, clockOutKey])
   @@index([branchId, clockInAt])
   @@index([userId, clockOutAt])
   @@map("attendance")
