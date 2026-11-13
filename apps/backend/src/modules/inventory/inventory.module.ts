@@ -11,16 +11,23 @@ import { SupplierInvoicesService } from './supplier-invoices.service';
 import { SupplierQuotationsService } from './supplier-quotations.service';
 import { TransfersController } from './transfers.controller';
 import { TransfersService } from './transfers.service';
+import { ProductionService } from './production.service';
+import { StockJournalController } from './stock-journal.controller';
+import { StockJournalService } from './stock-journal.service';
+import { WasteEntriesService } from './waste-entries.service';
 import { WasteService } from './waste.service';
 
 @Module({
   imports: [AuditModule],
-  controllers: [InventoryController, TransfersController],
+  controllers: [InventoryController, TransfersController, StockJournalController],
   providers: [
     InventoryService,
     PurchaseOrdersService,
     GoodsReceiptsService,
     WasteService,
+    ProductionService,
+    StockJournalService,
+    WasteEntriesService,
     StockService,
     TransfersService,
     PurchaseRequestsService,

@@ -1,0 +1,266 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument -- supertest bodies are untyped by design */
+// Stock journal, daily production and food waste against a REAL migrated + seeded Postgres.
+//   JOURNAL_E2E=1 DATABASE_URL=... JWT_SECRET=x npx jest --config ./test/jest-e2e.json --runInBand stock-journal
+import { INestApplication } from '@nestjs/common';
+import { ThrottlerStorage } from '@nestjs/throttler';
+import { Test } from '@nestjs/testing';
+import { randomUUID } from 'crypto';
+import cookieParser from 'cookie-parser';
+import request from 'supertest';
+import { App } from 'supertest/types';
+import { AppModule } from './../src/app.module';
+
+const run = process.env.JOURNAL_E2E ? describe : describe.skip;
+const BRANCH = 'demo-branch';
+const q = `?branchId=${BRANCH}`;
+const tag = randomUUID().slice(0, 6);
+
+run('Stock journal, production and waste (e2e)', () => {
+  let app: INestApplication<App>;
+  let owner: ReturnType<typeof request.agent>;
+  let chef: ReturnType<typeof request.agent>;
+  let cashier: ReturnType<typeof request.agent>;
+  const id: Record<string, string> = {};
+
+  const item = async (name: string, unit: string, extra: object = {}) =>
+    (await owner.post(`/api/v1/inventory/ingredients${q}`).send({ name: `${name}-${tag}`, unit, ...extra }).expect(201)).body.id as string;
+  const stock = async (ingredientId: string) =>
+    (await owner.get(`/api/v1/inventory/ingredients/${ingredientId}${q}`).expect(200)).body.currentStock as string;
+  const journal = async (qs = '') =>
+    (await owner.get(`/api/v1/inventory/journal${q}${qs}`).expect(200)).body.items as { type: string; quantity: string; ingredient: { id: string }; productionEntryId: string | null }[];
+  const receive = (ingredientId: string, quantity: string | number, unit: string) =>
+    owner.post(`/api/v1/inventory/journal/receipts${q}`).send({ ingredientId, quantity, unit, reference: 'INV-1' });
+  const batch = (over: object = {}) => ({
+    shift: 'Morning',
+    location: 'Main kitchen',
+    inputs: [
+      { ingredientId: id.rice, quantity: '6', unit: 'KG' },
+      { ingredientId: id.dal, quantity: '2000', unit: 'G' },
+    ],
+    outputs: [{ ingredientId: id.idli, quantity: '120', unit: 'PIECE' }],
+    post: true,
+    ...over,
+  });
+  const produce = (body: object) => owner.post(`/api/v1/inventory/production${q}`).send(body);
+
+  beforeAll(async () => {
+    const mod = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ThrottlerStorage)
+      .useValue({ increment: () => Promise.resolve({ totalHits: 1, timeToExpire: 60, isBlocked: false, timeToBlockExpire: 0 }) })
+      .compile();
+    app = mod.createNestApplication();
+    app.use(cookieParser());
+    app.setGlobalPrefix('api', { exclude: [] });
+    await app.init();
+    owner = request.agent(app.getHttpServer());
+    await owner.post('/api/v1/auth/login').send({ email: 'owner@demo.local', password: 'Password123!' }).expect(201);
+    const roles = (await owner.get('/api/v1/users/roles').expect(200)).body as { id: string; name: string }[];
+    const mk = async (roleName: string) => {
+      const email = `${roleName.toLowerCase()}-${tag}@demo.local`;
+      await owner.post('/api/v1/users').send({
+        name: `${roleName} ${tag}`, email, password: 'Password123!',
+        roleId: roles.find((r) => r.name === roleName)!.id, branchIds: [BRANCH],
+      }).expect(201);
+      const a = request.agent(app.getHttpServer());
+      await a.post('/api/v1/auth/login').send({ email, password: 'Password123!' }).expect(201);
+      return a;
+    };
+    chef = await mk('CHEF');
+    cashier = await mk('CASHIER');
+
+    id.rice = await item('Rice', 'KG');
+    id.dal = await item('Urad dal', 'KG');
+    id.oil = await item('Oil', 'L');
+    id.idli = await item('Idli', 'PIECE', { kind: 'PREPARED', wasteApprovalQty: 50 });
+    id.sambar = await item('Sambar', 'L', { kind: 'PREPARED' });
+    id.bag = await item('Flour bag', 'PACK', { conversions: [{ unit: 'KG', per: 25 }] });
+  });
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('receives stock in other units and keeps exact decimals', async () => {
+    await receive(id.rice, 25, 'KG').expect(201);
+    await receive(id.dal, '10', 'KG').expect(201);
+    await receive(id.dal, '500', 'G').expect(201); // 0.5 kg
+    expect(await stock(id.rice)).toBe('25');
+    expect(await stock(id.dal)).toBe('10.5');
+    // 0.1 kg + 0.2 kg is exactly 0.3 kg, not 0.30000000000000004
+    await receive(id.oil, '100', 'ML').expect(201);
+    await receive(id.oil, '200', 'ML').expect(201);
+    expect(await stock(id.oil)).toBe('0.3');
+    // a 25 kg bag, bought as 2 bags... stocked as PACK, received in KG through the declared conversion
+    await receive(id.bag, '50', 'KG').expect(201);
+    expect(await stock(id.bag)).toBe('2');
+  });
+
+  it('refuses units that cannot be converted and non-positive quantities', async () => {
+    const bad = await receive(id.rice, 1, 'PIECE');
+    expect(bad.status).toBe(400);
+    expect((await receive(id.rice, 0, 'KG')).status).toBe(400);
+    expect((await receive(id.rice, '0.0004', 'KG')).status).toBe(400); // 4 decimals: refused, not rounded
+  });
+
+  it('only finished products can be produced, and the review shows a shortfall before posting', async () => {
+    const asOutput = await produce(batch({ outputs: [{ ingredientId: id.rice, quantity: '1', unit: 'KG' }], inputs: [{ ingredientId: id.dal, quantity: '1', unit: 'KG' }] }));
+    expect(asOutput.status).toBe(400);
+    const prev = await owner.post(`/api/v1/inventory/production/preview${q}`).send({
+      inputs: [{ ingredientId: id.rice, quantity: '30', unit: 'KG' }],
+      outputs: [{ ingredientId: id.idli, quantity: '10', unit: 'PIECE' }],
+    }).expect(201);
+    expect(prev.body.canPost).toBe(false);
+    expect(prev.body.lines[0].short).toBe('5');
+    expect(await stock(id.rice)).toBe('25'); // a preview writes nothing
+  });
+
+  it('posts a batch of actual quantities: ingredients out, finished product in, one linked ledger, no cost', async () => {
+    const res = await produce(batch()).expect(201);
+    id.entry = res.body.id;
+    expect(res.body.status).toBe('POSTED');
+    expect(res.body.entryNo).toMatch(/^PR-\d{8}-\d{3}$/);
+    expect(JSON.stringify(res.body)).not.toMatch(/cost/i); // quantity tracking only
+    expect(await stock(id.rice)).toBe('19');
+    expect(await stock(id.dal)).toBe('8.5');
+    expect(await stock(id.idli)).toBe('120');
+    const linked = await journal(`&productionEntryId=${id.entry}`);
+    expect(linked.map((m) => m.type).sort()).toEqual(['PRODUCTION', 'PRODUCTION_USE', 'PRODUCTION_USE']);
+    const by = Object.fromEntries(linked.map((m) => [m.ingredient.id, m.quantity]));
+    expect(by[id.rice]).toBe('-6');
+    expect(by[id.dal]).toBe('-2');
+    expect(by[id.idli]).toBe('120');
+  });
+
+  it('is atomic: a shortfall on the second ingredient leaves the first untouched', async () => {
+    const res = await produce(batch({ inputs: [
+      { ingredientId: id.rice, quantity: '1', unit: 'KG' },
+      { ingredientId: id.dal, quantity: '99', unit: 'KG' },
+    ] }));
+    expect(res.status).toBe(400);
+    expect(await stock(id.rice)).toBe('19');
+    expect(await stock(id.idli)).toBe('120');
+  });
+
+  it('a retried upload with the same key posts once', async () => {
+    const key = `dev1-${randomUUID()}`;
+    const a = await produce(batch({ idempotencyKey: key, deviceId: 'phone-1', inputs: [{ ingredientId: id.rice, quantity: '1', unit: 'KG' }], outputs: [{ ingredientId: id.idli, quantity: '10', unit: 'PIECE' }] })).expect(201);
+    const b = await produce(batch({ idempotencyKey: key, deviceId: 'phone-1', inputs: [{ ingredientId: id.rice, quantity: '1', unit: 'KG' }], outputs: [{ ingredientId: id.idli, quantity: '10', unit: 'PIECE' }] })).expect(201);
+    expect(b.body.id).toBe(a.body.id);
+    expect(await stock(id.rice)).toBe('18');
+    expect(await stock(id.idli)).toBe('130');
+    const dev = (await journal(`&productionEntryId=${a.body.id}`)).length;
+    expect(dev).toBe(2);
+  });
+
+  it('drafts do not touch stock and a posted entry cannot be edited or posted twice', async () => {
+    const d = await produce(batch({ post: false })).expect(201);
+    expect(d.body.status).toBe('DRAFT');
+    expect(await stock(id.rice)).toBe('18');
+    await owner.post(`/api/v1/inventory/production/${d.body.id}/post${q}`).expect(201);
+    expect(await stock(id.rice)).toBe('12');
+    expect((await owner.post(`/api/v1/inventory/production/${d.body.id}/post${q}`)).status).toBe(409);
+    expect((await owner.patch(`/api/v1/inventory/production/${d.body.id}${q}`).send(batch({ post: undefined }))).status).toBe(400);
+    id.second = d.body.id;
+  });
+
+  it('kitchen staff can record but not reverse; cashiers cannot see production at all', async () => {
+    expect((await chef.get(`/api/v1/inventory/production${q}`)).status).toBe(200);
+    expect((await chef.post(`/api/v1/inventory/production/${id.second}/void${q}`).send({ reason: 'oops, wrong' })).status).toBe(403);
+    expect((await cashier.get(`/api/v1/inventory/production${q}`)).status).toBe(403);
+    expect((await chef.get(`/api/v1/inventory/journal${q}`)).status).toBe(403); // the full ledger is for managers
+  });
+
+  it('a void needs a reason, reverses by appending, and cannot be repeated', async () => {
+    expect((await owner.post(`/api/v1/inventory/production/${id.second}/void${q}`).send({})).status).toBe(400);
+    const v = await owner.post(`/api/v1/inventory/production/${id.second}/void${q}`).send({ reason: 'Entered twice by mistake' }).expect(201);
+    expect(v.body.status).toBe('VOIDED');
+    expect(await stock(id.rice)).toBe('18');
+    expect(await stock(id.idli)).toBe('130');
+    const linked = await journal(`&productionEntryId=${id.second}`);
+    expect(linked.filter((m) => m.type === 'REVERSAL')).toHaveLength(3);
+    expect(linked.filter((m) => m.type === 'PRODUCTION_USE')).toHaveLength(2); // originals still there
+    expect((await owner.post(`/api/v1/inventory/production/${id.second}/void${q}`).send({ reason: 'again' })).status).toBe(400);
+  });
+
+  it('a correction reverses the old entry and posts the right one, linked', async () => {
+    const c = await owner.post(`/api/v1/inventory/production/${id.entry}/correct${q}`).send({
+      reason: 'Counted 118 idlis, not 120',
+      inputs: [{ ingredientId: id.rice, quantity: '6', unit: 'KG' }, { ingredientId: id.dal, quantity: '2', unit: 'KG' }],
+      outputs: [{ ingredientId: id.idli, quantity: '118', unit: 'PIECE' }],
+    }).expect(201);
+    expect(c.body.correctsEntry.id).toBe(id.entry);
+    expect(await stock(id.idli)).toBe('128'); // 130 - 120 + 118
+    expect(await stock(id.rice)).toBe('18');
+    const old = (await owner.get(`/api/v1/inventory/production/${id.entry}${q}`).expect(200)).body;
+    expect(old.status).toBe('VOIDED');
+    expect(old.correctedBy[0].id).toBe(c.body.id);
+    id.entry = c.body.id;
+  });
+
+  it('waste moves stock exactly once; a loss already inside production does not move it again', async () => {
+    const before = await stock(id.idli);
+    const w = await owner.post(`/api/v1/inventory/waste/entries${q}`).send({ ingredientId: id.idli, quantity: '8', unit: 'PIECE', reason: 'OVER_PRODUCTION', shift: 'Morning' }).expect(201);
+    expect(w.body.kind).toBe('FINISHED');
+    expect(Number(await stock(id.idli))).toBe(Number(before) - 8);
+    const wasted = await journal(`&wasteEntryId=${w.body.id}`);
+    expect(wasted.map((m) => m.type)).toEqual(['WASTE']);
+
+    const mid = await stock(id.idli);
+    const inc = await owner.post(`/api/v1/inventory/waste/entries${q}`).send({ ingredientId: id.idli, quantity: '2', unit: 'PIECE', reason: 'PREP_ERROR', includedInProduction: true, productionEntryId: id.entry }).expect(201);
+    expect(inc.body.includedInProduction).toBe(true);
+    expect(await stock(id.idli)).toBe(mid); // not deducted a second time
+    expect((await journal(`&wasteEntryId=${inc.body.id}`)).length).toBe(0);
+
+    const rep = (await owner.get(`/api/v1/inventory/waste/report${q}`).expect(200)).body;
+    expect(rep.entryCount).toBeGreaterThanOrEqual(1);
+    expect(rep.alreadyInProduction).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(rep)).not.toMatch(/cost|price|amount/i);
+    id.waste = w.body.id;
+  });
+
+  it('waste validation: Other needs a note; an in-production loss needs a posted entry', async () => {
+    const other = await owner.post(`/api/v1/inventory/waste/entries${q}`).send({ ingredientId: id.rice, quantity: '1', unit: 'KG', reason: 'OTHER' });
+    expect(other.status).toBe(400);
+    const bad = await owner.post(`/api/v1/inventory/waste/entries${q}`).send({ ingredientId: id.idli, quantity: '1', unit: 'PIECE', reason: 'PREP_ERROR', includedInProduction: true, productionEntryId: id.second });
+    expect(bad.status).toBe(400); // voided entry
+    const over = await owner.post(`/api/v1/inventory/waste/entries${q}`).send({ ingredientId: id.rice, quantity: '500', unit: 'KG', reason: 'SPOILED' });
+    expect(over.status).toBe(400);
+  });
+
+  it('a large waste entry by a cook waits for a manager, and rejecting it puts stock back', async () => {
+    const before = await stock(id.idli);
+    const w = await chef.post(`/api/v1/inventory/waste/entries${q}`).send({ ingredientId: id.idli, quantity: '60', unit: 'PIECE', reason: 'SPOILED' }).expect(201);
+    expect(w.body.status).toBe('PENDING_APPROVAL');
+    expect(Number(await stock(id.idli))).toBe(Number(before) - 60);
+    expect((await chef.post(`/api/v1/inventory/waste/entries/${w.body.id}/approve${q}`).send({})).status).toBe(403);
+    await owner.post(`/api/v1/inventory/waste/entries/${w.body.id}/reject${q}`).send({ note: 'Not believable' }).expect(201);
+    expect(await stock(id.idli)).toBe(before);
+    expect((await owner.post(`/api/v1/inventory/waste/entries/${w.body.id}/reverse${q}`).send({ reason: 'again' })).status).toBe(400);
+  });
+
+  it('reversing waste restores the stock once', async () => {
+    const before = await stock(id.idli);
+    await owner.post(`/api/v1/inventory/waste/entries/${id.waste}/reverse${q}`).send({ reason: 'Logged on the wrong day' }).expect(201);
+    expect(Number(await stock(id.idli))).toBe(Number(before) + 8);
+    expect((await owner.post(`/api/v1/inventory/waste/entries/${id.waste}/reverse${q}`).send({ reason: 'twice' })).status).toBe(400);
+  });
+
+  it('a batch with sold or wasted finished stock cannot be reversed', async () => {
+    const e = await produce(batch({ inputs: [{ ingredientId: id.rice, quantity: '1', unit: 'KG' }], outputs: [{ ingredientId: id.sambar, quantity: '8', unit: 'L' }] })).expect(201);
+    await owner.post(`/api/v1/inventory/waste/entries${q}`).send({ ingredientId: id.sambar, quantity: '1', unit: 'L', reason: 'SPOILED' }).expect(201);
+    const v = await owner.post(`/api/v1/inventory/production/${e.body.id}/void${q}`).send({ reason: 'wrong batch' });
+    expect(v.status).toBe(400);
+    expect(JSON.stringify(v.body)).toMatch(/already been sold or wasted/);
+  });
+
+  it('reports and exports: daily production, and the journal as CSV', async () => {
+    const rep = (await owner.get(`/api/v1/inventory/production/report${q}&productId=${id.idli}`).expect(200)).body;
+    const idliRow = rep.produced.find((p: { ingredientId: string }) => p.ingredientId === id.idli);
+    expect(Number(idliRow.quantity)).toBe(128); // 118 (corrected) + 10 (second batch); voided ones excluded
+    expect(rep.note).toMatch(/No cost/);
+    const csv = await owner.get(`/api/v1/inventory/production/export.csv${q}`).expect(200);
+    expect(csv.text).toContain('Entry,Produced at,Status');
+    expect(csv.text).toContain(`Idli-${tag}`);
+    const jcsv = await owner.get(`/api/v1/inventory/journal/export.csv${q}`).expect(200);
+    expect(jcsv.text).toContain('PRODUCTION_USE');
+  });
+});

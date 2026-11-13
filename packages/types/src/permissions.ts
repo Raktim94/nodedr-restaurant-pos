@@ -40,6 +40,8 @@ export const PERMISSIONS = [
   { key: "marketing.manage", label: "Manage Coupons, Promotions & Campaigns", category: "Marketing" },
   { key: "operations.manage", label: "Manage Equipment & Documents", category: "Operations" },
   { key: "system.update", label: "Manage App Updates", category: "Admin" },
+  { key: "production.record", label: "Record Daily Production & Food Waste", category: "Inventory" },
+  { key: "production.void", label: "Reverse Production & Approve Food Waste", category: "Inventory" },
 ] as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[number]["key"];
@@ -49,6 +51,8 @@ export type PermissionKey = (typeof PERMISSIONS)[number]["key"];
 export const PERMISSION_IMPLIES: Partial<Record<PermissionKey, PermissionKey[]>> = {
   "menu.manage": ["menu.view"],
   "tables.manage": ["tables.view"],
+  // Whoever manages inventory may also record and reverse production.
+  "inventory.manage": ["production.record", "production.void"],
 };
 
 /** True when `held` satisfies `required`, directly or through PERMISSION_IMPLIES. */
@@ -102,8 +106,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
   // Waiters read the menu and floor plan and run orders; they cannot edit
   // either, and have no revenue access.
   WAITER: ["orders.create", "orders.edit", "orders.accept", "tables.view", "menu.view", "bills.print"],
-  KITCHEN_STAFF: ["kds.manage", "orders.accept"],
-  CHEF: ["kds.manage", "orders.accept", "menu.manage", "menu.view"],
+  KITCHEN_STAFF: ["kds.manage", "orders.accept", "production.record"],
+  CHEF: ["kds.manage", "orders.accept", "menu.manage", "menu.view", "production.record"],
   BARTENDER: ["orders.create", "orders.accept", "kds.manage", "menu.view", "tables.view"],
   DELIVERY_STAFF: ["orders.edit", "delivery.manage", "delivery.rider"],
   ACCOUNTANT: ["sales.view", "dashboard.sales.view", "reports.access", "reports.financial.view", "data.export", "accounting.manage"],
