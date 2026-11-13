@@ -4,7 +4,6 @@
 import { kv, reservations, sales } from './store.js';
 import { mergeFromServer, toPayload } from './reservations.js';
 import { pickServer, request } from './net.js';
-import { emptyBook, mergeServer, payloadFor, pendingRecipes } from './costbook.js';
 
 export class AuthExpired extends Error {}
 
@@ -82,44 +81,6 @@ export async function pushBookings(base) {
     }
   }
   return { sent, newer };
-}
-
-const mayCost = (snap) => !!(snap && snap.user && (snap.user.permissions || []).includes('inventory.manage'));
-
-/**
- * Recipe costing: send recipe edits made on the phone (each carries the server version it started
- * from; a 409 means someone changed it meanwhile, so it is held as a conflict), then take the
- * server's ingredients and recipes. Only for accounts that may see costs - everyone else gets nothing.
- */
-export async function syncCosting(base) {
-  const snap = await kv.get('snapshot');
-  if (!mayCost(snap)) return { sent: 0, conflicts: 0 };
-  const branchId = await kv.get('branchId');
-  let book = (await kv.get('costbook')) || emptyBook();
-  let sent = 0;
-  let held = 0;
-  for (const id of pendingRecipes(book)) {
-    const r = await request(base, 'PUT', `/api/v1/costing/menu-items/${encodeURIComponent(id)}?branchId=${encodeURIComponent(branchId)}`, payloadFor(book.recipes[id]));
-    if (r.status === 401) throw new AuthExpired();
-    if (r.status === 403) return { sent, conflicts: held, denied: true };
-    if (r.status === 409) {
-      book.recipes[id] = { ...book.recipes[id], conflict: true, server: (r.data && r.data.current && { version: r.data.current.version }) || undefined };
-      held++;
-    } else if (r.status === 200) {
-      book.recipes[id] = { ...book.recipes[id], dirty: false, error: null, version: r.data.version };
-      sent++;
-    } else {
-      book.recipes[id] = { ...book.recipes[id], error: (r.data && r.data.message) || 'The server refused this recipe.' };
-    }
-  }
-  await kv.set('costbook', book);
-  const b = await request(base, 'GET', `/api/v1/costing/bundle?branchId=${encodeURIComponent(branchId)}`);
-  if (b.status === 401) throw new AuthExpired();
-  if (b.status === 200) {
-    book = mergeServer(book, b.data);
-    await kv.set('costbook', book);
-  }
-  return { sent, conflicts: held };
 }
 
 function payload(sale) {
@@ -204,13 +165,6 @@ export function syncNow({ refreshMenu = true } = {}) {
       out.refused = r.refused;
       out.reviewed = r.reviewed;
       if (refreshMenu) await pullSnapshot(base); // also brings the server's bookings
-      try {
-        const c = await syncCosting(base);
-        out.recipesSent = c.sent;
-        out.recipeConflicts = c.conflicts;
-      } catch (e) {
-        if (e instanceof AuthExpired) throw e; // recipes are optional: never block selling or sales sync
-      }
       const b = await pushBookings(base);
       out.bookings = b.sent;
       out.bookingsNewer = b.newer;

@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { ImportCsvDialog } from "@/components/imports/import-csv-dialog";
 import { AddIngredientDialog } from "@/components/inventory/add-ingredient-dialog";
-import { IngredientCostDialog } from "@/components/costing/ingredient-cost-dialog";
 import { AdjustStockDialog } from "@/components/inventory/adjust-stock-dialog";
 import { InventoryTabs } from "@/components/inventory/inventory-tabs";
 import { Badge } from "@/components/ui/badge";
@@ -144,10 +143,7 @@ function InventoryView() {
                       {formatCurrency(Number(i.currentStock) * Number(i.costPerUnit))}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
-                        {canImport && <IngredientCostDialog branchId={branchId} ingredient={i} />}
-                        <AdjustStockDialog branchId={branchId} ingredient={i} />
-                      </div>
+                      <AdjustStockDialog branchId={branchId} ingredient={i} />
                     </TableCell>
                   </TableRow>
                 );

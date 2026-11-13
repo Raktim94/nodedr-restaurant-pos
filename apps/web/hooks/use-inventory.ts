@@ -29,15 +29,6 @@ export interface Ingredient {
   currentStock: string;
   costPerUnit: string;
   isActive: boolean;
-  // Recipe costing
-  kind?: "PURCHASED" | "PREPARED";
-  costMethod?: "AVERAGE" | "MANUAL" | "RECIPE";
-  purchaseQuantity?: string | null;
-  purchaseUnit?: IngredientUnit | null;
-  purchasePrice?: string | null;
-  yieldPercent?: string;
-  conversions?: { unit: IngredientUnit; per: number }[];
-  version?: number;
 }
 
 export interface Supplier {

@@ -3,12 +3,11 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { permissionSatisfied, profitability } from '@nodedr-restaurant/types';
+import { permissionSatisfied } from '@nodedr-restaurant/types';
 import { BranchTimeService } from '../../common/services/branch-time.service';
 import { localDate, localMinuteAndDay, zonedRange } from '../../common/time';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccountingService } from '../accounting/accounting.service';
-import { CostingCalcService } from '../inventory/costing-calc.service';
 import type { CsvValue } from './csv';
 
 export interface ReportResult {
@@ -90,7 +89,6 @@ export class ReportsService {
     private readonly prisma: PrismaService,
     private readonly time: BranchTimeService,
     private readonly accounting: AccountingService,
-    private readonly costing: CostingCalcService,
   ) {}
 
   catalog(permissions: readonly string[]) {
@@ -348,99 +346,62 @@ export class ReportsService {
       }
 
       case 'food-cost': {
-        // Current theoretical cost comes from the recipe-costing engine (units, yield, batch size,
-        // overheads). "Cost of units sold" uses the cost frozen on each order item when it was
-        // paid, so a later purchase-price change never rewrites past margins. Margins are measured
-        // on revenue excluding sales tax.
-        const branch = await this.prisma.branch.findUniqueOrThrow({
-          where: { id: branchId },
-          select: { taxMode: true },
-        });
-        const taxMode = branch.taxMode;
-        const items = await this.prisma.menuItem.findMany({
-          where: { branchId, isActive: true, isCombo: false },
-          select: { id: true, name: true, price: true, taxRatePercent: true },
-        });
-        const [ingredients, ctxs, sold] = await Promise.all([
-          this.costing.loadIngredients(this.prisma, branchId),
-          this.costing.loadDishContexts(
-            this.prisma,
-            items.map((i) => i.id),
-          ),
-          this.prisma.orderItem.findMany({
+        const [items, sold] = await Promise.all([
+          this.prisma.menuItem.findMany({
+            where: { branchId, isActive: true },
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              recipeLines: {
+                select: {
+                  quantity: true,
+                  ingredient: { select: { costPerUnit: true } },
+                },
+              },
+            },
+          }),
+          this.prisma.orderItem.groupBy({
+            by: ['menuItemId'],
             where: {
               order: { branchId, status: 'PAID', billedAt: range },
               status: { not: 'CANCELLED' },
             },
-            select: {
-              menuItemId: true,
-              quantity: true,
-              cost: { select: { unitCost: true } },
-            },
+            _sum: { quantity: true },
           }),
         ]);
-        const units = new Map<
-          string,
-          { qty: number; frozenCost: number; frozenQty: number }
-        >();
-        for (const o of sold) {
-          const u = units.get(o.menuItemId) ?? {
-            qty: 0,
-            frozenCost: 0,
-            frozenQty: 0,
-          };
-          u.qty += o.quantity;
-          if (o.cost) {
-            u.frozenCost += Number(o.cost.unitCost) * o.quantity;
-            u.frozenQty += o.quantity;
-          }
-          units.set(o.menuItemId, u);
-        }
+        const qty = new Map(
+          sold.map((s) => [s.menuItemId, s._sum.quantity ?? 0]),
+        );
         const rows = items
-          .flatMap((i) => {
-            const ctx = ctxs.get(i.id);
-            if (!ctx) return [];
-            const dish = this.costing.dishCost(ctx, ingredients);
-            if (dish.source === 'NONE' || dish.costPerPortion === null)
-              return [];
-            const cost = dish.costPerPortion;
-            const p = profitability({
-              cost,
-              listedPrice: Number(i.price),
-              taxRatePercent: Number(i.taxRatePercent),
-              taxMode,
-            });
-            const u = units.get(i.id) ?? {
-              qty: 0,
-              frozenCost: 0,
-              frozenQty: 0,
-            };
-            // Units sold before costing existed have no frozen cost: price them at today's cost.
-            const soldCost = u.frozenCost + (u.qty - u.frozenQty) * cost;
-            const soldRevenue = u.qty * p.netRevenue;
+          .filter((i) => i.recipeLines.length > 0)
+          .map((i) => {
+            const cost = i.recipeLines.reduce(
+              (s, r) =>
+                s + Number(r.quantity) * Number(r.ingredient.costPerUnit),
+              0,
+            );
+            const price = Number(i.price);
+            const units = qty.get(i.id) ?? 0;
             return [
-              [
-                i.name,
-                p.listedPrice,
-                round2(cost),
-                p.grossProfit,
-                p.grossMarginPercent ?? 0,
-                u.qty,
-                round2(soldCost),
-                round2(soldRevenue - soldCost),
-              ],
+              i.name,
+              round2(price),
+              round2(cost),
+              round2(price - cost),
+              price > 0 ? round2(((price - cost) / price) * 100) : 0,
+              units,
+              round2((price - cost) * units),
             ];
           })
-          .sort((a, b) => Number(b[7]) - Number(a[7]));
+          .sort((a, b) => Number(b[6]) - Number(a[6]));
         return out(
           [
             'Item',
             'Price',
-            'Cost per portion',
-            'Profit per portion (before tax)',
+            'Recipe cost',
+            'Margin',
             'Margin %',
             'Units sold',
-            'Cost of units sold',
             'Total margin',
           ],
           rows,

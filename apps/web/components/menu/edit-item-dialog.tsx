@@ -29,7 +29,7 @@ import {
   type MenuItem,
 } from "@/hooks/use-menu";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
-import { RecipeEditor } from "@/components/costing/recipe-editor";
+import { StockTrackingSection } from "@/components/menu/stock-tracking-section";
 import { useDisplaySettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
 
@@ -261,7 +261,7 @@ export function EditItemDialog({
           </DialogFooter>
         </form>
         {hasPermission(me?.user, "inventory.manage") && (
-          <RecipeEditor branchId={branchId} itemId={item.id} isCombo={item.isCombo} />
+          <StockTrackingSection branchId={branchId} itemId={item.id} isCombo={item.isCombo} />
         )}
       </DialogContent>
     </Dialog>
