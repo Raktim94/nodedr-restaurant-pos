@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 
-// https://orderrestro-demo.nodedr.com/demo : one click in, no sign-up and no password. Works only on the demo server.
+// https://orderrestro-demo.nodedrdev.com/demo : one click in, no sign-up and no password. Works only on the demo server.
 export default function DemoEntry() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
