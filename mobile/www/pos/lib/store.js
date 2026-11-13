@@ -7,7 +7,7 @@ let dbp;
 function open() {
   if (!dbp) {
     dbp = new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB, 4);
+      const req = indexedDB.open(DB, 5);
       req.onupgradeneeded = () => {
         // Only add what is missing: a phone upgrading from v1 keeps its sales and settings untouched.
         const db = req.result;
@@ -22,6 +22,7 @@ function open() {
         if (!db.objectStoreNames.contains('refunds')) db.createObjectStore('refunds', { keyPath: 'id' }); // money paid back on a sale
         if (!db.objectStoreNames.contains('expenses')) db.createObjectStore('expenses', { keyPath: 'id' }); // money paid out
         if (!db.objectStoreNames.contains('reservations')) db.createObjectStore('reservations', { keyPath: 'id' }); // table bookings
+        if (!db.objectStoreNames.contains('events')) db.createObjectStore('events', { keyPath: 'id' }); // kitchen events waiting for the server
         if (!db.objectStoreNames.contains('shifts')) db.createObjectStore('shifts', { keyPath: 'day' }); // closed days (cash counted)
       };
       req.onsuccess = () => resolve(req.result);
@@ -174,3 +175,9 @@ export async function nextLocalNumber(now = new Date()) {
 
 export const newId = () =>
   (globalThis.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`);
+
+export const events = {
+  put: (e) => tx('events', 'readwrite', (s) => s.put(e)),
+  get: (id) => tx('events', 'readonly', (s) => s.get(id)),
+  all: () => tx('events', 'readonly', (s) => s.getAll()).then((a) => a.sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1))),
+};

@@ -4,6 +4,11 @@
 const cap = () => window.Capacitor;
 const plugins = () => (cap() && cap().Plugins) || {};
 
+let deviceId = null;
+/** Set once at start: every request then carries this phone's id so the owner can switch it off. */
+export const setDeviceId = (id) => { deviceId = id; };
+const idHeader = () => (deviceId ? { 'X-Device-Id': deviceId } : {});
+
 export const native = () => !!(cap() && cap().isNativePlatform && cap().isNativePlatform());
 
 export async function request(base, method, path, body, { timeout = 15000 } = {}) {
@@ -13,7 +18,7 @@ export async function request(base, method, path, body, { timeout = 15000 } = {}
     const r = await http.request({
       url,
       method,
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...idHeader() },
       data: body === undefined ? undefined : body,
       connectTimeout: timeout,
       readTimeout: timeout,
@@ -26,7 +31,7 @@ export async function request(base, method, path, body, { timeout = 15000 } = {}
     const r = await fetch(url, {
       method,
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...idHeader() },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: ctl.signal,
     });

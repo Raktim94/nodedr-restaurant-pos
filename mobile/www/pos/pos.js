@@ -3,12 +3,13 @@
 // whenever it can. Plain DOM + modules: nothing here needs a build step.
 import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
-import { reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
+import { events, reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
 import { backupJson, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
 import { KOT_NEXT, dayReport, kotDelta, markSent, minutesSince, newOrder, openOrders, saleNote, tableMap, tableTakenBy } from './lib/orders.js';
 import { escposKot, htmlKot } from './lib/kot.js';
 import { STATUS_LABEL, clashes, grouped, heldSoon, newBooking, setStatus } from './lib/reservations.js';
-import { native, pickServer, reachable, savedServers } from './lib/net.js';
+import { native, pickServer, reachable, savedServers, setDeviceId } from './lib/net.js';
+import { queueEvent, retryEvent } from './lib/journal.js';
 import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
 import { addSection, addTable, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
@@ -663,6 +664,7 @@ function shell() {
     ['sell', 'Sell', ICON.sell],
     ['tables', 'Tables', ICON.tables],
     ...(S.snap.local ? [['menu', 'Menu', ICON.menu]] : []),
+    ...(kitchenOn() ? [['kitchen', 'Kitchen', ICON.menu || ICON.sales]] : []),
     ['sales', 'Sales', ICON.sales],
     ['sync', 'Sync', ICON.sync],
   ];
@@ -727,7 +729,7 @@ async function render() {
   await refreshPending();
   await refreshBadges();
   shell();
-  ({ sell: viewSell, tables: viewTables, menu: viewMenu, sales: viewSales, sync: viewSync })[S.view]();
+  ({ sell: viewSell, tables: viewTables, menu: viewMenu, sales: viewSales, sync: viewSync, kitchen: viewKitchen })[S.view]();
 }
 
 // -------------------------------------------------------------------- sell ---
@@ -1675,11 +1677,13 @@ async function viewSync() {
 function afterSync(r) {
   S.syncing = false;
   S.online = r.online;
-  if (r.authExpired) S.note = { kind: 'warn', text: 'Your sign-in has expired. Selling still works. Sign out and sign in again to send the sales.' };
+  if (r.revoked) S.note = { kind: 'bad', text: 'The owner removed this phone from the restaurant. Sales and kitchen records stay on this phone but cannot be sent until the owner allows it again.' };
+  else if (r.authExpired) S.note = { kind: 'warn', text: 'Your sign-in has expired. Selling still works. Sign out and sign in again to send the sales.' };
   else if (r.error) S.note = { kind: 'bad', text: r.error };
   else if (r.online) {
     S.note = r.done ? { text: `${r.done} sale${r.done > 1 ? 's' : ''} sent to the server.` } : null;
     if (r.reviewed) S.note = { kind: 'warn', text: `${r.reviewed} sale${r.reviewed > 1 ? 's were' : ' was'} recorded at a price that differs from the server menu. Open Sales to check.` };
+    if (r.eventsFailed) S.note = { kind: 'bad', text: `${r.eventsFailed} kitchen record${r.eventsFailed > 1 ? 's were' : ' was'} refused by the server. Open Kitchen to read why and try again.` };
     if (r.refused) S.note = { kind: 'bad', text: `${r.refused} sale${r.refused > 1 ? 's were' : ' was'} refused by the server. Open Sales to retry or set aside.` };
   } else S.note = null;
   kv.get('snapshot').then((s) => s && (S.snap = s));
@@ -1698,8 +1702,101 @@ async function doSync() {
   }
 }
 
+// ----------------------------------------------------------------- kitchen ---
+// Production and waste are written on the phone first and sent when there is a connection. Nothing here
+// waits for the network, and an event is never sent twice (its id is the server's idempotency key).
+const kitchenOn = () => !!(S.snap && !S.snap.local && Array.isArray(S.snap.stockItems));
+const KIT_REASONS = [['SPOILED', 'Spoiled'], ['EXPIRED', 'Expired'], ['OVER_PRODUCTION', 'Over-prepared'], ['DAMAGED', 'Dropped / damaged'], ['RETURNED_PLATE', 'Returned / plate waste'], ['PREP_TRIM', 'Preparation trim'], ['STORAGE_TEMPERATURE', 'Temperature / storage'], ['OTHER', 'Other']];
+const EV_LABEL = { pending: 'Waiting to send', synced: 'Sent', failed: 'Needs attention' };
+const unitOpts = (it, sel) => (it ? it.units : []).map((u) => `<option ${u === sel ? 'selected' : ''}>${u}</option>`).join('');
+const itemOpts = (list) => `<option value="">Choose…</option>${list.map((i) => `<option value="${esc(i.id)}">${esc(i.name)}</option>`).join('')}`;
+
+async function viewKitchen() {
+  const evs = (await events.all()).slice(0, 40);
+  const nameOf = (id) => (S.snap.stockItems.find((i) => i.id === id) || {}).name || 'Item';
+  const describe = (e) =>
+    e.kind === 'production'
+      ? `Made ${e.payload.outputs.map((o) => `${o.quantity} ${o.unit} ${nameOf(o.ingredientId)}`).join(', ')}`
+      : `Waste: ${e.payload.quantity} ${e.payload.unit} ${nameOf(e.payload.ingredientId)} (${(KIT_REASONS.find((r) => r[0] === e.payload.reason) || [, e.payload.reason])[1]})`;
+  $('view').innerHTML = `
+    ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
+    <div class="card mt"><button class="btn block" id="k-prod">Record production</button><button class="btn line block mt" id="k-waste">Record food waste</button>
+      <p class="mute center">Works without a connection. It is sent when the phone is online.</p></div>
+    <h2 class="mt">Recent</h2>
+    ${evs.length ? evs.map((e) => `<div class="card mt" data-ev="${esc(e.id)}"><b>${esc(describe(e))}</b><div class="mute">${esc(new Date(e.createdAt).toLocaleString())} &middot; ${EV_LABEL[e.status]}</div>${e.status === 'failed' ? `<div class="note bad mt">${esc(e.error || 'Refused')}</div><button class="btn ghost mt" data-retry="${esc(e.id)}">Try again</button>` : ''}</div>`).join('') : '<p class="mute center mt">Nothing recorded on this phone yet.</p>'}`;
+  $('k-prod').onclick = openProduction;
+  $('k-waste').onclick = openWaste;
+  document.querySelectorAll('[data-retry]').forEach((b) => (b.onclick = async () => (await retryEvent(b.dataset.retry), syncNow({ refreshMenu: false }).then(afterSync), viewKitchen())));
+}
+
+function openProduction() {
+  const raw = S.snap.stockItems;
+  const made = S.snap.stockItems.filter((i) => i.kind === 'PREPARED');
+  let used = 1;
+  openSheet(
+    `<h2>Record production</h2><p class="mute">Type what was really used and really made.</p>
+     <label>Made<select id="pr-out">${itemOpts(made)}</select></label>
+     <div class="row"><input id="pr-oq" inputmode="decimal" placeholder="Quantity" aria-label="Quantity made"><select id="pr-ou" aria-label="Unit made"></select></div>
+     <h3>Used</h3><div id="pr-used"></div><button class="btn ghost" id="pr-add">+ Add ingredient</button>
+     <label>Shift<select id="pr-shift"><option value="">None</option><option>Morning</option><option>Afternoon</option><option>Evening</option><option>Night</option></select></label>
+     <div id="pr-err" class="note bad" hidden></div>
+     <button class="btn block mt" id="pr-save">Save</button><button class="btn line block mt" data-close>Cancel</button>`,
+    (p) => {
+      const addRow = () => { const d = document.createElement('div'); d.className = 'row'; d.innerHTML = `<select data-i aria-label="Ingredient used">${itemOpts(raw)}</select><input data-q inputmode="decimal" placeholder="Qty" aria-label="Quantity used"><select data-u aria-label="Unit used"></select>`; p.querySelector('#pr-used').appendChild(d); const sel = d.querySelector('[data-i]'); sel.onchange = () => { const it = raw.find((x) => x.id === sel.value); d.querySelector('[data-u]').innerHTML = unitOpts(it, it && it.unit); }; };
+      addRow();
+      p.querySelector('#pr-add').onclick = addRow;
+      const out = p.querySelector('#pr-out');
+      out.onchange = () => { const it = made.find((x) => x.id === out.value); p.querySelector('#pr-ou').innerHTML = unitOpts(it, it && it.unit); };
+      p.querySelector('#pr-save').onclick = async () => {
+        const err = p.querySelector('#pr-err');
+        const inputs = [...p.querySelectorAll('#pr-used .row')].map((r) => ({ ingredientId: r.querySelector('[data-i]').value, quantity: r.querySelector('[data-q]').value.trim(), unit: r.querySelector('[data-u]').value })).filter((l) => l.ingredientId || l.quantity);
+        const o = { ingredientId: out.value, quantity: p.querySelector('#pr-oq').value.trim(), unit: p.querySelector('#pr-ou').value };
+        if (!o.ingredientId || !(Number(o.quantity) > 0) || !inputs.length || inputs.some((l) => !l.ingredientId || !(Number(l.quantity) > 0))) { err.textContent = 'Choose the product, and type a quantity on every row.'; err.hidden = false; return; }
+        await queueEvent('production', { producedAt: new Date().toISOString(), shift: p.querySelector('#pr-shift').value || undefined, inputs, outputs: [o] }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
+        closeSheet();
+        S.note = { text: 'Saved on this phone. It will be sent when there is a connection.' };
+        syncNow({ refreshMenu: false }).then(afterSync);
+        viewKitchen();
+      };
+    },
+  );
+}
+
+function openWaste() {
+  const list = S.snap.stockItems;
+  openSheet(
+    `<h2>Record food waste</h2>
+     <label>Item<select id="w-i">${itemOpts(list)}</select></label>
+     <div class="row"><input id="w-q" inputmode="decimal" placeholder="Quantity" aria-label="Quantity"><select id="w-u" aria-label="Unit"></select></div>
+     <label>Reason<select id="w-r">${KIT_REASONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+     <input id="w-n" placeholder="Note (required for Other)" aria-label="Note">
+     <div id="w-err" class="note bad" hidden></div>
+     <button class="btn block mt" id="w-save">Save</button><button class="btn line block mt" data-close>Cancel</button>`,
+    (p) => {
+      const it = p.querySelector('#w-i');
+      it.onchange = () => { const x = list.find((i) => i.id === it.value); p.querySelector('#w-u').innerHTML = unitOpts(x, x && x.unit); };
+      p.querySelector('#w-save').onclick = async () => {
+        const err = p.querySelector('#w-err');
+        const reason = p.querySelector('#w-r').value;
+        const note = p.querySelector('#w-n').value.trim();
+        const qty = p.querySelector('#w-q').value.trim();
+        if (!it.value || !(Number(qty) > 0)) { err.textContent = 'Choose the item and type a quantity.'; err.hidden = false; return; }
+        if (reason === 'OTHER' && note.length < 3) { err.textContent = 'Say what happened.'; err.hidden = false; return; }
+        await queueEvent('waste', { ingredientId: it.value, quantity: qty, unit: p.querySelector('#w-u').value, reason, note: note || undefined, occurredAt: new Date().toISOString() }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
+        closeSheet();
+        S.note = { text: 'Saved on this phone. It will be sent when there is a connection.' };
+        syncNow({ refreshMenu: false }).then(afterSync);
+        viewKitchen();
+      };
+    },
+  );
+}
+
 // ------------------------------------------------------------------- start ---
 async function start() {
+  let did = await kv.get('deviceId');
+  if (!did) { did = `phone-${newId()}`; await kv.set('deviceId', did); }
+  setDeviceId(did);
   S.snap = await kv.get('snapshot');
   S.setupDismissed = !!(await kv.get('setupDismissed'));
   if (!S.snap) return renderLogin();
