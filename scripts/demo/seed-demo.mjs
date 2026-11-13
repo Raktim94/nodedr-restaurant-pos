@@ -3,7 +3,7 @@
 //
 // Run it inside the backend container (or any place with the backend's node_modules and DATABASE_URL), with the demo
 // server running (DEMO_MODE=true, DEMO_USER_EMAIL=demo@orderrestro.nodedr.com):
-//   cat seed-demo.mjs | docker exec -i orderrestro-demo-backend sh -c 'cd /app && node --input-type=module -'
+//   cat seed-demo.mjs | docker exec -i orderrestro-demo-backend node --input-type=module -
 // It never touches any other database: it only talks to http://localhost:$PORT and to DATABASE_URL.
 import { createRequire } from 'node:module';
 import { randomBytes } from 'node:crypto';
