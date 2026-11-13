@@ -17,6 +17,7 @@ const ALWAYS_FULL_ACCESS_ROLES = ['OWNER', 'ADMINISTRATOR'] as const;
 // admin who later removes it is not overruled on the next restart.
 const GRANT_WHEN_CREATED: Record<string, string[]> = {
   'delivery.rider': ['DELIVERY_STAFF'],
+  'production.record': ['KITCHEN_STAFF', 'CHEF'],
 };
 
 @Injectable()

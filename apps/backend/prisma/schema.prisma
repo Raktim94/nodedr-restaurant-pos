@@ -201,9 +201,11 @@ model Branch {
   notifications      Notification[]
   integrationApiKeys IntegrationApiKey[]
 
-  menuItemCostings MenuItemCosting[]
-  preparations     Preparation[]
-  productionRuns   ProductionRun[]
+  menuItemCostings  MenuItemCosting[]
+  productionEntries ProductionEntry[]
+  wasteEntries      WasteEntry[]
+  preparations      Preparation[]
+  productionRuns    ProductionRun[]
 
   @@index([restaurantId])
   @@map("branches")
@@ -719,10 +721,18 @@ model Ingredient {
   conversions      Json                 @default("[]")
   version          Int                  @default(1)
 
+  // Stock journal (additive). category/storageLocation are plain labels; a waste entry bigger than
+  // wasteApprovalQty (in this item's stock unit) waits for a manager, null = never needs approval.
+  category         String?
+  storageLocation  String?
+  wasteApprovalQty Decimal? @db.Decimal(12, 3)
+
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  productionLines    ProductionLine[]
+  wasteEntries       WasteEntry[]
   preparation        Preparation?
   preparationLines   PreparationLine[]
   modifierLines      ModifierIngredient[]
@@ -1185,6 +1195,8 @@ model StockBatch {
 }
 
 enum StockMovementType {
+  OPENING // opening balance recorded when a stock item starts being tracked
+  PRODUCTION_USE // raw material actually used up by a production entry
   PRODUCTION // finished output of a production run, received into stock
   RECEIPT
   WASTE
@@ -1213,12 +1225,17 @@ model StockMovement {
   batchId      String?
   batch        StockBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
 
-  type     StockMovementType
-  quantity Decimal           @db.Decimal(12, 3) // signed: +in, -out
-  note     String?
+  type              StockMovementType
+  quantity          Decimal           @db.Decimal(12, 3) // signed: +in, -out
+  note              String?
   // Set for order-driven movements (checkout consumption / return reversal).
   // Plain column, no FK: the ledger must outlive a deleted order.
-  orderId  String?
+  orderId           String?
+  // Journal links. Plain columns, no FK, for the same reason as orderId: the ledger outlives its
+  // source record. deviceId is set for events that were created on a phone while offline.
+  productionEntryId String?
+  wasteEntryId      String?
+  deviceId          String?
 
   createdById String
   createdBy   User     @relation("StockMovementCreatedBy", fields: [createdById], references: [id])
@@ -1226,10 +1243,16 @@ model StockMovement {
 
   @@index([branchId, ingredientId, createdAt])
   @@index([orderId])
+  @@index([productionEntryId])
+  @@index([wasteEntryId])
+  @@index([branchId, createdAt])
   @@map("stock_movements")
 }
 
 enum WasteReason {
+  RETURNED_PLATE
+  PREP_TRIM
+  STORAGE_TEMPERATURE
   EXPIRED
   SPOILED
   DAMAGED
@@ -1251,6 +1274,9 @@ model WasteLog {
   reason          WasteReason
   unitCostAtWaste Decimal     @db.Decimal(12, 4)
   notes           String?
+  // Set for entries made through the waste journal (one entry can touch several batches).
+  entryId         String?
+  entry           WasteEntry? @relation(fields: [entryId], references: [id], onDelete: SetNull)
 
   createdById String
   createdBy   User     @relation("WasteLogCreatedBy", fields: [createdById], references: [id])
@@ -1682,7 +1708,7 @@ model OrderItem {
   // line lives in OrderItemCost, a separate table, because order rows are returned to waiters,
   // kiosks and customers and a cost must never travel with them.
   portion      String? // HALF | FULL | CUSTOM as ordered; null for plain items
-  portionRatio Decimal @default(1) @db.Decimal(5, 3)
+  portionRatio Decimal        @default(1) @db.Decimal(5, 3)
   cost         OrderItemCost?
 
   modifiers    OrderItemModifier[]
@@ -2877,4 +2903,133 @@ model GatewayRefund {
   @@index([gatewayPaymentId])
   @@index([orderId])
   @@map("gateway_refunds")
+}
+
+// ---------------------------------------------------------------------------
+// Stock journal: daily production (actual quantities, no recipe) and waste entries
+// ---------------------------------------------------------------------------
+
+enum ProductionStatus {
+  DRAFT
+  POSTED
+  VOIDED
+}
+
+enum ProductionLineRole {
+  INPUT // raw material actually used
+  OUTPUT // finished quantity actually produced
+}
+
+enum WasteKind {
+  INGREDIENT
+  FINISHED
+}
+
+enum WasteStatus {
+  POSTED
+  PENDING_APPROVAL
+  REJECTED
+  REVERSED
+}
+
+// One batch the kitchen made: what went in and what came out, as measured. Posting writes every
+// stock movement in one transaction; a posted entry is never edited, only voided (reversed) or
+// replaced through a correction that points back at it.
+model ProductionEntry {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  entryNo        String
+  status         ProductionStatus @default(DRAFT)
+  producedAt     DateTime
+  shift          String?
+  location       String?
+  batchRef       String?
+  notes          String?
+  responsibleId  String?
+  idempotencyKey String?
+  deviceId       String?
+
+  correctsEntryId String?
+  correctsEntry   ProductionEntry?  @relation("ProductionCorrection", fields: [correctsEntryId], references: [id], onDelete: SetNull)
+  correctedBy     ProductionEntry[] @relation("ProductionCorrection")
+
+  createdById String
+  createdAt   DateTime  @default(now())
+  postedById  String?
+  postedAt    DateTime?
+  voidedById  String?
+  voidedAt    DateTime?
+  voidReason  String?
+
+  lines ProductionLine[]
+
+  @@unique([branchId, entryNo])
+  @@unique([branchId, idempotencyKey])
+  @@index([branchId, producedAt])
+  @@map("production_entries")
+}
+
+model ProductionLine {
+  id           String             @id @default(cuid())
+  entryId      String
+  entry        ProductionEntry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  role         ProductionLineRole
+  ingredientId String
+  ingredient   Ingredient         @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  // As typed by the cook (e.g. 6 KG) and the same amount in the item's own stock unit.
+  enteredQuantity Decimal        @db.Decimal(12, 3)
+  enteredUnit     IngredientUnit
+  quantity        Decimal        @db.Decimal(12, 3)
+
+  @@index([entryId])
+  @@index([ingredientId])
+  @@map("production_lines")
+}
+
+// One waste event. includedInProduction = the quantity is already part of a production entry's
+// shortfall (for example batter spilled while making idli), so it is recorded for reporting but
+// does NOT move stock a second time.
+model WasteEntry {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  kind         WasteKind
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  enteredQuantity Decimal        @db.Decimal(12, 3)
+  enteredUnit     IngredientUnit
+  quantity        Decimal        @db.Decimal(12, 3)
+
+  reason               WasteReason
+  shift                String?
+  location             String?
+  note                 String?
+  occurredAt           DateTime
+  includedInProduction Boolean     @default(false)
+  productionEntryId    String?
+
+  status         WasteStatus @default(POSTED)
+  idempotencyKey String?
+  deviceId       String?
+
+  createdById   String
+  createdAt     DateTime  @default(now())
+  approvedById  String?
+  approvedAt    DateTime?
+  decisionNote  String?
+  reversedById  String?
+  reversedAt    DateTime?
+  reverseReason String?
+
+  logs WasteLog[]
+
+  @@unique([branchId, idempotencyKey])
+  @@index([branchId, occurredAt])
+  @@index([ingredientId])
+  @@map("waste_entries")
 }

@@ -3,12 +3,20 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma, StockMovementType } from '@prisma/client';
+import { Prisma, type StockMovementType } from '@prisma/client';
 import type { StockAdjustmentDto } from '@nodedr-restaurant/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { round3 } from '../../common/money';
 
 type Tx = Prisma.TransactionClient;
+const Dec = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
+
+// Links a movement to the journal record that caused it.
+export interface MovementRefs {
+  productionEntryId?: string;
+  wasteEntryId?: string;
+  deviceId?: string;
+}
 
 export interface StockConsumptionPortion {
   batchId: string | null;
@@ -56,13 +64,14 @@ export class StockService {
     tx: Tx,
     branchId: string,
     ingredientId: string,
-    quantity: number,
+    quantity: Prisma.Decimal.Value,
     opts: {
       type: StockMovementType;
       note?: string;
       userId: string;
       allowNegative?: boolean;
       orderId?: string;
+      refs?: MovementRefs;
     },
   ): Promise<StockConsumptionPortion[]> {
     const ingredient = await tx.ingredient.findFirst({
@@ -88,35 +97,32 @@ export class StockService {
       orderBy: { receivedAt: 'asc' },
     });
 
+    // All arithmetic below is exact decimal (Prisma.Decimal), never a binary float.
+    const wanted = Dec(quantity);
     const availableFromBatches = batches.reduce(
-      (sum, b) => sum + Number(b.quantityRemaining),
-      0,
+      (sum, bt) => sum.plus(bt.quantityRemaining),
+      Dec(0),
     );
     const available =
-      batches.length > 0
-        ? availableFromBatches
-        : Number(ingredient.currentStock);
+      batches.length > 0 ? availableFromBatches : Dec(ingredient.currentStock);
 
-    if (quantity > available && !opts.allowNegative) {
+    if (wanted.gt(available) && !opts.allowNegative) {
       throw new BadRequestException(
-        `Cannot consume ${quantity} ${ingredient.unit} of ${ingredient.name} — only ${available} in stock`,
+        `Cannot use ${wanted.toString()} ${ingredient.unit} of ${ingredient.name} — only ${available.toString()} in stock`,
       );
     }
 
     const portions: StockConsumptionPortion[] = [];
-    let remaining = quantity;
+    let remaining = wanted;
+    const refs = opts.refs ?? {};
 
     for (const batch of batches) {
-      if (remaining <= 0) break;
-      const consumeQty = Math.min(remaining, Number(batch.quantityRemaining));
+      if (remaining.lte(0)) break;
+      const consumeQty = Prisma.Decimal.min(remaining, batch.quantityRemaining);
 
       await tx.stockBatch.update({
         where: { id: batch.id },
-        data: {
-          quantityRemaining: round3(
-            Number(batch.quantityRemaining) - consumeQty,
-          ),
-        },
+        data: { quantityRemaining: Dec(batch.quantityRemaining).minus(consumeQty) },
       });
       await tx.stockMovement.create({
         data: {
@@ -124,21 +130,22 @@ export class StockService {
           ingredientId,
           batchId: batch.id,
           type: opts.type,
-          quantity: -consumeQty,
+          quantity: consumeQty.negated(),
           note: opts.note,
           createdById: opts.userId,
           orderId: opts.orderId,
+          ...refs,
         },
       });
       portions.push({
         batchId: batch.id,
-        quantity: consumeQty,
+        quantity: consumeQty.toNumber(),
         unitCost: Number(batch.unitCost),
       });
-      remaining = round3(remaining - consumeQty);
+      remaining = remaining.minus(consumeQty);
     }
 
-    if (remaining > 0) {
+    if (remaining.gt(0)) {
       // Either no batch history at all, or (allowNegative only) demand
       // exceeded every batch on hand — book the rest against the
       // ingredient directly at its current weighted-average cost.
@@ -147,24 +154,23 @@ export class StockService {
           branchId,
           ingredientId,
           type: opts.type,
-          quantity: -remaining,
+          quantity: remaining.negated(),
           note: opts.note,
           createdById: opts.userId,
           orderId: opts.orderId,
+          ...refs,
         },
       });
       portions.push({
         batchId: null,
-        quantity: remaining,
+        quantity: remaining.toNumber(),
         unitCost: Number(ingredient.costPerUnit),
       });
     }
 
     await tx.ingredient.update({
       where: { id: ingredientId },
-      data: {
-        currentStock: round3(Number(ingredient.currentStock) - quantity),
-      },
+      data: { currentStock: Dec(ingredient.currentStock).minus(wanted) },
     });
 
     return portions;
