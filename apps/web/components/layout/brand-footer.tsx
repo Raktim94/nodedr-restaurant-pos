@@ -1,6 +1,13 @@
 import { LifeBuoy } from "lucide-react";
 
-export function BrandFooter() {
+export function BrandFooter({ collapsed = false }: { collapsed?: boolean }) {
+  if (collapsed) {
+    return (
+      <div className="border-t border-sidebar-border px-1 py-3 text-center">
+        <a href="https://orderrestro.nodedr.com/" target="_blank" rel="noopener noreferrer" className="text-[10px] font-medium leading-tight text-sidebar-foreground/70 hover:underline">NodeDR</a>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-2 border-t border-sidebar-border px-4 py-3">
       <a
@@ -18,7 +25,7 @@ export function BrandFooter() {
         rel="noopener noreferrer"
         className="text-left text-xs font-medium leading-tight text-sidebar-foreground/70 hover:text-sidebar-foreground hover:underline"
       >
-        OrderRestro
+        Made by NodeDR
       </a>
     </div>
   );
