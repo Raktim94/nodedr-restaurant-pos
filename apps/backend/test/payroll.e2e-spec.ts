@@ -229,6 +229,8 @@ run('Payroll (e2e)', () => {
     });
     expect(slip.deductions).toEqual({
       unpaidLeave: 0,
+      late: 0,
+      absence: 0,
       advanceRecovery: 300,
       other: 50,
     });

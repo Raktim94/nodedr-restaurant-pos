@@ -225,14 +225,14 @@ function Payroll({ branchId }: { branchId: string | null }) {
     return { start: iso(first), end: iso(last) };
   });
   const [open, setOpen] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Record<string, { payType: "MONTHLY" | "HOURLY"; rate: string; ot: string; mult: string }>>({});
+  const [draft, setDraft] = useState<Record<string, { payType: "MONTHLY" | "HOURLY"; rate: string; ot: string; mult: string; grace: string; absent: boolean }>>({});
 
   return (
     <div className="flex flex-col gap-4">
       <Card className="flex flex-col gap-3 p-4">
         <p className="text-sm font-medium text-foreground">Pay rates</p>
         {pay?.map((p) => {
-          const d = draft[p.userId] ?? { payType: p.payType ?? "MONTHLY", rate: String(p.rate ?? ""), ot: p.overtimeAfterHours != null ? String(p.overtimeAfterHours) : "", mult: String(p.overtimeMultiplier ?? 1.5) };
+          const d = draft[p.userId] ?? { payType: p.payType ?? "MONTHLY", rate: String(p.rate ?? ""), ot: p.overtimeAfterHours != null ? String(p.overtimeAfterHours) : "", mult: String(p.overtimeMultiplier ?? 1.5), grace: p.lateGraceMinutes != null ? String(p.lateGraceMinutes) : "", absent: !!p.deductAbsence };
           return (
             <div key={p.userId} className="flex flex-wrap items-center gap-2 text-sm">
               <span className="w-40 truncate">{p.name}</span>
@@ -258,12 +258,18 @@ function Payroll({ branchId }: { branchId: string | null }) {
                   <Input aria-label="Overtime multiplier" className="w-20" inputMode="decimal" placeholder="x1.5" value={d.mult} onChange={(e) => setDraft({ ...draft, [p.userId]: { ...d, mult: e.target.value } })} />
                 </>
               )}
+              {d.payType === "MONTHLY" && (
+                <>
+                  <Input aria-label="Late grace minutes" className="w-28" inputMode="numeric" placeholder="Late after (min)" value={d.grace} onChange={(e) => setDraft({ ...draft, [p.userId]: { ...d, grace: e.target.value } })} />
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground"><input type="checkbox" checked={d.absent} onChange={(e) => setDraft({ ...draft, [p.userId]: { ...d, absent: e.target.checked } })} /> Deduct absent days</label>
+                </>
+              )}
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() =>
                   setPay.mutate(
-                    { userId: p.userId, payType: d.payType, rate: Number(d.rate), overtimeAfterHours: d.ot ? Number(d.ot) : null, overtimeMultiplier: d.mult ? Number(d.mult) : undefined },
+                    { userId: p.userId, payType: d.payType, rate: Number(d.rate), overtimeAfterHours: d.ot ? Number(d.ot) : null, overtimeMultiplier: d.mult ? Number(d.mult) : undefined, lateGraceMinutes: d.grace.trim() !== "" ? Number(d.grace) : null, deductAbsence: d.absent },
                     { onSuccess: () => toast.success("Saved"), onError: (e) => toast.error(errMsg(e)) },
                   )
                 }
