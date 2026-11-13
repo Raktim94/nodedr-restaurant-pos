@@ -23,7 +23,7 @@ export default function SuppliersPage() {
         <div>
           <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Inventory</h1>
           <p className="text-sm text-muted-foreground">
-            Ingredients, recipe costing, purchase orders, and waste
+            Stock, daily production, purchasing, and food waste
           </p>
         </div>
         <AddSupplierDialog branchId={branchId} />

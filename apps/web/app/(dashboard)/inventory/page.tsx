@@ -47,7 +47,7 @@ function InventoryView() {
         <div>
           <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Inventory</h1>
           <p className="text-sm text-muted-foreground">
-            Ingredients, recipe costing, purchase orders, and waste
+            Stock, daily production, purchasing, and food waste
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -154,7 +154,7 @@ function InventoryView() {
           <div className="flex flex-col items-center gap-2 py-16 text-center">
             <p className="text-sm font-medium text-foreground">No ingredients yet</p>
             <p className="text-sm text-muted-foreground">
-              Add your raw materials to start recipe costing and stock tracking.
+              Add your raw materials and finished products to start tracking stock.
             </p>
           </div>
         )}

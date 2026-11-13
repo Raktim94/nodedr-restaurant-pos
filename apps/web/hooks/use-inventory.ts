@@ -20,10 +20,17 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
+// What the form sends: the server fills in the defaults for kind and conversions.
+export type IngredientInput = Omit<IngredientDto, "kind" | "conversions"> &
+  Partial<Pick<IngredientDto, "kind" | "conversions">>;
+
 export interface Ingredient {
   id: string;
   name: string;
   sku: string | null;
+  kind?: "PURCHASED" | "PREPARED";
+  category?: string | null;
+  storageLocation?: string | null;
   unit: IngredientUnit;
   reorderLevel: string;
   currentStock: string;
@@ -210,7 +217,7 @@ export function useLowStockIngredients(branchId: string | null) {
 export function useCreateIngredient(branchId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (dto: IngredientDto) =>
+    mutationFn: (dto: IngredientInput) =>
       api.post<Ingredient>(`/inventory/ingredients?branchId=${branchId}`, dto),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory", "ingredients", branchId] }),
   });
