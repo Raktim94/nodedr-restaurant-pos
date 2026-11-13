@@ -12,6 +12,8 @@ import {
 import { ApiTags } from '@nestjs/swagger';
 import {
   bulkTableCreateSchema,
+  layoutNameSchema,
+  permissionSatisfied,
   bulkTableDeleteSchema,
   bulkTableUpdateSchema,
   floorSchema,
@@ -63,9 +65,10 @@ export class TablesController {
   async listFloors(
     @CurrentUser() user: SessionUser,
     @Query('branchId') branchId: string,
+    @Query('edit') forEditing?: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.tablesService.listFloors(branchId);
+    return this.tablesService.listFloors(branchId, forEditing === '1' && permissionSatisfied(user.permissions, 'tables.manage'));
   }
 
   @Auth('tables.manage')
@@ -102,6 +105,43 @@ export class TablesController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.tablesService.createTables(branchId, body as never);
+  }
+
+  @Auth('tables.manage')
+  @Post('floors/:id/layouts')
+  @UsePipes(new ZodValidationPipe(layoutNameSchema))
+  async saveLayout(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: { name: string }) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.saveLayout(branchId, id, body.name);
+  }
+
+  @Auth('tables.manage')
+  @Post('layouts/:id/activate')
+  async activateLayout(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.activateLayout(branchId, id);
+  }
+
+  @Auth('tables.manage')
+  @Post('layouts/:id/save-current')
+  async saveCurrent(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.updateLayoutFromFloor(branchId, id);
+  }
+
+  @Auth('tables.manage')
+  @Patch('layouts/:id')
+  @UsePipes(new ZodValidationPipe(layoutNameSchema))
+  async renameLayout(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: { name: string }) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.renameLayout(branchId, id, body.name);
+  }
+
+  @Auth('tables.manage')
+  @Delete('layouts/:id')
+  async deleteLayout(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.tablesService.deleteLayout(branchId, id);
   }
 
   @Auth('tables.manage')

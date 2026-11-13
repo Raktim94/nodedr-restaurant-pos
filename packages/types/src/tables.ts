@@ -12,6 +12,7 @@ export type TableStatusDto = z.infer<typeof tableStatusSchema>;
 export const floorSchema = z.object({
   name: z.string().min(1),
   sortOrder: z.number().int().default(0),
+  isActive: z.boolean().default(true),
 });
 export type FloorDto = z.infer<typeof floorSchema>;
 
@@ -87,3 +88,5 @@ export type BulkTableUpdateDto = z.infer<typeof bulkTableUpdateSchema>;
 
 export const bulkTableDeleteSchema = z.object({ ids: z.array(z.string()).min(1).max(200) });
 export type BulkTableDeleteDto = z.infer<typeof bulkTableDeleteSchema>;
+
+export const layoutNameSchema = z.object({ name: z.string().trim().min(1).max(60) });

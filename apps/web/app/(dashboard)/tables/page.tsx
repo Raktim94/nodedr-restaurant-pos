@@ -3,6 +3,7 @@
 import { LayoutGrid, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { CreateTablesDialog, ManageTablesDialog } from "@/components/tables/bulk-tables-dialogs";
+import { LayoutsBar } from "@/components/tables/layouts-bar";
 import { AddFloorDialog } from "@/components/tables/add-floor-dialog";
 import { EditableTableTile } from "@/components/tables/editable-table-tile";
 import { RenameFloorDialog } from "@/components/tables/rename-floor-dialog";
@@ -25,12 +26,14 @@ export default function TablesPage() {
   const { data: me } = useCurrentUser();
   // tables.view is read-only (status updates stay available); layout edits need tables.manage.
   const canManage = hasPermission(me?.user, "tables.manage");
-  const floorsQuery = useFloors(branchId);
+  const [wantEdit, setWantEdit] = useState(false);
+  const floorsQuery = useFloors(branchId, wantEdit && canManage);
   const { data: floors } = floorsQuery;
   const { isLoading: branchLoading } = useBranch();
   const isLoading = floorsQuery.isLoading || branchLoading;
   const [activeFloorId, setActiveFloorId] = useState<string | undefined>(undefined);
-  const [editModeRequested, setEditMode] = useState(false);
+  const [editModeRequested, setEditModeRaw] = useState(false);
+  const setEditMode = (f: (v: boolean) => boolean) => { setEditModeRaw((v) => { const n = f(v); setWantEdit(n); return n; }); };
   const editMode = canManage && editModeRequested;
   const [editorTable, setEditorTable] = useState<RestaurantTable | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -141,6 +144,7 @@ export default function TablesPage() {
                     Add table
                   </Button>
                   <CreateTablesDialog branchId={branchId} floorId={activeFloor?.id ?? floors[0].id} floorName={activeFloor?.name ?? floors[0].name} existing={(activeFloor ?? floors[0]).tables.map((t) => t.number)} />
+                  <div className="w-full"><LayoutsBar branchId={branchId} floor={activeFloor ?? floors[0]} /></div>
                   {(activeFloor ?? floors[0]).tables.length > 0 && <ManageTablesDialog branchId={branchId} tables={(activeFloor ?? floors[0]).tables} floorName={activeFloor?.name ?? floors[0].name} />}
                 </>
               )}

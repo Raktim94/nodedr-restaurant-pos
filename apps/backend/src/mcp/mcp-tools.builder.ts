@@ -1047,6 +1047,7 @@ export class McpToolsBuilder {
             await this.tables.createFloor(branchId, {
               name: args.string('name'),
               sortOrder: args.optionalNumber('sortOrder') ?? 0,
+              isActive: true,
             }),
           );
         },

@@ -564,8 +564,10 @@ model Floor {
 
   name      String
   sortOrder Int    @default(0)
+  isActive  Boolean @default(true)
 
-  tables Table[]
+  tables  Table[]
+  layouts FloorLayout[]
 
   @@index([branchId])
   @@map("floors")
@@ -596,6 +598,9 @@ model Table {
   rotation Float   @default(0)
   shape    String  @default("square") // square | round | rect
   color    String?
+
+  // Hidden by the active floor layout (not part of it). Orders keep pointing at the table.
+  hidden Boolean @default(false)
 
   assignedWaiterId String?
   assignedWaiter   User?   @relation("TableWaiter", fields: [assignedWaiterId], references: [id], onDelete: SetNull)
@@ -3043,4 +3048,22 @@ model WasteEntry {
   @@index([branchId, occurredAt])
   @@index([ingredientId])
   @@map("waste_entries")
+}
+
+// A saved arrangement of one floor (lunch, dinner, event). Tables are the same physical tables in every
+// layout; a layout remembers which are in use and where they sit. Activating one applies it.
+model FloorLayout {
+  id        String  @id @default(cuid())
+  floorId   String
+  floor     Floor   @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  name      String
+  isActive  Boolean @default(false)
+  sortOrder Int     @default(0)
+  // [{tableId,posX,posY,width,height,rotation}] for the tables that are in this layout
+  tables    Json    @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([floorId, name])
+  @@map("floor_layouts")
 }
