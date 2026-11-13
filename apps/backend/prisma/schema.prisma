@@ -337,6 +337,7 @@ model User {
   auditLogs     AuditLog[]
   refundsIssued Refund[]
   notifications Notification[] @relation("NotificationRecipient")
+  posDevices PosDevice[]
   deviceTokens  DeviceToken[]
 
   purchaseOrdersCreated PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
@@ -3066,4 +3067,30 @@ model FloorLayout {
 
   @@unique([floorId, name])
   @@map("floor_layouts")
+}
+
+// A phone enrolled to take orders. The phone sends its deviceId on every request; revoking the row makes
+// the server refuse that phone even though its user's session is still valid.
+model PosDevice {
+  id           String    @id @default(cuid())
+  restaurantId String
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId     String
+  name         String
+  platform     String?
+  appVersion   String?
+  enrolledAt   DateTime  @default(now())
+  lastSeenAt   DateTime  @default(now())
+  lastSyncAt   DateTime?
+  pendingCount Int       @default(0)
+  failedCount  Int       @default(0)
+  lastError    String?
+  revokedAt    DateTime?
+  revokedById  String?
+
+  @@unique([restaurantId, deviceId])
+  @@index([userId])
+  @@index([deviceId])
+  @@map("pos_devices")
 }
