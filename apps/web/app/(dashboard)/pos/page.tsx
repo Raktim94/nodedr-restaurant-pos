@@ -25,6 +25,7 @@ import {
   type OpenOrder,
 } from "@/hooks/use-orders";
 import { useFloors, type RestaurantTable } from "@/hooks/use-tables";
+import { ManufacturingCard } from "@/components/pos/manufacturing-card";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -289,9 +290,12 @@ function PosPageInner() {
         </Card>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden lg:grid-cols-[1fr_360px]">
-          <Card className="min-h-0 overflow-hidden p-3 sm:p-5">
-            <ProductGrid branchId={branchId} onSelect={handleSelect} />
-          </Card>
+          <div className="flex min-h-0 flex-col gap-3">
+            <Card className="min-h-0 flex-1 overflow-hidden p-3 sm:p-5">
+              <ProductGrid branchId={branchId} onSelect={handleSelect} />
+            </Card>
+            <ManufacturingCard branchId={branchId} />
+          </div>
 
           <Card
             className={cn(
