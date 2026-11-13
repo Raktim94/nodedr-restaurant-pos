@@ -42,17 +42,18 @@ export default function JournalPage() {
   const [unit, setUnit] = useState("");
   const [text, setText] = useState("");
   const [dir, setDir] = useState<"ADD" | "REMOVE">("REMOVE");
+  const [expiry, setExpiry] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const receive = useReceiveStock(branchId);
   const adjust = useJournalAdjust(branchId);
   const chosen = items?.find((i) => i.id === item);
 
-  const close = () => { setMode(null); setItem(""); setQty(""); setUnit(""); setText(""); setErr(null); };
+  const close = () => { setExpiry(""); setMode(null); setItem(""); setQty(""); setUnit(""); setText(""); setErr(null); };
   const submit = () => {
     const u = (unit || chosen?.unit) as never;
     const onError = (e: unknown) => setErr(e instanceof ApiError ? e.message : "Could not save");
     if (mode === "receive") {
-      receive.mutate({ ingredientId: item, quantity: qty, unit: u, reference: text || undefined }, { onSuccess: () => { toast.success("Stock received"); close(); }, onError });
+      receive.mutate({ ingredientId: item, quantity: qty, unit: u, reference: text || undefined, expiryDate: expiry ? new Date(`${expiry}T00:00:00`).toISOString() : undefined }, { onSuccess: () => { toast.success("Stock received"); close(); }, onError });
     } else {
       adjust.mutate({ ingredientId: item, direction: dir, quantity: qty, unit: u, reason: text }, { onSuccess: () => { toast.success("Adjustment recorded"); close(); }, onError });
     }
@@ -142,6 +143,9 @@ export default function JournalPage() {
               </select>
             </div>
             <Input aria-label={mode === "receive" ? "Supplier or invoice reference" : "Reason"} placeholder={mode === "receive" ? "Supplier / invoice reference (optional)" : "Reason (required)"} value={text} onChange={(e) => setText(e.target.value)} />
+            {mode === "receive" && (
+              <label className="flex flex-col gap-1.5 text-sm">Use by / expiry date (optional)<Input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></label>
+            )}
             {err && <p role="alert" className="text-sm text-destructive">{err}</p>}
           </div>
           <DialogFooter>

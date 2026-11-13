@@ -31,6 +31,7 @@ export interface Ingredient {
   kind?: "PURCHASED" | "PREPARED";
   category?: string | null;
   storageLocation?: string | null;
+  parLevel?: string | null;
   unit: IngredientUnit;
   reorderLevel: string;
   currentStock: string;

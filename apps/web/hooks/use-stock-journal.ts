@@ -142,7 +142,7 @@ export const useSuggestions = (branchId: string | null, productId: string) =>
 function useRefresh() {
   const qc = useQueryClient();
   return () => {
-    for (const k of ["production", "production-report", "stock-items", "journal", "ingredients", "waste-entries", "waste-report"]) {
+    for (const k of ["production", "production-report", "stock-items", "journal", "ingredients", "waste-entries", "waste-report", "expiring", "reorder"]) {
       void qc.invalidateQueries({ queryKey: [k] });
     }
   };
@@ -184,7 +184,7 @@ export const useJournal = (branchId: string | null, filters: Record<string, stri
 export function useReceiveStock(branchId: string | null) {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: (body: { ingredientId: string; quantity: string; unit: IngredientUnit; reference?: string; note?: string }) =>
+    mutationFn: (body: { ingredientId: string; quantity: string; unit: IngredientUnit; reference?: string; note?: string; expiryDate?: string }) =>
       api.post(`/inventory/journal/receipts?${qs(branchId)}`, body),
     onSuccess: refresh,
   });
@@ -228,5 +228,23 @@ export function useWasteAction(branchId: string | null) {
     mutationFn: (a: { id: string; action: "approve" | "reject" | "reverse"; body?: unknown }) =>
       api.post<WasteEntry>(`/inventory/waste/entries/${a.id}/${a.action}?${qs(branchId)}`, a.body ?? {}),
     onSuccess: refresh,
+  });
+}
+
+export interface ExpiringRow { batchId: string; ingredientId: string; name: string; unit: IngredientUnit; storageLocation: string | null; quantity: string; expiryDate: string; expired: boolean; daysLeft: number }
+export const useExpiring = (branchId: string | null, days = 7) =>
+  useQuery({ queryKey: ["expiring", branchId, days], queryFn: () => api.get<ExpiringRow[]>(`/inventory/journal/expiring?${qs(branchId, { days: String(days) })}`), enabled: !!branchId });
+
+export interface ReorderRow { id: string; name: string; unit: IngredientUnit; category: string | null; storageLocation: string | null; inStock: string; minimum: string; par: string; toBuy: string }
+export const useReorder = (branchId: string | null) =>
+  useQuery({ queryKey: ["reorder", branchId], queryFn: () => api.get<ReorderRow[]>(`/inventory/journal/reorder?${qs(branchId)}`), enabled: !!branchId });
+
+export interface StockTakeResult { id: string; takenAt: string; area: string | null; lines: { ingredientId: string; name: string; unit: string; expected: string; counted: string; difference: string }[] }
+export function useStockTake(branchId: string | null) {
+  const refresh = useRefresh();
+  return useMutation({
+    mutationFn: (body: { area?: string; note?: string; lines: { ingredientId: string; counted: string; unit: IngredientUnit }[]; idempotencyKey: string }) =>
+      api.post<StockTakeResult>(`/inventory/journal/stock-takes?${qs(branchId)}`, body),
+    onSuccess: () => { refresh(); },
   });
 }
