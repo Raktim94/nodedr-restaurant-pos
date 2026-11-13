@@ -37,6 +37,7 @@ export default function CustomersPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Customers</h1>
+          <Link href="/ratings" className="mt-1 inline-block text-sm underline">Customer ratings</Link>
           <p className="text-sm text-muted-foreground">Profiles, loyalty, and order history</p>
         </div>
         <AddCustomerDialog branchId={branchId} />

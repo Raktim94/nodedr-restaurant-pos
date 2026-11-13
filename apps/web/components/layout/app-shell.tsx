@@ -1,8 +1,8 @@
 "use client";
 
 import type { SessionUser } from "@nodedr-restaurant/types";
-import { Menu } from "lucide-react";
-import { useState } from "react";
+import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { EntityDialogHost } from "@/components/layout/entity-dialog-host";
 import { NotificationBell } from "@/components/notifications/notification-bell";
@@ -61,21 +61,34 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Desktop sidebar can collapse to icons. Remembered per browser; works with mouse, touch and keyboard (a real button).
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    let v = false;
+    try { v = localStorage.getItem("orderrestro.sidebar.collapsed") === "1"; } catch { /* storage blocked */ }
+    const t = setTimeout(() => setCollapsed(v), 0);
+    return () => clearTimeout(t);
+  }, []);
+  const toggle = () => setCollapsed((c) => { const n = !c; try { localStorage.setItem("orderrestro.sidebar.collapsed", n ? "1" : "0"); } catch { /* storage blocked */ } return n; });
+  const { branchId: shellBranch } = useBranch();
+  const { data: shellDisplay } = useDisplaySettings(shellBranch);
 
   return (
     <div className="flex min-h-screen bg-background">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
-        <div className="flex h-16 items-center gap-2 px-5">
-          <RestaurantBrand />
+      <aside id="app-sidebar" aria-label="Main navigation" className={`hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none lg:flex ${collapsed ? "w-[4.5rem]" : "w-64"}`}>
+        <div className={`flex h-16 items-center gap-2 ${collapsed ? "justify-center px-2" : "px-5"}`}>
+          {collapsed ? <Logo /> : <RestaurantBrand />}
         </div>
-        <div className="px-3 pb-3">
-          <BranchSwitcher />
-        </div>
+        {!collapsed && (
+          <div className="px-3 pb-3">
+            <BranchSwitcher />
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto py-2">
-          <SidebarNav user={user} />
+          <SidebarNav user={user} collapsed={collapsed} />
         </div>
-        <BrandFooter />
+        <BrandFooter collapsed={collapsed} />
       </aside>
 
       {/* Mobile drawer */}
@@ -105,7 +118,20 @@ export function AppShell({
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="hidden lg:block" />
+          <div className="hidden min-w-0 items-center gap-2 lg:flex">
+            <button
+              type="button"
+              onClick={toggle}
+              aria-controls="app-sidebar"
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+            </button>
+            {/* The restaurant's name stays in view whether the sidebar is open or collapsed. */}
+            <span className="truncate text-sm font-semibold text-foreground">{shellDisplay?.restaurant?.name ?? "OrderRestro"}</span>
+          </div>
           <div className="flex items-center gap-1">
             <LanguageSwitcher compact />
             <NotificationBell />

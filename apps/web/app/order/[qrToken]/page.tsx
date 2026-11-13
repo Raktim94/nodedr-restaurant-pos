@@ -2,6 +2,7 @@
 
 import { BellRing, CheckCircle2, Leaf, Minus, Plus, Receipt, UtensilsCrossed } from "lucide-react";
 import { use, useEffect, useRef, useState } from "react";
+import { RatingCard } from "@/components/order/rating-card";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
 import { ModifierPickerDialog } from "@/components/pos/modifier-picker-dialog";
@@ -81,6 +82,7 @@ interface PublicMenuResponse {
   tableName: string;
   categories: PublicMenuCategory[];
   payments?: { cash: boolean; online: boolean };
+  session?: { required: boolean };
 }
 
 export default function PublicMenuPage({
@@ -100,6 +102,38 @@ export default function PublicMenuPage({
   const [payError, setPayError] = useState<string | null>(null);
   // One key per basket + payment choice, kept across retries so a double tap or a dropped connection cannot make a second order.
   const attempt = useRef<{ sig: string; key: string } | null>(null);
+  // The table code the staff gave the guest is traded for a grant kept only in this tab. Old or copied QR photos have none.
+  const sKey = `table-session:${qrToken}`;
+  const [grant, setGrant] = useState<string | null>(null);
+  const [codeDraft, setCodeDraft] = useState("");
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
+  const [sessionMsg, setSessionMsg] = useState<string | null>(null);
+  const hdr = (): RequestInit => (grant ? { headers: { "X-Table-Session": grant } } : {});
+  const lostSession = (e: unknown) => {
+    const code = e instanceof ApiError ? e.code : undefined;
+    if (code === "TABLE_SESSION_REQUIRED" || code === "TABLE_SESSION_EXPIRED") {
+      try { sessionStorage.removeItem(sKey); } catch { /* storage blocked */ }
+      setGrant(null);
+      setSessionMsg(e instanceof ApiError ? e.message : "Your table session has ended. Please ask the staff for a new table code.");
+      return true;
+    }
+    return false;
+  };
+  const joinTable = async () => {
+    setJoining(true);
+    setCodeError(null);
+    try {
+      const r = await api.post<{ token: string }>(`/public/menu/${qrToken}/session`, { code: codeDraft });
+      try { sessionStorage.setItem(sKey, r.token); } catch { /* storage blocked: the grant lives in memory only */ }
+      setGrant(r.token);
+      setSessionMsg(null);
+      setCodeDraft("");
+    } catch (e) {
+      setCodeError(e instanceof ApiError ? e.message : "Could not check the code. Please try again.");
+    }
+    setJoining(false);
+  };
   const [nameDraft, setNameDraft] = useState("");
 
   // Read any name saved earlier this session after mount, not in the state
@@ -110,6 +144,15 @@ export default function PublicMenuPage({
   // (a browser storage API unavailable until after hydration), not the
   // derive-state-from-already-available-data anti-pattern it otherwise
   // flags.
+  useEffect(() => {
+    try {
+      const g = sessionStorage.getItem(sKey);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (g) setGrant(g);
+    } catch { /* storage blocked */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const saved = sessionStorage.getItem(nameStorageKey);
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -139,7 +182,8 @@ export default function PublicMenuPage({
   });
 
   const requestService = useMutation({
-    mutationFn: (type: "WAITER" | "BILL") => api.post(`/public/menu/${qrToken}/request`, { type }),
+    mutationFn: (type: "WAITER" | "BILL") => api.post(`/public/menu/${qrToken}/request`, { type }, hdr()),
+    onError: (e) => { lostSession(e); },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] }),
   });
 
@@ -166,10 +210,12 @@ export default function PublicMenuPage({
       const items = cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds }));
       const sig = JSON.stringify([items, payChoice, guestName]);
       if (!attempt.current || attempt.current.sig !== sig) attempt.current = { sig, key: crypto.randomUUID() };
-      return api.post<{ id: string; orderNumber: string }>(`/public/menu/${qrToken}/order`, { guestName, items, payment: payChoice, idempotencyKey: attempt.current.key });
+      return api.post<{ id: string; orderNumber: string; ratingToken?: string }>(`/public/menu/${qrToken}/order`, { guestName, items, payment: payChoice, idempotencyKey: attempt.current.key }, hdr());
     },
+    onError: (e) => { lostSession(e); },
     onSuccess: async (order) => {
       attempt.current = null;
+      try { if ((order as { ratingToken?: string }).ratingToken) localStorage.setItem(`rating-token:${order.id}`, (order as { ratingToken?: string }).ratingToken!); } catch { /* storage blocked */ }
       setPlaced(order);
       setCart([]);
       queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] });
@@ -385,6 +431,22 @@ export default function PublicMenuPage({
         )}
       </main>
 
+      {data?.session?.required && !grant && (
+        <section aria-label="Table code" className="mx-auto max-w-lg px-5 pt-4">
+          <div className="rounded-2xl border border-primary/40 bg-primary/5 p-4">
+            <h2 className="text-base font-semibold text-foreground">Enter your table code to order</h2>
+            <p className="mt-1 text-sm text-muted-foreground">You can look at the menu now. To order, ask the staff for this table&rsquo;s 6-character code.</p>
+            {sessionMsg && <p role="alert" className="mt-2 text-sm text-destructive">{sessionMsg}</p>}
+            <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (codeDraft.trim().length >= 6) void joinTable(); }}>
+              <label className="sr-only" htmlFor="table-code">Table code</label>
+              <input id="table-code" value={codeDraft} onChange={(e) => setCodeDraft(e.target.value.toUpperCase())} maxLength={8} autoCapitalize="characters" autoComplete="off" spellCheck={false} inputMode="text" className="h-12 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-center text-xl font-semibold uppercase tracking-[0.3em]" placeholder="ABC234" />
+              <Button type="submit" className="h-12" disabled={joining || codeDraft.trim().length < 6}>{joining ? "Checking…" : "Join table"}</Button>
+            </form>
+            {codeError && <p role="alert" className="mt-2 text-sm text-destructive">{codeError}</p>}
+          </div>
+        </section>
+      )}
+
       {status && (status.order || status.openRequests.length > 0 || data) && (
         <section className="mx-auto max-w-lg px-5 pb-6">
           {status.order && (
@@ -406,6 +468,7 @@ export default function PublicMenuPage({
                       : ""}
                 {{ WAITING_PAYMENT: "The kitchen will start as soon as the payment is confirmed.", SENT: "Sent to the kitchen.", NEW: "The kitchen has your order.", PREPARING: "Being prepared.", READY: "Ready, please collect it.", SERVED: "Served. Enjoy!" }[status.order.kitchen]}
               </p>
+              {status.order.paid && <div className="mt-3"><RatingCard orderId={status.order.id} /></div>}
               {!status.order.paid && status.order.payIntent === "ONLINE" && (
                 <div className="mt-3 flex flex-col gap-2">
                   {(status.order.lastPayment === "FAILED" || status.order.lastPayment === "EXPIRED") && (
@@ -492,7 +555,7 @@ export default function PublicMenuPage({
           <div className="mx-auto flex max-w-lg items-center gap-3">
             <Button
               className="h-12 flex-1"
-              disabled={placeOrder.isPending}
+              disabled={placeOrder.isPending || (!!data?.session?.required && !grant)}
               onClick={() => placeOrder.mutate()}
             >
               {placeOrder.isPending

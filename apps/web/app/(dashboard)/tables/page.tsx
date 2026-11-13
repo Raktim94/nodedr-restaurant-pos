@@ -3,6 +3,7 @@
 import { LayoutGrid, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { CreateTablesDialog, ManageTablesDialog } from "@/components/tables/bulk-tables-dialogs";
+import { GuestCodesPanel } from "@/components/tables/guest-codes-panel";
 import { LayoutsBar } from "@/components/tables/layouts-bar";
 import { AddFloorDialog } from "@/components/tables/add-floor-dialog";
 import { EditableTableTile } from "@/components/tables/editable-table-tile";
@@ -204,7 +205,10 @@ export default function TablesPage() {
             </div>
           </div>
 
-          <WaitlistPanel branchId={branchId} availableTables={availableTables} />
+          <div className="flex flex-col gap-6">
+            <WaitlistPanel branchId={branchId} availableTables={availableTables} />
+            {!editMode && <GuestCodesPanel branchId={branchId} floors={floors} />}
+          </div>
         </div>
       ) : (
         <Card className="flex flex-col items-center gap-3 p-16 text-center">
