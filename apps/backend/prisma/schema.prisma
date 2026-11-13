@@ -204,6 +204,7 @@ model Branch {
   menuItemCostings  MenuItemCosting[]
   productionEntries ProductionEntry[]
   stockTakes        StockTake[]
+  stockLocations    StockLocation[]
   wasteEntries      WasteEntry[]
   preparations      Preparation[]
   productionRuns    ProductionRun[]
@@ -741,6 +742,7 @@ model Ingredient {
   updatedAt DateTime @updatedAt
 
   productionLines    ProductionLine[]
+  stockLevels        StockLevel[]
   wasteEntries       WasteEntry[]
   preparation        Preparation?
   preparationLines   PreparationLine[]
@@ -3131,4 +3133,53 @@ model StockTake {
   @@unique([branchId, idempotencyKey])
   @@index([branchId, takenAt])
   @@map("stock_takes")
+}
+
+// A place stock is kept (dry store, walk-in fridge, freezer, bar). The item's total stays on
+// Ingredient.currentStock; a StockLevel says how much of it is in this place. Total minus the levels is
+// "unassigned" until someone counts or moves it.
+model StockLocation {
+  id        String  @id @default(cuid())
+  branchId  String
+  branch    Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+  levels    StockLevel[]
+  createdAt DateTime @default(now())
+
+  @@unique([branchId, name])
+  @@map("stock_locations")
+}
+
+model StockLevel {
+  id           String        @id @default(cuid())
+  ingredientId String
+  ingredient   Ingredient    @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  locationId   String
+  location     StockLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  quantity     Decimal       @default(0) @db.Decimal(12, 3)
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([ingredientId, locationId])
+  @@index([locationId])
+  @@map("stock_levels")
+}
+
+// Moving stock between places in one branch. fromLocationId null = taken from the unassigned part.
+model LocationTransfer {
+  id             String   @id @default(cuid())
+  branchId       String
+  ingredientId   String
+  fromLocationId String?
+  toLocationId   String
+  quantity       Decimal  @db.Decimal(12, 3)
+  note           String?
+  idempotencyKey String?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  @@unique([branchId, idempotencyKey])
+  @@index([branchId, createdAt])
+  @@map("location_transfers")
 }

@@ -12,6 +12,7 @@ import { SupplierQuotationsService } from './supplier-quotations.service';
 import { TransfersController } from './transfers.controller';
 import { TransfersService } from './transfers.service';
 import { ProductionService } from './production.service';
+import { StockLocationsService } from './stock-locations.service';
 import { StockJournalController } from './stock-journal.controller';
 import { StockJournalService } from './stock-journal.service';
 import { WasteEntriesService } from './waste-entries.service';
@@ -27,6 +28,7 @@ import { WasteService } from './waste.service';
     WasteService,
     ProductionService,
     StockJournalService,
+    StockLocationsService,
     WasteEntriesService,
     StockService,
     TransfersService,

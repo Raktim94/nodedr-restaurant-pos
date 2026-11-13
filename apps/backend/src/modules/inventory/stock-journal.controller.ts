@@ -8,6 +8,10 @@ import {
   journalAdjustmentSchema,
   stockReceiptSchema,
   stockTakeSchema,
+  stockLocationSchema,
+  locationTransferSchema,
+  type StockLocationDto,
+  type LocationTransferDto,
   type StockTakeDto,
   type JournalAdjustmentDto,
   type StockReceiptDto,
@@ -29,6 +33,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { allowedUnits, type StockUnit } from './units';
 import { ProductionService, type ProductionFilters } from './production.service';
 import { StockJournalService } from './stock-journal.service';
+import { StockLocationsService } from './stock-locations.service';
 import { WasteEntriesService, type WasteFilters } from './waste-entries.service';
 
 const date = (v?: string) => {
@@ -56,6 +61,7 @@ export class StockJournalController {
     private readonly journal: StockJournalService,
     private readonly production: ProductionService,
     private readonly waste: WasteEntriesService,
+    private readonly locations: StockLocationsService,
     private readonly prisma: PrismaService,
     private readonly branchAccess: BranchAccessService,
   ) {}
@@ -92,6 +98,52 @@ export class StockJournalController {
     return this.journal.exportCsv(branchId, {
       from: date(q.from), to: date(q.to), ingredientId: q.ingredientId || undefined, type: q.type || undefined,
     });
+  }
+
+  // ---- places stock is kept in -------------------------------------------------------------
+
+  @Auth('inventory.manage')
+  @Get('locations')
+  async listLocations(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+    await this.access(u, branchId);
+    return this.locations.list(branchId);
+  }
+
+  @Auth('inventory.manage')
+  @Get('locations/matrix')
+  async matrix(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+    await this.access(u, branchId);
+    return this.locations.matrix(branchId);
+  }
+
+  @Auth('inventory.manage')
+  @Post('locations')
+  @UsePipes(new ZodValidationPipe(stockLocationSchema))
+  async createLocation(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+    await this.access(u, branchId);
+    return this.locations.create(branchId, body as StockLocationDto);
+  }
+
+  @Auth('inventory.manage')
+  @Patch('locations/:id')
+  async updateLocation(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body(new ZodValidationPipe(stockLocationSchema.partial())) body: Partial<StockLocationDto>) {
+    await this.access(u, branchId);
+    return this.locations.update(branchId, id, body);
+  }
+
+  @Auth('inventory.manage')
+  @Get('locations/transfers')
+  async locationTransfers(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+    await this.access(u, branchId);
+    return this.locations.transfers(branchId);
+  }
+
+  @Auth('inventory.manage')
+  @Post('locations/transfers')
+  @UsePipes(new ZodValidationPipe(locationTransferSchema))
+  async locationTransfer(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+    await this.access(u, branchId);
+    return this.locations.transfer(branchId, u.id, body as LocationTransferDto);
   }
 
   @Auth('inventory.manage')

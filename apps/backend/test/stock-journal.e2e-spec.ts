@@ -292,6 +292,39 @@ run('Stock journal, production and waste (e2e)', () => {
     expect((await chef.post(`/api/v1/inventory/journal/stock-takes${q}`).send(sheet)).status).toBe(403);
   });
 
+  it('keeps stock in places: count a place, move stock between places, never more than is there', async () => {
+    const fridge = (await owner.post(`/api/v1/inventory/locations${q}`).send({ name: `Fridge ${tag}` }).expect(201)).body;
+    const dry = (await owner.post(`/api/v1/inventory/locations${q}`).send({ name: `Dry ${tag}` }).expect(201)).body;
+    expect((await owner.post(`/api/v1/inventory/locations${q}`).send({ name: `Dry ${tag}` })).status).toBe(409);
+    const flour = await item('Atta', 'KG');
+    await receive(flour, 20, 'KG').expect(201);
+    // nothing is placed yet: all 20 are unassigned
+    const m0 = (await owner.get(`/api/v1/inventory/locations/matrix${q}`).expect(200)).body.items.find((i: { id: string }) => i.id === flour);
+    expect(Number(m0.unassigned)).toBe(20);
+    // counting 12 kg in the Dry store keeps the total (the system said 20 in total, 0 recorded there -> +12 would raise it)
+    // so first move 20 from unassigned into Dry, then count Dry as 18 (2 kg missing): total 18
+    await owner.post(`/api/v1/inventory/locations/transfers${q}`).send({ ingredientId: flour, toLocationId: dry.id, quantity: '20', unit: 'KG' }).expect(201);
+    const take = (await owner.post(`/api/v1/inventory/journal/stock-takes${q}`).send({ area: `Dry ${tag}`, lines: [{ ingredientId: flour, counted: '18', unit: 'KG' }] }).expect(201)).body;
+    expect(Number(take.lines[0].expected)).toBe(20);
+    expect(Number(take.lines[0].difference)).toBe(-2);
+    expect(Number(await stock(flour))).toBe(18);
+    // move 5 kg Dry -> Fridge; asking for more than Dry holds is refused
+    const key = `loc-${randomUUID()}`;
+    const t1 = (await owner.post(`/api/v1/inventory/locations/transfers${q}`).send({ ingredientId: flour, fromLocationId: dry.id, toLocationId: fridge.id, quantity: '5', unit: 'KG', idempotencyKey: key }).expect(201)).body;
+    const t2 = (await owner.post(`/api/v1/inventory/locations/transfers${q}`).send({ ingredientId: flour, fromLocationId: dry.id, toLocationId: fridge.id, quantity: '5', unit: 'KG', idempotencyKey: key }).expect(201)).body;
+    expect(t2.id).toBe(t1.id); // resent once, moved once
+    expect((await owner.post(`/api/v1/inventory/locations/transfers${q}`).send({ ingredientId: flour, fromLocationId: dry.id, toLocationId: fridge.id, quantity: '50', unit: 'KG' })).status).toBe(400);
+    expect((await owner.post(`/api/v1/inventory/locations/transfers${q}`).send({ ingredientId: flour, fromLocationId: dry.id, toLocationId: dry.id, quantity: '1', unit: 'KG' })).status).toBe(400);
+    const m = (await owner.get(`/api/v1/inventory/locations/matrix${q}`).expect(200)).body.items.find((i: { id: string }) => i.id === flour);
+    expect(Number(m.levels[dry.id])).toBe(13);
+    expect(Number(m.levels[fridge.id])).toBe(5);
+    expect(Number(m.total)).toBe(18); // transfers never change the total
+    expect(Number(m.unassigned)).toBe(0);
+    // a place with stock cannot be switched off
+    expect((await owner.patch(`/api/v1/inventory/locations/${fridge.id}${q}`).send({ isActive: false })).status).toBe(409);
+    expect((await chef.post(`/api/v1/inventory/locations/transfers${q}`).send({ ingredientId: flour, toLocationId: fridge.id, quantity: '1', unit: 'KG' })).status).toBe(403);
+  });
+
   it('shows what expires soon and a shopping list up to the par level', async () => {
     const soon = new Date(Date.now() + 2 * 86_400_000).toISOString();
     const fresh = await item('Paneer', 'KG', { reorderLevel: 5, parLevel: 20 });

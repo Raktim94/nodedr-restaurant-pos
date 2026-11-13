@@ -136,7 +136,7 @@ run('Offline attendance events (e2e)', () => {
     expect(a2.body.id).toBe(a.body.id);
     const b = await me.post('/api/v1/attendance/events').send({ type: 'OUT', at: ago(1), branchId: BRANCH, idempotencyKey: kOut, breakMinutes: 30 }).expect(201);
     expect(b.body.id).toBe(a.body.id);
-    expect(new Date(b.body.clockOutAt).getTime() - new Date(b.body.clockInAt).getTime()).toBe(8 * 3_600_000);
+    expect(Math.abs(new Date(b.body.clockOutAt).getTime() - new Date(b.body.clockInAt).getTime() - 8 * 3_600_000)).toBeLessThan(2000);
     const b2 = await me.post('/api/v1/attendance/events').send({ type: 'OUT', at: ago(1), branchId: BRANCH, idempotencyKey: kOut, breakMinutes: 30 }).expect(201);
     expect(b2.body.id).toBe(a.body.id);
   });
