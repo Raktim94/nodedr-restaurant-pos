@@ -117,6 +117,11 @@ export type AddOrderItemsDto = z.infer<typeof addOrderItemsSchema>;
 export const publicOrderSchema = z.object({
   guestName: z.string().trim().min(1, "Please enter your name").max(60),
   items: z.array(cartItemSchema).min(1),
+  // How the guest will pay. Omitted = the older behaviour (no payment choice).
+  payment: z.enum(["CASH", "ONLINE"]).optional(),
+  // Made by the phone for this basket and reused on every retry, so a double tap or a dropped connection
+  // can never create a second order or add the same round twice.
+  idempotencyKey: z.string().trim().min(8).max(80).optional(),
 });
 export type PublicOrderDto = z.infer<typeof publicOrderSchema>;
 

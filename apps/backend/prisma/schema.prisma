@@ -203,6 +203,9 @@ model Branch {
 
   menuItemCostings  MenuItemCosting[]
   productionEntries ProductionEntry[]
+  buzzers           Buzzer[]
+  displayTerminals  DisplayTerminal[]
+  displayAds        DisplayAd[]
   stockTakes        StockTake[]
   stockLocations    StockLocation[]
   wasteEntries      WasteEntry[]
@@ -1589,6 +1592,11 @@ model Order {
   channel     OrderChannel     @default(STAFF)
   acceptance  AcceptanceStatus @default(NOT_REQUIRED)
 
+  // Table self-ordering: how the guest said they will pay, and whether the kitchen is waiting for that
+  // payment before it starts (online payments only; a cash order goes to the kitchen at once).
+  payIntent      PayIntent?
+  heldForPayment Boolean     @default(false)
+
   tableId    String?
   table      Table?  @relation(fields: [tableId], references: [id], onDelete: SetNull)
   guestCount Int?
@@ -1758,6 +1766,11 @@ model OrderItemModifier {
 // ---------------------------------------------------------------------------
 // Kitchen Order Tickets
 // ---------------------------------------------------------------------------
+
+enum PayIntent {
+  CASH // the guest will pay at the register
+  ONLINE // the guest chose to pay on their phone
+}
 
 enum KotStatus {
   NEW
@@ -3182,4 +3195,124 @@ model LocationTransfer {
   @@unique([branchId, idempotencyKey])
   @@index([branchId, createdAt])
   @@map("location_transfers")
+}
+
+// A guest's tap/scan can be retried by the phone; the same key never makes a second order or adds a round twice.
+model PublicOrderKey {
+  id        String   @id @default(cuid())
+  branchId  String
+  key       String
+  orderId   String
+  createdAt DateTime @default(now())
+
+  @@unique([branchId, key])
+  @@map("public_order_keys")
+}
+
+// ---------------------------------------------------------------------------
+// Paging buzzers (one per table)
+// ---------------------------------------------------------------------------
+
+enum BuzzerDriver {
+  SIMULATED // a device (or the simulator page) that polls the server with its token
+  WEBHOOK // the server POSTs a signed call to the base station / gateway at webhookUrl
+}
+
+enum BuzzerCallState {
+  PENDING // waiting for the device to collect it
+  SENT // delivered (webhook accepted it, or the device fetched it)
+  ACKED // the guest or staff acknowledged it
+  EXPIRED
+  FAILED
+}
+
+model Buzzer {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name          String
+  // The number printed on the buzzer, if any.
+  number        String?
+  tableId       String?  @unique
+  driver        BuzzerDriver @default(SIMULATED)
+  webhookUrl    String?
+  webhookSecret String?
+  deviceToken   String   @unique
+  isActive      Boolean  @default(true)
+  lastSeenAt    DateTime?
+  createdAt     DateTime @default(now())
+
+  calls BuzzerCall[]
+
+  @@unique([branchId, name])
+  @@map("buzzers")
+}
+
+model BuzzerCall {
+  id        String          @id @default(cuid())
+  buzzerId  String
+  buzzer    Buzzer          @relation(fields: [buzzerId], references: [id], onDelete: Cascade)
+  orderId   String?
+  tableId   String?
+  state     BuzzerCallState @default(PENDING)
+  error     String?
+  createdById String?
+  createdAt DateTime        @default(now())
+  sentAt    DateTime?
+  ackedAt   DateTime?
+  expiresAt DateTime
+
+  @@index([buzzerId, state])
+  @@index([orderId])
+  @@map("buzzer_calls")
+}
+
+// ---------------------------------------------------------------------------
+// Customer-facing screens: one terminal per display, with its own adverts
+// ---------------------------------------------------------------------------
+
+enum AdKind {
+  IMAGE
+  VIDEO
+}
+
+model DisplayTerminal {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name             String
+  token            String  @unique // in the display's URL; read-only access to what is shown
+  idleSeconds      Int     @default(45) // a half-finished order with no change this long returns to adverts
+  thankYouSeconds  Int     @default(8)
+  adSlideSeconds   Int     @default(10)
+  adFit            String  @default("contain") // contain | cover
+  isActive         Boolean @default(true)
+  state            Json?
+  stateAt          DateTime?
+  lastSeenAt       DateTime?
+  createdAt        DateTime @default(now())
+
+  @@unique([branchId, name])
+  @@map("display_terminals")
+}
+
+model DisplayAd {
+  id         String   @id @default(cuid())
+  branchId   String
+  branch     Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  terminalId String? // null = every terminal of the branch
+  kind       AdKind
+  url        String
+  title      String?
+  durationSec Int?    // images only; null = the terminal's default
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  startsOn   DateTime?
+  endsOn     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([branchId, isActive])
+  @@map("display_ads")
 }

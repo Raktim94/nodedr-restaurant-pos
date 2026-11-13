@@ -29,8 +29,21 @@ export class PublicMenuController {
   @Post('menu/:qrToken/order')
   @UsePipes(new ZodValidationPipe(publicOrderSchema))
   createOrder(@Param('qrToken') qrToken: string, @Body() body: unknown) {
-    const { items, guestName } = body as { items: never; guestName: string };
-    return this.publicMenuService.createOrder(qrToken, items, guestName);
+    const { items, guestName, payment, idempotencyKey } = body as { items: never; guestName: string; payment?: 'CASH' | 'ONLINE'; idempotencyKey?: string };
+    return this.publicMenuService.createOrder(qrToken, items, guestName, { payment, idempotencyKey });
+  }
+
+  // Starts the guest's online payment (Stripe or whichever gateway is on). The amount is the server's bill.
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @Post('menu/:qrToken/orders/:orderId/pay-online')
+  payOnline(@Param('qrToken') qrToken: string, @Param('orderId') orderId: string, @Body() body: { origin?: string }) {
+    return this.publicMenuService.payOnline(qrToken, orderId, typeof body?.origin === 'string' ? body.origin.slice(0, 200) : undefined);
+  }
+
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @Post('menu/:qrToken/orders/:orderId/pay-cash')
+  payCash(@Param('qrToken') qrToken: string, @Param('orderId') orderId: string) {
+    return this.publicMenuService.switchToCash(qrToken, orderId);
   }
 
   @Get('menu/:qrToken/status')

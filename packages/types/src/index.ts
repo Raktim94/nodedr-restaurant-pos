@@ -22,3 +22,4 @@ export * from "./accounting";
 export * from "./marketing";
 export * from "./order-lifecycle";
 export * from "./stock-journal";
+export * from "./display";

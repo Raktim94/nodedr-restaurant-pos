@@ -312,6 +312,8 @@ export class GatewayPaymentsService {
         allowPartial: true,
         requestId: p.id,
       });
+      // A table order that was waiting for this payment goes to the kitchen now, never before.
+      await this.orders.releaseHeldOrder(p.branchId, p.orderId).catch((e: Error) => this.logger.error(`Could not release order ${p.orderId}: ${e.message}`));
       return await this.prisma.gatewayPayment.update({
         where: { id: p.id },
         data: { status: 'SUCCEEDED', note: null },
