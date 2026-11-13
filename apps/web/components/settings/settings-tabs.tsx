@@ -26,6 +26,7 @@ const TABS: SettingsTab[] = [
   { label: "Backup", href: "/settings/backup", permission: "backup.manage" },
   { label: "Updates", href: "/settings/updates", permission: "system.update" },
   { label: "Server Sync", href: "/settings/sync", permission: "settings.manage" },
+  { label: "Phones", href: "/settings/devices", permission: "users.manage" },
   { label: "Integrations", href: "/settings/integrations", permission: "settings.manage" },
   { label: "Payments", href: "/settings/payment-gateways", permission: "settings.manage" },
   { label: "API Keys", href: "/settings/api-keys" },
