@@ -21,25 +21,19 @@ database; "read" means only read in code.
 | Tables | Bulk create had no preview, prefix, size or grid control; no bulk edit/delete; 3 shapes | medium | **Added**; 6 shapes |
 | Phone, small screens | New dialogs squashed item pickers and filters | medium | **Fixed**, checked at 375px |
 
-## Not done (be clear about these)
+## Update (same day, 1.27.0): what was finished afterwards
 
-* **Payroll**: no break deduction, no overtime, no late/absence rules, no statutory/tax rules (none invented), no
-  versioned calculation inputs, no timezone-change test beyond the existing zoned-range use. Attendance has no break
-  field. Payslips show amounts but not a formula breakdown.
-* **Floor plan**: *several saved layouts per area* (lunch/dinner) is **not built** (needs a schema change). Areas are
-  the existing floors with create and rename; no ordering, active flag or opening hours. Merge exists from before and
-  was not re-tested. Drag/resize on touch, undo/redo, snap and zoom were not audited or changed.
-* **Mobile offline**: the existing Capacitor app already keeps sales, tabs, KOTs, refunds, expenses and bookings in
-  IndexedDB and uploads sales idempotently (server answers `duplicate` for a repeat). **Not built**: offline
-  production, waste, stock and attendance on the phone; device enrolment and revocation; a conflict queue beyond
-  "refused sale"; local-network sync; offline-payment rules beyond cash. The new production and waste endpoints already
-  accept `idempotencyKey` and `deviceId`, so the phone can send them once a screen exists.
-* **Sync design, devices admin screen, per-device credentials**: not built.
-* **Screen-by-screen audit**: only Inventory (stock items, journal, production, waste) and Tables were inspected in a
-  browser (375, 768, 1440). Other screens were not.
-* **Photos on waste, transfers between locations, multiple stock locations**: not built. "Location" is a free-text
-  label on production and waste.
-* No real Android device test. No APK was built from this branch.
+Done and verified: payroll unpaid breaks, daily overtime rule and a formula on the payslip; saved floor layouts per area;
+enrolled-phone list with revoke/restore enforced on every request; phone Kitchen tab (production and waste recorded
+offline, kept through a restart, sent once with an idempotency key, refusals kept with the server's words and a Try again).
+
+## Still not done
+
+* Payroll: late/absence rules (not defined by the restaurant), statutory/tax rules (deliberately not invented), offline attendance.
+* Phone: offline attendance and stock receipts; a conflict screen beyond "refused, try again"; sync over the local network with no internet; per-device credentials (a phone shares its user's session, revocation is by device id).
+* Floor plan: drag/resize/rotate, undo/redo, snap and zoom on touch screens were not audited; merge/split was not re-tested.
+* Waste photos, multiple stock locations and transfers between them.
+* Screens other than Inventory, Tables, Team/payroll and Settings > Phones were not inspected in a browser; no Android device test.
 
 ## Tests run
 
@@ -52,5 +46,5 @@ database; "read" means only read in code.
 
 ## Deployment
 
-Nothing was deployed, published or released. The migration `stock_journal_production` is additive (no DROP) and has
-only been applied to a scratch database.
+Released as v1.27.0 and deployed on 2026-11-13 to PKUSS, 192.168.1.40 and the Play review demo. Four additive migrations
+(no DROP) applied on each. Play: signed bundle versionCode 127000 submitted to closed testing (Alpha), in review.
