@@ -45,12 +45,12 @@ export class AttendanceService {
     });
   }
 
-  async clockOut(userId: string, note?: string) {
+  async clockOut(userId: string, note?: string, breakMinutes?: number) {
     const open = await this.current(userId);
     if (!open) throw new BadRequestException('Not clocked in');
     return this.prisma.attendance.update({
       where: { id: open.id },
-      data: { clockOutAt: new Date(), ...(note ? { note } : {}) },
+      data: { clockOutAt: new Date(), ...(note ? { note } : {}), ...(breakMinutes != null ? { breakMinutes } : {}) },
       include: WITH_USER,
     });
   }
@@ -89,6 +89,7 @@ export class AttendanceService {
       clockInAt?: Date;
       clockOutAt?: Date | null;
       note?: string;
+      breakMinutes?: number;
       reason: string;
     },
   ) {
@@ -155,6 +156,7 @@ export class AttendanceService {
         clockInAt,
         clockOutAt,
         ...(dto.note !== undefined ? { note: dto.note } : {}),
+        ...(dto.breakMinutes !== undefined ? { breakMinutes: dto.breakMinutes } : {}),
       },
       include: WITH_USER,
     });

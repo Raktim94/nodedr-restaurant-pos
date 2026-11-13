@@ -22,11 +22,14 @@ const clockInSchema = z.object({
 });
 const clockOutSchema = z.object({
   note: z.string().trim().max(200).optional(),
+  // Unpaid break taken during the shift, in minutes.
+  breakMinutes: z.coerce.number().int().min(0).max(480).optional(),
 });
 const correctionSchema = z
   .object({
     clockInAt: z.coerce.date().optional(),
     clockOutAt: z.union([z.coerce.date(), z.null()]).optional(),
+    breakMinutes: z.coerce.number().int().min(0).max(480).optional(),
     note: z.string().trim().max(200).optional(),
     reason: z
       .string()
@@ -75,7 +78,7 @@ export class AttendanceController {
     @Body(new ZodValidationPipe(clockOutSchema))
     body: z.infer<typeof clockOutSchema>,
   ) {
-    return this.attendance.clockOut(user.id, body.note);
+    return this.attendance.clockOut(user.id, body.note, body.breakMinutes);
   }
 
   @Auth('attendance.manage')

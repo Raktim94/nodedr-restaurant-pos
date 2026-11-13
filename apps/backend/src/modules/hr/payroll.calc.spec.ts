@@ -227,3 +227,50 @@ describe('payroll boundaries', () => {
     expect(H).toBe(3_600_000);
   });
 });
+
+import { workedByDay } from './payroll.calc';
+
+describe('breaks and overtime', () => {
+  const t = (iso: string) => Date.parse(iso);
+  const date = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const day = (a: string, b: string, breakMinutes = 0) => ({ start: t(a), end: t(b), breakMinutes });
+
+  it('takes the unpaid break off the paid hours', () => {
+    const w = workedByDay([day('2026-03-02T04:00:00Z', '2026-03-02T13:00:00Z', 60)], 0, 9e15, date);
+    expect(w.hours).toBe(8);
+  });
+
+  it('counts a duplicated shift and its break once', () => {
+    const r = day('2026-03-02T04:00:00Z', '2026-03-02T13:00:00Z', 30);
+    expect(workedByDay([r, r], 0, 9e15, date).hours).toBe(8.5);
+  });
+
+  it('pays overtime per day above the threshold at the multiplier', () => {
+    const [l] = computePayroll('2026-03-01', '2026-03-31', 0, [
+      { userId: 'a', payType: 'HOURLY', rate: 100, hoursWorked: 19, dailyHours: [10, 9], overtimeAfterHours: 8, overtimeMultiplier: 1.5, unpaidLeaveDays: 0 },
+    ]);
+    expect(l.overtimeHours).toBe(3); // 2 + 1
+    expect(l.overtimePay).toBe(450);
+    expect(l.basePay).toBe(1600 + 450);
+    expect(l.formula).toHaveLength(2);
+  });
+
+  it('exactly at the threshold is not overtime; no rule means no overtime', () => {
+    const base = { userId: 'a', payType: 'HOURLY' as const, rate: 100, hoursWorked: 16, dailyHours: [8, 8], unpaidLeaveDays: 0 };
+    expect(computePayroll('2026-03-01', '2026-03-31', 0, [{ ...base, overtimeAfterHours: 8 }])[0].overtimeHours).toBe(0);
+    const none = computePayroll('2026-03-01', '2026-03-31', 0, [{ ...base, dailyHours: [12, 4] }])[0];
+    expect(none.overtimeHours).toBe(0);
+    expect(none.basePay).toBe(1600);
+  });
+
+  it('a midnight-crossing shift belongs to the day it started', () => {
+    const w = workedByDay([day('2026-03-02T20:00:00Z', '2026-03-03T04:00:00Z')], 0, 9e15, date);
+    expect([...w.byDay.keys()]).toEqual(['2026-03-02']);
+    expect(w.hours).toBe(8);
+  });
+
+  it('shows how monthly pay was reached', () => {
+    const [l] = computePayroll('2026-02-01', '2026-02-28', 0, [{ userId: 'a', payType: 'MONTHLY', rate: 28000, hoursWorked: 0, unpaidLeaveDays: 0 }]);
+    expect(l.formula[0]).toBe('2026-02: 28000 x 28/28 days = 28000');
+  });
+});

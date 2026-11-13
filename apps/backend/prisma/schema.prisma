@@ -1985,6 +1985,8 @@ model Attendance {
   clockInAt  DateTime  @default(now())
   clockOutAt DateTime?
   note       String?
+  // Unpaid break taken inside this shift, taken off the paid hours.
+  breakMinutes Int @default(0)
 
   @@index([branchId, clockInAt])
   @@index([userId, clockOutAt])
@@ -2100,6 +2102,10 @@ model StaffPay {
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   payType PayType @default(MONTHLY)
   rate    Decimal @default(0) @db.Decimal(12, 2)
+  // HOURLY staff: hours worked in one local day beyond this are overtime paid at rate x multiplier.
+  // null = no overtime rule (nothing is invented).
+  overtimeAfterHours Decimal? @db.Decimal(5, 2)
+  overtimeMultiplier Decimal  @default(1.5) @db.Decimal(4, 2)
 
   @@map("staff_pay")
 }
@@ -2152,6 +2158,11 @@ model PayrollLine {
   otherDeductions      Decimal @default(0) @db.Decimal(12, 2)
   adjustmentNote       String?
   netPay               Decimal @db.Decimal(12, 2)
+  // Of hoursWorked, the part paid at the overtime multiplier, and its pay (already inside basePay).
+  overtimeHours        Decimal @default(0) @db.Decimal(8, 2)
+  overtimePay          Decimal @default(0) @db.Decimal(12, 2)
+  // The inputs and formula lines this line was calculated from, frozen when the run was built.
+  calcInputs           Json?
 
   @@unique([runId, userId])
   @@map("payroll_lines")

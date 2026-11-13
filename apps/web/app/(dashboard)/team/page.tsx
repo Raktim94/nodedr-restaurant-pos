@@ -225,14 +225,14 @@ function Payroll({ branchId }: { branchId: string | null }) {
     return { start: iso(first), end: iso(last) };
   });
   const [open, setOpen] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Record<string, { payType: "MONTHLY" | "HOURLY"; rate: string }>>({});
+  const [draft, setDraft] = useState<Record<string, { payType: "MONTHLY" | "HOURLY"; rate: string; ot: string; mult: string }>>({});
 
   return (
     <div className="flex flex-col gap-4">
       <Card className="flex flex-col gap-3 p-4">
         <p className="text-sm font-medium text-foreground">Pay rates</p>
         {pay?.map((p) => {
-          const d = draft[p.userId] ?? { payType: p.payType ?? "MONTHLY", rate: String(p.rate ?? "") };
+          const d = draft[p.userId] ?? { payType: p.payType ?? "MONTHLY", rate: String(p.rate ?? ""), ot: p.overtimeAfterHours != null ? String(p.overtimeAfterHours) : "", mult: String(p.overtimeMultiplier ?? 1.5) };
           return (
             <div key={p.userId} className="flex flex-wrap items-center gap-2 text-sm">
               <span className="w-40 truncate">{p.name}</span>
@@ -252,12 +252,18 @@ function Payroll({ branchId }: { branchId: string | null }) {
                 value={d.rate}
                 onChange={(e) => setDraft({ ...draft, [p.userId]: { ...d, rate: e.target.value } })}
               />
+              {d.payType === "HOURLY" && (
+                <>
+                  <Input aria-label="Overtime after hours a day" className="w-28" inputMode="decimal" placeholder="OT after h/day" value={d.ot} onChange={(e) => setDraft({ ...draft, [p.userId]: { ...d, ot: e.target.value } })} />
+                  <Input aria-label="Overtime multiplier" className="w-20" inputMode="decimal" placeholder="x1.5" value={d.mult} onChange={(e) => setDraft({ ...draft, [p.userId]: { ...d, mult: e.target.value } })} />
+                </>
+              )}
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() =>
                   setPay.mutate(
-                    { userId: p.userId, payType: d.payType, rate: Number(d.rate) },
+                    { userId: p.userId, payType: d.payType, rate: Number(d.rate), overtimeAfterHours: d.ot ? Number(d.ot) : null, overtimeMultiplier: d.mult ? Number(d.mult) : undefined },
                     { onSuccess: () => toast.success("Saved"), onError: (e) => toast.error(errMsg(e)) },
                   )
                 }
@@ -277,7 +283,10 @@ function Payroll({ branchId }: { branchId: string | null }) {
             createRun.mutate(
               { periodStart: period.start, periodEnd: period.end },
               {
-                onSuccess: (r) => setOpen((r as { id: string }).id),
+                onSuccess: (r) => {
+                  setOpen((r as { id: string }).id);
+                  for (const w of (r as { warnings?: string[] }).warnings ?? []) toast.error(w);
+                },
                 onError: (e) => toast.error(errMsg(e)),
               },
             )

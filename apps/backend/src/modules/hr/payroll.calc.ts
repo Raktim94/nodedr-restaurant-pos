@@ -16,6 +16,10 @@ export interface PayInput {
    * rate / days-in-THAT-month, so a leave day in February costs more than one in March.
    */
   unpaidLeaveByMonth?: Record<string, number>;
+  /** HOURLY: hours worked on each local day (already net of unpaid breaks). Enables the overtime rule. */
+  dailyHours?: number[];
+  overtimeAfterHours?: number | null;
+  overtimeMultiplier?: number;
 }
 
 /** Calendar months touched by a period, with how many of the period's days fall in each. */
@@ -33,6 +37,47 @@ export function monthSlices(start: string, end: string) {
     cursor = stop + 86_400_000;
   }
   return out;
+}
+
+export interface Shift {
+  start: number;
+  end: number;
+  breakMinutes?: number;
+}
+
+/**
+ * Paid hours per local day. Shifts are clipped to [from, to), duplicates and overlaps are merged (the
+ * longest unpaid break in a merged group is taken off once), and each merged block belongs to the local
+ * date it starts on. Scheduled time is never used: only clocked time.
+ */
+export function workedByDay(
+  rows: Shift[],
+  from: number,
+  to: number,
+  dateOf: (ms: number) => string,
+) {
+  const clipped = rows
+    .map((r) => ({ start: Math.max(r.start, from), end: Math.min(r.end, to), br: r.breakMinutes ?? 0 }))
+    .filter((r) => r.end > r.start)
+    .sort((a, b) => a.start - b.start);
+  const groups: { start: number; end: number; br: number }[] = [];
+  let overlaps = 0;
+  for (const r of clipped) {
+    const g = groups[groups.length - 1];
+    if (g && r.start < g.end) {
+      overlaps++;
+      g.end = Math.max(g.end, r.end);
+      g.br = Math.max(g.br, r.br);
+    } else groups.push({ ...r });
+  }
+  const byDay = new Map<string, number>();
+  for (const g of groups) {
+    const hours = Math.max(0, (g.end - g.start) / 3_600_000 - g.br / 60);
+    const day = dateOf(g.start);
+    byDay.set(day, (byDay.get(day) ?? 0) + hours);
+  }
+  const days = [...byDay.values()];
+  return { byDay, days, hours: days.reduce((a, b) => a + b, 0), overlaps };
 }
 
 export interface Interval {
@@ -73,6 +118,10 @@ export interface PayLineResult {
   tipShare: number;
   unpaidLeaveDeduction: number;
   netPay: number;
+  overtimeHours: number;
+  overtimePay: number;
+  /** Plain-language lines showing exactly how the base pay was reached. */
+  formula: string[];
 }
 
 /** Inclusive day count between two YYYY-MM-DD dates. */
@@ -122,8 +171,27 @@ export function computePayroll(
     const hours = round2(p.hoursWorked);
     let basePay: number;
     let deduction = 0;
+    let overtimeHours = 0;
+    let overtimePay = 0;
+    const formula: string[] = [];
     if (p.payType === 'HOURLY') {
-      basePay = round2(p.rate * p.hoursWorked);
+      const limit = p.overtimeAfterHours ?? null;
+      if (limit != null && p.dailyHours) {
+        overtimeHours = round2(
+          p.dailyHours.reduce((s, h) => s + Math.max(0, h - limit), 0),
+        );
+        const regular = round2(p.hoursWorked - overtimeHours);
+        const mult = p.overtimeMultiplier ?? 1.5;
+        overtimePay = round2(overtimeHours * p.rate * mult);
+        basePay = round2(regular * p.rate + overtimePay);
+        formula.push(
+          `${regular} h regular x ${p.rate} = ${round2(regular * p.rate)}`,
+          `${overtimeHours} h over ${limit} h a day x ${p.rate} x ${mult} = ${overtimePay}`,
+        );
+      } else {
+        basePay = round2(p.rate * p.hoursWorked);
+        formula.push(`${hours} h x ${p.rate} = ${basePay}`);
+      }
     } else {
       // Each calendar month is pro-rated by its own length, so a whole month is exactly the rate
       // whatever the month, and a period that straddles two months is not priced by the first one.
@@ -132,6 +200,11 @@ export function computePayroll(
       );
       const byMonth =
         p.unpaidLeaveByMonth ?? { [slices[0].key]: p.unpaidLeaveDays };
+      formula.push(
+        ...slices.map(
+          (m) => `${m.key}: ${p.rate} x ${m.days}/${m.monthDays} days = ${round2((p.rate * m.days) / m.monthDays)}`,
+        ),
+      );
       deduction = round2(
         Object.entries(byMonth).reduce((sum, [key, days]) => {
           const [y, m] = key.split('-').map(Number);
@@ -148,6 +221,9 @@ export function computePayroll(
       tipShare,
       unpaidLeaveDeduction: deduction,
       netPay: round2(basePay - deduction + tipShare),
+      overtimeHours,
+      overtimePay,
+      formula,
     };
   });
 }
