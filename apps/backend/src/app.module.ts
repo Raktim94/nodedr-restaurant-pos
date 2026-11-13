@@ -47,6 +47,7 @@ import { DevicesModule } from './devices/devices.module';
 import { DisplayModule } from './modules/display/display.module';
 import { PagingModule } from './modules/paging/paging.module';
 import { RatingsModule } from './modules/ratings/ratings.module';
+import { DemoModule } from './demo/demo.module';
 import { StandaloneModule } from './standalone/standalone.module';
 import { BackupModule } from './backup/backup.module';
 import { IntegrationsModule } from './integrations/integrations.module';
@@ -102,6 +103,7 @@ import { VerifactuModule } from './modules/verifactu/verifactu.module';
     DisplayModule,
     PagingModule,
     RatingsModule,
+    DemoModule,
     BackupModule,
     IntegrationsModule,
     McpModule,

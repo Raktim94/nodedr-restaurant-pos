@@ -1,5 +1,6 @@
 import {
   ForbiddenException,
+  NotFoundException,
   BadRequestException,
   ConflictException,
   Injectable,
@@ -288,6 +289,21 @@ export class AuthService {
     }
 
     return this.issueSession(user);
+  }
+
+  /**
+   * Public demo only (DEMO_MODE=true on the demo server; refused everywhere else). Signs a visitor in as the configured demo
+   * user with no password. The session carries `demo: true`, which the demo guard uses to block anything dangerous.
+   */
+  async demoLogin() {
+    if (process.env.DEMO_MODE !== 'true') throw new NotFoundException('Not found');
+    const email = process.env.DEMO_USER_EMAIL;
+    if (!email) throw new NotFoundException('The demo user is not configured');
+    const user = await this.prisma.user.findFirst({ where: { email, isActive: true }, include: permissionInclude });
+    if (!user) throw new NotFoundException('The demo is being reset. Please try again in a minute.');
+    const sessionUser = this.toSessionUser(user);
+    const token = await this.jwt.signAsync({ sub: user.id, demo: true }, { expiresIn: '3h' });
+    return { token, user: sessionUser };
   }
 
   private async issueSession(
