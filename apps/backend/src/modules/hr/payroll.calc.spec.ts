@@ -274,3 +274,46 @@ describe('breaks and overtime', () => {
     expect(l.formula[0]).toBe('2026-02: 28000 x 28/28 days = 28000');
   });
 });
+
+import { lateAndAbsence } from './payroll.calc';
+
+describe('late and absence', () => {
+  const t = (iso: string) => Date.parse(iso);
+  const day = (date: string, from: string, to: string) => ({ start: t(`${date}T${from}:00Z`), end: t(`${date}T${to}:00Z`), date });
+  const opts = (over = {}) => ({ graceMinutes: 10 as number | null, deductAbsence: true, dayRate: () => 1000, ...over });
+
+  it('within grace costs nothing; beyond it deducts the lateness pro rata of the shift', () => {
+    const shifts = [day('2026-03-02', '09:00', '17:00'), day('2026-03-03', '09:00', '17:00')];
+    const clocks = [
+      { start: t('2026-03-02T09:08:00Z'), end: t('2026-03-02T17:00:00Z') }, // 8 min: inside grace
+      { start: t('2026-03-03T09:48:00Z'), end: t('2026-03-03T17:00:00Z') }, // 48 min of 480
+    ];
+    const r = lateAndAbsence(shifts, clocks, new Set(), opts());
+    expect(r.lateMinutes).toBe(48);
+    expect(r.lateDeduction).toBe(100); // 1000 x 48/480
+    expect(r.absentDays).toBe(0);
+  });
+
+  it('a rostered day with no clock-in is absent unless on approved leave', () => {
+    const shifts = [day('2026-03-02', '09:00', '17:00'), day('2026-03-03', '09:00', '17:00')];
+    const r = lateAndAbsence(shifts, [], new Set(['2026-03-03']), opts());
+    expect(r.absentDays).toBe(1);
+    expect(r.absenceDeduction).toBe(1000);
+  });
+
+  it('both rules are off by default and an open (not clocked out) shift still counts as present', () => {
+    const shifts = [day('2026-03-02', '09:00', '17:00')];
+    const off = lateAndAbsence(shifts, [], new Set(), opts({ graceMinutes: null, deductAbsence: false }));
+    expect(off.absenceDeduction + off.lateDeduction).toBe(0);
+    const open = lateAndAbsence(shifts, [{ start: t('2026-03-02T09:00:00Z'), end: null }], new Set(), opts());
+    expect(open.absentDays).toBe(0);
+  });
+
+  it('flows into net pay and the formula lines', () => {
+    const late = lateAndAbsence([day('2026-03-02', '09:00', '17:00')], [], new Set(), opts());
+    const [l] = computePayroll('2026-03-01', '2026-03-31', 0, [{ userId: 'a', payType: 'MONTHLY', rate: 31000, hoursWorked: 0, unpaidLeaveDays: 0, late }]);
+    expect(l.absenceDeduction).toBe(1000);
+    expect(l.netPay).toBe(30000);
+    expect(l.formula.join(' ')).toMatch(/absent/);
+  });
+});
