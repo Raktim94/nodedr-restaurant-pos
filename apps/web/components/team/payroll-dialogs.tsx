@@ -180,7 +180,7 @@ table{width:100%;border-collapse:collapse}td{padding:5px 0;border-bottom:1px sol
 <div class="m">Period ${esc(day(s.periodStart))} – ${esc(day(s.periodEnd))} · ${esc(s.hoursWorked)} h worked</div>
 <h2>Earnings</h2><table>${row("Base pay", s.earnings.basePay)}${row("Tip share", s.earnings.tipShare)}${row("Allowances", s.earnings.allowances)}${row("Bonus", s.earnings.bonus)}</table>
 ${s.overtimeHours ? `<div class="m">Includes ${esc(s.overtimeHours)} h overtime paid ${esc(formatCurrency(s.overtimePay ?? 0))}</div>` : ""}
-<h2>Deductions</h2><table>${row("Unpaid leave", s.deductions.unpaidLeave)}${row("Advance recovery", s.deductions.advanceRecovery)}${row("Other deductions", s.deductions.other)}</table>
+<h2>Deductions</h2><table>${row("Unpaid leave", s.deductions.unpaidLeave)}${row("Late arrival", s.deductions.late ?? 0)}${row("Absent days", s.deductions.absence ?? 0)}${row("Advance recovery", s.deductions.advanceRecovery)}${row("Other deductions", s.deductions.other)}</table>
 ${s.calculation?.formula?.length ? `<h2>How base pay was worked out</h2><table>${s.calculation.formula.map((f) => `<tr><td class="m">${esc(f)}</td></tr>`).join("")}</table>` : ""}
 <table style="margin-top:14px"><tr class="net"><td>Net pay</td><td class="r">${esc(formatCurrency(s.netPay))}</td></tr></table>
 ${s.note ? `<p class="m">Note: ${esc(s.note)}</p>` : ""}
