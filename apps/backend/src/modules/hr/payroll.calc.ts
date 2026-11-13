@@ -11,6 +11,59 @@ export interface PayInput {
   hoursWorked: number;
   /** Approved UNPAID leave days that fall inside the period. */
   unpaidLeaveDays: number;
+  /**
+   * The same leave days split by calendar month ("2026-02": 2). When given, each day is priced at
+   * rate / days-in-THAT-month, so a leave day in February costs more than one in March.
+   */
+  unpaidLeaveByMonth?: Record<string, number>;
+}
+
+/** Calendar months touched by a period, with how many of the period's days fall in each. */
+export function monthSlices(start: string, end: string) {
+  const out: { key: string; days: number; monthDays: number }[] = [];
+  let cursor = Date.parse(`${start}T00:00:00Z`);
+  const last = Date.parse(`${end}T00:00:00Z`);
+  while (cursor <= last) {
+    const d = new Date(cursor);
+    const key = d.toISOString().slice(0, 7);
+    const monthDays = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    const lastOfMonth = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), monthDays);
+    const stop = Math.min(last, lastOfMonth);
+    out.push({ key, days: Math.round((stop - cursor) / 86_400_000) + 1, monthDays });
+    cursor = stop + 86_400_000;
+  }
+  return out;
+}
+
+export interface Interval {
+  start: number;
+  end: number;
+}
+
+/**
+ * Hours worked inside [from, to): attendance rows are clipped to the window, overlapping or duplicate
+ * rows are merged so the same minute is never paid twice, and rows still open (no clock-out) are not
+ * counted. Returns the hours and how many rows overlapped another.
+ */
+export function workedHours(rows: Interval[], from: number, to: number) {
+  const clipped = rows
+    .map((r) => ({ start: Math.max(r.start, from), end: Math.min(r.end, to) }))
+    .filter((r) => r.end > r.start)
+    .sort((a, b) => a.start - b.start);
+  let ms = 0;
+  let overlaps = 0;
+  let cur: Interval | null = null;
+  for (const r of clipped) {
+    if (cur && r.start < cur.end) {
+      overlaps++;
+      cur.end = Math.max(cur.end, r.end);
+    } else {
+      if (cur) ms += cur.end - cur.start;
+      cur = { ...r };
+    }
+  }
+  if (cur) ms += cur.end - cur.start;
+  return { hours: ms / 3_600_000, overlaps };
 }
 
 export interface PayLineResult {
@@ -48,8 +101,7 @@ export function computePayroll(
   tipPool: number,
   staff: PayInput[],
 ): PayLineResult[] {
-  const periodDays = daysInclusive(periodStart, periodEnd);
-  const monthDays = daysInMonthOf(periodStart);
+  const slices = monthSlices(periodStart, periodEnd);
   const totalHours = staff.reduce((s, p) => s + p.hoursWorked, 0);
 
   const tipRecipients = staff.filter((p) => p.hoursWorked > 0);
@@ -73,8 +125,20 @@ export function computePayroll(
     if (p.payType === 'HOURLY') {
       basePay = round2(p.rate * p.hoursWorked);
     } else {
-      basePay = round2((p.rate * periodDays) / monthDays);
-      deduction = round2((p.rate / monthDays) * p.unpaidLeaveDays);
+      // Each calendar month is pro-rated by its own length, so a whole month is exactly the rate
+      // whatever the month, and a period that straddles two months is not priced by the first one.
+      basePay = round2(
+        slices.reduce((sum, m) => sum + (p.rate * m.days) / m.monthDays, 0),
+      );
+      const byMonth =
+        p.unpaidLeaveByMonth ?? { [slices[0].key]: p.unpaidLeaveDays };
+      deduction = round2(
+        Object.entries(byMonth).reduce((sum, [key, days]) => {
+          const [y, m] = key.split('-').map(Number);
+          const len = new Date(Date.UTC(y, m, 0)).getUTCDate();
+          return sum + (p.rate / len) * days;
+        }, 0),
+      );
     }
     const tipShare = tips.get(p.userId) ?? 0;
     return {

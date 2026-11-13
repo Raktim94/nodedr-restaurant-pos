@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
@@ -210,7 +211,7 @@ export class HrController {
     @Param('id') id: string,
   ) {
     await this.access(u, branchId);
-    return this.hr.finalizeRun(branchId, id);
+    return this.hr.finalizeRun(branchId, id, u);
   }
 
   @Auth('staff.manage')
@@ -238,7 +239,31 @@ export class HrController {
     @Body(new ZodValidationPipe(payrollPaySchema)) body: PayrollPayDto,
   ) {
     await this.access(u, branchId);
-    return this.hr.payRun(branchId, id, u.id, body);
+    return this.hr.payRun(branchId, id, u.id, body, u);
+  }
+
+  @Auth('staff.manage')
+  @AuditAction('payroll.reopened', 'PayrollRun')
+  @Post('payroll/:id/reopen')
+  async reopen(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.access(u, branchId);
+    return this.hr.reopenRun(branchId, id);
+  }
+
+  @Auth('staff.manage')
+  @Get('payroll/:id/export.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async exportCsv(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.access(u, branchId);
+    return this.hr.runCsv(branchId, id);
   }
 
   @Auth('staff.manage')
