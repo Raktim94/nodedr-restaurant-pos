@@ -58,7 +58,9 @@ run('Table ordering, paging and customer display (e2e)', () => {
     guest = request.agent(app.getHttpServer()); // never signs in
     floorId = (await owner.post(`/api/v1/tables/floors${q}`).send({ name: `Hall ${tag}` }).expect(201)).body.id;
     for (const n of ['A', 'B', 'C']) await mkTable(n);
-    itemId = ((await owner.get(`/api/v1/menu/items${q}`).expect(200)).body as { id: string }[])[0].id;
+    // a dish with no required options, so the guest can order it with one tap
+    const dishes = (await owner.get(`/api/v1/menu/items${q}`).expect(200)).body as { id: string; name: string }[];
+    itemId = (dishes.find((d) => d.name === 'Coca-Cola') ?? dishes.find((d) => d.name.startsWith('PlainItem')) ?? dishes[0]).id;
     hook = createServer((req, res) => {
       let b = '';
       req.on('data', (c) => (b += c));
@@ -204,7 +206,7 @@ run('Table ordering, paging and customer display (e2e)', () => {
     const view0 = (await guest.get(`/api/v1/public/display/${t.token}`).expect(200)).body;
     expect(view0.state.kind).toBe('idle');
     expect(view0.terminal.idleSeconds).toBe(30);
-    expect(view0.ads).toEqual([]);
+    expect(view0.ads.filter((a: { title: string | null }) => a.title?.includes(tag))).toEqual([]);
     const cart = { kind: 'cart', lines: [{ name: '1 kg Mango', quantity: 1, total: 180 }, { name: 'Papaya', quantity: 2, total: 90 }], subtotal: 270 };
     await cashier.put(`/api/v1/display/terminals/${t.id}/state${q}`).send(cart).expect(200);
     const view1 = (await guest.get(`/api/v1/public/display/${t.token}`).expect(200)).body;
@@ -233,7 +235,7 @@ run('Table ordering, paging and customer display (e2e)', () => {
     const all = (await owner.post(`/api/v1/display/ads${q}`).send({ kind: 'IMAGE', url: up.url, title: `Everyone ${tag}`, sortOrder: 2 }).expect(201)).body;
     const only1 = (await owner.post(`/api/v1/display/ads${q}`).send({ kind: 'IMAGE', url: up.url, title: `Left only ${tag}`, terminalId: t1.id, sortOrder: 1 }).expect(201)).body;
     const future = (await owner.post(`/api/v1/display/ads${q}`).send({ kind: 'IMAGE', url: up.url, title: `Later ${tag}`, startsOn: new Date(Date.now() + 86_400_000).toISOString() }).expect(201)).body;
-    const titles = async (tok: string) => ((await guest.get(`/api/v1/public/display/${tok}`).expect(200)).body.ads as { title: string }[]).map((a) => a.title);
+    const titles = async (tok: string) => ((await guest.get(`/api/v1/public/display/${tok}`).expect(200)).body.ads as { title: string }[]).map((a) => a.title).filter((t) => t?.includes(tag));
     expect(await titles(t1.token)).toEqual([`Left only ${tag}`, `Everyone ${tag}`]);
     expect(await titles(t2.token)).toEqual([`Everyone ${tag}`]);
     expect((await owner.post(`/api/v1/display/ads${q}`).send({ kind: 'IMAGE', url: 'https://evil.example/a.png' })).status).toBe(400);

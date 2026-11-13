@@ -69,7 +69,7 @@ function setup(over: Partial<Row> = {}) {
   const gateways: any = {
     context: jest.fn(() => ({ mode: pay.mode, credentials: {} })),
   };
-  const orders: any = { checkout: jest.fn(async () => ({})) };
+  const orders: any = { checkout: jest.fn(async () => ({})), releaseHeldOrder: jest.fn(async () => false) };
   const svc = new GatewayPaymentsService(prisma, gateways, orders);
   return { svc, pay, orders, prisma };
 }
@@ -231,5 +231,17 @@ describe('redirect target', () => {
     expect(svc.baseUrl('https://pos.example.com/')).toBe(
       'https://pos.example.com',
     );
+  });
+});
+
+
+describe('releasing a held table order', () => {
+  it('is asked once the payment settles, and a failure there never downgrades the confirmed payment', async () => {
+    const { svc, orders, pay } = setup();
+    orders.releaseHeldOrder.mockRejectedValue(new Error('kitchen unavailable'));
+    fake.fetchStatus.mockResolvedValue(paid());
+    await svc.refresh('gp1');
+    expect(orders.releaseHeldOrder).toHaveBeenCalledTimes(1);
+    expect(pay.status).toBe('SUCCEEDED');
   });
 });
