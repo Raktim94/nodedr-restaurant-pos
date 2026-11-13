@@ -31,6 +31,17 @@ The journal shows three lines linked to entry `PR-20261113-001`: `-6 KG`, `-2 KG
 118, a manager chooses *Correct*: the old entry is reversed (three `REVERSAL` lines), a new entry for 118 is posted,
 and both point at each other.
 
+## For the kitchen and the store room
+
+* **Stock items** are grouped by category and can be filtered by storage area. The strip at the top shows what is
+  running low, what is out, and what expires in three days.
+* **Stock take** (`Inventory > Stock take`): pick an area, type what is on the shelf, save. Only counted items change;
+  each difference becomes an adjustment in the journal. Tick *Blind count* to hide the system quantity while counting.
+* **Shopping list**: every item at or under its minimum, with `par - in stock` to buy (par defaults to twice the
+  minimum). Print it or download CSV. The same page lists stock to use first (expiring within 7 days).
+* Storage areas and categories are labels on the item, not separate balances: a store with a walk-in fridge and a dry
+  store has one stock figure per item. Per-area balances and transfers between them are not built.
+
 ## Rules the code enforces
 
 * Stock never goes below zero in these flows. There is no negative-stock override.

@@ -76,6 +76,7 @@ export interface WasteEntry {
   shift: string | null;
   location: string | null;
   note: string | null;
+  photoUrl?: string | null;
   occurredAt: string;
   includedInProduction: boolean;
   status: "POSTED" | "PENDING_APPROVAL" | "REJECTED" | "REVERSED";

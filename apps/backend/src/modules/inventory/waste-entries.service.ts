@@ -80,6 +80,7 @@ export class WasteEntriesService {
             shift: dto.shift,
             location: dto.location,
             note: dto.note,
+            photoUrl: dto.photoUrl,
             occurredAt: dto.occurredAt ?? new Date(),
             includedInProduction: dto.includedInProduction,
             productionEntryId: dto.includedInProduction ? dto.productionEntryId : null,

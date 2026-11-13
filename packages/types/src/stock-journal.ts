@@ -44,6 +44,7 @@ export const wasteEntrySchema = z
     shift: z.string().trim().max(40).optional(),
     location: z.string().trim().max(80).optional(),
     note: z.string().trim().max(1000).optional(),
+    photoUrl: z.string().regex(/^\/api\/uploads\/[A-Za-z0-9._-]+$/, "Not an uploaded photo").max(200).optional(),
     occurredAt: z.coerce.date().optional(),
     /** Already counted in a production entry's output shortfall: record, do not deduct again. */
     includedInProduction: z.boolean().default(false),

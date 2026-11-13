@@ -3040,6 +3040,8 @@ model WasteEntry {
   occurredAt           DateTime
   includedInProduction Boolean     @default(false)
   productionEntryId    String?
+  // Optional photo of what was thrown away (never required, never blocks an offline entry).
+  photoUrl             String?
 
   status         WasteStatus @default(POSTED)
   idempotencyKey String?

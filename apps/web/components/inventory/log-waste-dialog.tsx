@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { selectClass } from "@/components/inventory/production-entry-dialog";
 import { useCreateWaste, useProductionEntries, useStockItems } from "@/hooks/use-stock-journal";
-import { ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
 export const WASTE_REASONS: { value: WasteReason; label: string }[] = [
@@ -36,26 +36,39 @@ export function LogWasteDialog({ branchId }: { branchId: string | null }) {
   const [inProd, setInProd] = useState(false);
   const [prodId, setProdId] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const { data: items } = useStockItems(branchId);
   const { data: entries } = useProductionEntries(branchId, { status: "POSTED" });
   const create = useCreateWaste(branchId);
   const chosen = items?.find((i) => i.id === item);
   const candidates = (entries ?? []).filter((e) => e.lines.some((l) => l.ingredientId === item));
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
+    // The photo is optional: if it cannot be uploaded the waste is still recorded, without it.
+    let photoUrl: string | undefined;
+    if (photo) {
+      setUploading(true);
+      try {
+        photoUrl = (await api.upload<{ url: string }>(`/inventory/waste/photo?branchId=${branchId}`, photo)).url;
+      } catch {
+        toast.error("The photo could not be uploaded. Recording the waste without it.");
+      }
+      setUploading(false);
+    }
     create.mutate(
       {
         ingredientId: item, quantity: qty, unit: (unit || chosen?.unit) as IngredientUnit, reason,
-        shift: shift || undefined, note: note || undefined,
+        shift: shift || undefined, note: note || undefined, photoUrl,
         includedInProduction: inProd, productionEntryId: inProd ? prodId : undefined,
         idempotencyKey: `web-${crypto.randomUUID()}`,
       },
       {
         onSuccess: (r) => {
           toast.success(r.status === "PENDING_APPROVAL" ? "Recorded. A manager will review it." : "Waste recorded");
-          setOpen(false); setItem(""); setQty(""); setNote(""); setInProd(false); setProdId("");
+          setOpen(false); setPhoto(null); setItem(""); setQty(""); setNote(""); setInProd(false); setProdId("");
         },
         onError: (er) => setErr(er instanceof ApiError ? er.message : "Could not record"),
       },
@@ -88,6 +101,7 @@ export function LogWasteDialog({ branchId }: { branchId: string | null }) {
               <select id="w-shift" className={selectClass} value={shift} onChange={(e) => setShift(e.target.value)}><option value="">None</option>{["Morning", "Afternoon", "Evening", "Night"].map((s) => (<option key={s}>{s}</option>))}</select></div>
           </div>
           <Input aria-label="Note" placeholder={reason === "OTHER" ? "What happened? (required)" : "Note (optional)"} value={note} onChange={(e) => setNote(e.target.value)} />
+          <label className="flex flex-col gap-1.5 text-sm">Photo (optional)<input type="file" accept="image/*" capture="environment" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} /></label>
           <fieldset className="flex flex-col gap-2 rounded-lg border border-border p-3">
             <legend className="px-1 text-xs font-medium text-muted-foreground">Is this already counted in a production entry?</legend>
             <label className="flex items-center gap-2 text-sm"><input type="radio" checked={!inProd} onChange={() => setInProd(false)} /> No, take it off stock now</label>
@@ -100,7 +114,7 @@ export function LogWasteDialog({ branchId }: { branchId: string | null }) {
             )}
           </fieldset>
           {err && <p role="alert" className="text-sm text-destructive">{err}</p>}
-          <DialogFooter><Button type="submit" disabled={create.isPending || !item}>{create.isPending ? "Saving…" : "Record waste"}</Button></DialogFooter>
+          <DialogFooter><Button type="submit" disabled={create.isPending || uploading || !item}>{create.isPending || uploading ? "Saving…" : "Record waste"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -307,6 +307,16 @@ run('Stock journal, production and waste (e2e)', () => {
     expect(csv.text).toContain('Paneer');
   });
 
+  it('an optional waste photo is stored with the entry; a non-upload path is refused', async () => {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    const up = await owner.post(`/api/v1/inventory/waste/photo${q}`).attach('file', png, { filename: 'bin.png', contentType: 'image/png' }).expect(201);
+    expect(up.body.url).toMatch(/^\/api\/uploads\//);
+    const w = await owner.post(`/api/v1/inventory/waste/entries${q}`).send({ ingredientId: id.sambar, quantity: '1', unit: 'L', reason: 'SPOILED', photoUrl: up.body.url }).expect(201);
+    expect(w.body.photoUrl).toBe(up.body.url);
+    const bad = await owner.post(`/api/v1/inventory/waste/entries${q}`).send({ ingredientId: id.sambar, quantity: '1', unit: 'L', reason: 'SPOILED', photoUrl: 'https://evil.example/x.png' });
+    expect(bad.status).toBe(400);
+  });
+
   it('reports and exports: daily production, and the journal as CSV', async () => {
     const rep = (await owner.get(`/api/v1/inventory/production/report${q}&productId=${id.idli}`).expect(200)).body;
     const idliRow = rep.produced.find((p: { ingredientId: string }) => p.ingredientId === id.idli);
