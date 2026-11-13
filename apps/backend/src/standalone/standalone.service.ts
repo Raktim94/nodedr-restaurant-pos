@@ -126,6 +126,7 @@ export class StandaloneService {
       generatedAt: new Date().toISOString(),
       stockItems,
       canVoid: permissionSatisfied(user.permissions, 'production.void'),
+      canReceive: permissionSatisfied(user.permissions, 'inventory.manage'),
       user: { id: user.id, name: user.name, permissions: user.permissions },
       restaurant: {
         name: r.name,

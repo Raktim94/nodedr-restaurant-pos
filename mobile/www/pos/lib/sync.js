@@ -9,7 +9,8 @@ import { counts, pushEvents, DeviceRevoked, AuthExpired as EventAuthExpired } fr
 export class AuthExpired extends Error {}
 
 export async function login(base, identifier, password) {
-  const r = await request(base, 'POST', '/api/v1/auth/login', { email: identifier, password });
+  const r = await request(base, 'POST', '/api/v1/auth/login', { email: identifier, password, deviceId: (await kv.get('deviceId')) || undefined });
+  if (r.status === 403 && r.data && r.data.code === 'DEVICE_REVOKED') throw new Error('The owner removed this phone from the restaurant. Ask them to allow it again.');
   if (r.status === 429) throw new Error('Too many attempts. Wait a minute and try again.');
   if (r.status !== 201 && r.status !== 200) {
     throw new Error((r.data && r.data.message) || 'That email, phone or password is not right.');
