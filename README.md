@@ -27,10 +27,10 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 
 <p align="center">
   <a href="https://orderrestro.nodedr.com/"><img src="https://img.shields.io/badge/Go%20to%20the%20OrderRestro%20website-orderrestro.nodedr.com-E0234E?style=for-the-badge" alt="Go to the OrderRestro website"></a>
-  <a href="https://orderrestro-demo.nodedr.com/demo"><img src="https://img.shields.io/badge/Live%20demo-no%20sign--up%2C%20no%20password-2EA44F?style=for-the-badge" alt="Open the live demo: no sign-up, no password"></a>
+  <a href="https://orderrestro-demo.nodedrdev.com/demo"><img src="https://img.shields.io/badge/Live%20demo-no%20sign--up%2C%20no%20password-2EA44F?style=for-the-badge" alt="Open the live demo: no sign-up, no password"></a>
 </p>
 
-> **Try it now:** [orderrestro-demo.nodedr.com/demo](https://orderrestro-demo.nodedr.com/demo) opens a working restaurant with sample data in one click. No sign-up, no password. It resets every 3 hours, and a few admin features are switched off in the public demo.
+> **Try it now:** [orderrestro-demo.nodedrdev.com/demo](https://orderrestro-demo.nodedrdev.com/demo) opens a working restaurant with sample data in one click. No sign-up, no password. It resets every 3 hours, and a few admin features are switched off in the public demo.
 
 <p align="center">
   <img src="docs/assets/hero-animated.svg" alt="Nodedr OrderRestro: animated overview with an illustrative sample screen" width="100%">
