@@ -22,6 +22,14 @@ const REPEAT_WINDOW_MS = 20_000; // pressing Call twice within this returns the 
 // acknowledged by the device. SIMULATED devices (and the simulator page) poll with their token; WEBHOOK
 // buzzers are pushed to a base station at webhookUrl with an HMAC-signed JSON body. Which real buzzer
 // hardware speaks to which driver is NOT decided yet; nothing here claims compatibility with any product.
+/** 169.254.0.0/16 and fe80::/10, including the IPv4-mapped IPv6 spellings of the former (`new URL()` writes them as hex). */
+export function isLinkLocalHost(host: string): boolean {
+  if (/^169\.254\.\d+\.\d+$/.test(host)) return true;
+  if (/^fe[89ab][0-9a-f]?:/.test(host)) return true;
+  const mapped = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  return !!mapped && parseInt(mapped[1], 16) === 0xa9fe;
+}
+
 @Injectable()
 export class PagingService {
   private readonly logger = new Logger(PagingService.name);
@@ -89,6 +97,10 @@ export class PagingService {
       let u: URL | null = null;
       try { u = new URL(dto.webhookUrl ?? ''); } catch { /* handled below */ }
       if (!u || !['http:', 'https:'].includes(u.protocol)) throw new BadRequestException('Give the base station address as an http:// or https:// URL');
+      // A buzzer base station lives on the restaurant's own network, so private addresses are normal here. Link-local
+      // (169.254.0.0/16, fe80::/10) is not: it is where cloud metadata services answer, and no base station is there.
+      const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+      if (u.username || u.password || isLinkLocalHost(host)) throw new BadRequestException('That address cannot be used for a base station');
     }
   }
 
@@ -133,7 +145,8 @@ export class PagingService {
     try {
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), 5000);
-      const res = await fetch(b.webhookUrl!, { method: 'POST', headers, body, signal: ctl.signal }).finally(() => clearTimeout(timer));
+      // A base station answers directly; following a redirect would let a configured address bounce the call elsewhere.
+      const res = await fetch(b.webhookUrl!, { method: 'POST', headers, body, signal: ctl.signal, redirect: 'error' }).finally(() => clearTimeout(timer));
       if (!res.ok) throw new Error(`The base station answered ${res.status}`);
       return this.prisma.buzzerCall.update({ where: { id: callId }, data: { state: 'SENT', sentAt: new Date() } });
     } catch (e) {
