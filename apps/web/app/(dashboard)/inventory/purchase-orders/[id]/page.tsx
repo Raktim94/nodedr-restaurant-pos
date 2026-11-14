@@ -2,7 +2,8 @@
 
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { use } from "react";
+import { use, useState } from "react";
+import { StockJournalVoucher } from "@/components/inventory/stock-journal-voucher";
 import { toast } from "@/lib/toast";
 import { ReceivePoDialog } from "@/components/inventory/receive-po-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,7 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
   const { branchId } = useBranch();
   const { data: po, isLoading } = usePurchaseOrder(branchId, id);
   const updateStatus = useUpdatePurchaseOrderStatus(branchId);
+  const [making, setMaking] = useState(false);
 
   if (isLoading || !po) {
     return <Skeleton className="h-96 rounded-2xl" />;
@@ -82,6 +84,9 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
         )}
         {(po.status === "SENT" || po.status === "PARTIALLY_RECEIVED") && (
           <ReceivePoDialog branchId={branchId} po={po} />
+        )}
+        {po.status !== "CANCELLED" && (
+          <Button size="sm" variant="outline" onClick={() => setMaking(true)}>Manufacturing</Button>
         )}
         {(po.status === "DRAFT" || po.status === "SENT") && (
           <Button size="sm" variant="outline" onClick={cancel} disabled={updateStatus.isPending}>
@@ -144,6 +149,18 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
             ))}
           </div>
         </Card>
+      )}
+      {making && (
+        <StockJournalVoucher
+          branchId={branchId}
+          open
+          onOpenChange={setMaking}
+          context={{
+            batchRef: po.poNumber,
+            narration: `Manufacturing from ${po.poNumber} (${po.supplier.name})`,
+            sourceIds: po.items.filter((i) => Number(i.quantityReceived) > 0).map((i) => i.ingredientId),
+          }}
+        />
       )}
     </div>
   );

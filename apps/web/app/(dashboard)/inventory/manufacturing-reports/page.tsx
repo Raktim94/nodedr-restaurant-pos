@@ -47,6 +47,37 @@ export default function ManufacturingReportsPage() {
     return sort === "cost" ? [...rows].sort((a, b) => Number(b.unitCost ?? 0) - Number(a.unitCost ?? 0)) : rows;
   }, [data, search, sort]);
 
+  // One row per day: everything consumed and everything produced by that day's POSTED vouchers.
+  const daily = useMemo(() => {
+    type Agg = { qty: number; unit: string; cost: number };
+    const days = new Map<string, { vouchers: string[]; used: Map<string, Agg>; made: Map<string, Agg>; total: number }>();
+    for (const b of data?.batches ?? []) {
+      if (b.status !== "POSTED") continue;
+      const d = b.producedAt.slice(0, 10);
+      const e = days.get(d) ?? { vouchers: [] as string[], used: new Map<string, Agg>(), made: new Map<string, Agg>(), total: 0 };
+      e.vouchers.push(b.batchRef ? `${b.entryNo} (${b.batchRef})` : b.entryNo);
+      e.total += Number(b.totalCost ?? 0);
+      for (const l of b.lines) {
+        const map = l.role === "INPUT" ? e.used : e.made;
+        const k = `${l.item}|${l.unit}`;
+        const cur = map.get(k) ?? { qty: 0, unit: l.unit, cost: 0 };
+        cur.qty += Number(l.quantity); cur.cost += Number(l.amount ?? 0);
+        map.set(k, cur);
+      }
+      days.set(d, e);
+    }
+    return [...days.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [data]);
+  const dailyCsv = () => {
+    const rows = [["Date", "Direction", "Item", "Quantity", "Unit", "Cost"]];
+    for (const [d, e] of daily) {
+      for (const [k, v] of e.used) rows.push([d, "Consumed", k.split("|")[0], String(Math.round(v.qty * 1000) / 1000), v.unit, v.cost ? v.cost.toFixed(2) : ""]);
+      for (const [k, v] of e.made) rows.push([d, "Produced", k.split("|")[0], String(Math.round(v.qty * 1000) / 1000), v.unit, ""]);
+    }
+    const blob = new Blob([rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n")], { type: "text/csv" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `daily-production-${from}-to-${to}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -72,6 +103,19 @@ export default function ManufacturingReportsPage() {
         <>
           <p className="text-xs text-muted-foreground">{data.note}</p>
           <div className="flex flex-wrap gap-2">{data.statusCounts.map((c) => (<Badge key={c.status} variant="outline">{STATUS[c.status]}: {c.count}</Badge>))}</div>
+
+          <section aria-label="Daily production" className="flex flex-col gap-2">
+            <div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Daily production: what was consumed and what was made</h2>{daily.length > 0 && <button type="button" className="text-xs underline" onClick={dailyCsv}>Export CSV</button>}</div>
+            {daily.length ? daily.map(([d, e]) => (
+              <Card key={d} className="p-0">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-sm"><span className="font-semibold">{new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span><span className="text-xs text-muted-foreground">{e.vouchers.join(", ")} · total production cost <b className="text-foreground">{num(String(e.total))}</b></span></div>
+                <div className="grid gap-4 p-4 text-sm md:grid-cols-2">
+                  <div><h3 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">Consumed</h3><ul className="divide-y divide-border">{[...e.used.entries()].map(([k, v]) => (<li key={k} className="flex justify-between gap-2 py-1"><span>{k.split("|")[0]}</span><span className="tabular-nums">{Math.round(v.qty * 1000) / 1000} {v.unit}{v.cost ? ` · ${num(String(v.cost))}` : ""}</span></li>))}</ul></div>
+                  <div><h3 className="mb-1 text-xs font-semibold uppercase text-muted-foreground">Produced</h3><ul className="divide-y divide-border">{[...e.made.entries()].map(([k, v]) => (<li key={k} className="flex justify-between gap-2 py-1"><span>{k.split("|")[0]}</span><span className="tabular-nums">{Math.round(v.qty * 1000) / 1000} {v.unit}</span></li>))}</ul></div>
+                </div>
+              </Card>
+            )) : <Empty t="No posted vouchers in this date range." />}
+          </section>
 
           <Section title="Batches by day" csv={mfgCsvUrl(branchId, "days", filters)}>
             {data.batchesByDay.length ? <Card className="p-0"><ul className="divide-y divide-border text-sm">{data.batchesByDay.map((d) => (<li key={d.date} className="flex justify-between px-4 py-2"><span>{d.date} · {d.batches} batch{d.batches === 1 ? "" : "es"}</span><span className="tabular-nums">{num(d.totalCost)}</span></li>))}</ul></Card> : <Empty t="No posted batches in this period." />}

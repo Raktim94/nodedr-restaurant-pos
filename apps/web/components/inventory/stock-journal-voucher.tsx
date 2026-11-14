@@ -31,7 +31,10 @@ const head = "px-2 py-1.5 text-left text-xs font-medium text-muted-foreground";
  * happened; amounts are worked out by the server in the review step and frozen when posted. The menu selling price
  * is never touched here.
  */
-export function StockJournalVoucher({ branchId, open, onOpenChange, productId }: { branchId: string | null; open: boolean; onOpenChange: (o: boolean) => void; productId?: string }) {
+export interface VoucherContext { productId?: string; batchRef?: string; narration?: string; sourceIds?: string[] }
+
+export function StockJournalVoucher({ branchId, open, onOpenChange, productId, context }: { branchId: string | null; open: boolean; onOpenChange: (o: boolean) => void; productId?: string; context?: VoucherContext }) {
+  productId = productId ?? context?.productId;
   const { data: items } = useStockItems(branchId);
   const { data: settings } = useMfgSettings(branchId);
   const prefill = usePrefill(branchId);
@@ -41,14 +44,14 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId }:
   const plainSave = useSaveProduction(branchId);
   const quality = useRecordQuality(branchId);
   const [when, setWhen] = useState(local);
-  const [batchRef, setBatchRef] = useState("");
+  const [batchRef, setBatchRef] = useState(context?.batchRef ?? "");
   const [location, setLocation] = useState("");
   const [shift, setShift] = useState("");
   const [madeOn, setMadeOn] = useState("");
   const [expiry, setExpiry] = useState("");
-  const [notes, setNotes] = useState("");
-  const [ins, setIns] = useState<In[]>([blankIn()]);
-  const [outs, setOuts] = useState<Out[]>([blankOut(productId ? { ingredientId: productId } : {})]);
+  const [notes, setNotes] = useState(context?.narration ?? "");
+  const [insRaw, setIns] = useState<In[]>(() => (context?.sourceIds?.length ? context.sourceIds.map((id) => blankIn({ ingredientId: id })) : [blankIn()]));
+  const [outsRaw, setOuts] = useState<Out[]>([blankOut(productId ? { ingredientId: productId } : {})]);
   const [costs, setCosts] = useState<Cost[]>([]);
   const [qResult, setQResult] = useState<QualityResult | "">("");
   const [qGrade, setQGrade] = useState("");
@@ -60,13 +63,16 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId }:
   const byId = useMemo(() => new Map((items ?? []).map((i) => [i.id, i])), [items]);
   const raw = (items ?? []).filter((i) => i.kind === "PURCHASED");
   const products = (items ?? []).filter((i) => i.kind === "PREPARED");
+  // Rows started from a purchase order have an item but no unit yet; use the item's own unit until one is chosen.
+  const ins = useMemo(() => insRaw.map((x) => (x.ingredientId && !x.unit ? { ...x, unit: (byId.get(x.ingredientId)?.unit ?? "") as IngredientUnit | "" } : x)), [insRaw, byId]);
+  const outs = useMemo(() => outsRaw.map((x) => (x.ingredientId && !x.unit ? { ...x, unit: (byId.get(x.ingredientId)?.unit ?? "") as IngredientUnit | "" } : x)), [outsRaw, byId]);
+
   const costed = !!settings?.enabled && outs.length === 1;
   const busy = mfgPreview.isPending || plainPreview.isPending || mfgPost.isPending || plainSave.isPending;
   const patchIn = (id: number, p: Partial<In>) => setIns((r) => r.map((x) => (x.key === id ? { ...x, ...p } : x)));
   const patchOut = (id: number, p: Partial<Out>) => setOuts((r) => r.map((x) => (x.key === id ? { ...x, ...p } : x)));
   const pickIn = (id: number, ing: string) => patchIn(id, { ingredientId: ing, unit: byId.get(ing)?.unit ?? "", expected: undefined });
   const pickOut = (id: number, ing: string) => patchOut(id, { ingredientId: ing, unit: byId.get(ing)?.unit ?? "" });
-  if (productId && outs[0]?.ingredientId === productId && !outs[0].unit && byId.get(productId)) patchOut(outs[0].key, { unit: byId.get(productId)!.unit });
 
   const usedIns = ins.filter((r) => r.ingredientId || r.quantity);
   const usedOuts = outs.filter((r) => r.ingredientId || r.quantity);
@@ -74,6 +80,13 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId }:
   const extra = costs.reduce((s, c) => s + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0);
   // Quick shortage hint while typing (same unit only); the server check in Review is the real one.
   const short = (r: In) => { const it = byId.get(r.ingredientId); return !!it && r.unit === it.unit && Number(r.quantity) > Number(it.currentStock); };
+
+  const yieldInfo = useMemo(() => {
+    const rows = ins.filter((r) => r.expected && Number(r.expected) > 0 && Number(r.quantity) > 0 && byId.get(r.ingredientId)?.unit === r.unit);
+    if (!rows.length) return null;
+    const expected = rows.reduce((a, r) => a + Number(r.expected), 0), used = rows.reduce((a, r) => a + Number(r.quantity), 0);
+    return { expected: Math.round(expected * 1000) / 1000, used: Math.round(used * 1000) / 1000, pct: ((used - expected) / expected) * 100 };
+  }, [ins, byId]);
 
   const problem = () => {
     if (!usedOuts.length || usedOuts.some((r) => !r.ingredientId)) return "Choose the finished product in the Destination panel.";
@@ -182,6 +195,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId }:
                         })}
                       </tbody>
                     </table>
+                    {yieldInfo && <p className="px-1 pt-1 text-xs text-muted-foreground">Against the recipe: <b className={yieldInfo.pct > 5 ? "text-destructive" : "text-foreground"}>{yieldInfo.pct > 0 ? "+" : ""}{yieldInfo.pct.toFixed(1)}%</b> ingredient use ({yieldInfo.used} of {yieldInfo.expected} expected, same-unit rows only).</p>}
                     <div className="flex items-center justify-between px-1 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add ingredient</Button><span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b></span></div>
                   </div>
                 </section>

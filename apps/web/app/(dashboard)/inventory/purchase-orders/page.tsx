@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import { StockJournalVoucher } from "@/components/inventory/stock-journal-voucher";
+import { Button } from "@/components/ui/button";
 import { CreatePoDialog } from "@/components/inventory/create-po-dialog";
 import { InventoryTabs } from "@/components/inventory/inventory-tabs";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +32,7 @@ const STATUS_VARIANT: Record<PurchaseOrder["status"], "default" | "secondary" | 
 export default function PurchaseOrdersPage() {
   const { branchId } = useBranch();
   const { data: orders, isLoading } = usePurchaseOrders(branchId);
+  const [making, setMaking] = useState(false);
 
   return (
     <div className="flex flex-col gap-6">
@@ -39,7 +43,10 @@ export default function PurchaseOrdersPage() {
             Stock, daily production, purchasing, and food waste
           </p>
         </div>
-        <CreatePoDialog branchId={branchId} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={() => setMaking(true)}>Manufacturing</Button>
+          <CreatePoDialog branchId={branchId} />
+        </div>
       </div>
 
       <InventoryTabs />
@@ -96,6 +103,7 @@ export default function PurchaseOrdersPage() {
           </div>
         )}
       </Card>
+      {making && <StockJournalVoucher branchId={branchId} open onOpenChange={setMaking} />}
     </div>
   );
 }

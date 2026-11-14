@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useBranch } from "@/hooks/use-branch";
+import { StockJournalVoucher } from "@/components/inventory/stock-journal-voucher";
 import { csvUrl, useJournal, useJournalAdjust, useReceiveStock, useStockItems } from "@/hooks/use-stock-journal";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
@@ -37,6 +38,7 @@ export default function JournalPage() {
   const { data: items } = useStockItems(branchId);
   const { data, isLoading, isError } = useJournal(branchId, filters);
   const [mode, setMode] = useState<Mode>(null);
+  const [voucher, setVoucher] = useState(false);
   const [item, setItem] = useState("");
   const [qty, setQty] = useState("");
   const [unit, setUnit] = useState("");
@@ -68,6 +70,7 @@ export default function JournalPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setMode("adjust")}>Adjust stock</Button>
+          <Button variant="outline" onClick={() => setVoucher(true)}>Manufacturing voucher</Button>
           <Button onClick={() => setMode("receive")}>Receive stock</Button>
         </div>
       </div>
@@ -120,6 +123,7 @@ export default function JournalPage() {
       </Card>
       <p className="text-xs text-muted-foreground">Every movement is kept. A mistake is fixed by a reversal or an adjustment, never by editing or deleting a line.</p>
 
+      {voucher && <StockJournalVoucher branchId={branchId} open onOpenChange={setVoucher} />}
       <Dialog open={!!mode} onOpenChange={(o) => !o && close()}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

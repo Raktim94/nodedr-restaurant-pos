@@ -128,3 +128,11 @@ session immediately.
   location, opening, purchases/receipts, manufacturing used, manufacturing produced, sales, waste, adjustments,
   closing for a date range. Every figure is summed from the stock ledger; the e2e test checks
   opening + movements = closing = live stock.
+
+### Where the Manufacturing voucher opens from (added after 1.33.0)
+
+* **Inventory > Purchase Orders** (list and each PO): a **Manufacturing** button. From a PO it carries the context over: the PO number becomes the batch/run number, the narration says which PO and supplier, and the source rows start with the items that PO actually received (quantities left blank to type).
+* **Inventory > Stock journal**: **Manufacturing voucher** button next to Adjust stock / Receive stock (the ledger itself is unchanged).
+* **Inventory > Production** and the **POS** screen, as before.
+* The voucher shows the ingredient-use variance against the recipe (same-unit rows) after "Fill from recipe".
+* **Stock Journal Reports** gained **Daily production**: per day, what was consumed (with cost) and what was produced, from posted vouchers only, with CSV export.
