@@ -45,7 +45,9 @@ describe('DeliveryService', () => {
       deliveryStatus: 'UNASSIGNED',
     });
     await svc.assignDriver('b1', 'o1', 'd1', 'staff1');
-    expect(prisma.deliveryAssignment.create.mock.calls[0][0].data).toMatchObject({
+    expect(
+      prisma.deliveryAssignment.create.mock.calls[0][0].data,
+    ).toMatchObject({
       fromDriverId: undefined,
       toDriverId: 'd1',
       assignedById: 'staff1',
@@ -69,7 +71,8 @@ describe('DeliveryService', () => {
 
   it('refuses to reassign once picked up', async () => {
     const { svc } = setup({ id: 'o1', deliveryStatus: 'PICKED_UP' });
-    await expect(svc.assignDriver('b1', 'o1', 'd1', 'staff1'),
+    await expect(
+      svc.assignDriver('b1', 'o1', 'd1', 'staff1'),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -91,11 +94,13 @@ describe('DeliveryService', () => {
       deliveryStatus: 'ASSIGNED',
       driverId: 'd0',
     });
-    await expect(
-      svc.assignDriver('b1', 'o1', 'd1', 'staff1'),
-    ).rejects.toThrow(/why/);
+    await expect(svc.assignDriver('b1', 'o1', 'd1', 'staff1')).rejects.toThrow(
+      /why/,
+    );
     await svc.assignDriver('b1', 'o1', 'd1', 'staff1', 'Rider d0 is off sick');
-    expect(prisma.deliveryAssignment.create.mock.calls[0][0].data).toMatchObject({
+    expect(
+      prisma.deliveryAssignment.create.mock.calls[0][0].data,
+    ).toMatchObject({
       fromDriverId: 'd0',
       toDriverId: 'd1',
       reason: 'Rider d0 is off sick',
