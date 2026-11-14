@@ -24,6 +24,7 @@ import type {
   SessionUser,
   SetBackupConfigDto,
 } from '@nodedr-restaurant/types';
+import { assertSafeUploadsArchive, SAFE_EXTRACT_FLAGS } from './safe-tar';
 import { AuditService } from '../audit/audit.service';
 import type { NotifyPayload } from '../notifications/notifications.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -659,6 +660,12 @@ export class BackupService {
 
     try {
       await this.downloadTo(s3, config.bucket, record.s3KeyDb, dbDumpPath);
+      // Fetch and vet the uploads archive BEFORE the database is touched: a hostile or damaged archive then fails the
+      // restore early, with nothing changed (see safe-tar.ts).
+      if (record.s3KeyUploads) {
+        await this.downloadTo(s3, config.bucket, record.s3KeyUploads, uploadsArchivePath);
+        await assertSafeUploadsArchive(uploadsArchivePath, path.basename(uploadRoot));
+      }
       await execFileAsync('pg_restore', [
         '--clean',
         '--if-exists',
@@ -669,12 +676,6 @@ export class BackupService {
       ]);
 
       if (record.s3KeyUploads) {
-        await this.downloadTo(
-          s3,
-          config.bucket,
-          record.s3KeyUploads,
-          uploadsArchivePath,
-        );
         // Empty uploadRoot's contents rather than removing the directory
         // itself: the container's non-root user owns everything inside it
         // but not necessarily its parent, so an rmdir/mkdir round-trip on
@@ -693,6 +694,7 @@ export class BackupService {
         await execFileAsync('tar', [
           '-xzf',
           uploadsArchivePath,
+          ...SAFE_EXTRACT_FLAGS,
           '-C',
           path.dirname(uploadRoot),
         ]);
