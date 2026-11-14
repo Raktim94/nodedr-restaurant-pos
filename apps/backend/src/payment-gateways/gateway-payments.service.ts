@@ -317,7 +317,9 @@ export class GatewayPaymentsService {
       try {
         await this.orders.releaseHeldOrder(p.branchId, p.orderId);
       } catch (e) {
-        this.logger.error(`Could not release order ${p.orderId} after payment: ${(e as Error).message}`);
+        this.logger.error(
+          `Could not release order ${p.orderId} after payment: ${(e as Error).message}`,
+        );
       }
       return await this.prisma.gatewayPayment.update({
         where: { id: p.id },

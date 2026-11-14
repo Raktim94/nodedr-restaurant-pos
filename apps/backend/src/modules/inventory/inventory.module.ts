@@ -21,7 +21,11 @@ import { WasteService } from './waste.service';
 
 @Module({
   imports: [AuditModule],
-  controllers: [InventoryController, TransfersController, StockJournalController],
+  controllers: [
+    InventoryController,
+    TransfersController,
+    StockJournalController,
+  ],
   providers: [
     InventoryService,
     PurchaseOrdersService,

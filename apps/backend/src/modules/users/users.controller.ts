@@ -43,7 +43,12 @@ export class UsersController {
   @Post()
   @UsePipes(new ZodValidationPipe(createStaffSchema))
   create(@CurrentUser() user: SessionUser, @Body() body: unknown) {
-    return this.usersService.create(user.restaurantId, user.id, body as never, user);
+    return this.usersService.create(
+      user.restaurantId,
+      user.id,
+      body as never,
+      user,
+    );
   }
 
   @Auth('users.manage')

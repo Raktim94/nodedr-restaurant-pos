@@ -11,12 +11,15 @@ export const FUTURE_SKEW_MS = 10 * 60_000;
 export const DEFAULT_MAX_AGE_DAYS = 90;
 
 export type SoldAtResolution =
-  | { ok: true; at: Date; clamped: boolean }
-  | { ok: false; reason: string };
+  { ok: true; at: Date; clamped: boolean } | { ok: false; reason: string };
 
-export function maxAgeDays(env: string | undefined = process.env.OFFLINE_SALE_MAX_AGE_DAYS): number {
+export function maxAgeDays(
+  env: string | undefined = process.env.OFFLINE_SALE_MAX_AGE_DAYS,
+): number {
   const n = Number(env);
-  return Number.isFinite(n) && n >= 1 && n <= 3650 ? Math.floor(n) : DEFAULT_MAX_AGE_DAYS;
+  return Number.isFinite(n) && n >= 1 && n <= 3650
+    ? Math.floor(n)
+    : DEFAULT_MAX_AGE_DAYS;
 }
 
 export function resolveSoldAt(
@@ -25,8 +28,10 @@ export function resolveSoldAt(
   maxDays: number = maxAgeDays(),
 ): SoldAtResolution {
   const t = new Date(soldAt);
-  if (Number.isNaN(t.getTime())) return { ok: false, reason: 'The sale has no valid time.' };
-  if (t.getTime() > now.getTime() + FUTURE_SKEW_MS) return { ok: true, at: now, clamped: true };
+  if (Number.isNaN(t.getTime()))
+    return { ok: false, reason: 'The sale has no valid time.' };
+  if (t.getTime() > now.getTime() + FUTURE_SKEW_MS)
+    return { ok: true, at: now, clamped: true };
   if (t.getTime() < now.getTime() - maxDays * 86_400_000) {
     return {
       ok: false,

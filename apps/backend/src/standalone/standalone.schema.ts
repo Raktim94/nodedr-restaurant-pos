@@ -116,7 +116,8 @@ export const phoneReservationSchema = z
   })
   .strict()
   .refine((r) => !!r.id !== !!r.serverId, {
-    message: 'Send either id (made on the phone) or serverId (made on the server)',
+    message:
+      'Send either id (made on the phone) or serverId (made on the server)',
   });
 
 export const reservationSyncSchema = z

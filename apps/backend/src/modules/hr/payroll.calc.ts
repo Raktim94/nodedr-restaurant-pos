@@ -52,9 +52,19 @@ export function lateAndAbsence(
   shifts: RotaShift[],
   clocks: ClockRow[],
   leaveDates: Set<string>,
-  opts: { graceMinutes: number | null; deductAbsence: boolean; dayRate: (date: string) => number },
+  opts: {
+    graceMinutes: number | null;
+    deductAbsence: boolean;
+    dayRate: (date: string) => number;
+  },
 ): LateAbsence {
-  const out: LateAbsence = { lateMinutes: 0, lateDeduction: 0, absentDays: 0, absenceDeduction: 0, notes: [] };
+  const out: LateAbsence = {
+    lateMinutes: 0,
+    lateDeduction: 0,
+    absentDays: 0,
+    absenceDeduction: 0,
+    notes: [],
+  };
   for (const sh of shifts) {
     const len = (sh.end - sh.start) / 60_000;
     if (len <= 0) continue;
@@ -67,17 +77,24 @@ export function lateAndAbsence(
         const d = round2(opts.dayRate(sh.date));
         out.absentDays += 1;
         out.absenceDeduction = round2(out.absenceDeduction + d);
-        out.notes.push(`${sh.date}: rostered, no clock-in, no leave -> absent, 1 day = ${d}`);
+        out.notes.push(
+          `${sh.date}: rostered, no clock-in, no leave -> absent, 1 day = ${d}`,
+        );
       }
       continue;
     }
     if (opts.graceMinutes != null) {
-      const late = Math.floor((touching.start - sh.start) / 60_000) - opts.graceMinutes;
+      const late =
+        Math.floor((touching.start - sh.start) / 60_000) - opts.graceMinutes;
       if (late > 0) {
-        const d = round2((opts.dayRate(sh.date) * (touching.start - sh.start) / 60_000) / len);
+        const d = round2(
+          (opts.dayRate(sh.date) * (touching.start - sh.start)) / 60_000 / len,
+        );
         out.lateMinutes += Math.floor((touching.start - sh.start) / 60_000);
         out.lateDeduction = round2(out.lateDeduction + d);
-        out.notes.push(`${sh.date}: ${Math.floor((touching.start - sh.start) / 60_000)} min late (grace ${opts.graceMinutes}) -> ${d}`);
+        out.notes.push(
+          `${sh.date}: ${Math.floor((touching.start - sh.start) / 60_000)} min late (grace ${opts.graceMinutes}) -> ${d}`,
+        );
       }
     }
   }
@@ -92,10 +109,20 @@ export function monthSlices(start: string, end: string) {
   while (cursor <= last) {
     const d = new Date(cursor);
     const key = d.toISOString().slice(0, 7);
-    const monthDays = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
-    const lastOfMonth = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), monthDays);
+    const monthDays = new Date(
+      Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    const lastOfMonth = Date.UTC(
+      d.getUTCFullYear(),
+      d.getUTCMonth(),
+      monthDays,
+    );
     const stop = Math.min(last, lastOfMonth);
-    out.push({ key, days: Math.round((stop - cursor) / 86_400_000) + 1, monthDays });
+    out.push({
+      key,
+      days: Math.round((stop - cursor) / 86_400_000) + 1,
+      monthDays,
+    });
     cursor = stop + 86_400_000;
   }
   return out;
@@ -119,7 +146,11 @@ export function workedByDay(
   dateOf: (ms: number) => string,
 ) {
   const clipped = rows
-    .map((r) => ({ start: Math.max(r.start, from), end: Math.min(r.end, to), br: r.breakMinutes ?? 0 }))
+    .map((r) => ({
+      start: Math.max(r.start, from),
+      end: Math.min(r.end, to),
+      br: r.breakMinutes ?? 0,
+    }))
     .filter((r) => r.end > r.start)
     .sort((a, b) => a.start - b.start);
   const groups: { start: number; end: number; br: number }[] = [];
@@ -264,11 +295,13 @@ export function computePayroll(
       basePay = round2(
         slices.reduce((sum, m) => sum + (p.rate * m.days) / m.monthDays, 0),
       );
-      const byMonth =
-        p.unpaidLeaveByMonth ?? { [slices[0].key]: p.unpaidLeaveDays };
+      const byMonth = p.unpaidLeaveByMonth ?? {
+        [slices[0].key]: p.unpaidLeaveDays,
+      };
       formula.push(
         ...slices.map(
-          (m) => `${m.key}: ${p.rate} x ${m.days}/${m.monthDays} days = ${round2((p.rate * m.days) / m.monthDays)}`,
+          (m) =>
+            `${m.key}: ${p.rate} x ${m.days}/${m.monthDays} days = ${round2((p.rate * m.days) / m.monthDays)}`,
         ),
       );
       deduction = round2(
@@ -288,7 +321,11 @@ export function computePayroll(
       tipShare,
       unpaidLeaveDeduction: deduction,
       netPay: round2(
-        basePay - deduction - (p.late?.lateDeduction ?? 0) - (p.late?.absenceDeduction ?? 0) + tipShare,
+        basePay -
+          deduction -
+          (p.late?.lateDeduction ?? 0) -
+          (p.late?.absenceDeduction ?? 0) +
+          tipShare,
       ),
       lateMinutes: p.late?.lateMinutes ?? 0,
       lateDeduction: p.late?.lateDeduction ?? 0,

@@ -156,11 +156,19 @@ export class AuthService {
     // A phone that was removed by the owner cannot sign in again until it is allowed back.
     if (dto.deviceId) {
       const d = await this.prisma.posDevice.findUnique({
-        where: { restaurantId_deviceId: { restaurantId: user.restaurantId, deviceId: dto.deviceId } },
+        where: {
+          restaurantId_deviceId: {
+            restaurantId: user.restaurantId,
+            deviceId: dto.deviceId,
+          },
+        },
         select: { revokedAt: true },
       });
       if (d?.revokedAt) {
-        throw new ForbiddenException({ message: 'This phone was removed by the owner.', code: 'DEVICE_REVOKED' });
+        throw new ForbiddenException({
+          message: 'This phone was removed by the owner.',
+          code: 'DEVICE_REVOKED',
+        });
       }
     }
     return this.issueSession(user, dto.deviceId);
@@ -306,13 +314,23 @@ export class AuthService {
    * user with no password. The session carries `demo: true`, which the demo guard uses to block anything dangerous.
    */
   async demoLogin() {
-    if (process.env.DEMO_MODE !== 'true') throw new NotFoundException('Not found');
+    if (process.env.DEMO_MODE !== 'true')
+      throw new NotFoundException('Not found');
     const email = process.env.DEMO_USER_EMAIL;
     if (!email) throw new NotFoundException('The demo user is not configured');
-    const user = await this.prisma.user.findFirst({ where: { email, isActive: true }, include: permissionInclude });
-    if (!user) throw new NotFoundException('The demo is being reset. Please try again in a minute.');
+    const user = await this.prisma.user.findFirst({
+      where: { email, isActive: true },
+      include: permissionInclude,
+    });
+    if (!user)
+      throw new NotFoundException(
+        'The demo is being reset. Please try again in a minute.',
+      );
     const sessionUser = this.toSessionUser(user);
-    const token = await this.jwt.signAsync({ sub: user.id, demo: true, ms: Date.now() }, { expiresIn: '3h' });
+    const token = await this.jwt.signAsync(
+      { sub: user.id, demo: true, ms: Date.now() },
+      { expiresIn: '3h' },
+    );
     return { token, user: sessionUser };
   }
 
@@ -322,7 +340,11 @@ export class AuthService {
   ) {
     const sessionUser = this.toSessionUser(user);
     // `did` binds the session to one phone: JwtStrategy refuses it once that phone is removed.
-    const token = await this.jwt.signAsync(deviceId ? { sub: user.id, did: deviceId, ms: Date.now() } : { sub: user.id, ms: Date.now() });
+    const token = await this.jwt.signAsync(
+      deviceId
+        ? { sub: user.id, did: deviceId, ms: Date.now() }
+        : { sub: user.id, ms: Date.now() },
+    );
     return { token, user: sessionUser };
   }
 }

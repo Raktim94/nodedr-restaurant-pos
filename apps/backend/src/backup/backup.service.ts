@@ -663,8 +663,16 @@ export class BackupService {
       // Fetch and vet the uploads archive BEFORE the database is touched: a hostile or damaged archive then fails the
       // restore early, with nothing changed (see safe-tar.ts).
       if (record.s3KeyUploads) {
-        await this.downloadTo(s3, config.bucket, record.s3KeyUploads, uploadsArchivePath);
-        await assertSafeUploadsArchive(uploadsArchivePath, path.basename(uploadRoot));
+        await this.downloadTo(
+          s3,
+          config.bucket,
+          record.s3KeyUploads,
+          uploadsArchivePath,
+        );
+        await assertSafeUploadsArchive(
+          uploadsArchivePath,
+          path.basename(uploadRoot),
+        );
       }
       await execFileAsync('pg_restore', [
         '--clean',
@@ -682,7 +690,9 @@ export class BackupService {
         // uploadRoot itself can fail with EACCES. tar then recreates the
         // same tree from the archive, merging into the now-empty
         // directory (same approach zulivio's restore() uses).
-        const existingEntries = await fs.readdir(uploadRoot).catch(() => []);
+        const existingEntries: string[] = await fs
+          .readdir(uploadRoot)
+          .catch(() => [] as string[]);
         await Promise.all(
           existingEntries.map((entry) =>
             fs.rm(path.join(uploadRoot, entry), {

@@ -126,12 +126,19 @@ describe('embedded IPv4 in IPv6 literals', () => {
     'https://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/hook', // Teredo
     'https://[::ffff:0:7f00:1]/hook', // IPv4-translated
   ])('refuses %s through the URL path', async (u) => {
-    await expect(resolveWebhookTarget(u, strict)).rejects.toThrow(/private or internal/);
+    await expect(resolveWebhookTarget(u, strict)).rejects.toThrow(
+      /private or internal/,
+    );
   });
 
-  it.each(['::ffff:7f00:1', '::ffff:a9fe:a9fe', '::7f00:1', '64:ff9b::7f00:1', '2002:7f00:1::'])(
-    'isPrivateAddress blocks %s',
-    (ip) => expect(isPrivateAddress(ip)).toBe(true),
+  it.each([
+    '::ffff:7f00:1',
+    '::ffff:a9fe:a9fe',
+    '::7f00:1',
+    '64:ff9b::7f00:1',
+    '2002:7f00:1::',
+  ])('isPrivateAddress blocks %s', (ip) =>
+    expect(isPrivateAddress(ip)).toBe(true),
   );
 
   it('still allows genuinely public addresses, including mapped and 6to4 forms of public IPv4', () => {

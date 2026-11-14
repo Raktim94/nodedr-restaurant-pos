@@ -166,7 +166,11 @@ export class MenuController {
     @Body() body: unknown,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.menuService.bulkPriceChange(branchId, user.id, body as z.infer<typeof bulkPriceSchema>);
+    return this.menuService.bulkPriceChange(
+      branchId,
+      user.id,
+      body as z.infer<typeof bulkPriceSchema>,
+    );
   }
 
   @Auth('menu.manage')

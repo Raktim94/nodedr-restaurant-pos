@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { SessionUser } from '@nodedr-restaurant/types';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.service';
@@ -29,10 +33,18 @@ export class DevicesService {
   /** Enrol or refresh. Throws if the device was revoked, so the phone can tell its user. */
   async heartbeat(user: SessionUser, dto: Heartbeat) {
     const existing = await this.prisma.posDevice.findUnique({
-      where: { restaurantId_deviceId: { restaurantId: user.restaurantId, deviceId: dto.deviceId } },
+      where: {
+        restaurantId_deviceId: {
+          restaurantId: user.restaurantId,
+          deviceId: dto.deviceId,
+        },
+      },
     });
     if (existing?.revokedAt) {
-      throw new ForbiddenException({ message: 'This phone was removed by the owner.', code: 'DEVICE_REVOKED' });
+      throw new ForbiddenException({
+        message: 'This phone was removed by the owner.',
+        code: 'DEVICE_REVOKED',
+      });
     }
     const data = {
       userId: user.id,
@@ -46,8 +58,17 @@ export class DevicesService {
       ...(dto.synced ? { lastSyncAt: new Date() } : {}),
     };
     return this.prisma.posDevice.upsert({
-      where: { restaurantId_deviceId: { restaurantId: user.restaurantId, deviceId: dto.deviceId } },
-      create: { restaurantId: user.restaurantId, deviceId: dto.deviceId, ...data },
+      where: {
+        restaurantId_deviceId: {
+          restaurantId: user.restaurantId,
+          deviceId: dto.deviceId,
+        },
+      },
+      create: {
+        restaurantId: user.restaurantId,
+        deviceId: dto.deviceId,
+        ...data,
+      },
       update: data,
       select: { id: true, name: true, enrolledAt: true },
     });
@@ -61,12 +82,21 @@ export class DevicesService {
     });
   }
 
-  async setRevoked(restaurantId: string, actorId: string, id: string, revoked: boolean) {
-    const d = await this.prisma.posDevice.findFirst({ where: { id, restaurantId } });
+  async setRevoked(
+    restaurantId: string,
+    actorId: string,
+    id: string,
+    revoked: boolean,
+  ) {
+    const d = await this.prisma.posDevice.findFirst({
+      where: { id, restaurantId },
+    });
     if (!d) throw new NotFoundException('Device not found');
     const out = await this.prisma.posDevice.update({
       where: { id },
-      data: revoked ? { revokedAt: new Date(), revokedById: actorId } : { revokedAt: null, revokedById: null },
+      data: revoked
+        ? { revokedAt: new Date(), revokedById: actorId }
+        : { revokedAt: null, revokedById: null },
     });
     await this.audit.record({
       userId: actorId,
@@ -81,7 +111,10 @@ export class DevicesService {
   /** Used by the middleware: is this device id switched off on any restaurant? */
   isRevoked(deviceId: string) {
     return this.prisma.posDevice
-      .findFirst({ where: { deviceId, revokedAt: { not: null } }, select: { id: true } })
+      .findFirst({
+        where: { deviceId, revokedAt: { not: null } },
+        select: { id: true },
+      })
       .then((r) => !!r);
   }
 }

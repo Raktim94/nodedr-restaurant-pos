@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Headers, Param, Post, Req, UsePipes } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Post,
+  Req,
+  UsePipes,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
@@ -29,33 +38,71 @@ export class PublicMenuController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('menu/:qrToken/order')
   @UsePipes(new ZodValidationPipe(publicOrderSchema))
-  createOrder(@Param('qrToken') qrToken: string, @Body() body: unknown, @Headers('x-table-session') sessionToken?: string) {
-    const { items, guestName, payment, idempotencyKey } = body as { items: never; guestName: string; payment?: 'CASH' | 'ONLINE'; idempotencyKey?: string };
-    return this.publicMenuService.createOrder(qrToken, items, guestName, { payment, idempotencyKey, sessionToken });
+  createOrder(
+    @Param('qrToken') qrToken: string,
+    @Body() body: unknown,
+    @Headers('x-table-session') sessionToken?: string,
+  ) {
+    const { items, guestName, payment, idempotencyKey } = body as {
+      items: never;
+      guestName: string;
+      payment?: 'CASH' | 'ONLINE';
+      idempotencyKey?: string;
+    };
+    return this.publicMenuService.createOrder(qrToken, items, guestName, {
+      payment,
+      idempotencyKey,
+      sessionToken,
+    });
   }
 
   // Starts the guest's online payment (Stripe or whichever gateway is on). The amount is the server's bill.
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
   @Post('menu/:qrToken/orders/:orderId/pay-online')
-  payOnline(@Param('qrToken') qrToken: string, @Param('orderId') orderId: string, @Body() body: { origin?: string }, @Headers('x-table-session') sessionToken?: string) {
-    return this.publicMenuService.payOnline(qrToken, orderId, typeof body?.origin === 'string' ? body.origin.slice(0, 200) : undefined, sessionToken);
+  payOnline(
+    @Param('qrToken') qrToken: string,
+    @Param('orderId') orderId: string,
+    @Body() body: { origin?: string },
+    @Headers('x-table-session') sessionToken?: string,
+  ) {
+    return this.publicMenuService.payOnline(
+      qrToken,
+      orderId,
+      typeof body?.origin === 'string' ? body.origin.slice(0, 200) : undefined,
+      sessionToken,
+    );
   }
 
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
   @Post('menu/:qrToken/orders/:orderId/pay-cash')
-  payCash(@Param('qrToken') qrToken: string, @Param('orderId') orderId: string, @Headers('x-table-session') sessionToken?: string) {
+  payCash(
+    @Param('qrToken') qrToken: string,
+    @Param('orderId') orderId: string,
+    @Headers('x-table-session') sessionToken?: string,
+  ) {
     return this.publicMenuService.switchToCash(qrToken, orderId, sessionToken);
   }
 
   // Wrong codes are also counted per session on the server (locks after 8); this is the outer rate limit.
   @Throttle({ default: { limit: 12, ttl: 60_000 } })
   @Post('menu/:qrToken/session')
-  joinSession(@Param('qrToken') qrToken: string, @Body() body: { code?: string }, @Req() req: Request) {
-    return this.publicMenuService.joinSession(qrToken, typeof body?.code === 'string' ? body.code.slice(0, 20) : '', req.ip);
+  joinSession(
+    @Param('qrToken') qrToken: string,
+    @Body() body: { code?: string },
+    @Req() req: Request,
+  ) {
+    return this.publicMenuService.joinSession(
+      qrToken,
+      typeof body?.code === 'string' ? body.code.slice(0, 20) : '',
+      req.ip,
+    );
   }
 
   @Get('menu/:qrToken/session')
-  sessionState(@Param('qrToken') qrToken: string, @Headers('x-table-session') sessionToken?: string) {
+  sessionState(
+    @Param('qrToken') qrToken: string,
+    @Headers('x-table-session') sessionToken?: string,
+  ) {
     return this.publicMenuService.sessionState(qrToken, sessionToken);
   }
 
@@ -67,7 +114,11 @@ export class PublicMenuController {
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
   @Post('menu/:qrToken/request')
   @UsePipes(new ZodValidationPipe(publicRequestSchema))
-  createRequest(@Param('qrToken') qrToken: string, @Body() body: unknown, @Headers('x-table-session') sessionToken?: string) {
+  createRequest(
+    @Param('qrToken') qrToken: string,
+    @Body() body: unknown,
+    @Headers('x-table-session') sessionToken?: string,
+  ) {
     return this.publicMenuService.createRequest(
       qrToken,
       (body as { type: 'WAITER' | 'BILL' }).type,

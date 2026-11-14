@@ -4,7 +4,11 @@ import type { SessionUser } from '@nodedr-restaurant/types';
 import { Auth } from '../common/decorators/auth.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
-import { DevicesService, heartbeatSchema, type Heartbeat } from './devices.service';
+import {
+  DevicesService,
+  heartbeatSchema,
+  type Heartbeat,
+} from './devices.service';
 
 @ApiTags('devices')
 @Controller('v1/pos-devices')

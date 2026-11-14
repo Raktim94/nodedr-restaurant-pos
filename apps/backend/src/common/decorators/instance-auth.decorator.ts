@@ -8,4 +8,8 @@ import { RequirePermission } from './permissions.decorator';
 
 // Like @Auth, for operations on the whole server (backup, update, sync): the permission AND the server operator.
 export const InstanceAuth = (...permissions: PermissionKey[]) =>
-  applyDecorators(UseGuards(JwtAuthGuard, PermissionsGuard, InstanceOperatorGuard), RequirePermission(...permissions), ApiCookieAuth());
+  applyDecorators(
+    UseGuards(JwtAuthGuard, PermissionsGuard, InstanceOperatorGuard),
+    RequirePermission(...permissions),
+    ApiCookieAuth(),
+  );

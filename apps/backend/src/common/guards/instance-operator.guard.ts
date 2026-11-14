@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthenticatedRequest } from '../types/authenticated-request';
 
@@ -17,8 +22,13 @@ export class InstanceOperatorGuard implements CanActivate {
     if (!user) throw new ForbiddenException('No authenticated user');
     const restaurants = await this.prisma.restaurant.count();
     if (restaurants <= 1) return true;
-    const first = await this.prisma.restaurant.findFirst({ orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true } });
+    const first = await this.prisma.restaurant.findFirst({
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    });
     if (first?.id === user.restaurantId) return true;
-    throw new ForbiddenException('This affects every restaurant on the server, so only the restaurant that set the server up can do it.');
+    throw new ForbiddenException(
+      'This affects every restaurant on the server, so only the restaurant that set the server up can do it.',
+    );
   }
 }

@@ -34,7 +34,12 @@ export class RolesController {
   @Post()
   @UsePipes(new ZodValidationPipe(createRoleSchema))
   create(@CurrentUser() user: SessionUser, @Body() body: unknown) {
-    return this.rolesService.create(user.restaurantId, user.id, body as never, user);
+    return this.rolesService.create(
+      user.restaurantId,
+      user.id,
+      body as never,
+      user,
+    );
   }
 
   @Auth('roles.manage')

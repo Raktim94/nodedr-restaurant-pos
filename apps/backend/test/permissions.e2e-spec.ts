@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access -- supertest response bodies are untyped by design */
 // Role-permission policy end-to-end against a REAL, migrated + seeded Postgres.
 //   PERMISSIONS_E2E=1 DATABASE_URL=... JWT_SECRET=x npm run test:e2e -- permissions
 // Creates one throw-away staff login per role under the seeded demo restaurant.

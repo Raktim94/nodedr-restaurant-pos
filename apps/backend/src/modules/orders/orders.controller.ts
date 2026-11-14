@@ -277,7 +277,9 @@ export class OrdersController {
     @Param('id') id: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return { released: await this.ordersService.releaseHeldOrder(branchId, id) };
+    return {
+      released: await this.ordersService.releaseHeldOrder(branchId, id),
+    };
   }
 
   @Auth('orders.accept')

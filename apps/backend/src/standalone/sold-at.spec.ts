@@ -1,4 +1,9 @@
-import { DEFAULT_MAX_AGE_DAYS, FUTURE_SKEW_MS, maxAgeDays, resolveSoldAt } from './sold-at';
+import {
+  DEFAULT_MAX_AGE_DAYS,
+  FUTURE_SKEW_MS,
+  maxAgeDays,
+  resolveSoldAt,
+} from './sold-at';
 
 const now = new Date('2026-11-14T10:00:00.000Z');
 const iso = (ms: number) => new Date(now.getTime() + ms).toISOString();
@@ -6,7 +11,11 @@ const iso = (ms: number) => new Date(now.getTime() + ms).toISOString();
 describe('resolveSoldAt', () => {
   it('keeps a normal past sale exactly', () => {
     const r = resolveSoldAt(iso(-3_600_000), now, 90);
-    expect(r).toEqual({ ok: true, at: new Date(iso(-3_600_000)), clamped: false });
+    expect(r).toEqual({
+      ok: true,
+      at: new Date(iso(-3_600_000)),
+      clamped: false,
+    });
   });
   it('keeps a sale a few minutes ahead (clock drift)', () => {
     const r = resolveSoldAt(iso(FUTURE_SKEW_MS - 1000), now, 90);

@@ -34,8 +34,8 @@ describe('UPI QR on the bill', () => {
           address: null,
           phone: null,
           gstNumber: null,
-          taxRegime: 'INDIA_GST' as never,
-          taxMode: 'INCLUSIVE' as never,
+          taxRegime: 'INDIA_GST',
+          taxMode: 'INCLUSIVE',
           taxLabel: null,
           taxId: null,
         },
@@ -56,7 +56,7 @@ describe('UPI QR on the bill', () => {
           payments: [],
           isProvisional,
           upi: withUpi ? upi : null,
-        } as never,
+        },
       }).buffer.toString('latin1');
     expect(mk(true, true)).toContain('upi://pay?pa=shop%40upi');
     expect(mk(true, true)).toContain('Scan to pay by UPI');

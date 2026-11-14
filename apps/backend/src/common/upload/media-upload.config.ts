@@ -16,13 +16,25 @@ export const MAX_VIDEO_BYTES = 60 * 1024 * 1024;
 export const mediaUploadOptions = {
   storage: diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadsDir()),
-    filename: (_req, file, cb) => cb(null, `${randomUUID()}${extname(file.originalname).toLowerCase()}`),
+    filename: (_req, file, cb) =>
+      cb(null, `${randomUUID()}${extname(file.originalname).toLowerCase()}`),
   }),
   limits: { fileSize: MAX_VIDEO_BYTES },
-  fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+  fileFilter: (
+    _req: Request,
+    file: Express.Multer.File,
+    cb: FileFilterCallback,
+  ) => {
     const ext = extname(file.originalname).toLowerCase();
-    const ok = (IMAGE.has(ext) && file.mimetype.startsWith('image/')) || (VIDEO.has(ext) && file.mimetype.startsWith('video/'));
-    if (!ok) return cb(new BadRequestException('Use a picture (jpg, png, webp, gif) or a video (mp4, webm)'));
+    const ok =
+      (IMAGE.has(ext) && file.mimetype.startsWith('image/')) ||
+      (VIDEO.has(ext) && file.mimetype.startsWith('video/'));
+    if (!ok)
+      return cb(
+        new BadRequestException(
+          'Use a picture (jpg, png, webp, gif) or a video (mp4, webm)',
+        ),
+      );
     cb(null, true);
   },
 };
@@ -32,7 +44,10 @@ export function checkMedia(file: Express.Multer.File): 'IMAGE' | 'VIDEO' {
   const ext = extname(file.filename).toLowerCase();
   try {
     if (IMAGE.has(ext)) {
-      if (file.size > MAX_IMAGE_BYTES) throw new BadRequestException('Pictures can be at most 5 MB. Use a smaller or more compressed picture.');
+      if (file.size > MAX_IMAGE_BYTES)
+        throw new BadRequestException(
+          'Pictures can be at most 5 MB. Use a smaller or more compressed picture.',
+        );
       assertValidImageSignature(file.path);
       return 'IMAGE';
     }
@@ -41,11 +56,16 @@ export function checkMedia(file: Express.Multer.File): 'IMAGE' | 'VIDEO' {
     readSync(fd, b, 0, 12, 0);
     closeSync(fd);
     const mp4 = b.subarray(4, 8).toString('latin1') === 'ftyp';
-    const webm = b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3;
+    const webm =
+      b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3;
     if ((ext === '.mp4' && mp4) || (ext === '.webm' && webm)) return 'VIDEO';
     throw new BadRequestException('That file is not a valid video');
   } catch (e) {
-    try { unlinkSync(file.path); } catch { /* already gone */ }
+    try {
+      unlinkSync(file.path);
+    } catch {
+      /* already gone */
+    }
     throw e;
   }
 }

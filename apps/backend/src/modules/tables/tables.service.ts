@@ -32,7 +32,10 @@ export class TablesService {
       where: { branchId, ...(forEditing ? {} : { isActive: true }) },
       orderBy: { sortOrder: 'asc' },
       include: {
-        layouts: { select: { id: true, name: true, isActive: true }, orderBy: { sortOrder: 'asc' } },
+        layouts: {
+          select: { id: true, name: true, isActive: true },
+          orderBy: { sortOrder: 'asc' },
+        },
         tables: {
           ...(forEditing ? {} : { where: { hidden: false } }),
           include: { assignedWaiter: { select: { id: true, name: true } } },
@@ -55,26 +58,50 @@ export class TablesService {
   /** Save how the floor looks right now (visible tables and their places) under a name. */
   async saveLayout(branchId: string, floorId: string, name: string) {
     await this.assertFloorInBranch(branchId, floorId);
-    const tables = await this.prisma.table.findMany({ where: { floorId, hidden: false } });
+    const tables = await this.prisma.table.findMany({
+      where: { floorId, hidden: false },
+    });
     const snapshot = tables.map((t) => ({
-      tableId: t.id, posX: t.posX, posY: t.posY, width: t.width, height: t.height, rotation: t.rotation,
+      tableId: t.id,
+      posX: t.posX,
+      posY: t.posY,
+      width: t.width,
+      height: t.height,
+      rotation: t.rotation,
     }));
-    const clash = await this.prisma.floorLayout.findUnique({ where: { floorId_name: { floorId, name } } });
-    if (clash) throw new BadRequestException('A layout with that name already exists on this floor.');
+    const clash = await this.prisma.floorLayout.findUnique({
+      where: { floorId_name: { floorId, name } },
+    });
+    if (clash)
+      throw new BadRequestException(
+        'A layout with that name already exists on this floor.',
+      );
     const count = await this.prisma.floorLayout.count({ where: { floorId } });
     return this.prisma.floorLayout.create({
-      data: { floorId, name, tables: snapshot, sortOrder: count, isActive: count === 0 },
+      data: {
+        floorId,
+        name,
+        tables: snapshot,
+        sortOrder: count,
+        isActive: count === 0,
+      },
     });
   }
 
   async renameLayout(branchId: string, id: string, name: string) {
     const l = await this.layoutIn(branchId, id);
-    return this.prisma.floorLayout.update({ where: { id: l.id }, data: { name } });
+    return this.prisma.floorLayout.update({
+      where: { id: l.id },
+      data: { name },
+    });
   }
 
   async deleteLayout(branchId: string, id: string) {
     const l = await this.layoutIn(branchId, id);
-    if (l.isActive) throw new ConflictException('This layout is in use. Switch to another layout first.');
+    if (l.isActive)
+      throw new ConflictException(
+        'This layout is in use. Switch to another layout first.',
+      );
     await this.prisma.floorLayout.delete({ where: { id } });
     return { ok: true };
   }
@@ -82,12 +109,19 @@ export class TablesService {
   /** Overwrite a layout with the floor as it looks now (after rearranging in the editor). */
   async updateLayoutFromFloor(branchId: string, id: string) {
     const l = await this.layoutIn(branchId, id);
-    const tables = await this.prisma.table.findMany({ where: { floorId: l.floorId, hidden: false } });
+    const tables = await this.prisma.table.findMany({
+      where: { floorId: l.floorId, hidden: false },
+    });
     return this.prisma.floorLayout.update({
       where: { id },
       data: {
         tables: tables.map((t) => ({
-          tableId: t.id, posX: t.posX, posY: t.posY, width: t.width, height: t.height, rotation: t.rotation,
+          tableId: t.id,
+          posX: t.posX,
+          posY: t.posY,
+          width: t.width,
+          height: t.height,
+          rotation: t.rotation,
         })),
       },
     });
@@ -100,33 +134,71 @@ export class TablesService {
    */
   async activateLayout(branchId: string, id: string) {
     const l = await this.layoutIn(branchId, id);
-    const spec = (l.tables as unknown as { tableId: string; posX: number; posY: number; width: number; height: number; rotation: number }[]) ?? [];
+    const spec =
+      (l.tables as unknown as {
+        tableId: string;
+        posX: number;
+        posY: number;
+        width: number;
+        height: number;
+        rotation: number;
+      }[]) ?? [];
     const inLayout = new Set(spec.map((s) => s.tableId));
-    const all = await this.prisma.table.findMany({ where: { floorId: l.floorId }, select: { id: true, number: true } });
+    const all = await this.prisma.table.findMany({
+      where: { floorId: l.floorId },
+      select: { id: true, number: true },
+    });
     const leaving = all.filter((t) => !inLayout.has(t.id));
     const busy = await this.blockers(leaving.map((t) => t.id));
     if (busy.size > 0) {
-      const names = leaving.filter((t) => busy.has(t.id)).map((t) => t.number).join(', ');
-      throw new ConflictException(`Table ${names} still has an open order or booking and is not in this layout. Close or move it first.`);
+      const names = leaving
+        .filter((t) => busy.has(t.id))
+        .map((t) => t.number)
+        .join(', ');
+      throw new ConflictException(
+        `Table ${names} still has an open order or booking and is not in this layout. Close or move it first.`,
+      );
     }
     await this.prisma.$transaction([
       ...spec.map((s) =>
         this.prisma.table.updateMany({
           where: { id: s.tableId, floorId: l.floorId },
-          data: { posX: s.posX, posY: s.posY, width: s.width, height: s.height, rotation: s.rotation, hidden: false },
+          data: {
+            posX: s.posX,
+            posY: s.posY,
+            width: s.width,
+            height: s.height,
+            rotation: s.rotation,
+            hidden: false,
+          },
         }),
       ),
-      this.prisma.table.updateMany({ where: { id: { in: leaving.map((t) => t.id) } }, data: { hidden: true } }),
-      this.prisma.floorLayout.updateMany({ where: { floorId: l.floorId }, data: { isActive: false } }),
-      this.prisma.floorLayout.update({ where: { id }, data: { isActive: true } }),
+      this.prisma.table.updateMany({
+        where: { id: { in: leaving.map((t) => t.id) } },
+        data: { hidden: true },
+      }),
+      this.prisma.floorLayout.updateMany({
+        where: { floorId: l.floorId },
+        data: { isActive: false },
+      }),
+      this.prisma.floorLayout.update({
+        where: { id },
+        data: { isActive: true },
+      }),
     ]);
-    const tables = await this.prisma.table.findMany({ where: { floorId: l.floorId } });
-    tables.forEach((t) => this.realtime.emitToBranch(branchId, 'table.updated', t));
+    const tables = await this.prisma.table.findMany({
+      where: { floorId: l.floorId },
+    });
+    tables.forEach((t) =>
+      this.realtime.emitToBranch(branchId, 'table.updated', t),
+    );
     return { ok: true, shown: spec.length, hidden: leaving.length };
   }
 
   private async layoutIn(branchId: string, id: string) {
-    const l = await this.prisma.floorLayout.findFirst({ where: { id, floor: { branchId } } });
+    const l = await this.prisma.floorLayout.findFirst({
+      where: { id, floor: { branchId } },
+    });
     if (!l) throw new NotFoundException('Layout not found');
     return l;
   }
@@ -174,7 +246,8 @@ export class TablesService {
             width: dto.width ?? 80,
             height: dto.height ?? 80,
             posX: 20 + (index % dto.columns) * ((dto.width ?? 80) + 20),
-            posY: 20 + Math.floor(index / dto.columns) * ((dto.height ?? 80) + 20),
+            posY:
+              20 + Math.floor(index / dto.columns) * ((dto.height ?? 80) + 20),
           },
         }),
       ),
@@ -234,7 +307,14 @@ export class TablesService {
       }
     }
     if (status === 'AVAILABLE') {
-      await this.prisma.tableSession.updateMany({ where: { tableId: id, status: 'ACTIVE' }, data: { status: 'CLOSED', closedAt: new Date(), closedReason: 'Table set free' } });
+      await this.prisma.tableSession.updateMany({
+        where: { tableId: id, status: 'ACTIVE' },
+        data: {
+          status: 'CLOSED',
+          closedAt: new Date(),
+          closedReason: 'Table set free',
+        },
+      });
     }
     const table = await this.prisma.table.update({
       where: { id },
@@ -256,11 +336,16 @@ export class TablesService {
         select: { tableId: true },
       }),
       this.prisma.reservation.findMany({
-        where: { tableId: { in: ids }, status: { in: ['RESERVED', 'CONFIRMED', 'ARRIVED'] } },
+        where: {
+          tableId: { in: ids },
+          status: { in: ['RESERVED', 'CONFIRMED', 'ARRIVED'] },
+        },
         select: { tableId: true },
       }),
     ]);
-    const busy = new Set([...orders, ...bookings].map((r) => r.tableId as string));
+    const busy = new Set(
+      [...orders, ...bookings].map((r) => r.tableId as string),
+    );
     return busy;
   }
 
@@ -285,8 +370,12 @@ export class TablesService {
       throw new NotFoundException('One of the selected tables was not found');
     const { ids, ...data } = dto;
     await this.prisma.table.updateMany({ where: { id: { in: ids } }, data });
-    const updated = await this.prisma.table.findMany({ where: { id: { in: ids } } });
-    updated.forEach((t) => this.realtime.emitToBranch(branchId, 'table.updated', t));
+    const updated = await this.prisma.table.findMany({
+      where: { id: { in: ids } },
+    });
+    updated.forEach((t) =>
+      this.realtime.emitToBranch(branchId, 'table.updated', t),
+    );
     return updated;
   }
 
@@ -300,13 +389,18 @@ export class TablesService {
       throw new NotFoundException('One of the selected tables was not found');
     const busy = await this.blockers(dto.ids);
     if (busy.size > 0) {
-      const names = tables.filter((t) => busy.has(t.id)).map((t) => t.number).join(', ');
+      const names = tables
+        .filter((t) => busy.has(t.id))
+        .map((t) => t.number)
+        .join(', ');
       throw new ConflictException(
         `Table ${names} ${busy.size > 1 ? 'have' : 'has'} an open order or an upcoming booking, so nothing was deleted. Close or move those first.`,
       );
     }
     await this.prisma.table.deleteMany({ where: { id: { in: dto.ids } } });
-    dto.ids.forEach((id) => this.realtime.emitToBranch(branchId, 'table.deleted', { id }));
+    dto.ids.forEach((id) =>
+      this.realtime.emitToBranch(branchId, 'table.deleted', { id }),
+    );
     return { deleted: dto.ids.length };
   }
 

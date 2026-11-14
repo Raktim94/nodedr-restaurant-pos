@@ -91,7 +91,11 @@ run('Aggregator webhook (e2e)', () => {
     // returned whatever row Postgres listed first: often a leftover from another suite (stock-tracked at
     // zero stock, for instance), so orders were refused intermittently depending on heap/vacuum timing.
     const cat = await prisma.menuCategory.create({
-      data: { branchId: 'demo-branch', name: `Zomato cat ${tag}`, showOnWebsite: true },
+      data: {
+        branchId: 'demo-branch',
+        name: `Zomato cat ${tag}`,
+        showOnWebsite: true,
+      },
     });
     categoryId = cat.id;
     item = await prisma.menuItem.create({

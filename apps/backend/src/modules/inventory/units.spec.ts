@@ -14,13 +14,21 @@ describe('toBaseQuantity (decimal-safe)', () => {
   });
   it('uses a declared conversion, 25 kg bag consumed in grams', () => {
     // 1 PACK(base) = 25000 G
-    expect(toBaseQuantity('500', 'G', 'PACK', [{ unit: 'G', per: 25000 }]).toString()).toBe('0.02');
+    expect(
+      toBaseQuantity('500', 'G', 'PACK', [
+        { unit: 'G', per: 25000 },
+      ]).toString(),
+    ).toBe('0.02');
     // received as KG for an item stocked in KG, 1 KG = 1000 G
     expect(toBaseQuantity('1', 'G', 'KG', []).toString()).toBe('0.001');
   });
   it('refuses ambiguous or impossible conversions', () => {
-    expect(() => toBaseQuantity('1', 'KG', 'PIECE', [])).toThrow(BadRequestException);
-    expect(() => toBaseQuantity('1', 'PACK', 'KG', [])).toThrow(/cannot be converted/);
+    expect(() => toBaseQuantity('1', 'KG', 'PIECE', [])).toThrow(
+      BadRequestException,
+    );
+    expect(() => toBaseQuantity('1', 'PACK', 'KG', [])).toThrow(
+      /cannot be converted/,
+    );
     expect(() =>
       toBaseQuantity('1', 'G', 'PACK', [
         { unit: 'G', per: 10 },
@@ -36,6 +44,9 @@ describe('toBaseQuantity (decimal-safe)', () => {
   });
   it('lists the units a cook may pick', () => {
     expect(allowedUnits('KG', []).sort()).toEqual(['G', 'KG']);
-    expect(allowedUnits('PACK', [{ unit: 'G', per: 500 }]).sort()).toEqual(['G', 'PACK']);
+    expect(allowedUnits('PACK', [{ unit: 'G', per: 500 }]).sort()).toEqual([
+      'G',
+      'PACK',
+    ]);
   });
 });

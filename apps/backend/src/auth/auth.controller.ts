@@ -114,7 +114,10 @@ export class AuthController {
     @Body() body: { password?: string },
     @Res({ passthrough: true }) res: Response,
   ) {
-    await this.authService.deleteOwnAccount(user.id, String(body?.password ?? ''));
+    await this.authService.deleteOwnAccount(
+      user.id,
+      String(body?.password ?? ''),
+    );
     res.clearCookie(SESSION_COOKIE, {
       httpOnly: true,
       sameSite: 'lax',

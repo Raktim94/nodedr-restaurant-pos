@@ -46,6 +46,10 @@ jobs:
           pnpm exec prisma db seed
       - name: Typecheck
         run: pnpm -r --if-present typecheck
+      - name: Lint (never autofixes; run eslint --fix locally and review the diff)
+        run: |
+          (cd apps/backend && pnpm exec eslint src test)
+          (cd apps/web && pnpm exec eslint .)
       - name: Backend unit tests
         working-directory: apps/backend
         run: pnpm exec jest
