@@ -226,6 +226,18 @@ export class TablesController {
     );
   }
 
+  // The rotating join QR for the open table (refresh before refreshInSeconds runs out).
+  @Auth('table.session')
+  @Get(':id/session/join-token')
+  async joinToken(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.sessions.currentJoinToken(branchId, id);
+  }
+
   @Auth('table.session')
   @Delete(':id/session')
   async closeSession(

@@ -1,5 +1,6 @@
 import {
   createHash,
+  createHmac,
   randomBytes,
   randomInt,
   timingSafeEqual,
@@ -32,6 +33,8 @@ const DEFAULT_HOURS = 4;
 const MAX_FAILS = 8; // wrong codes from ONE source before that source is blocked
 const SESSION_MAX_FAILS = 60; // wrong codes from ALL sources together before the session itself locks (distributed guessing)
 const LOCK_MS = 10 * 60_000;
+const JOIN_WINDOW_MS = 30_000; // the join QR changes every 30 s; the current and the previous one are accepted (30-60 s of life)
+const MAX_GRANTS_PER_SESSION = 60; // a table has a handful of guests; this stops a relayed code from being farmed
 const ACCESS_MINUTES = 30; // how long a verified tag tap stays good for placing the first order
 
 // Wrong-code blocks are kept per (session, source). A single phone or script that keeps guessing blocks only itself:
@@ -42,6 +45,12 @@ const sourceFails = new Map<string, { fails: number; until: number }>();
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const same = (a: string, b: string) =>
   a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const macOf = (secret: string, sessionId: string, window: number) =>
+  createHmac('sha256', secret)
+    .update(`join:${sessionId}:${window}`)
+    .digest()
+    .subarray(0, 16)
+    .toString('base64url');
 const normalise = (c: string) => c.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 export class SessionError extends HttpException {
@@ -101,6 +110,7 @@ export class TableSessionsService {
           branchId,
           tableId,
           codeHash: sha(code),
+          joinSecret: randomBytes(32).toString('hex'),
           openedById: userId,
           expiresAt: new Date(Date.now() + h * 3_600_000),
         },
@@ -141,6 +151,116 @@ export class TableSessionsService {
         metadata: { reason },
       });
     return { closed: r.count > 0 };
+  }
+
+  /**
+   * Staff/display: the join token for the table's live session. It is an HMAC of (session, 30-second window) under a
+   * per-session secret, so it names no customer, payment or staff data, cannot be guessed, expires by itself, and dies
+   * with the session. A guest scanning it receives their own limited grant (many guests can scan the same QR).
+   */
+  async currentJoinToken(branchId: string, tableId: string) {
+    const s = await this.active(tableId);
+    if (!s || s.branchId !== branchId)
+      throw new NotFoundException('This table is not open. Open it first.');
+    let secret = s.joinSecret;
+    if (!secret) {
+      secret = randomBytes(32).toString('hex');
+      const r = await this.prisma.tableSession.updateMany({
+        where: { id: s.id, joinSecret: null },
+        data: { joinSecret: secret },
+      });
+      if (r.count === 0) {
+        secret =
+          (
+            await this.prisma.tableSession.findUniqueOrThrow({
+              where: { id: s.id },
+              select: { joinSecret: true },
+            })
+          ).joinSecret ?? secret;
+      }
+    }
+    const now = Date.now();
+    const window = Math.floor(now / JOIN_WINDOW_MS);
+    const table = await this.prisma.table.findUnique({
+      where: { id: tableId },
+      select: { qrToken: true, number: true },
+    });
+    return {
+      token: `${window.toString(36)}.${macOf(secret, s.id, window)}`,
+      qrToken: table?.qrToken ?? null,
+      tableNumber: table?.number ?? null,
+      refreshInSeconds: Math.max(
+        1,
+        Math.ceil(((window + 1) * JOIN_WINDOW_MS - now) / 1000),
+      ),
+      sessionExpiresAt: s.expiresAt,
+    };
+  }
+
+  /** A guest scanned the rotating QR. Valid only for this table's live session and only within its short window. */
+  async joinWithToken(tableId: string, rawToken: string, source = 'unknown') {
+    const s = await this.active(tableId);
+    if (!s)
+      throw new SessionError(
+        'This table is not open for ordering yet. Please ask the staff to open it.',
+        'TABLE_SESSION_EXPIRED',
+      );
+    const key = `tok|${s.id}|${source}`;
+    const mine = sourceFails.get(key);
+    if (mine && mine.until > Date.now())
+      throw new SessionError(
+        'Too many attempts. Please ask the staff for help.',
+        'TABLE_SESSION_LOCKED',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    const [w, mac] = String(rawToken ?? '')
+      .slice(0, 80)
+      .split('.');
+    const window = Number.parseInt(w ?? '', 36);
+    const nowWindow = Math.floor(Date.now() / JOIN_WINDOW_MS);
+    const fresh =
+      !!s.joinSecret &&
+      Number.isInteger(window) &&
+      !!mac &&
+      nowWindow - window >= 0 &&
+      nowWindow - window <= 1 &&
+      same(mac, macOf(s.joinSecret, s.id, window));
+    if (!fresh) {
+      if (sourceFails.size > 5000) sourceFails.clear();
+      const fails = (mine && mine.until === 0 ? mine.fails : 0) + 1;
+      sourceFails.set(
+        key,
+        fails >= MAX_FAILS
+          ? { fails: 0, until: Date.now() + LOCK_MS }
+          : { fails, until: 0 },
+      );
+      this.logger.warn(
+        `Table session ${s.id}: invalid or expired join QR (table ${tableId})`,
+      );
+      throw new SessionError(
+        'That QR has expired. Please scan the code on the table screen again.',
+        'TABLE_SESSION_BAD_CODE',
+      );
+    }
+    sourceFails.delete(key);
+    const issued = await this.prisma.tableSessionGrant.count({
+      where: { sessionId: s.id },
+    });
+    if (issued >= MAX_GRANTS_PER_SESSION) {
+      this.logger.warn(
+        `Table session ${s.id}: grant limit reached, refusing another join`,
+      );
+      throw new SessionError(
+        'Too many phones have joined this table. Please ask the staff for help.',
+        'TABLE_SESSION_LOCKED',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    const token = randomBytes(32).toString('base64url');
+    await this.prisma.tableSessionGrant.create({
+      data: { sessionId: s.id, tokenHash: sha(token) },
+    });
+    return { token, expiresAt: s.expiresAt };
   }
 
   /** Called when a table is cleared (bill paid, table set free): the next guests need a fresh code. */

@@ -148,6 +148,29 @@ export default function PublicMenuPage({
     }
     setJoining(false);
   };
+  // A phone that scanned the rotating QR on the table screen arrives with ?j=<short-lived token>: trade it for this
+  // phone's own grant, then take the token out of the address bar so it is not bookmarked or shared.
+  const joinToken = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("j");
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
+  useEffect(() => {
+    if (!joinToken) return;
+    let alive = true;
+    (async () => {
+      try {
+        const r = await api.post<{ token: string }>(`/public/menu/${qrToken}/session`, { joinToken });
+        if (!alive) return;
+        try { sessionStorage.setItem(sKey, r.token); } catch { /* storage blocked */ }
+        grantRef.current = r.token;
+        setGrant(r.token);
+        setSessionMsg(null);
+      } catch (e) {
+        if (alive) setScanMsg(e instanceof ApiError ? e.message : "Could not join the table. Please scan the code on the table screen again.");
+      }
+      try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [nameDraft, setNameDraft] = useState("");
 
   // Read any name saved earlier this session after mount, not in the state
@@ -461,8 +484,9 @@ export default function PublicMenuPage({
       {data?.session?.required && !grant && !access && (
         <section aria-label="Table code" className="mx-auto max-w-lg px-5 pt-4">
           <div className="rounded-2xl border border-primary/40 bg-primary/5 p-4">
-            <h2 className="text-base font-semibold text-foreground">Enter your table code to order</h2>
-            <p className="mt-1 text-sm text-muted-foreground">You can look at the menu now. To order, ask the staff for this table&rsquo;s 6-character code.</p>
+            <h2 className="text-base font-semibold text-foreground">Scan the code on your table to order</h2>
+            <p className="mt-1 text-sm text-muted-foreground">You can look at the menu now. To order, scan the QR shown on your table&rsquo;s screen, or enter the 6-character table code if the staff gave you one.</p>
+            {scanMsg && <p role="alert" className="mt-2 text-sm text-destructive">{scanMsg}</p>}
             {sessionMsg && <p role="alert" className="mt-2 text-sm text-destructive">{sessionMsg}</p>}
             <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (codeDraft.trim().length >= 6) void joinTable(); }}>
               <label className="sr-only" htmlFor="table-code">Table code</label>

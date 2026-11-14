@@ -291,8 +291,15 @@ export class PublicMenuService {
   }
 
   /** The guest trades the staff's code for a grant, or the page asks whether its saved grant is still good. */
-  async joinSession(qrToken: string, code: string, source?: string) {
+  async joinSession(
+    qrToken: string,
+    code: string,
+    source?: string,
+    joinToken?: string,
+  ) {
     const table = await this.resolveTable(qrToken);
+    if (joinToken)
+      return this.sessions.joinWithToken(table.id, joinToken, source);
     return this.sessions.join(table.id, code, source);
   }
 

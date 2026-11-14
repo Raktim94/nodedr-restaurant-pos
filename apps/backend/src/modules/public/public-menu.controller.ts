@@ -90,13 +90,16 @@ export class PublicMenuController {
   @Post('menu/:qrToken/session')
   joinSession(
     @Param('qrToken') qrToken: string,
-    @Body() body: { code?: string },
+    @Body() body: { code?: string; joinToken?: string },
     @Req() req: Request,
   ) {
     return this.publicMenuService.joinSession(
       qrToken,
       typeof body?.code === 'string' ? body.code.slice(0, 20) : '',
       req.ip,
+      typeof body?.joinToken === 'string'
+        ? body.joinToken.slice(0, 80)
+        : undefined,
     );
   }
 

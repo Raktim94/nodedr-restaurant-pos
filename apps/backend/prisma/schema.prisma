@@ -3454,6 +3454,8 @@ model TableSession {
   closedReason String?
   failedTries  Int                @default(0)
   lockedUntil  DateTime?
+  // Per-session secret behind the rotating join QR (HMAC key). Never returned; null on sessions opened before it existed.
+  joinSecret   String?
 
   grants TableSessionGrant[]
 
