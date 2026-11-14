@@ -136,6 +136,7 @@ export class StandaloneService {
         upiVpa: r.upiVpa,
         upiPayeeName: r.upiPayeeName ?? r.name,
         maxManualDiscountPercent: Number(r.maxManualDiscountPercent),
+        requireDiscountReason: r.requireDiscountReason,
       },
       branch: {
         id: branch.id,
@@ -296,6 +297,15 @@ export class StandaloneService {
         throw new SaleRefused('DISCOUNT_NOT_ALLOWED', `Together the price cut and discount come to ${total.toFixed(1)}% below the menu price; this restaurant allows ${cap}% for this account. Ask a manager to enter this sale.`);
       }
     }
+    // A restaurant that requires a reason for discounts requires it here too: the reason comes from the phone, it is
+    // not made up by the server (that used to satisfy the policy for every offline discount).
+    const discountReason = sale.discountReason?.trim() || undefined;
+    if ((below.length || sale.discountPercent || sale.discountFlat) && !discountReason) {
+      const policy = await this.prisma.branch.findUniqueOrThrow({ where: { id: branchId }, select: { restaurant: { select: { requireDiscountReason: true } } } });
+      if (policy.restaurant.requireDiscountReason) {
+        throw new SaleRefused('DISCOUNT_NOT_ALLOWED', 'This restaurant needs a reason for every discount. Add a reason and send the sale again.');
+      }
+    }
     const review: SaleReviewFlag[] = merged.flatMap((m) => {
       const c = byId.get(m.menuItemId)!;
       return Math.abs(Number(c.price) - m.unitPrice) > 0.005
@@ -315,6 +325,7 @@ export class StandaloneService {
       `Offline sale ${sale.localNumber}${deviceName ? ` on ${deviceName}` : ''}`,
       sale.tableLabel ? `(${sale.tableLabel})` : '',
       sale.note ?? '',
+      below.length && discountReason ? `[Discount reason: ${discountReason}]` : '',
       when.clamped
         ? `[Review: the phone's clock was ahead (it said ${sale.soldAt}); booked at the time the server received it]`
         : '',
@@ -355,7 +366,7 @@ export class StandaloneService {
           discountFlat: sale.discountFlat,
           discountReason:
             sale.discountPercent || sale.discountFlat
-              ? 'Offline sale discount'
+              ? (discountReason ?? 'Offline sale discount')
               : undefined,
           requestId: sale.id,
         },
