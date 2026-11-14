@@ -22,6 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { ItemOptionsEditor, problemWithDrafts, saveOptionDrafts, type GroupDraft } from "@/components/menu/item-options-editor";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateMenuItem,
   useStations,
@@ -46,6 +48,9 @@ export function AddItemDialog({
   const [halfPrice, setHalfPrice] = useState("");
   const [taxRatePercent, setTaxRatePercent] = useState("5");
   const [isVeg, setIsVeg] = useState(true);
+  const [optionDrafts, setOptionDrafts] = useState<GroupDraft[]>([]);
+  const [savingOptions, setSavingOptions] = useState(false);
+  const queryClient = useQueryClient();
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   const [imagePreview, setImagePreview] = useState<string | undefined>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +69,7 @@ export function AddItemDialog({
     setPrice("");
     setTaxRatePercent("5");
     setIsVeg(true);
+    setOptionDrafts([]);
     setImageUrl(undefined);
     setImagePreview(undefined);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -82,11 +88,30 @@ export function AddItemDialog({
     });
   };
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!categoryId) {
       toast.error("Choose a category");
       return;
+    }
+    const problem = problemWithDrafts(optionDrafts);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
+    // Option groups are written first (the item needs their ids), then the item is created pointing at them.
+    let modifierGroupIds: string[] = [];
+    if (optionDrafts.length > 0) {
+      setSavingOptions(true);
+      try {
+        modifierGroupIds = await saveOptionDrafts(branchId, optionDrafts);
+        void queryClient.invalidateQueries({ queryKey: ["menu", "modifier-groups", branchId] });
+      } catch (err) {
+        setSavingOptions(false);
+        toast.error(err instanceof ApiError ? err.message : "Could not save the options");
+        return;
+      }
+      setSavingOptions(false);
     }
     createItem.mutate(
       {
@@ -104,7 +129,7 @@ export function AddItemDialog({
         spiceLevel: "NONE",
         allergens: [],
         isActive: true,
-        modifierGroupIds: [],
+        modifierGroupIds,
         imageUrl,
       },
       {
@@ -133,7 +158,7 @@ export function AddItemDialog({
           </Button>
         }
       />
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-md">
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>New menu item</DialogTitle>
@@ -277,9 +302,11 @@ export function AddItemDialog({
             <Switch id="is-veg" checked={isVeg} onCheckedChange={setIsVeg} />
           </div>
 
+          <ItemOptionsEditor branchId={branchId} drafts={optionDrafts} setDrafts={setOptionDrafts} />
+
           <DialogFooter>
-            <Button type="submit" disabled={createItem.isPending || uploadImage.isPending}>
-              {createItem.isPending ? "Adding…" : "Add item"}
+            <Button type="submit" disabled={createItem.isPending || uploadImage.isPending || savingOptions}>
+              {createItem.isPending || savingOptions ? "Adding…" : "Add item"}
             </Button>
           </DialogFooter>
         </form>

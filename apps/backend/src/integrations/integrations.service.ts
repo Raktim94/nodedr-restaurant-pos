@@ -117,6 +117,7 @@ export class IntegrationsService {
                     maxSelect: true,
                     isRequired: true,
                     modifiers: {
+                      where: { isActive: true },
                       orderBy: { sortOrder: 'asc' },
                       select: {
                         id: true,

@@ -89,6 +89,7 @@ export class PublicMenuService {
                     maxSelect: true,
                     isRequired: true,
                     modifiers: {
+                      where: { isActive: true },
                       orderBy: { sortOrder: 'asc' },
                       select: {
                         id: true,

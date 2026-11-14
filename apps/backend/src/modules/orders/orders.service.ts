@@ -238,7 +238,7 @@ export class OrdersService {
 
     const modifierIds = [...new Set(dto.items.flatMap((i) => i.modifierIds))];
     const modifiers = await this.prisma.modifier.findMany({
-      where: { id: { in: modifierIds } },
+      where: { id: { in: modifierIds }, isActive: true },
     });
     const modifierById = new Map(modifiers.map((m) => [m.id, m]));
     if (modifiers.length !== modifierIds.length) {
@@ -552,7 +552,7 @@ export class OrdersService {
 
     const modifierIds = [...new Set(items.flatMap((i) => i.modifierIds))];
     const modifiers = await this.prisma.modifier.findMany({
-      where: { id: { in: modifierIds } },
+      where: { id: { in: modifierIds }, isActive: true },
     });
     const modifierById = new Map(modifiers.map((m) => [m.id, m]));
     if (modifiers.length !== modifierIds.length) {
@@ -2308,7 +2308,11 @@ export class OrdersService {
         modifierGroup: { branchId },
       },
       include: {
-        modifierGroup: { include: { modifiers: { select: { id: true } } } },
+        modifierGroup: {
+          include: {
+            modifiers: { where: { isActive: true }, select: { id: true } },
+          },
+        },
       },
     });
     for (const item of items) {

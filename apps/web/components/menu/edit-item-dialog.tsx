@@ -30,6 +30,8 @@ import {
 } from "@/hooks/use-menu";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { StockTrackingSection } from "@/components/menu/stock-tracking-section";
+import { ItemOptionsEditor, draftsFromItem, problemWithDrafts, saveOptionDrafts, type GroupDraft } from "@/components/menu/item-options-editor";
+import { useQueryClient } from "@tanstack/react-query";
 import { useDisplaySettings } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
 
@@ -53,6 +55,9 @@ export function EditItemDialog({
   const [halfPrice, setHalfPrice] = useState(item.halfPrice ?? "");
   const [taxRatePercent, setTaxRatePercent] = useState(item.taxRatePercent);
   const [isVeg, setIsVeg] = useState(item.isVeg);
+  const [optionDrafts, setOptionDrafts] = useState<GroupDraft[]>(() => draftsFromItem(item));
+  const [savingOptions, setSavingOptions] = useState(false);
+  const queryClient = useQueryClient();
   const [imageUrl, setImageUrl] = useState<string | undefined>(item.imageUrl ?? undefined);
   const [imagePreview, setImagePreview] = useState<string | undefined>(item.imageUrl ?? undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,16 +83,34 @@ export function EditItemDialog({
     });
   };
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!categoryId) {
       toast.error("Choose a category");
       return;
     }
+    const problem = problemWithDrafts(optionDrafts);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
+    // Option groups are saved first (new ones created, changed ones updated in place), then the item points at them.
+    let modifierGroupIds: string[];
+    setSavingOptions(true);
+    try {
+      modifierGroupIds = await saveOptionDrafts(branchId, optionDrafts);
+      void queryClient.invalidateQueries({ queryKey: ["menu", "modifier-groups", branchId] });
+    } catch (err) {
+      setSavingOptions(false);
+      toast.error(err instanceof ApiError ? err.message : "Could not save the options");
+      return;
+    }
+    setSavingOptions(false);
     updateItem.mutate(
       {
         id: item.id,
         dto: {
+          modifierGroupIds,
           name,
           categoryId,
           stationId: stationId || undefined,
@@ -110,7 +133,7 @@ export function EditItemDialog({
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-md">
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>Edit menu item</DialogTitle>
@@ -254,9 +277,11 @@ export function EditItemDialog({
             <Switch id="edit-is-veg" checked={isVeg} onCheckedChange={setIsVeg} />
           </div>
 
+          <ItemOptionsEditor branchId={branchId} drafts={optionDrafts} setDrafts={setOptionDrafts} />
+
           <DialogFooter>
-            <Button type="submit" disabled={updateItem.isPending || uploadImage.isPending}>
-              {updateItem.isPending ? "Saving…" : "Save changes"}
+            <Button type="submit" disabled={updateItem.isPending || uploadImage.isPending || savingOptions}>
+              {updateItem.isPending || savingOptions ? "Saving…" : "Save changes"}
             </Button>
           </DialogFooter>
         </form>
