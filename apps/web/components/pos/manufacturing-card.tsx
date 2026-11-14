@@ -34,7 +34,7 @@ export function ManufacturingCard({ branchId }: { branchId: string | null }) {
         <div className="flex flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <Button className="h-12 w-full sm:h-9 sm:w-auto" onClick={() => setOpen(true)}>Manufacturing</Button>
           {s.canReport && (
-            <Link href="/inventory/manufacturing-reports" className="inline-flex h-11 w-full items-center justify-center rounded-lg border border-border px-3 text-sm hover:bg-muted sm:h-9 sm:w-auto">Stock Journal Reports</Link>
+            <Link href="/inventory/journal?view=report" className="inline-flex h-11 w-full items-center justify-center rounded-lg border border-border px-3 text-sm hover:bg-muted sm:h-9 sm:w-auto">Stock Journal Reports</Link>
           )}
         </div>
       </Card>

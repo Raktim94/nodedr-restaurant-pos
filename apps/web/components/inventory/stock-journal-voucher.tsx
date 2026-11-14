@@ -33,7 +33,7 @@ export interface VoucherContext { productId?: string; batchRef?: string; narrati
  * Destination / Production on the right, side by side from lg and stacked (source first) below it. Every number in the
  * review step is worked out by the server and frozen when posted; the menu selling price is never touched here.
  */
-export function StockJournalVoucher({ branchId, open, onOpenChange, productId, context }: { branchId: string | null; open: boolean; onOpenChange: (o: boolean) => void; productId?: string; context?: VoucherContext }) {
+export function StockJournalVoucher({ branchId, open, onOpenChange, productId, context, inline }: { branchId: string | null; open: boolean; onOpenChange: (o: boolean) => void; productId?: string; context?: VoucherContext; inline?: boolean }) {
   productId = productId ?? context?.productId;
   const { data: items } = useStockItems(branchId);
   const { data: places } = usePlaces(branchId);
@@ -178,17 +178,9 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
     </select>
   );
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[96vw] sm:rounded-xl xl:max-w-[88rem]">
-        <DialogHeader className="border-b border-border px-4 py-3">
-          <DialogTitle>Stock journal voucher <span className="ml-2 text-sm font-normal text-muted-foreground">Manufacturing · {review ? "ready to post" : "draft, nothing posted yet"} · number assigned on posting</span></DialogTitle>
-          <DialogDescription>
-            Materials consumed on the left, products made on the right. Nothing changes in stock until you post.
-            {context?.poNumber ? ` Started from ${context.poNumber}${context.supplier ? ` (${context.supplier})` : ""}; the purchase order is only a reference and never receives stock again.` : ""}
-          </DialogDescription>
-        </DialogHeader>
-
+  const cancelText = inline ? "Clear" : "Cancel";
+  const inner = (
+    <>
         <div className="flex-1 overflow-y-auto px-4 py-4">
           {!review ? (
             <div className="flex flex-col gap-4">
@@ -336,11 +328,44 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
 
         <div className="flex items-center justify-between gap-2 border-t border-border bg-background px-4 py-3">
           {!review ? (
-            <><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button type="button" onClick={goReview} disabled={busy}>{busy ? "Checking…" : "Review voucher"}</Button></>
+            <><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{cancelText}</Button><Button type="button" onClick={goReview} disabled={busy}>{busy ? "Checking…" : "Review voucher"}</Button></>
           ) : (
             <><Button type="button" variant="outline" onClick={() => { setReview(null); setError(null); }}>Back</Button><Button type="button" onClick={submit} disabled={busy || !review.canPost}>{busy ? "Posting…" : "Post voucher"}</Button></>
           )}
         </div>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <div className="tally-voucher flex min-h-[70vh] flex-col overflow-hidden rounded-md border border-[#7aa6cf] bg-[#e9f2fb] text-foreground dark:border-border dark:bg-card">
+        <div className="flex items-center justify-between bg-[#8fb8de] px-3 py-1 text-sm font-semibold text-[#0b2a4a] dark:bg-muted dark:text-foreground">
+          <span>Inventory Voucher Creation</span>
+          <span>{context?.poNumber ? `From ${context.poNumber}` : "Manufacturing"}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 px-3 py-2">
+          <span className="rounded-sm bg-[#2f5fa7] px-3 py-0.5 text-sm font-semibold text-white">Stock Journal</span>
+          <span className="text-sm">No. <b>{review ? "ready to post" : "assigned on posting"}</b></span>
+          <span className="mx-auto text-sm font-semibold underline underline-offset-4">Manufacturing / Transfer of Materials</span>
+          <span className="text-xs text-muted-foreground">Nothing changes in stock until you post</span>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col bg-background">{inner}</div>
+      </div>
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[96vw] sm:rounded-xl xl:max-w-[88rem]">
+        <DialogHeader className="border-b border-border px-4 py-3">
+          <DialogTitle>Stock journal voucher <span className="ml-2 text-sm font-normal text-muted-foreground">Manufacturing · {review ? "ready to post" : "draft, nothing posted yet"} · number assigned on posting</span></DialogTitle>
+          <DialogDescription>
+            Materials consumed on the left, products made on the right. Nothing changes in stock until you post.
+            {context?.poNumber ? ` Started from ${context.poNumber}${context.supplier ? ` (${context.supplier})` : ""}; the purchase order is only a reference and never receives stock again.` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        {inner}
       </DialogContent>
     </Dialog>
   );
