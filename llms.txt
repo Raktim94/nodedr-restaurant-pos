@@ -1,0 +1,13 @@
+# OrderRestro
+
+> Open-source, self-hosted restaurant POS and management system by NodeDR: billing, tables, kitchen display, reservations, delivery, inventory, staff, accounting, loyalty, multi-branch. Websites can read the menu and place takeaway/delivery orders and reservations through a scoped REST API; staff-side AI clients can use an MCP server. Requires the restaurant to run its own instance.
+
+## Integrate
+- [AI integration prompt](https://github.com/Raktim94/nodedr-restaurant-pos/blob/master/prompts/AI_INTEGRATION_PROMPT.md): steps for coding agents, incl. Next.js
+- [Integration API and MCP reference](https://github.com/Raktim94/nodedr-restaurant-pos/blob/master/docs/integrations-api.md)
+- [Website integration guide](https://github.com/Raktim94/nodedr-restaurant-pos/blob/master/docs/website-integration.md)
+
+## Product
+- [Product site](https://orderrestro.nodedr.com/)
+- [Repository](https://github.com/Raktim94/nodedr-restaurant-pos)
+- [NodeDR AI integration catalog](https://www.nodedr.com/ai-integrations)
