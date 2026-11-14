@@ -329,6 +329,8 @@ model User {
   twoFactorSecret         String? // AES-GCM sealed TOTP secret (see auth/totp.ts)
   twoFactorEnabled        Boolean  @default(false)
   twoFactorRecoveryHashes String[] @default([]) // bcrypt hashes of unused one-time recovery codes
+  // Sessions issued at or before this moment are dead (set when an admin changes the password).
+  sessionsValidFrom       DateTime?
   twoFactorLastStep       Int? // last accepted TOTP step: a code works once
 
   // Delivery rider app: on duty, and the last position the rider's phone reported.
