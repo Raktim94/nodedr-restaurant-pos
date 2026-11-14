@@ -49,6 +49,13 @@ try {
         throw 'OrderRestro needs Windows 10 version 1809 or newer (or Windows 11).'
     }
 
+    # The package unpacks to roughly 1.5 GB and the first start builds a database: stop early, with a clear
+    # message, instead of failing half way through on a nearly full disk.
+    $sysDrive = Get-PSDrive -Name ($env:SystemDrive.TrimEnd(':')) -ErrorAction SilentlyContinue
+    if ($sysDrive -and $sysDrive.Free -lt 4GB) {
+        throw ('Not enough free disk space on {0}: {1:N1} GB free, 4 GB needed. Free some space and run this installer again.' -f $env:SystemDrive, ($sysDrive.Free / 1GB))
+    }
+
     Write-Host "Package: $Msix"
     $sig = Get-AuthenticodeSignature -LiteralPath $Msix
     if (-not $sig.SignerCertificate) {
@@ -77,7 +84,23 @@ try {
         'HKCU:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
     ) | Where-Object { Test-Path $_ }
     if (-not $wv2) {
-        Write-Warning 'Microsoft Edge WebView2 Runtime was not found. If OrderRestro opens blank, install it from https://go.microsoft.com/fwlink/p/?LinkId=2124703 and start the app again.'
+        # Without WebView2 the app window opens blank. Microsoft's own small installer fixes that; try it, and
+        # if this PC is offline just say what to do instead of failing the whole install.
+        Write-Host 'Installing the Microsoft Edge WebView2 Runtime (needed to show the app window)...'
+        $boot = Join-Path $env:TEMP ('MicrosoftEdgeWebview2Setup-' + [guid]::NewGuid().ToString('N') + '.exe')
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $boot -UseBasicParsing -TimeoutSec 120
+            $sigw = Get-AuthenticodeSignature -LiteralPath $boot
+            if ($sigw.Status -ne 'Valid' -or $sigw.SignerCertificate.Subject -notmatch 'Microsoft') { throw 'The downloaded WebView2 installer is not signed by Microsoft.' }
+            $proc = Start-Process -FilePath $boot -ArgumentList '/silent', '/install' -Wait -PassThru
+            if ($proc.ExitCode -ne 0) { throw "WebView2 setup exited with code $($proc.ExitCode)." }
+            Write-Host 'WebView2 installed.' -ForegroundColor Green
+        }
+        catch {
+            Write-Warning "Could not install the WebView2 Runtime automatically ($($_.Exception.Message)). If OrderRestro opens blank, install it from https://go.microsoft.com/fwlink/p/?LinkId=2124703 and start the app again."
+        }
+        finally { Remove-Item $boot -Force -ErrorAction SilentlyContinue }
     }
 
     Write-Host 'Installing OrderRestro (an existing install is updated, your data is kept)...'

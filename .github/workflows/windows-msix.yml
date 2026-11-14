@@ -534,7 +534,7 @@ jobs:
           foreach ($store in 'Cert:\LocalMachine\Root','Cert:\LocalMachine\TrustedPeople','Cert:\CurrentUser\Root','Cert:\CurrentUser\TrustedPeople') {
               Get-ChildItem $store -ErrorAction SilentlyContinue | Where-Object { $_.Subject -eq $subject } | Remove-Item -Force -ErrorAction SilentlyContinue
           }
-          Copy-Item windows\msix\Install-OrderRestro.ps1, windows\msix\Install-OrderRestro.cmd windows\msix\out\ -Force
+          Copy-Item windows\msix\Install-OrderRestro.ps1, windows\msix\Install-OrderRestro.cmd, windows\msix\INSTALL-README.txt windows\msix\out\ -Force
 
           # Without the installer, Windows must refuse the package (proves the test is real).
           $plain = $true
@@ -557,4 +557,5 @@ jobs:
             windows/msix/out/OrderRestro.msix
             windows/msix/out/Install-OrderRestro.ps1
             windows/msix/out/Install-OrderRestro.cmd
+            windows/msix/out/INSTALL-README.txt
           if-no-files-found: warn
