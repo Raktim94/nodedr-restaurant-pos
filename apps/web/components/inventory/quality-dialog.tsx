@@ -38,13 +38,13 @@ export function QualityDialog({ branchId, batch, onClose }: { branchId: string |
           <DialogDescription>{batch.entryNo} · {batch.item ?? "batch"}. This does not change stock, cost or price.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
-          {error && <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+          {error && <div id="q-error" role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
           <div className="flex flex-col gap-1.5"><Label htmlFor="q-result">Result</Label>
             <select id="q-result" className={`${selectClass} h-11`} value={result} onChange={(e) => setResult(e.target.value as QualityResult)}>
               {(Object.keys(QUALITY_LABEL) as QualityResult[]).map((r) => <option key={r} value={r}>{QUALITY_LABEL[r]}</option>)}
             </select></div>
           <div className="flex flex-col gap-1.5"><Label htmlFor="q-grade">Grade (optional)</Label><Input id="q-grade" className="h-11" maxLength={20} value={grade} onChange={(e) => setGrade(e.target.value)} /></div>
-          <div className="flex flex-col gap-1.5"><Label htmlFor="q-notes">Notes{result === "FAIL" ? " (required for a fail)" : " (optional)"}</Label><Textarea id="q-notes" maxLength={500} rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+          <div className="flex flex-col gap-1.5"><Label htmlFor="q-notes">Notes{result === "FAIL" ? " (required for a fail)" : " (optional)"}</Label><Textarea id="q-notes" maxLength={500} rows={3} required={result === "FAIL"} aria-invalid={!!error && result === "FAIL" && !notes.trim()} aria-describedby={error ? "q-error" : undefined} enterKeyHint="done" value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
         </div>
         <DialogFooter className="gap-2 sm:gap-2">
           <Button type="button" variant="outline" className="h-11" disabled={save.isPending} onClick={onClose}>Cancel</Button>
