@@ -114,7 +114,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
   // either, and have no revenue access.
   WAITER: ["table.session", "orders.create", "orders.edit", "orders.accept", "tables.view", "menu.view", "bills.print"],
   KITCHEN_STAFF: ["kds.manage", "orders.accept", "production.record", "production.post"],
-  CHEF: ["kds.manage", "orders.accept", "menu.manage", "menu.view", "production.record", "production.post"],
+  CHEF: ["kds.manage", "orders.accept", "menu.manage", "menu.view", "production.record", "production.post", "production.quality"],
   BARTENDER: ["orders.create", "orders.accept", "kds.manage", "menu.view", "tables.view"],
   DELIVERY_STAFF: ["orders.edit", "delivery.manage", "delivery.rider"],
   ACCOUNTANT: ["sales.view", "dashboard.sales.view", "reports.access", "reports.financial.view", "data.export", "accounting.manage"],
