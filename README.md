@@ -27,10 +27,7 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 
 <p align="center">
   <a href="https://orderrestro.nodedr.com/"><img src="https://img.shields.io/badge/Go%20to%20the%20OrderRestro%20website-orderrestro.nodedr.com-E0234E?style=for-the-badge" alt="Go to the OrderRestro website"></a>
-  <a href="https://orderrestro-demo.nodedrdev.com/demo"><img src="https://img.shields.io/badge/Live%20demo-no%20sign--up%2C%20no%20password-2EA44F?style=for-the-badge" alt="Open the live demo: no sign-up, no password"></a>
 </p>
-
-> **Try it now:** [orderrestro-demo.nodedrdev.com/demo](https://orderrestro-demo.nodedrdev.com/demo) opens a working restaurant with sample data in one click. No sign-up, no password. It resets every 3 hours, and a few admin features are switched off in the public demo.
 
 <p align="center">
   <img src="docs/assets/hero-animated.svg" alt="Nodedr OrderRestro: animated overview with an illustrative sample screen" width="100%">
@@ -196,7 +193,7 @@ ordering page and staff sidebar.
 - **Live table sessions.** The printed QR (or NFC card) only shows the menu. Staff open the table and give guests a short code; orders need it, and it dies when the bill is paid or staff reset it.
 - **Customer ratings** tied to a paid order, one per order, with an admin view.
 - **Customer-facing screen with adverts**, **paging buzzers**, a **hardware simulator**, saved **floor layouts**, **stock areas**, **stock take** and **shopping list**, and phones that work **offline** for sales, production, waste, stock receipts and clock in/out.
-- **Collapsible navigation**, and a **public live demo**.
+- **Collapsible navigation**.
 
 ## Why OrderRestro
 
