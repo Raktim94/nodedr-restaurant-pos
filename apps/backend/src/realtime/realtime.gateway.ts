@@ -1,3 +1,4 @@
+import { isRevoked } from '../auth/jwt.strategy';
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import {
@@ -58,11 +59,13 @@ export class RealtimeGateway
       const token = this.extractSessionCookie(client);
       if (!token) throw new Error('No session cookie');
 
-      const payload = this.jwt.verify<{ sub: string }>(token);
+      const payload = this.jwt.verify<{ sub: string; iat?: number }>(token);
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
       });
       if (!user || !user.isActive) throw new Error('Session no longer valid');
+      if (isRevoked(payload.iat, user.sessionsValidFrom))
+        throw new Error('Session was revoked');
 
       const branchId = client.handshake.query.branchId;
       if (typeof branchId !== 'string' || !branchId) {

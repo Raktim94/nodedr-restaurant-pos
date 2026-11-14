@@ -13,6 +13,15 @@ interface JwtPayload {
   sub: string;
   /** Set when the session was created by a phone: that phone's id. */
   did?: string;
+  /** Seconds since epoch, set by the JWT library when the session was issued. */
+  iat?: number;
+}
+
+/** A session is dead if it was issued at or before the moment the account's sessions were revoked. */
+export function isRevoked(iat: number | undefined, validFrom: Date | null | undefined): boolean {
+  if (!validFrom) return false;
+  if (typeof iat !== 'number') return true; // cannot prove it is newer
+  return iat <= Math.floor(validFrom.getTime() / 1000);
 }
 
 const cookieExtractor = (req: {
@@ -41,6 +50,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
 
     if (!user || !user.isActive) {
+      throw new UnauthorizedException('Session no longer valid');
+    }
+
+    if (isRevoked(payload.iat, user.sessionsValidFrom)) {
       throw new UnauthorizedException('Session no longer valid');
     }
 

@@ -158,6 +158,8 @@ export class UsersService {
         departmentId: dto.departmentId,
         isActive: dto.isActive,
         passwordHash,
+        // A new password ends every session signed in with the old one.
+        ...(passwordHash ? { sessionsValidFrom: new Date() } : {}),
         ...(dto.branchIds
           ? {
               branches: {
