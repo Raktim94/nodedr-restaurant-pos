@@ -38,6 +38,15 @@ The site is for a restaurant/cafe/hotel kitchen that **already runs, or will run
 
 Do not invent endpoints beyond this table. Read `docs/integrations-api.md` for exact request/response shapes before coding; money fields are strings or numbers as documented, prices are tax-inclusive, and **the server computes every total — ignore any client-side total**.
 
+Tested live (local build, 2026-11-14, Postgres, fresh restaurant):
+- Menu items carry `description`, `imageUrl`, `isVeg`, `isVegan`, `allergens`, `availableFrom/To`, `modifierGroups`, `taxRatePercent`; categories created through MCP default to `showOnWebsite: true`.
+- Order: `201`, `status: OPEN`, `acceptance: PENDING`. Extra `price`/`total` fields in the request were ignored and the server total was 400 for 2 × 200. Same `Idempotency-Key` + same body returned the same order id; same key + different body `422`; `DELIVERY` without address/pincode `400` with an `issues` entry.
+- Reading an order without `?include=customer` returns no customer data; with it and without `orders:read_customer` `403`. `GET …/orders` (list) is `404`, so there is no order list. No key and a bad key both `401`; a key without `reservations:write` got `403` on reservations.
+- `GET …/delivery-quote` returned `{"deliverable":false}` for a location that has no delivery zones configured, so do not treat `false` as "delivery impossible" until the owner has set zones.
+- Webhook (`order.created`): delivered to a local receiver (needs `WEBHOOKS_ALLOW_PRIVATE=true` and `WEBHOOKS_ALLOW_INSECURE=true` for a non-public `http` URL). Delivery was **asynchronous and took several seconds**, so never block checkout on it. The verifier in `docs/integrations-api.md` returned valid for the real delivery and invalid for a tampered body.
+- MCP at `/api/v1/mcp` with a personal key (`ordr_staff_…`): 40 tools (18 flagged `readOnlyHint`), `401` without a key, and writes work (it created a category and a menu item). Because these are staff-level writes, confirm with the user before `create_*`, `update_*`, `delete_*`, `cancel_order`, `refund_order`.
+- Not verified: reservations booking, rewards/referrals, the 30 writes/min limit, key rotation and expiry, payment gateways.
+
 ## Credentials
 
 Create in the app: **Settings → API Keys → Integration API keys → New key**. Lock to one location; tick only needed scopes; shown once. Typical website: `locations:read menu:read orders:write orders:read` (+ `orders:read_customer` only if the backend must read back phone/address). Optional expiry; rotate with the Rotate button.
