@@ -7,7 +7,8 @@ import { Prisma } from '@prisma/client';
 // A stock item has ONE base unit (Ingredient.unit). A cook may type a quantity in another unit of
 // the same kind: KG<->G, L<->ML, PIECE<->DOZEN. Anything else (a 25 kg "BAG", a PACK of 12) must be
 // declared on the item as a conversion {unit, per}: "1 stock unit = `per` of `unit`".
-export type StockUnit = 'KG' | 'G' | 'L' | 'ML' | 'PIECE' | 'DOZEN' | 'PACK' | 'BOX';
+export type StockUnit =
+  'KG' | 'G' | 'L' | 'ML' | 'PIECE' | 'DOZEN' | 'PACK' | 'BOX';
 
 export interface UnitConversion {
   unit: StockUnit;
@@ -41,7 +42,10 @@ export function parseConversions(raw: unknown): UnitConversion[] {
 }
 
 /** Units a cook may use for an item whose base unit is `base`. */
-export function allowedUnits(base: StockUnit, conversions: unknown): StockUnit[] {
+export function allowedUnits(
+  base: StockUnit,
+  conversions: unknown,
+): StockUnit[] {
   const out = new Set<StockUnit>([base]);
   for (const u of Object.keys(FAMILY) as StockUnit[]) {
     if (FAMILY[u].family === FAMILY[base].family) out.add(u);
@@ -72,20 +76,30 @@ export function toBaseQuantity(
     throw new BadRequestException(`Quantity for ${label} is not a number`);
   }
   if (!q.isFinite() || q.lte(0)) {
-    throw new BadRequestException(`Quantity for ${label} must be greater than zero`);
+    throw new BadRequestException(
+      `Quantity for ${label} must be greater than zero`,
+    );
   }
   let result: Prisma.Decimal;
   if (unit === base) {
     result = q;
   } else {
-    const declared = parseConversions(conversions).filter((c) => c.unit === unit);
+    const declared = parseConversions(conversions).filter(
+      (c) => c.unit === unit,
+    );
     if (declared.length > 1) {
-      throw new BadRequestException(`${label} has more than one conversion for ${unit}`);
+      throw new BadRequestException(
+        `${label} has more than one conversion for ${unit}`,
+      );
     }
     if (declared.length === 1) {
       // 1 base = per * unit  =>  qty unit = qty / per base
       result = q.div(D(declared[0].per));
-    } else if (FAMILY[unit].family === FAMILY[base].family && FAMILY[unit].family !== 'pack' && FAMILY[unit].family !== 'box') {
+    } else if (
+      FAMILY[unit].family === FAMILY[base].family &&
+      FAMILY[unit].family !== 'pack' &&
+      FAMILY[unit].family !== 'box'
+    ) {
       result = q.mul(FAMILY[unit].toSmallest).div(FAMILY[base].toSmallest);
     } else {
       throw new BadRequestException(
@@ -99,7 +113,9 @@ export function toBaseQuantity(
     );
   }
   if (result.lte(0)) {
-    throw new BadRequestException(`Quantity for ${label} is too small to record`);
+    throw new BadRequestException(
+      `Quantity for ${label} is too small to record`,
+    );
   }
   return result;
 }

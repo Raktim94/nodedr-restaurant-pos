@@ -70,7 +70,11 @@ export class TablesController {
     @Query('edit') forEditing?: string,
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.tablesService.listFloors(branchId, forEditing === '1' && permissionSatisfied(user.permissions, 'tables.manage'));
+    return this.tablesService.listFloors(
+      branchId,
+      forEditing === '1' &&
+        permissionSatisfied(user.permissions, 'tables.manage'),
+    );
   }
 
   @Auth('tables.manage')
@@ -112,21 +116,34 @@ export class TablesController {
   @Auth('tables.manage')
   @Post('floors/:id/layouts')
   @UsePipes(new ZodValidationPipe(layoutNameSchema))
-  async saveLayout(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: { name: string }) {
+  async saveLayout(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: { name: string },
+  ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.tablesService.saveLayout(branchId, id, body.name);
   }
 
   @Auth('tables.manage')
   @Post('layouts/:id/activate')
-  async activateLayout(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async activateLayout(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.tablesService.activateLayout(branchId, id);
   }
 
   @Auth('tables.manage')
   @Post('layouts/:id/save-current')
-  async saveCurrent(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async saveCurrent(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.tablesService.updateLayoutFromFloor(branchId, id);
   }
@@ -134,14 +151,23 @@ export class TablesController {
   @Auth('tables.manage')
   @Patch('layouts/:id')
   @UsePipes(new ZodValidationPipe(layoutNameSchema))
-  async renameLayout(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: { name: string }) {
+  async renameLayout(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: { name: string },
+  ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.tablesService.renameLayout(branchId, id, body.name);
   }
 
   @Auth('tables.manage')
   @Delete('layouts/:id')
-  async deleteLayout(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async deleteLayout(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.tablesService.deleteLayout(branchId, id);
   }
@@ -162,21 +188,38 @@ export class TablesController {
 
   @Auth('table.session')
   @Get('sessions')
-  async listSessions(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string) {
+  async listSessions(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.sessions.list(branchId);
   }
 
   @Auth('table.session')
   @Post(':id/session')
-  async openSession(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: { hours?: number }) {
+  async openSession(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: { hours?: number },
+  ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
-    return this.sessions.open(branchId, id, user.id, Number(body?.hours) || undefined);
+    return this.sessions.open(
+      branchId,
+      id,
+      user.id,
+      Number(body?.hours) || undefined,
+    );
   }
 
   @Auth('table.session')
   @Delete(':id/session')
-  async closeSession(@CurrentUser() user: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async closeSession(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.sessions.close(branchId, id, user.id);
   }

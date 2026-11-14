@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument -- supertest bodies are untyped by design */
 // Regression: an existing staff member logs in and gets exactly the branch
 // they were assigned - never none (the "No branches available" report), never
 // someone else's. Opt-in:

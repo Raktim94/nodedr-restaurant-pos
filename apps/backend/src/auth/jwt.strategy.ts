@@ -22,7 +22,10 @@ interface JwtPayload {
  * resolution matters: with whole seconds, signing in right after a password change could land in the same
  * second as the change and be revoked by mistake.
  */
-export function isRevoked(issuedAtMs: number | undefined, validFrom: Date | null | undefined): boolean {
+export function isRevoked(
+  issuedAtMs: number | undefined,
+  validFrom: Date | null | undefined,
+): boolean {
   if (!validFrom) return false;
   if (typeof issuedAtMs !== 'number') return true; // issued before this check existed, so before the revocation
   return issuedAtMs < validFrom.getTime();
@@ -63,11 +66,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (payload.did) {
       const device = await this.prisma.posDevice.findUnique({
-        where: { restaurantId_deviceId: { restaurantId: user.restaurantId, deviceId: payload.did } },
+        where: {
+          restaurantId_deviceId: {
+            restaurantId: user.restaurantId,
+            deviceId: payload.did,
+          },
+        },
         select: { revokedAt: true },
       });
       if (device?.revokedAt) {
-        throw new UnauthorizedException({ message: 'This phone was removed by the owner.', code: 'DEVICE_REVOKED' });
+        throw new UnauthorizedException({
+          message: 'This phone was removed by the owner.',
+          code: 'DEVICE_REVOKED',
+        });
       }
     }
 

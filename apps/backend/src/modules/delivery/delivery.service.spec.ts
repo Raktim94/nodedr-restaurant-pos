@@ -39,6 +39,7 @@ describe('DeliveryService', () => {
     expect(prisma.order.update.mock.calls[0][0].data).toEqual({
       driverId: 'd1',
       deliveryStatus: 'ASSIGNED',
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- jest asymmetric matcher
       assignedAt: expect.any(Date),
     });
     // the rider's phone is told straight away

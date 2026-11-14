@@ -92,7 +92,8 @@ export class StandaloneReservationsService {
         });
       }
     }
-    if (changed) this.realtime.emitToBranch(branchId, 'reservation.updated', {});
+    if (changed)
+      this.realtime.emitToBranch(branchId, 'reservation.updated', {});
     return { results };
   }
 
@@ -114,7 +115,10 @@ export class StandaloneReservationsService {
 
     if (!existing) {
       if (!r.id) {
-        return { status: 'refused', reason: 'That booking is not on the server.' };
+        return {
+          status: 'refused',
+          reason: 'That booking is not on the server.',
+        };
       }
       // Not found in this branch. If the id exists in another branch, refuse
       // without revealing it.
@@ -122,7 +126,8 @@ export class StandaloneReservationsService {
         where: { id },
         select: { id: true },
       });
-      if (elsewhere) return { status: 'refused', reason: 'Booking id is taken.' };
+      if (elsewhere)
+        return { status: 'refused', reason: 'Booking id is taken.' };
       const created = await this.prisma.reservation.create({
         data: {
           id,

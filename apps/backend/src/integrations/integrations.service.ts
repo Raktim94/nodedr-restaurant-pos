@@ -555,7 +555,15 @@ export class IntegrationsService {
     // any booking, are not a website key's to read.
     const reservation = await this.prisma.reservation.findFirst({
       where: { id: reservationId, branchId, channel: 'ONLINE' },
-      select: { id: true, status: true, reservedAt: true, durationMinutes: true, guestCount: true, customerName: true, createdAt: true },
+      select: {
+        id: true,
+        status: true,
+        reservedAt: true,
+        durationMinutes: true,
+        guestCount: true,
+        customerName: true,
+        createdAt: true,
+      },
     });
     if (!reservation) throw new NotFoundException('Reservation not found');
     return reservation;

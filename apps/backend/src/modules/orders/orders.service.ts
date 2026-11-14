@@ -382,7 +382,9 @@ export class OrdersService {
           guestName: dto.guestName,
           notes: dto.notes,
           clientRequestId: options.clientRequestId,
-          ...(options.historical ? { createdAt: options.historical.createdAt } : {}),
+          ...(options.historical
+            ? { createdAt: options.historical.createdAt }
+            : {}),
           integrationKeyId: options.integrationKeyId,
           clientRequestHash: options.clientRequestHash,
           externalSource: options.externalSource,
@@ -610,7 +612,8 @@ export class OrdersService {
       });
 
       // An order still waiting for its online payment sends nothing to the kitchen, including extra rounds.
-      if (!order.heldForPayment) await this.generateKots(tx, orderId, branchId, newItems);
+      if (!order.heldForPayment)
+        await this.generateKots(tx, orderId, branchId, newItems);
 
       return result;
     });
@@ -668,16 +671,30 @@ export class OrdersService {
    * take it anyway) this sends it to the kitchen, exactly once. Returns false if there was nothing to release.
    */
   async releaseHeldOrder(branchId: string, orderId: string): Promise<boolean> {
-    const order = await this.prisma.order.findFirst({ where: { id: orderId, branchId }, include: { items: true } });
-    if (!order || !order.heldForPayment || order.status === 'CANCELLED') return false;
+    const order = await this.prisma.order.findFirst({
+      where: { id: orderId, branchId },
+      include: { items: true },
+    });
+    if (!order || !order.heldForPayment || order.status === 'CANCELLED')
+      return false;
     const released = await this.prisma.$transaction(async (tx) => {
-      const flipped = await tx.order.updateMany({ where: { id: orderId, heldForPayment: true, status: { not: 'CANCELLED' } }, data: { heldForPayment: false } });
+      const flipped = await tx.order.updateMany({
+        where: {
+          id: orderId,
+          heldForPayment: true,
+          status: { not: 'CANCELLED' },
+        },
+        data: { heldForPayment: false },
+      });
       if (flipped.count === 0) return false;
       await this.generateKots(tx, orderId, branchId, order.items);
       return true;
     });
     if (!released) return false;
-    this.realtime.emitToBranch(branchId, 'order.created', { id: orderId, acceptance: order.acceptance });
+    this.realtime.emitToBranch(branchId, 'order.created', {
+      id: orderId,
+      acceptance: order.acceptance,
+    });
     this.realtime.emitToBranch(branchId, 'kot.updated', { orderId });
     try {
       await this.notifications.notifyByPermission(branchId, 'kds.manage', {
@@ -688,9 +705,17 @@ export class OrdersService {
         entityId: orderId,
       });
     } catch (err) {
-      this.logger.warn(`Failed to notify the kitchen about order ${orderId}: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(
+        `Failed to notify the kitchen about order ${orderId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
-    await this.audit.record({ userId: null, action: 'order.released_to_kitchen', entity: 'Order', entityId: orderId, metadata: { reason: 'payment confirmed or staff released' } });
+    await this.audit.record({
+      userId: null,
+      action: 'order.released_to_kitchen',
+      entity: 'Order',
+      entityId: orderId,
+      metadata: { reason: 'payment confirmed or staff released' },
+    });
     return true;
   }
 
@@ -865,7 +890,14 @@ export class OrdersService {
         data: { status: 'AVAILABLE', statusSince: new Date() },
       });
       // The next guests at this table need a fresh code: the old code and every phone that held it stop working.
-      await tx.tableSession.updateMany({ where: { tableId, status: 'ACTIVE' }, data: { status: 'CLOSED', closedAt: new Date(), closedReason: 'Table cleared' } });
+      await tx.tableSession.updateMany({
+        where: { tableId, status: 'ACTIVE' },
+        data: {
+          status: 'CLOSED',
+          closedAt: new Date(),
+          closedReason: 'Table cleared',
+        },
+      });
     }
   }
 

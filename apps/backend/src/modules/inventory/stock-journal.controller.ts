@@ -1,6 +1,24 @@
-import { BadRequestException, ForbiddenException, Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, UploadedFile, UseInterceptors, UsePipes } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Header,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+  UsePipes,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { assertValidImageSignature, imageUploadOptions } from '../../common/upload/image-upload.config';
+import {
+  assertValidImageSignature,
+  imageUploadOptions,
+} from '../../common/upload/image-upload.config';
 import { ApiTags } from '@nestjs/swagger';
 import {
   productionQualitySchema,
@@ -31,30 +49,51 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { allowedUnits, type StockUnit } from './units';
-import { ProductionService, type ProductionFilters } from './production.service';
+import { allowedUnits } from './units';
+import {
+  ProductionService,
+  type ProductionFilters,
+} from './production.service';
 import { StockJournalService } from './stock-journal.service';
 import { ManufacturingService } from './manufacturing.service';
 import { StockLocationsService } from './stock-locations.service';
-import { WasteEntriesService, type WasteFilters } from './waste-entries.service';
+import {
+  WasteEntriesService,
+  type WasteFilters,
+} from './waste-entries.service';
 
 const date = (v?: string) => {
   if (!v) return undefined;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? undefined : d;
 };
-const prodFilters = (q: Record<string, string | undefined>): ProductionFilters => ({
-  from: date(q.from), to: date(q.to), productId: q.productId || undefined, location: q.location || undefined,
-  shift: q.shift || undefined, employeeId: q.employeeId || undefined,
+const prodFilters = (
+  q: Record<string, string | undefined>,
+): ProductionFilters => ({
+  from: date(q.from),
+  to: date(q.to),
+  productId: q.productId || undefined,
+  location: q.location || undefined,
+  shift: q.shift || undefined,
+  employeeId: q.employeeId || undefined,
   status: (['DRAFT', 'POSTED', 'VOIDED'] as const).find((s) => s === q.status),
 });
 const wasteFilters = (q: Record<string, string | undefined>): WasteFilters => ({
-  from: date(q.from), to: date(q.to), ingredientId: q.ingredientId || undefined, reason: q.reason || undefined,
-  shift: q.shift || undefined, employeeId: q.employeeId || undefined, location: q.location || undefined,
-  kind: q.kind === 'INGREDIENT' || q.kind === 'FINISHED' ? q.kind : undefined, status: q.status || undefined,
+  from: date(q.from),
+  to: date(q.to),
+  ingredientId: q.ingredientId || undefined,
+  reason: q.reason || undefined,
+  shift: q.shift || undefined,
+  employeeId: q.employeeId || undefined,
+  location: q.location || undefined,
+  kind: q.kind === 'INGREDIENT' || q.kind === 'FINISHED' ? q.kind : undefined,
+  status: q.status || undefined,
 });
 const reason = new ZodValidationPipe(reasonSchema);
-const previewSchema = productionEntrySchema.pick({ inputs: true, outputs: true });
+const previewSchema = productionEntrySchema.pick({
+  inputs: true,
+  outputs: true,
+});
 
 @ApiTags('stock-journal')
 @Controller('v1/inventory')
@@ -81,18 +120,30 @@ export class StockJournalController {
 
   @Auth('inventory.manage')
   @Get('journal')
-  async list(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+  async list(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
     await this.access(u, branchId);
     return this.journal.list(branchId, {
-      from: date(q.from), to: date(q.to), ingredientId: q.ingredientId || undefined, type: q.type || undefined,
-      productionEntryId: q.productionEntryId || undefined, wasteEntryId: q.wasteEntryId || undefined,
-      cursor: q.cursor || undefined, take: q.take ? Number(q.take) : undefined,
+      from: date(q.from),
+      to: date(q.to),
+      ingredientId: q.ingredientId || undefined,
+      type: q.type || undefined,
+      productionEntryId: q.productionEntryId || undefined,
+      wasteEntryId: q.wasteEntryId || undefined,
+      cursor: q.cursor || undefined,
+      take: q.take ? Number(q.take) : undefined,
     });
   }
 
   @Auth('inventory.manage')
   @Get('journal/balances')
-  async balances(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async balances(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.access(u, branchId);
     return this.journal.balances(branchId);
   }
@@ -100,10 +151,17 @@ export class StockJournalController {
   @Auth('inventory.manage')
   @Get('journal/export.csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
-  async exportJournal(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+  async exportJournal(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
     await this.access(u, branchId);
     return this.journal.exportCsv(branchId, {
-      from: date(q.from), to: date(q.to), ingredientId: q.ingredientId || undefined, type: q.type || undefined,
+      from: date(q.from),
+      to: date(q.to),
+      ingredientId: q.ingredientId || undefined,
+      type: q.type || undefined,
     });
   }
 
@@ -111,14 +169,20 @@ export class StockJournalController {
 
   @Auth('inventory.manage')
   @Get('locations')
-  async listLocations(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async listLocations(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.access(u, branchId);
     return this.locations.list(branchId);
   }
 
   @Auth('inventory.manage')
   @Get('locations/matrix')
-  async matrix(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async matrix(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.access(u, branchId);
     return this.locations.matrix(branchId);
   }
@@ -126,21 +190,34 @@ export class StockJournalController {
   @Auth('inventory.manage')
   @Post('locations')
   @UsePipes(new ZodValidationPipe(stockLocationSchema))
-  async createLocation(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+  async createLocation(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
     return this.locations.create(branchId, body as StockLocationDto);
   }
 
   @Auth('inventory.manage')
   @Patch('locations/:id')
-  async updateLocation(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body(new ZodValidationPipe(stockLocationSchema.partial())) body: Partial<StockLocationDto>) {
+  async updateLocation(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(stockLocationSchema.partial()))
+    body: Partial<StockLocationDto>,
+  ) {
     await this.access(u, branchId);
     return this.locations.update(branchId, id, body);
   }
 
   @Auth('inventory.manage')
   @Get('locations/transfers')
-  async locationTransfers(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async locationTransfers(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.access(u, branchId);
     return this.locations.transfers(branchId);
   }
@@ -148,7 +225,11 @@ export class StockJournalController {
   @Auth('inventory.manage')
   @Post('locations/transfers')
   @UsePipes(new ZodValidationPipe(locationTransferSchema))
-  async locationTransfer(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+  async locationTransfer(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
     return this.locations.transfer(branchId, u.id, body as LocationTransferDto);
   }
@@ -156,28 +237,45 @@ export class StockJournalController {
   @Auth('inventory.manage')
   @Post('journal/stock-takes')
   @UsePipes(new ZodValidationPipe(stockTakeSchema))
-  async stockTake(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+  async stockTake(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
     return this.journal.stockTake(branchId, u.id, body as StockTakeDto);
   }
 
   @Auth('inventory.manage')
   @Get('journal/stock-takes')
-  async stockTakes(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async stockTakes(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.access(u, branchId);
     return this.journal.listStockTakes(branchId);
   }
 
   @Auth('inventory.manage')
   @Get('journal/expiring')
-  async expiring(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query('days') days?: string) {
+  async expiring(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query('days') days?: string,
+  ) {
     await this.access(u, branchId);
-    return this.journal.expiring(branchId, Math.min(60, Math.max(0, Number(days) || 7)));
+    return this.journal.expiring(
+      branchId,
+      Math.min(60, Math.max(0, Number(days) || 7)),
+    );
   }
 
   @Auth('inventory.manage')
   @Get('journal/reorder')
-  async reorder(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async reorder(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.access(u, branchId);
     return this.journal.reorderList(branchId);
   }
@@ -185,7 +283,10 @@ export class StockJournalController {
   @Auth('inventory.manage')
   @Get('journal/reorder.csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
-  async reorderCsv(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async reorderCsv(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.access(u, branchId);
     return this.journal.reorderCsv(branchId);
   }
@@ -193,7 +294,11 @@ export class StockJournalController {
   @Auth('inventory.manage')
   @Post('journal/receipts')
   @UsePipes(new ZodValidationPipe(stockReceiptSchema))
-  async receive(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+  async receive(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
     return this.journal.receive(branchId, u.id, body as StockReceiptDto);
   }
@@ -201,7 +306,11 @@ export class StockJournalController {
   @Auth('inventory.manage')
   @Post('journal/adjustments')
   @UsePipes(new ZodValidationPipe(journalAdjustmentSchema))
-  async adjust(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+  async adjust(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
     return this.journal.adjust(branchId, u.id, body as JournalAdjustmentDto);
   }
@@ -210,28 +319,50 @@ export class StockJournalController {
 
   @Auth('production.record')
   @Get('production/items')
-  async items(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async items(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.access(u, branchId);
     const rows = await this.prisma.ingredient.findMany({
       where: { branchId, isActive: true },
       orderBy: [{ kind: 'asc' }, { name: 'asc' }],
-      select: { id: true, name: true, unit: true, kind: true, category: true, currentStock: true, conversions: true },
+      select: {
+        id: true,
+        name: true,
+        unit: true,
+        kind: true,
+        category: true,
+        currentStock: true,
+        conversions: true,
+      },
     });
-    return rows.map((r) => ({ ...r, units: allowedUnits(r.unit as StockUnit, r.conversions) }));
+    return rows.map((r) => ({
+      ...r,
+      units: allowedUnits(r.unit, r.conversions),
+    }));
   }
 
   // ---- production -----------------------------------------------------------------------------
 
   @Auth('production.record')
   @Get('production')
-  async listProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+  async listProduction(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
     await this.access(u, branchId);
     return this.production.list(branchId, prodFilters(q));
   }
 
   @Auth('production.record')
   @Get('production/report')
-  async report(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+  async report(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
     await this.access(u, branchId);
     return this.production.report(branchId, prodFilters(q));
   }
@@ -239,14 +370,22 @@ export class StockJournalController {
   @Auth('production.record')
   @Get('production/export.csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
-  async exportProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+  async exportProduction(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
     await this.access(u, branchId);
     return this.production.exportCsv(branchId, prodFilters(q));
   }
 
   @Auth('production.record')
   @Get('production/suggest/:productId')
-  async suggest(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('productId') productId: string) {
+  async suggest(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('productId') productId: string,
+  ) {
     await this.access(u, branchId);
     return this.production.suggestInputs(branchId, productId);
   }
@@ -254,25 +393,43 @@ export class StockJournalController {
   @Auth('production.record')
   @Post('production/preview')
   @UsePipes(new ZodValidationPipe(previewSchema))
-  async preview(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+  async preview(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
-    return this.production.preview(branchId, body as z.infer<typeof previewSchema>);
+    return this.production.preview(
+      branchId,
+      body as z.infer<typeof previewSchema>,
+    );
   }
 
   @Auth('production.record')
   @Post('production')
   @UsePipes(new ZodValidationPipe(productionEntrySchema))
-  async createProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+  async createProduction(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
     const dto = body as ProductionEntryDto;
     // Drafting needs production.record; posting needs production.post; changing a menu price needs menu.price.
-    if (dto.post && !permissionSatisfied(u.permissions, 'production.post')) throw new ForbiddenException('You can save a draft, but posting needs the post permission.');
+    if (dto.post && !permissionSatisfied(u.permissions, 'production.post'))
+      throw new ForbiddenException(
+        'You can save a draft, but posting needs the post permission.',
+      );
     return this.production.create(branchId, u.id, dto, this.opts(u));
   }
 
   @Auth('production.record')
   @Get('production/:id')
-  async getProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async getProduction(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     await this.access(u, branchId);
     return this.production.get(branchId, id);
   }
@@ -280,21 +437,40 @@ export class StockJournalController {
   @Auth('production.record')
   @Patch('production/:id')
   @UsePipes(new ZodValidationPipe(productionEntrySchema.omit({ post: true })))
-  async updateProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: unknown) {
+  async updateProduction(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
-    return this.production.updateDraft(branchId, u.id, id, body as never, this.opts(u));
+    return this.production.updateDraft(
+      branchId,
+      u.id,
+      id,
+      body as never,
+      this.opts(u),
+    );
   }
 
   @Auth('production.record')
   @Delete('production/:id')
-  async deleteProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async deleteProduction(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     await this.access(u, branchId);
     return this.production.deleteDraft(branchId, id);
   }
 
   @Auth('production.post')
   @Post('production/:id/post')
-  async postProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string) {
+  async postProduction(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
     await this.access(u, branchId);
     return this.production.post(branchId, u.id, id, undefined, this.opts(u));
   }
@@ -302,14 +478,24 @@ export class StockJournalController {
   @Auth('production.quality')
   @Patch('production/:id/quality')
   @UsePipes(new ZodValidationPipe(productionQualitySchema))
-  async recordQuality(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: unknown) {
+  async recordQuality(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
     return this.production.recordQuality(branchId, u.id, id, body as never);
   }
 
   @Auth('production.void')
   @Post('production/:id/void')
-  async voidProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body(reason) body: { reason: string }) {
+  async voidProduction(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body(reason) body: { reason: string },
+  ) {
     await this.access(u, branchId);
     return this.production.void(branchId, u.id, id, body.reason);
   }
@@ -317,8 +503,11 @@ export class StockJournalController {
   @Auth('production.void')
   @Post('production/:id/correct')
   async correctProduction(
-    @CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string,
-    @Body(new ZodValidationPipe(correctProductionSchema)) body: CorrectProductionDto,
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(correctProductionSchema))
+    body: CorrectProductionDto,
   ) {
     await this.access(u, branchId);
     return this.production.correct(branchId, u.id, id, body, this.opts(u));
@@ -328,59 +517,117 @@ export class StockJournalController {
 
   @Auth('production.record')
   @Get('manufacturing/settings')
-  async mfgSettings(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
+  async mfgSettings(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
     await this.access(u, branchId);
-    return { ...(await this.mfg.settings(u.restaurantId, branchId)), canPost: permissionSatisfied(u.permissions, 'production.post'), canPrice: permissionSatisfied(u.permissions, 'menu.price'), canReport: permissionSatisfied(u.permissions, 'production.report'), canQuality: permissionSatisfied(u.permissions, 'production.quality') };
+    return {
+      ...(await this.mfg.settings(u.restaurantId, branchId)),
+      canPost: permissionSatisfied(u.permissions, 'production.post'),
+      canPrice: permissionSatisfied(u.permissions, 'menu.price'),
+      canReport: permissionSatisfied(u.permissions, 'production.report'),
+      canQuality: permissionSatisfied(u.permissions, 'production.quality'),
+    };
   }
 
   @Auth('settings.manage')
   @Patch('manufacturing/settings')
-  async setMfg(@CurrentUser() u: SessionUser, @Body(new ZodValidationPipe(z.object({ enabled: z.boolean().optional(), requireTableSession: z.boolean().optional() }))) body: { enabled?: boolean; requireTableSession?: boolean }) {
+  async setMfg(
+    @CurrentUser() u: SessionUser,
+    @Body(
+      new ZodValidationPipe(
+        z.object({
+          enabled: z.boolean().optional(),
+          requireTableSession: z.boolean().optional(),
+        }),
+      ),
+    )
+    body: { enabled?: boolean; requireTableSession?: boolean },
+  ) {
     return this.mfg.setEnabled(u.restaurantId, body);
   }
 
   @Auth('production.record')
   @Post('manufacturing/preview')
-  @UsePipes(new ZodValidationPipe(previewSchema.extend({ costing: productionEntrySchema.shape.costing })))
-  async mfgPreview(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+  @UsePipes(
+    new ZodValidationPipe(
+      previewSchema.extend({ costing: productionEntrySchema.shape.costing }),
+    ),
+  )
+  async mfgPreview(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
     return this.mfg.preview(branchId, body as never);
   }
 
   @Auth('production.record')
   @Get('manufacturing/prefill/:ingredientId')
-  async mfgPrefill(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('ingredientId') ingredientId: string, @Query('quantity') quantity?: string) {
+  async mfgPrefill(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('ingredientId') ingredientId: string,
+    @Query('quantity') quantity?: string,
+  ) {
     await this.access(u, branchId);
     return this.mfg.prefill(branchId, ingredientId, quantity ?? '1');
   }
 
   @Auth('production.report')
   @Get('manufacturing/report')
-  async mfgReport(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+  async mfgReport(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
     await this.access(u, branchId);
-    return this.mfg.report(branchId, { from: date(q.from), to: date(q.to), itemId: q.itemId || undefined, status: q.status || undefined });
+    return this.mfg.report(branchId, {
+      from: date(q.from),
+      to: date(q.to),
+      itemId: q.itemId || undefined,
+      status: q.status || undefined,
+    });
   }
 
   @Auth('production.report')
   @Get('manufacturing/report.csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
-  async mfgCsv(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+  async mfgCsv(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
     await this.access(u, branchId);
-    return this.mfg.csv(branchId, q.section ?? 'batches', { from: date(q.from), to: date(q.to), itemId: q.itemId || undefined });
+    return this.mfg.csv(branchId, q.section ?? 'batches', {
+      from: date(q.from),
+      to: date(q.to),
+      itemId: q.itemId || undefined,
+    });
   }
 
   // ---- waste ------------------------------------------------------------------------------------
 
   @Auth('production.record')
   @Get('waste/entries')
-  async listWaste(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+  async listWaste(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
     await this.access(u, branchId);
     return this.waste.list(branchId, wasteFilters(q));
   }
 
   @Auth('production.record')
   @Get('waste/report')
-  async wasteReport(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+  async wasteReport(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
     await this.access(u, branchId);
     return this.waste.report(branchId, wasteFilters(q));
   }
@@ -388,7 +635,11 @@ export class StockJournalController {
   @Auth('production.record')
   @Get('waste/export.csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
-  async wasteCsv(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Query() q: Record<string, string>) {
+  async wasteCsv(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
     await this.access(u, branchId);
     return this.waste.exportCsv(branchId, wasteFilters(q));
   }
@@ -405,7 +656,11 @@ export class StockJournalController {
   @Auth('production.record')
   @Post('waste/entries')
   @UsePipes(new ZodValidationPipe(wasteEntrySchema))
-  async createWaste(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Body() body: unknown) {
+  async createWaste(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body() body: unknown,
+  ) {
     await this.access(u, branchId);
     const canApprove = permissionSatisfied(u.permissions, 'production.void');
     return this.waste.create(branchId, u.id, body as WasteEntryDto, canApprove);
@@ -413,21 +668,36 @@ export class StockJournalController {
 
   @Auth('production.void')
   @Post('waste/entries/:id/approve')
-  async approveWaste(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body(new ZodValidationPipe(decisionSchema)) body: { note?: string }) {
+  async approveWaste(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(decisionSchema)) body: { note?: string },
+  ) {
     await this.access(u, branchId);
     return this.waste.approve(branchId, u.id, id, body.note);
   }
 
   @Auth('production.void')
   @Post('waste/entries/:id/reject')
-  async rejectWaste(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body(new ZodValidationPipe(decisionSchema)) body: { note?: string }) {
+  async rejectWaste(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(decisionSchema)) body: { note?: string },
+  ) {
     await this.access(u, branchId);
     return this.waste.reject(branchId, u.id, id, body.note);
   }
 
   @Auth('production.void')
   @Post('waste/entries/:id/reverse')
-  async reverseWaste(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body(reason) body: { reason: string }) {
+  async reverseWaste(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body(reason) body: { reason: string },
+  ) {
     await this.access(u, branchId);
     return this.waste.reverse(branchId, u.id, id, body.reason);
   }

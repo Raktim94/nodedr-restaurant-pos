@@ -129,13 +129,20 @@ export class Args {
   }
 
   static checkInt(key: string, v: number, min: number, max: number): number {
-    if (!Number.isInteger(v) || v < min || v > max) throw new Error(`"${key}" must be a whole number from ${min} to ${max}`);
+    if (!Number.isInteger(v) || v < min || v > max)
+      throw new Error(`"${key}" must be a whole number from ${min} to ${max}`);
     return v;
   }
 
   static checkMoney(key: string, v: number): number {
-    if (v < 0 || v > 1_000_000 || Math.abs(Math.round(v * 100) - v * 100) > 1e-6) {
-      throw new Error(`"${key}" must be an amount from 0 to 1000000 with at most 2 decimals`);
+    if (
+      v < 0 ||
+      v > 1_000_000 ||
+      Math.abs(Math.round(v * 100) - v * 100) > 1e-6
+    ) {
+      throw new Error(
+        `"${key}" must be an amount from 0 to 1000000 with at most 2 decimals`,
+      );
     }
     return v;
   }
@@ -177,7 +184,12 @@ export class Args {
           `${key}[${i}].menuItemId is required and must be a string`,
         );
       }
-      if (typeof item.quantity !== 'number' || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 999) {
+      if (
+        typeof item.quantity !== 'number' ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity < 1 ||
+        item.quantity > 999
+      ) {
         throw new Error(
           `${key}[${i}].quantity is required and must be a whole number from 1 to 999`,
         );
@@ -941,7 +953,8 @@ export class McpToolsBuilder {
               phone: args.optionalString('phone'),
               guestCount: args.int('guestCount', 1, 500),
               reservedAt: new Date(args.string('reservedAt')),
-              durationMinutes: args.optionalInt('durationMinutes', 15, 600) ?? 90,
+              durationMinutes:
+                args.optionalInt('durationMinutes', 15, 600) ?? 90,
               tableId: args.optionalString('tableId'),
               specialRequests: args.optionalString('specialRequests'),
             }),

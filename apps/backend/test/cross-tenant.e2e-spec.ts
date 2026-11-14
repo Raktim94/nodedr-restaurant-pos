@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument -- supertest bodies are untyped by design */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access -- supertest bodies are untyped by design */
 // Regression for audit finding #3 (cross-tenant tableId/customerId/menuItemId):
 // an owner of restaurant A must never be able to touch restaurant B's records
 // by guessing or leaking an id. Opt-in:
@@ -97,52 +97,44 @@ run('Cross-tenant isolation (e2e)', () => {
   const bad = (status: number) => status >= 400 && status < 500;
 
   it("rejects an order on another restaurant's table and leaves it untouched", async () => {
-    const res = await ownerA
-      .post(`/api/v1/orders?branchId=${A}`)
-      .send({
-        type: 'DINE_IN',
-        tableId: tableB,
-        items: [{ menuItemId: itemA, quantity: 1 }],
-      });
+    const res = await ownerA.post(`/api/v1/orders?branchId=${A}`).send({
+      type: 'DINE_IN',
+      tableId: tableB,
+      items: [{ menuItemId: itemA, quantity: 1 }],
+    });
     expect(bad(res.status)).toBe(true);
     const t = await prisma.table.findUniqueOrThrow({ where: { id: tableB } });
     expect(t.status).toBe('AVAILABLE');
   });
 
   it("rejects an order linked to another restaurant's customer", async () => {
-    const res = await ownerA
-      .post(`/api/v1/orders?branchId=${A}`)
-      .send({
-        type: 'TAKEAWAY',
-        customerId: customerB,
-        items: [{ menuItemId: itemA, quantity: 1 }],
-      });
+    const res = await ownerA.post(`/api/v1/orders?branchId=${A}`).send({
+      type: 'TAKEAWAY',
+      customerId: customerB,
+      items: [{ menuItemId: itemA, quantity: 1 }],
+    });
     expect(bad(res.status)).toBe(true);
-    expect(
-      await prisma.order.count({ where: { customerId: customerB } }),
-    ).toBe(0);
+    expect(await prisma.order.count({ where: { customerId: customerB } })).toBe(
+      0,
+    );
   });
 
   it("rejects an order containing another restaurant's menu item", async () => {
-    const res = await ownerA
-      .post(`/api/v1/orders?branchId=${A}`)
-      .send({
-        type: 'TAKEAWAY',
-        items: [{ menuItemId: itemB, quantity: 1 }],
-      });
+    const res = await ownerA.post(`/api/v1/orders?branchId=${A}`).send({
+      type: 'TAKEAWAY',
+      items: [{ menuItemId: itemB, quantity: 1 }],
+    });
     expect(bad(res.status)).toBe(true);
     expect(JSON.stringify(res.body)).not.toContain('B secret');
   });
 
   it("rejects a reservation on another restaurant's table", async () => {
-    const res = await ownerA
-      .post(`/api/v1/reservations?branchId=${A}`)
-      .send({
-        customerName: 'x',
-        guestCount: 2,
-        reservedAt: new Date(Date.now() + 86_400_000).toISOString(),
-        tableId: tableB,
-      });
+    const res = await ownerA.post(`/api/v1/reservations?branchId=${A}`).send({
+      customerName: 'x',
+      guestCount: 2,
+      reservedAt: new Date(Date.now() + 86_400_000).toISOString(),
+      tableId: tableB,
+    });
     expect(bad(res.status)).toBe(true);
     const t = await prisma.table.findUniqueOrThrow({ where: { id: tableB } });
     expect(t.status).toBe('AVAILABLE');
@@ -175,7 +167,10 @@ run('Cross-tenant isolation (e2e)', () => {
       ['patch', `/api/v1/customers/${customerB}?branchId=${A}`],
       ['delete', `/api/v1/customers/${customerB}?branchId=${A}`],
     ] as const) {
-      const res = await ownerA[method](url).send({ name: 'pwned', number: 'X' });
+      const res = await ownerA[method](url).send({
+        name: 'pwned',
+        number: 'X',
+      });
       expect(bad(res.status)).toBe(true);
     }
     expect(
@@ -198,13 +193,11 @@ run('Cross-tenant isolation (e2e)', () => {
   });
 
   it('positive control: the same order on tenant A own table works', async () => {
-    const res = await ownerA
-      .post(`/api/v1/orders?branchId=${A}`)
-      .send({
-        type: 'DINE_IN',
-        tableId: tableA,
-        items: [{ menuItemId: itemA, quantity: 1 }],
-      });
+    const res = await ownerA.post(`/api/v1/orders?branchId=${A}`).send({
+      type: 'DINE_IN',
+      tableId: tableA,
+      items: [{ menuItemId: itemA, quantity: 1 }],
+    });
     expect(res.status).toBeLessThan(300);
   });
 
@@ -212,7 +205,11 @@ run('Cross-tenant isolation (e2e)', () => {
   // request: the identical bodies succeed when the ids belong to tenant A.
   it('positive controls: identical bodies succeed with tenant A ids', async () => {
     const customerA = await prisma.customer.create({
-      data: { branchId: A, name: `Own ${tag}`, phone: `8${tag.length}11111111` },
+      data: {
+        branchId: A,
+        name: `Own ${tag}`,
+        phone: `8${tag.length}11111111`,
+      },
     });
     const gift = await ownerA
       .post(`/api/v1/gift-cards?branchId=${A}`)
@@ -226,14 +223,12 @@ run('Cross-tenant isolation (e2e)', () => {
         items: [{ menuItemId: itemA, quantity: 1 }],
       });
     expect(withCustomer.status).toBeLessThan(300);
-    const resv = await ownerA
-      .post(`/api/v1/reservations?branchId=${A}`)
-      .send({
-        customerName: 'x',
-        guestCount: 2,
-        reservedAt: new Date(Date.now() + 86_400_000).toISOString(),
-        tableId: tableA,
-      });
+    const resv = await ownerA.post(`/api/v1/reservations?branchId=${A}`).send({
+      customerName: 'x',
+      guestCount: 2,
+      reservedAt: new Date(Date.now() + 86_400_000).toISOString(),
+      tableId: tableA,
+    });
     expect(resv.status).toBeLessThan(300);
   });
 });

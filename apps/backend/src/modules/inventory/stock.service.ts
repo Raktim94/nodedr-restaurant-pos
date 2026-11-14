@@ -122,7 +122,9 @@ export class StockService {
 
       await tx.stockBatch.update({
         where: { id: batch.id },
-        data: { quantityRemaining: Dec(batch.quantityRemaining).minus(consumeQty) },
+        data: {
+          quantityRemaining: Dec(batch.quantityRemaining).minus(consumeQty),
+        },
       });
       await tx.stockMovement.create({
         data: {

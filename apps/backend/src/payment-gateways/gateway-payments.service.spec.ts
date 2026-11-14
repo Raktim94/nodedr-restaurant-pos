@@ -69,7 +69,10 @@ function setup(over: Partial<Row> = {}) {
   const gateways: any = {
     context: jest.fn(() => ({ mode: pay.mode, credentials: {} })),
   };
-  const orders: any = { checkout: jest.fn(async () => ({})), releaseHeldOrder: jest.fn(async () => false) };
+  const orders: any = {
+    checkout: jest.fn(async () => ({})),
+    releaseHeldOrder: jest.fn(async () => false),
+  };
   const svc = new GatewayPaymentsService(prisma, gateways, orders);
   return { svc, pay, orders, prisma };
 }
@@ -233,7 +236,6 @@ describe('redirect target', () => {
     );
   });
 });
-
 
 describe('releasing a held table order', () => {
   it('is asked once the payment settles, and a failure there never downgrades the confirmed payment', async () => {

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call -- supertest bodies are untyped by design */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access -- supertest bodies are untyped by design */
 // Bulk menu price change by percentage.
 //   BULKPRICE_E2E=1 DATABASE_URL=... JWT_SECRET=x npx jest --config ./test/jest-e2e.json --runInBand bulk-price
 import { INestApplication } from '@nestjs/common';
@@ -20,7 +20,9 @@ run('Bulk price change (e2e)', () => {
   const url = `/api/v1/menu/items/bulk-price?branchId=${BRANCH}`;
 
   beforeAll(async () => {
-    const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const mod = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
     app = mod.createNestApplication();
     app.use(cookieParser());
     app.setGlobalPrefix('api');
@@ -52,7 +54,10 @@ run('Bulk price change (e2e)', () => {
 
   it('preview changes nothing', async () => {
     const p = Number((await cola()).price);
-    const r = await owner.post(url).send({ percent: 10, preview: true }).expect(201);
+    const r = await owner
+      .post(url)
+      .send({ percent: 10, preview: true })
+      .expect(201);
     expect(r.body.applied).toBe(false);
     expect(r.body.count).toBeGreaterThan(0);
     expect(Number((await cola()).price)).toBe(p);
@@ -80,9 +85,17 @@ run('Bulk price change (e2e)', () => {
       where: { branchId: BRANCH, categoryId: { not: c.categoryId } },
     });
     const o = other ? Number(other.price) : null;
-    await owner.post(url).send({ percent: 50, categoryId: c.categoryId }).expect(201);
+    await owner
+      .post(url)
+      .send({ percent: 50, categoryId: c.categoryId })
+      .expect(201);
     if (other && o != null) {
-      expect(Number((await prisma.menuItem.findUniqueOrThrow({ where: { id: other.id } })).price)).toBe(o);
+      expect(
+        Number(
+          (await prisma.menuItem.findUniqueOrThrow({ where: { id: other.id } }))
+            .price,
+        ),
+      ).toBe(o);
     }
   });
 });

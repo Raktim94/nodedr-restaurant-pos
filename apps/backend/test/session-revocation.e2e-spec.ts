@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument -- supertest bodies are untyped by design */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access -- supertest bodies are untyped by design */
 // An admin changing a staff member's password must end that person's existing sessions
 // (a stolen cookie must not outlive the password reset). Opt-in:
 //   REVOKE_E2E=1 DATABASE_URL=... JWT_SECRET=x npx jest --config ./test/jest-e2e.json --runInBand session-revocation
@@ -20,7 +20,10 @@ run('Session revocation on password change (e2e)', () => {
 
   const login = async (email: string, password: string, expected = 201) => {
     const a = request.agent(app.getHttpServer());
-    await a.post('/api/v1/auth/login').send({ email, password }).expect(expected);
+    await a
+      .post('/api/v1/auth/login')
+      .send({ email, password })
+      .expect(expected);
     return a;
   };
 
@@ -29,7 +32,12 @@ run('Session revocation on password change (e2e)', () => {
       .overrideProvider(ThrottlerStorage)
       .useValue({
         increment: () =>
-          Promise.resolve({ totalHits: 1, timeToExpire: 60, isBlocked: false, timeToBlockExpire: 0 }),
+          Promise.resolve({
+            totalHits: 1,
+            timeToExpire: 60,
+            isBlocked: false,
+            timeToBlockExpire: 0,
+          }),
       })
       .compile();
     app = mod.createNestApplication();
@@ -43,12 +51,21 @@ run('Session revocation on password change (e2e)', () => {
   });
 
   it('kills the old session on a password change, lets the new password in, and spares other users', async () => {
-    const roles = (await owner.get('/api/v1/users/roles').expect(200)).body as { id: string; name: string }[];
+    const roles = (await owner.get('/api/v1/users/roles').expect(200)).body as {
+      id: string;
+      name: string;
+    }[];
     const mk = async (n: string) => {
       const email = `${n}-${tag}@demo.local`;
       const res = await owner
         .post('/api/v1/users')
-        .send({ name: n, email, password: 'Password123!', roleId: roles.find((r) => r.name === 'WAITER')!.id, branchIds: ['demo-branch'] })
+        .send({
+          name: n,
+          email,
+          password: 'Password123!',
+          roleId: roles.find((r) => r.name === 'WAITER')!.id,
+          branchIds: ['demo-branch'],
+        })
         .expect(201);
       return { email, id: res.body.id as string };
     };
@@ -59,7 +76,10 @@ run('Session revocation on password change (e2e)', () => {
     await stolen.get('/api/v1/auth/me').expect(200);
 
     await new Promise((r) => setTimeout(r, 20)); // a different millisecond from the login, nothing more
-    await owner.patch(`/api/v1/users/${victim.id}`).send({ password: 'NewPassw0rd!x' }).expect(200);
+    await owner
+      .patch(`/api/v1/users/${victim.id}`)
+      .send({ password: 'NewPassw0rd!x' })
+      .expect(200);
 
     await stolen.get('/api/v1/auth/me').expect(401);
     await login(victim.email, 'Password123!', 401);

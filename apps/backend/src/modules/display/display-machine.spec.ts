@@ -1,7 +1,19 @@
-import { playableAds, screenFor, type DisplayStateDto } from '@nodedr-restaurant/types';
+import {
+  playableAds,
+  screenFor,
+  type DisplayStateDto,
+} from '@nodedr-restaurant/types';
 
 const cfg = { idleSeconds: 45, thankYouSeconds: 8 };
-const cart = (n = 1): DisplayStateDto => ({ kind: 'cart', lines: Array.from({ length: n }, (_, i) => ({ name: `Item ${i}`, quantity: 1, total: 10 })), subtotal: 10 * n });
+const cart = (n = 1): DisplayStateDto => ({
+  kind: 'cart',
+  lines: Array.from({ length: n }, (_, i) => ({
+    name: `Item ${i}`,
+    quantity: 1,
+    total: 10,
+  })),
+  subtotal: 10 * n,
+});
 const at = 1_000_000;
 
 describe('which screen the customer sees', () => {
@@ -27,7 +39,12 @@ describe('which screen the customer sees', () => {
   });
 
   it('a payment QR stays up for at least three minutes, then gives way', () => {
-    const upi: DisplayStateDto = { kind: 'upi', total: 100, uri: 'upi://pay', payee: 'Shop' };
+    const upi: DisplayStateDto = {
+      kind: 'upi',
+      total: 100,
+      uri: 'upi://pay',
+      payee: 'Shop',
+    };
     expect(screenFor(upi, at, at + 170_000, cfg)).toBe('pay');
     expect(screenFor(upi, at, at + 181_000, cfg)).toBe('ads');
   });
@@ -44,7 +61,14 @@ describe('which screen the customer sees', () => {
 });
 
 describe('which adverts play', () => {
-  const ad = (id: string, over: object = {}) => ({ id, kind: 'IMAGE' as const, url: `/api/uploads/${id}.png`, isActive: true, sortOrder: 0, ...over });
+  const ad = (id: string, over: object = {}) => ({
+    id,
+    kind: 'IMAGE' as const,
+    url: `/api/uploads/${id}.png`,
+    isActive: true,
+    sortOrder: 0,
+    ...over,
+  });
   const now = new Date('2026-11-14T12:00:00Z');
   it('respects switched-off, schedule, per-screen targeting and order', () => {
     const list = [
@@ -56,7 +80,17 @@ describe('which adverts play', () => {
       ad('other', { terminalId: 't2' }),
       ad('b', { sortOrder: 2, endsOn: '2026-11-30T00:00:00Z' }),
     ];
-    expect(playableAds(list, 't1', now).map((x) => x.id)).toEqual(['a', 'b', 'c']);
-    expect(playableAds(list, 't2', now).map((x) => x.id)).toEqual(['b', 'c', 'other'].sort((x, y) => list.find((l) => l.id === x)!.sortOrder - list.find((l) => l.id === y)!.sortOrder));
+    expect(playableAds(list, 't1', now).map((x) => x.id)).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
+    expect(playableAds(list, 't2', now).map((x) => x.id)).toEqual(
+      ['b', 'c', 'other'].sort(
+        (x, y) =>
+          list.find((l) => l.id === x)!.sortOrder -
+          list.find((l) => l.id === y)!.sortOrder,
+      ),
+    );
   });
 });

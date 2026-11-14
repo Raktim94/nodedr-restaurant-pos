@@ -10,7 +10,13 @@ import { PublicMenuController } from './public-menu.controller';
 import { PublicMenuService } from './public-menu.service';
 
 @Module({
-  imports: [OrdersModule, NotificationsModule, PaymentGatewaysModule, TablesModule, RatingsModule],
+  imports: [
+    OrdersModule,
+    NotificationsModule,
+    PaymentGatewaysModule,
+    TablesModule,
+    RatingsModule,
+  ],
   controllers: [PublicMenuController, PublicKioskController],
   providers: [PublicMenuService, PublicKioskService],
 })

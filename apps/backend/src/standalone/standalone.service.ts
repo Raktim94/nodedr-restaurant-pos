@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { permissionSatisfied, type SessionUser } from '@nodedr-restaurant/types';
-import { allowedUnits, type StockUnit } from '../modules/inventory/units';
+import {
+  permissionSatisfied,
+  type SessionUser,
+} from '@nodedr-restaurant/types';
+import { allowedUnits } from '../modules/inventory/units';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   computeOrderTotals,
@@ -107,20 +110,29 @@ export class StandaloneService {
       ? await this.bookings.forSnapshot(branchId)
       : [];
     // Stock items for the Kitchen tab, only for staff who may record production and waste.
-    const canKitchen = permissionSatisfied(user.permissions, 'production.record');
+    const canKitchen = permissionSatisfied(
+      user.permissions,
+      'production.record',
+    );
     const stockItems = canKitchen
       ? (
           await this.prisma.ingredient.findMany({
             where: { branchId, isActive: true },
             orderBy: [{ kind: 'asc' }, { name: 'asc' }],
-            select: { id: true, name: true, unit: true, kind: true, conversions: true },
+            select: {
+              id: true,
+              name: true,
+              unit: true,
+              kind: true,
+              conversions: true,
+            },
           })
         ).map((i) => ({
           id: i.id,
           name: i.name,
           unit: i.unit,
           kind: i.kind,
-          units: allowedUnits(i.unit as StockUnit, i.conversions),
+          units: allowedUnits(i.unit, i.conversions),
         }))
       : undefined;
     return {
@@ -275,35 +287,85 @@ export class StandaloneService {
     // discount, is a discount like any other: the normal checkout needs discounts.apply for it and applies the
     // restaurant's cap, so the offline route does the same. (A waiter's phone with a price that went stale after
     // a menu increase is refused with the current price; a manager can enter that sale.)
-    const mayDiscount = user.permissions.includes('discounts.apply') || mayExceedDiscountCap(user);
+    const mayDiscount =
+      user.permissions.includes('discounts.apply') ||
+      mayExceedDiscountCap(user);
     if ((sale.discountPercent || sale.discountFlat) && !mayDiscount) {
-      throw new SaleRefused('DISCOUNT_NOT_ALLOWED', 'This account may not give discounts. Ask a manager to enter this sale.');
+      throw new SaleRefused(
+        'DISCOUNT_NOT_ALLOWED',
+        'This account may not give discounts. Ask a manager to enter this sale.',
+      );
     }
-    const below = merged.filter((m) => m.unitPrice < Number(byId.get(m.menuItemId)!.price) - 0.005);
+    const below = merged.filter(
+      (m) => m.unitPrice < Number(byId.get(m.menuItemId)!.price) - 0.005,
+    );
     if (below.length && !mayDiscount) {
-      const names = below.map((m) => `${byId.get(m.menuItemId)!.name} (menu price ${Number(byId.get(m.menuItemId)!.price)}, sold at ${m.unitPrice})`).join(', ');
-      throw new SaleRefused('DISCOUNT_NOT_ALLOWED', `Sold below the menu price and this account may not give discounts: ${names}. Ask a manager to enter this sale.`);
+      const names = below
+        .map(
+          (m) =>
+            `${byId.get(m.menuItemId)!.name} (menu price ${Number(byId.get(m.menuItemId)!.price)}, sold at ${m.unitPrice})`,
+        )
+        .join(', ');
+      throw new SaleRefused(
+        'DISCOUNT_NOT_ALLOWED',
+        `Sold below the menu price and this account may not give discounts: ${names}. Ask a manager to enter this sale.`,
+      );
     }
-    if (!mayExceedDiscountCap(user) && (below.length || sale.discountPercent || sale.discountFlat)) {
+    if (
+      !mayExceedDiscountCap(user) &&
+      (below.length || sale.discountPercent || sale.discountFlat)
+    ) {
       // The cap covers everything that lowers the price: selling under the menu price AND any typed discount, added
       // together (a price just under the cap plus a typed discount up to the cap must not pass as two small discounts).
-      const cap = Number((await this.prisma.branch.findUniqueOrThrow({ where: { id: branchId }, select: { restaurant: { select: { maxManualDiscountPercent: true } } } })).restaurant.maxManualDiscountPercent);
-      const menuTotal = merged.reduce((a, m) => a + Number(byId.get(m.menuItemId)!.price) * m.quantity, 0);
-      const soldTotal = merged.reduce((a, m) => a + m.unitPrice * m.quantity, 0);
-      const priceCut = menuTotal > 0 ? Math.max(0, ((menuTotal - soldTotal) / menuTotal) * 100) : 0;
-      const typed = (sale.discountPercent ?? 0) + (menuTotal > 0 ? ((sale.discountFlat ?? 0) / menuTotal) * 100 : 0);
+      const cap = Number(
+        (
+          await this.prisma.branch.findUniqueOrThrow({
+            where: { id: branchId },
+            select: {
+              restaurant: { select: { maxManualDiscountPercent: true } },
+            },
+          })
+        ).restaurant.maxManualDiscountPercent,
+      );
+      const menuTotal = merged.reduce(
+        (a, m) => a + Number(byId.get(m.menuItemId)!.price) * m.quantity,
+        0,
+      );
+      const soldTotal = merged.reduce(
+        (a, m) => a + m.unitPrice * m.quantity,
+        0,
+      );
+      const priceCut =
+        menuTotal > 0
+          ? Math.max(0, ((menuTotal - soldTotal) / menuTotal) * 100)
+          : 0;
+      const typed =
+        (sale.discountPercent ?? 0) +
+        (menuTotal > 0 ? ((sale.discountFlat ?? 0) / menuTotal) * 100 : 0);
       const total = priceCut + typed;
       if (total > cap + 0.005) {
-        throw new SaleRefused('DISCOUNT_NOT_ALLOWED', `Together the price cut and discount come to ${total.toFixed(1)}% below the menu price; this restaurant allows ${cap}% for this account. Ask a manager to enter this sale.`);
+        throw new SaleRefused(
+          'DISCOUNT_NOT_ALLOWED',
+          `Together the price cut and discount come to ${total.toFixed(1)}% below the menu price; this restaurant allows ${cap}% for this account. Ask a manager to enter this sale.`,
+        );
       }
     }
     // A restaurant that requires a reason for discounts requires it here too: the reason comes from the phone, it is
     // not made up by the server (that used to satisfy the policy for every offline discount).
     const discountReason = sale.discountReason?.trim() || undefined;
-    if ((below.length || sale.discountPercent || sale.discountFlat) && !discountReason) {
-      const policy = await this.prisma.branch.findUniqueOrThrow({ where: { id: branchId }, select: { restaurant: { select: { requireDiscountReason: true } } } });
+    if (
+      (below.length || sale.discountPercent || sale.discountFlat) &&
+      !discountReason
+    ) {
+      const policy = await this.prisma.branch.findUniqueOrThrow({
+        where: { id: branchId },
+        select: { restaurant: { select: { requireDiscountReason: true } } },
+      });
       if (policy.restaurant.requireDiscountReason) {
-        throw new SaleRefused('DISCOUNT_NOT_ALLOWED', 'This restaurant needs a reason for every discount. Add a reason and send the sale again.');
+        throw new SaleRefused(
+          'DISCOUNT_NOT_ALLOWED',
+          'This restaurant needs a reason for every discount. Add a reason and send the sale again.',
+        );
       }
     }
     const review: SaleReviewFlag[] = merged.flatMap((m) => {
@@ -325,7 +387,9 @@ export class StandaloneService {
       `Offline sale ${sale.localNumber}${deviceName ? ` on ${deviceName}` : ''}`,
       sale.tableLabel ? `(${sale.tableLabel})` : '',
       sale.note ?? '',
-      below.length && discountReason ? `[Discount reason: ${discountReason}]` : '',
+      below.length && discountReason
+        ? `[Discount reason: ${discountReason}]`
+        : '',
       when.clamped
         ? `[Review: the phone's clock was ahead (it said ${sale.soldAt}); booked at the time the server received it]`
         : '',

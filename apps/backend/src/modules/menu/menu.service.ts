@@ -169,7 +169,12 @@ export class MenuService {
   async bulkPriceChange(
     branchId: string,
     userId: string,
-    input: { percent: number; categoryId?: string; roundToWhole: boolean; preview: boolean },
+    input: {
+      percent: number;
+      categoryId?: string;
+      roundToWhole: boolean;
+      preview: boolean;
+    },
   ) {
     const { percent, categoryId, roundToWhole, preview } = input;
     const items = await this.prisma.menuItem.findMany({
@@ -188,13 +193,18 @@ export class MenuService {
       halfBefore: i.halfPrice == null ? null : Number(i.halfPrice),
       halfAfter: i.halfPrice == null ? null : move(Number(i.halfPrice)),
     }));
-    const changed = changes.filter((c) => c.before !== c.after || c.halfBefore !== c.halfAfter);
+    const changed = changes.filter(
+      (c) => c.before !== c.after || c.halfBefore !== c.halfAfter,
+    );
     if (!preview && changed.length > 0) {
       await this.prisma.$transaction(
         changed.map((c) =>
           this.prisma.menuItem.update({
             where: { id: c.id },
-            data: { price: c.after, ...(c.halfAfter != null ? { halfPrice: c.halfAfter } : {}) },
+            data: {
+              price: c.after,
+              ...(c.halfAfter != null ? { halfPrice: c.halfAfter } : {}),
+            },
           }),
         ),
       );
@@ -203,14 +213,21 @@ export class MenuService {
         action: 'menu_item.bulk_price_changed',
         entity: 'MenuItem',
         entityId: branchId,
-        metadata: { percent, categoryId: categoryId ?? null, roundToWhole, count: changed.length },
+        metadata: {
+          percent,
+          categoryId: categoryId ?? null,
+          roundToWhole,
+          count: changed.length,
+        },
       });
     }
     return {
       applied: !preview,
       count: changed.length,
       total: items.length,
-      sample: changed.slice(0, 5).map((c) => ({ name: c.name, before: c.before, after: c.after })),
+      sample: changed
+        .slice(0, 5)
+        .map((c) => ({ name: c.name, before: c.before, after: c.after })),
     };
   }
 
