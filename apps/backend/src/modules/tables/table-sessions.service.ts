@@ -32,6 +32,7 @@ const DEFAULT_HOURS = 4;
 const MAX_FAILS = 8; // wrong codes from ONE source before that source is blocked
 const SESSION_MAX_FAILS = 60; // wrong codes from ALL sources together before the session itself locks (distributed guessing)
 const LOCK_MS = 10 * 60_000;
+const ACCESS_MINUTES = 30; // how long a verified tag tap stays good for placing the first order
 
 // Wrong-code blocks are kept per (session, source). A single phone or script that keeps guessing blocks only itself:
 // it can no longer lock every real guest out of a table with the static QR. In memory on purpose: a restart only
@@ -165,10 +166,154 @@ export class TableSessionsService {
   }
 
   private async active(tableId: string) {
-    return this.prisma.tableSession.findFirst({
-      where: { tableId, status: 'ACTIVE', expiresAt: { gt: new Date() } },
+    const candidates = await this.prisma.tableSession.findMany({
+      where: { tableId, status: 'ACTIVE' },
       orderBy: { openedAt: 'desc' },
+      take: 3,
     });
+    for (const s of candidates) if (await this.isLive(s)) return s;
+    return null;
+  }
+
+  /**
+   * A session is live while it is unexpired OR the table still has an unpaid order. A timer alone never ends a session
+   * that someone still owes money on: it ends when the last order is settled (see OrdersService) or staff close it.
+   */
+  async isLive(s: {
+    tableId: string;
+    status: string;
+    expiresAt: Date;
+  }): Promise<boolean> {
+    if (s.status !== 'ACTIVE') return false;
+    if (s.expiresAt > new Date()) return true;
+    return (
+      (await this.prisma.order.count({
+        where: { tableId: s.tableId, status: 'OPEN' },
+      })) > 0
+    );
+  }
+
+  /** Whether the table has a live session (staff-opened or automatic). */
+  async hasLive(tableId: string): Promise<boolean> {
+    return (await this.active(tableId)) !== null;
+  }
+
+  /**
+   * A phone proves it is at this table (a verified tag tap). Short-lived, random, stored only as a hash. It does NOT open
+   * the table: the first valid order does, and the phone then receives a session grant like any other guest.
+   */
+  async issueAccess(
+    tableId: string,
+    tagId: string | null,
+    minutes = ACCESS_MINUTES,
+  ) {
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + minutes * 60_000);
+    await this.prisma.tableAccess.create({
+      data: { tableId, tagId, tokenHash: sha(token), expiresAt },
+    });
+    return { token, expiresAt };
+  }
+
+  async assertAccess(tableId: string, token: string | undefined) {
+    const need = () =>
+      new SessionError(
+        'To order from your table, tap the table tag or enter the table code the staff gave you.',
+        'TABLE_SESSION_REQUIRED',
+      );
+    if (!token) throw need();
+    const row = await this.prisma.tableAccess.findUnique({
+      where: { tokenHash: sha(token) },
+    });
+    if (!row || row.tableId !== tableId) throw need();
+    if (row.expiresAt <= new Date()) {
+      throw new SessionError(
+        'That tap has expired. Please tap the table tag again.',
+        'TABLE_SESSION_EXPIRED',
+      );
+    }
+    await this.prisma.tableAccess.update({
+      where: { id: row.id },
+      data: { lastUsedAt: new Date() },
+    });
+    return row;
+  }
+
+  async hasVerifiedAccess(tableId: string): Promise<boolean> {
+    return (
+      (await this.prisma.tableAccess.count({
+        where: { tableId, expiresAt: { gt: new Date() } },
+      })) > 0
+    );
+  }
+
+  /**
+   * Opens the table's session when the first valid guest order is accepted, once, however many guests order at the
+   * same moment (a per-table advisory lock inside one transaction). Further guests join the session that exists.
+   */
+  async ensureSession(
+    branchId: string,
+    tableId: string,
+    via: 'NFC' | 'GUEST_ORDER' = 'GUEST_ORDER',
+    hours = DEFAULT_HOURS,
+  ) {
+    const { session, created } = await this.prisma.$transaction(async (tx) => {
+      // A transaction-scoped lock on this table (executeRaw: pg_advisory_xact_lock returns void).
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'table-session:' + tableId}))`;
+      const existing = await tx.tableSession.findMany({
+        where: { tableId, status: 'ACTIVE' },
+        orderBy: { openedAt: 'desc' },
+        take: 3,
+      });
+      for (const s of existing) {
+        if (
+          s.expiresAt > new Date() ||
+          (await tx.order.count({ where: { tableId, status: 'OPEN' } })) > 0
+        )
+          return { session: s, created: false };
+      }
+      await tx.tableSession.updateMany({
+        where: { tableId, status: 'ACTIVE' },
+        data: {
+          status: 'CLOSED',
+          closedAt: new Date(),
+          closedReason: 'Expired with nothing owed',
+        },
+      });
+      const made = await tx.tableSession.create({
+        data: {
+          branchId,
+          tableId,
+          // There is no code to enter: guests got in by tapping the tag, so this hash matches nothing anyone can type.
+          codeHash: sha(randomBytes(32).toString('hex')),
+          openedById: null,
+          openedVia: via,
+          expiresAt: new Date(
+            Date.now() + Math.min(12, Math.max(1, hours)) * 3_600_000,
+          ),
+        },
+      });
+      return { session: made, created: true };
+    });
+    if (created) {
+      await this.audit.record({
+        userId: null,
+        action: 'table_session.opened',
+        entity: 'Table',
+        entityId: tableId,
+        metadata: { sessionId: session.id, via },
+      });
+    }
+    return session;
+  }
+
+  /** A grant for a session the guest did not unlock with the staff code (they tapped in and their order opened or joined it). */
+  async grantFor(sessionId: string): Promise<string> {
+    const token = randomBytes(32).toString('base64url');
+    await this.prisma.tableSessionGrant.create({
+      data: { sessionId, tokenHash: sha(token) },
+    });
+    return token;
   }
 
   /** The guest enters the code shown by staff. Returns a bearer grant for this session. */
@@ -259,7 +404,7 @@ export class TableSessionsService {
         'To order from your table, enter the table code the staff gave you.',
         'TABLE_SESSION_REQUIRED',
       );
-    if (s.status !== 'ACTIVE' || s.expiresAt <= new Date())
+    if (!(await this.isLive(s)))
       throw new SessionError(
         'Your table session has ended. Please ask the staff for a new table code.',
         'TABLE_SESSION_EXPIRED',

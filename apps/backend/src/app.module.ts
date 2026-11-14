@@ -31,6 +31,7 @@ import { RestaurantsModule } from './modules/restaurants/restaurants.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { WaitlistModule } from './modules/waitlist/waitlist.module';
 import { PublicModule } from './modules/public/public.module';
+import { NfcModule } from './modules/nfc/nfc.module';
 import { DownloadsModule } from './modules/downloads/downloads.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { GiftCardsModule } from './modules/gift-cards/gift-cards.module';
@@ -85,6 +86,7 @@ import { VerifactuModule } from './modules/verifactu/verifactu.module';
     ReservationsModule,
     WaitlistModule,
     PublicModule,
+    NfcModule,
     DownloadsModule,
     CustomersModule,
     GiftCardsModule,

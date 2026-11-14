@@ -29,6 +29,7 @@ import { Auth } from '../../common/decorators/auth.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
+import { TableLifecycleService } from './table-lifecycle.service';
 import { TableSessionsService } from './table-sessions.service';
 import { TablesService } from './tables.service';
 
@@ -37,6 +38,7 @@ import { TablesService } from './tables.service';
 export class TablesController {
   constructor(
     private readonly sessions: TableSessionsService,
+    private readonly lifecycle: TableLifecycleService,
     private readonly tablesService: TablesService,
     private readonly branchAccess: BranchAccessService,
   ) {}
@@ -185,6 +187,17 @@ export class TablesController {
   }
 
   // ---- live table sessions (guest ordering codes) ---------------------------------------------
+
+  // The live table board: each table's state, derived by the server from orders, kitchen tickets, payments and calls.
+  @Auth('tables.view')
+  @Get('overview')
+  async overview(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.lifecycle.overview(branchId);
+  }
 
   @Auth('table.session')
   @Get('sessions')

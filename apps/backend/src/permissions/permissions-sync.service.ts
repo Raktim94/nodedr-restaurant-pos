@@ -26,6 +26,7 @@ const GRANT_WHEN_CREATED: Record<string, string[]> = {
   ],
   'production.report': ['RESTAURANT_MANAGER', 'INVENTORY_MANAGER'],
   'production.quality': ['CHEF', 'RESTAURANT_MANAGER', 'INVENTORY_MANAGER'],
+  'nfc.manage': ['RESTAURANT_MANAGER'],
   'menu.price': ['RESTAURANT_MANAGER'],
   'table.session': ['RESTAURANT_MANAGER', 'CASHIER', 'WAITER'],
   'ratings.view': ['RESTAURANT_MANAGER'],
