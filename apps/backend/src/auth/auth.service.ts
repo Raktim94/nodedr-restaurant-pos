@@ -302,7 +302,7 @@ export class AuthService {
     const user = await this.prisma.user.findFirst({ where: { email, isActive: true }, include: permissionInclude });
     if (!user) throw new NotFoundException('The demo is being reset. Please try again in a minute.');
     const sessionUser = this.toSessionUser(user);
-    const token = await this.jwt.signAsync({ sub: user.id, demo: true }, { expiresIn: '3h' });
+    const token = await this.jwt.signAsync({ sub: user.id, demo: true, ms: Date.now() }, { expiresIn: '3h' });
     return { token, user: sessionUser };
   }
 
@@ -312,7 +312,7 @@ export class AuthService {
   ) {
     const sessionUser = this.toSessionUser(user);
     // `did` binds the session to one phone: JwtStrategy refuses it once that phone is removed.
-    const token = await this.jwt.signAsync(deviceId ? { sub: user.id, did: deviceId } : { sub: user.id });
+    const token = await this.jwt.signAsync(deviceId ? { sub: user.id, did: deviceId, ms: Date.now() } : { sub: user.id, ms: Date.now() });
     return { token, user: sessionUser };
   }
 }

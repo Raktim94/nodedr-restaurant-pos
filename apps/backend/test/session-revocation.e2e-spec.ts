@@ -58,8 +58,7 @@ run('Session revocation on password change (e2e)', () => {
     const other = await login(bystander.email, 'Password123!');
     await stolen.get('/api/v1/auth/me').expect(200);
 
-    // Cookies are second-resolution: make sure the reset lands in a later second than the login.
-    await new Promise((r) => setTimeout(r, 1100));
+    await new Promise((r) => setTimeout(r, 20)); // a different millisecond from the login, nothing more
     await owner.patch(`/api/v1/users/${victim.id}`).send({ password: 'NewPassw0rd!x' }).expect(200);
 
     await stolen.get('/api/v1/auth/me').expect(401);

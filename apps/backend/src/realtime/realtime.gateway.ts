@@ -59,12 +59,12 @@ export class RealtimeGateway
       const token = this.extractSessionCookie(client);
       if (!token) throw new Error('No session cookie');
 
-      const payload = this.jwt.verify<{ sub: string; iat?: number }>(token);
+      const payload = this.jwt.verify<{ sub: string; ms?: number }>(token);
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
       });
       if (!user || !user.isActive) throw new Error('Session no longer valid');
-      if (isRevoked(payload.iat, user.sessionsValidFrom))
+      if (isRevoked(payload.ms, user.sessionsValidFrom))
         throw new Error('Session was revoked');
 
       const branchId = client.handshake.query.branchId;

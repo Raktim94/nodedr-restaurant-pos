@@ -13,15 +13,19 @@ interface JwtPayload {
   sub: string;
   /** Set when the session was created by a phone: that phone's id. */
   did?: string;
-  /** Seconds since epoch, set by the JWT library when the session was issued. */
-  iat?: number;
+  /** Milliseconds since epoch when the session was issued (the library's own `iat` only has 1s resolution). */
+  ms?: number;
 }
 
-/** A session is dead if it was issued at or before the moment the account's sessions were revoked. */
-export function isRevoked(iat: number | undefined, validFrom: Date | null | undefined): boolean {
+/**
+ * A session is dead if it was issued before the moment the account's sessions were revoked. Millisecond
+ * resolution matters: with whole seconds, signing in right after a password change could land in the same
+ * second as the change and be revoked by mistake.
+ */
+export function isRevoked(issuedAtMs: number | undefined, validFrom: Date | null | undefined): boolean {
   if (!validFrom) return false;
-  if (typeof iat !== 'number') return true; // cannot prove it is newer
-  return iat <= Math.floor(validFrom.getTime() / 1000);
+  if (typeof issuedAtMs !== 'number') return true; // issued before this check existed, so before the revocation
+  return issuedAtMs < validFrom.getTime();
 }
 
 const cookieExtractor = (req: {
@@ -53,7 +57,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Session no longer valid');
     }
 
-    if (isRevoked(payload.iat, user.sessionsValidFrom)) {
+    if (isRevoked(payload.ms, user.sessionsValidFrom)) {
       throw new UnauthorizedException('Session no longer valid');
     }
 
