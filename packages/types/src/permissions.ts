@@ -46,6 +46,7 @@ export const PERMISSIONS = [
   { key: "production.report", label: "View Manufacturing Reports", category: "Inventory" },
   { key: "production.quality", label: "Record Batch Quality Inspection Results", category: "Inventory" },
   { key: "menu.price", label: "Change Menu Selling Prices from the Stock Journal", category: "Menu" },
+  { key: "nfc.manage", label: "Manage NFC Table Tags & Table Ordering Mode", category: "Tables" },
   { key: "table.session", label: "Open & Close Table Sessions (guest ordering codes)", category: "Tables" },
   { key: "ratings.view", label: "View Customer Ratings", category: "CRM" },
 ] as const;
@@ -103,7 +104,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
     "inventory.manage", "reports.access", "kds.manage",
     "reservations.manage", "customers.manage", "refunds.process",
     "attendance.manage", "delivery.manage", "staff.manage", "accounting.manage", "marketing.manage", "operations.manage",
-    "menu.price", "table.session", "ratings.view",
+    "menu.price", "table.session", "ratings.view", "nfc.manage",
   ],
   CASHIER: [
     "table.session", "orders.create", "orders.edit", "orders.accept", "bills.print", "discounts.apply",

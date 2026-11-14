@@ -42,6 +42,7 @@ export class PublicMenuController {
     @Param('qrToken') qrToken: string,
     @Body() body: unknown,
     @Headers('x-table-session') sessionToken?: string,
+    @Headers('x-table-access') accessToken?: string,
   ) {
     const { items, guestName, payment, idempotencyKey } = body as {
       items: never;
@@ -53,6 +54,7 @@ export class PublicMenuController {
       payment,
       idempotencyKey,
       sessionToken,
+      accessToken,
     });
   }
 
@@ -118,11 +120,13 @@ export class PublicMenuController {
     @Param('qrToken') qrToken: string,
     @Body() body: unknown,
     @Headers('x-table-session') sessionToken?: string,
+    @Headers('x-table-access') accessToken?: string,
   ) {
     return this.publicMenuService.createRequest(
       qrToken,
       (body as { type: 'WAITER' | 'BILL' }).type,
       sessionToken,
+      accessToken,
     );
   }
 }

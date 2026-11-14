@@ -326,6 +326,12 @@ run('Live table sessions (e2e)', () => {
       .expect(200);
     expect((await order('B', tb)).body.code).toBe('TABLE_SESSION_EXPIRED');
 
+    // Expiry ends a session only when nothing is owed: a table with an unpaid order keeps its session past the clock
+    // (see the NFC suite). Clear the table's open orders first so this case tests the timer alone.
+    await prisma.order.updateMany({
+      where: { tableId: T.A.id, status: 'OPEN' },
+      data: { status: 'CANCELLED' },
+    });
     const c = await open('A');
     const tc = (await join('A', c.code).expect(201)).body.token;
     await prisma.tableSession.update({

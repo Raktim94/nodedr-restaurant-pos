@@ -39,7 +39,11 @@ function build(opts: { zones?: boolean } = {}) {
   const customers: any[] = [];
 
   const tx = {
+    // The real service takes a per-branch advisory lock when numbering an order; the fake has nothing to lock.
+    $executeRaw: jest.fn(async () => 0),
     order: {
+      // Numbering looks up the latest order number inside the transaction: none yet in this fake.
+      findFirst: jest.fn(async () => null),
       create: jest.fn(async ({ data }: any) => {
         const row = {
           id: `o${orders.length + 1}`,

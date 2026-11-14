@@ -364,9 +364,10 @@ export class OrdersService {
       }
     }
 
-    const orderNumber = await this.nextOrderNumber(branchId);
-
     const order = await this.prisma.$transaction(async (tx) => {
+      // The number is chosen inside the transaction under a per-branch, per-day lock. Choosing it before (read the latest,
+      // add one) let simultaneous orders pick the same number, and all but one were refused with a conflict.
+      const orderNumber = await this.nextOrderNumber(branchId, tx);
       const created = await tx.order.create({
         data: {
           branchId,
@@ -2271,9 +2272,14 @@ export class OrdersService {
   // count collides with an existing number as soon as any earlier order of the
   // day has been deleted (orders.delete), and that surfaced as a 409 on the
   // unique (branchId, orderNumber) index.
-  private async nextOrderNumber(branchId: string): Promise<string> {
+  private async nextOrderNumber(
+    branchId: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<string> {
     const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const latest = await this.prisma.order.findFirst({
+    // Held until the transaction ends, so the next order sees this one's number. (executeRaw: the function returns void.)
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'order-number:' + branchId + ':' + datePart}))`;
+    const latest = await tx.order.findFirst({
       where: { branchId, orderNumber: { startsWith: `${datePart}-` } },
       orderBy: { orderNumber: 'desc' },
       select: { orderNumber: true },

@@ -13,7 +13,10 @@ import { GatewayPaymentsService } from '../../payment-gateways/gateway-payments.
 import { PaymentGatewaysService } from '../../payment-gateways/payment-gateways.service';
 import { OrdersService } from '../orders/orders.service';
 import { RatingsService } from '../ratings/ratings.service';
-import { TableSessionsService } from '../tables/table-sessions.service';
+import {
+  SessionError,
+  TableSessionsService,
+} from '../tables/table-sessions.service';
 
 @Injectable()
 export class PublicMenuService {
@@ -112,13 +115,13 @@ export class PublicMenuService {
       payment?: 'CASH' | 'ONLINE';
       idempotencyKey?: string;
       sessionToken?: string;
+      accessToken?: string;
     } = {},
   ) {
     const table = await this.resolveTable(qrToken);
     const branchId = table.floor.branchId;
-    // Dine-in ordering needs a live session grant; a photographed or shared static QR is not enough.
-    if (table.floor.branch.restaurant.requireTableSession)
-      await this.sessions.assertGrant(table.id, opts.sessionToken);
+    // Dine-in ordering needs a live session grant or a verified tag tap; a photographed or shared static QR is not enough.
+    const via = await this.authoriseTable(table, opts);
 
     // The same basket sent again (double tap, flaky connection) returns the same order.
     if (opts.idempotencyKey) {
@@ -162,8 +165,23 @@ export class PublicMenuService {
           throw e;
       }
     }
+    // A guest who got in by tapping the tag has no session yet or is joining one: the first accepted order opens the
+    // table (once), and the phone gets a session grant so it can pay and order again without tapping.
+    let sessionGrant: string | undefined;
+    if (via === 'ACCESS') {
+      const session = await this.sessions.ensureSession(
+        branchId,
+        table.id,
+        'NFC',
+      );
+      sessionGrant = await this.sessions.grantFor(session.id);
+    }
     // The way to rate THIS order later, made by the server and handed only to the phone that placed it.
-    return { ...result, ratingToken: this.ratings.issue(result.id) };
+    return {
+      ...result,
+      ratingToken: this.ratings.issue(result.id),
+      ...(sessionGrant ? { sessionGrant } : {}),
+    };
   }
 
   private async createOrAdd(
@@ -212,6 +230,45 @@ export class PublicMenuService {
         heldForPayment: payment === 'ONLINE',
       },
     );
+  }
+
+  /**
+   * Who may act at this table. 'NONE': the restaurant does not require sessions. 'GRANT': the phone holds a session grant.
+   * 'ACCESS': the phone proved it is at the table with a verified tag tap (the first order then opens or joins the
+   * session). A failed or missing proof never falls back to ordinary access: it is an error the guest page explains.
+   */
+  private async authoriseTable(
+    table: Awaited<ReturnType<PublicMenuService['resolveTable']>>,
+    o: { sessionToken?: string; accessToken?: string },
+  ): Promise<'NONE' | 'GRANT' | 'ACCESS'> {
+    const r = table.floor.branch.restaurant;
+    if (!r.requireTableSession) return 'NONE';
+    if (o.sessionToken) {
+      try {
+        await this.sessions.assertGrant(table.id, o.sessionToken);
+        return 'GRANT';
+      } catch (e) {
+        if (!o.accessToken) throw e;
+      }
+    }
+    if (o.accessToken) {
+      if (!r.nfcTablesEnabled) {
+        throw new SessionError(
+          'Table tags are not switched on here. Please enter the table code the staff gave you.',
+          'TABLE_SESSION_REQUIRED',
+        );
+      }
+      await this.sessions.assertAccess(table.id, o.accessToken);
+      if (!r.autoTableSessions && !(await this.sessions.hasLive(table.id))) {
+        throw new SessionError(
+          'This table has not been opened yet. Please ask the staff.',
+          'TABLE_SESSION_REQUIRED',
+        );
+      }
+      return 'ACCESS';
+    }
+    await this.sessions.assertGrant(table.id, o.sessionToken);
+    return 'GRANT';
   }
 
   private async tableOrder(
@@ -385,10 +442,10 @@ export class PublicMenuService {
     qrToken: string,
     type: 'WAITER' | 'BILL',
     sessionToken?: string,
+    accessToken?: string,
   ) {
     const table = await this.resolveTable(qrToken);
-    if (table.floor.branch.restaurant.requireTableSession)
-      await this.sessions.assertGrant(table.id, sessionToken);
+    await this.authoriseTable(table, { sessionToken, accessToken });
     const branchId = table.floor.branchId;
     const existing = await this.prisma.tableRequest.findFirst({
       where: { tableId: table.id, type, resolvedAt: null },
