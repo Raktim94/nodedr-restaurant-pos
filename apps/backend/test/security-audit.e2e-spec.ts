@@ -119,6 +119,17 @@ run('Security audit regressions (e2e)', () => {
       expect((await staffAdmin.patch(`/api/v1/users/${created.body.id}`).send({ name: 'sub renamed' })).status).toBe(200);
     });
 
+    it('counts permissions granted to a person directly, not only their role', async () => {
+      // A waiter an owner has individually given backup.manage: a staff manager without it must not be able to take them over.
+      const target = await mkUser('granted', roles.WAITER);
+      await owner.put(`/api/v1/users/${target.id}/permission-overrides`).send({ overrides: [{ permissionKey: 'backup.manage', effect: 'GRANT' }] }).expect(200);
+      const before = (await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).passwordHash;
+      expect((await staffAdmin.patch(`/api/v1/users/${target.id}`).send({ password: 'Hijacked123!x' })).status).toBe(403);
+      expect((await staffAdmin.post(`/api/v1/auth/2fa/reset/${target.id}`)).status).toBe(403);
+      expect((await staffAdmin.delete(`/api/v1/users/${target.id}`)).status).toBe(403);
+      expect((await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).passwordHash).toBe(before);
+    });
+
     it('an ADMINISTRATOR holds every permission but still cannot touch or create an OWNER', async () => {
       const admin = await mkUser('admin1', roles.ADMINISTRATOR);
       const a = await login(admin.email);
@@ -230,6 +241,11 @@ run('Security audit regressions (e2e)', () => {
         expect(over.code).toBe('DISCOUNT_NOT_ALLOWED');
         expect(await sold(7)).toBe(0);
         expect((await post(cashier, 8, {}, Math.round(dish.price * 0.95)).expect(201)).body.results[0].status).toBe('created');
+        // The cap covers the price cut and a typed discount together: 5% under menu plus a typed 8% is 13%, over a 10% cap.
+        const both = (await post(cashier, 9, { discountPercent: 8 }, Math.round(dish.price * 0.95)).expect(201)).body.results[0];
+        expect(both.status).toBe('refused');
+        expect(both.code).toBe('DISCOUNT_NOT_ALLOWED');
+        expect(await sold(9)).toBe(0);
       } finally {
         await prisma.restaurant.update({ where: { id: rest.restaurantId }, data: { maxManualDiscountPercent: 100 } });
       }
