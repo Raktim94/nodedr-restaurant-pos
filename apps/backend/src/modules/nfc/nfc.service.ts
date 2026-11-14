@@ -122,9 +122,13 @@ export class NfcService {
         'Automatic table sessions need NFC table tags switched on first: guests have no table code to enter.',
       );
     }
+    // Tags are a way to PROVE you are at the table, so proof must be required: with it off, anyone with the static QR could order.
     await this.prisma.restaurant.update({
       where: { id: restaurantId },
-      data: next,
+      data: {
+        ...next,
+        ...(next.nfcTablesEnabled ? { requireTableSession: true } : {}),
+      },
     });
     await this.audit.record({
       userId,
@@ -224,6 +228,15 @@ export class NfcService {
     });
     if (!table) throw new NotFoundException('Table not found');
     const mode = dto.mode ?? 'SECURE';
+    // A tag leads guests to the table's ordering page, so the table must have its ordering link. Tables created before
+    // QR codes were used (or never given one) get it here, the same opaque token the printed QR carries.
+    if (!table.qrToken) {
+      table.qrToken = randomBytes(16).toString('hex');
+      await this.prisma.table.update({
+        where: { id: table.id },
+        data: { qrToken: table.qrToken },
+      });
+    }
     const publicRef = ref();
     if (mode === 'BASIC') {
       // An ordinary NFC card holding the table's printed-QR link: it only needs recording. Same trust as the printed QR.
