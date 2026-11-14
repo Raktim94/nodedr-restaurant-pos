@@ -105,16 +105,29 @@ export default function PublicMenuPage({
   // The table code the staff gave the guest is traded for a grant kept only in this tab. Old or copied QR photos have none.
   const sKey = `table-session:${qrToken}`;
   const [grant, setGrant] = useState<string | null>(null);
+  // A verified tag tap (see /t/[ref]) is a short-lived proof of being at THIS table. The first order opens the table and the
+  // server then hands back a normal session grant, which replaces it.
+  const aKey = `table-access:${qrToken}`;
+  const [access, setAccess] = useState<string | null>(null);
+  const grantRef = useRef<string | null>(null); // the newest grant, readable in the same tick it arrives (payment starts right after the order)
   const [codeDraft, setCodeDraft] = useState("");
   const [codeError, setCodeError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [sessionMsg, setSessionMsg] = useState<string | null>(null);
-  const hdr = (): RequestInit => (grant ? { headers: { "X-Table-Session": grant } } : {});
+  const hdr = (): RequestInit => {
+    const g = grantRef.current ?? grant;
+    const headers: Record<string, string> = {};
+    if (g) headers["X-Table-Session"] = g;
+    if (access) headers["X-Table-Access"] = access;
+    return Object.keys(headers).length ? { headers } : {};
+  };
   const lostSession = (e: unknown) => {
     const code = e instanceof ApiError ? e.code : undefined;
     if (code === "TABLE_SESSION_REQUIRED" || code === "TABLE_SESSION_EXPIRED") {
-      try { sessionStorage.removeItem(sKey); } catch { /* storage blocked */ }
+      try { sessionStorage.removeItem(sKey); sessionStorage.removeItem(aKey); } catch { /* storage blocked */ }
+      grantRef.current = null;
       setGrant(null);
+      setAccess(null);
       setSessionMsg(e instanceof ApiError ? e.message : "Your table session has ended. Please ask the staff for a new table code.");
       return true;
     }
@@ -126,6 +139,7 @@ export default function PublicMenuPage({
     try {
       const r = await api.post<{ token: string }>(`/public/menu/${qrToken}/session`, { code: codeDraft });
       try { sessionStorage.setItem(sKey, r.token); } catch { /* storage blocked: the grant lives in memory only */ }
+      grantRef.current = r.token;
       setGrant(r.token);
       setSessionMsg(null);
       setCodeDraft("");
@@ -148,7 +162,9 @@ export default function PublicMenuPage({
     try {
       const g = sessionStorage.getItem(sKey);
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (g) setGrant(g);
+      if (g) { grantRef.current = g; setGrant(g); }
+      const a = sessionStorage.getItem(aKey);
+      if (a) setAccess(a);
     } catch { /* storage blocked */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -210,11 +226,18 @@ export default function PublicMenuPage({
       const items = cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds }));
       const sig = JSON.stringify([items, payChoice, guestName]);
       if (!attempt.current || attempt.current.sig !== sig) attempt.current = { sig, key: crypto.randomUUID() };
-      return api.post<{ id: string; orderNumber: string; ratingToken?: string }>(`/public/menu/${qrToken}/order`, { guestName, items, payment: payChoice, idempotencyKey: attempt.current.key }, hdr());
+      return api.post<{ id: string; orderNumber: string; ratingToken?: string; sessionGrant?: string }>(`/public/menu/${qrToken}/order`, { guestName, items, payment: payChoice, idempotencyKey: attempt.current.key }, hdr());
     },
     onError: (e) => { lostSession(e); },
     onSuccess: async (order) => {
       attempt.current = null;
+      if (order.sessionGrant) {
+        // The order opened (or joined) the table: from now on this phone holds an ordinary session grant.
+        try { sessionStorage.setItem(sKey, order.sessionGrant); sessionStorage.removeItem(aKey); } catch { /* storage blocked */ }
+        grantRef.current = order.sessionGrant;
+        setGrant(order.sessionGrant);
+        setAccess(null);
+      }
       try { if ((order as { ratingToken?: string }).ratingToken) localStorage.setItem(`rating-token:${order.id}`, (order as { ratingToken?: string }).ratingToken!); } catch { /* storage blocked */ }
       setPlaced(order);
       setCart([]);
@@ -431,7 +454,11 @@ export default function PublicMenuPage({
         )}
       </main>
 
-      {data?.session?.required && !grant && (
+      {data?.session?.required && !grant && access && (
+        <p className="mx-auto max-w-lg px-5 pt-4 text-sm text-muted-foreground" data-testid="tap-verified">Your table is verified. Your first order opens the table.</p>
+      )}
+
+      {data?.session?.required && !grant && !access && (
         <section aria-label="Table code" className="mx-auto max-w-lg px-5 pt-4">
           <div className="rounded-2xl border border-primary/40 bg-primary/5 p-4">
             <h2 className="text-base font-semibold text-foreground">Enter your table code to order</h2>
@@ -555,7 +582,7 @@ export default function PublicMenuPage({
           <div className="mx-auto flex max-w-lg items-center gap-3">
             <Button
               className="h-12 flex-1"
-              disabled={placeOrder.isPending || (!!data?.session?.required && !grant)}
+              disabled={placeOrder.isPending || (!!data?.session?.required && !grant && !access)}
               onClick={() => placeOrder.mutate()}
             >
               {placeOrder.isPending
