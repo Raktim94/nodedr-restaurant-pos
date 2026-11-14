@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, Param, Post, UsePipes } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Req, UsePipes } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import {
   publicOrderSchema,
@@ -49,8 +50,8 @@ export class PublicMenuController {
   // Wrong codes are also counted per session on the server (locks after 8); this is the outer rate limit.
   @Throttle({ default: { limit: 12, ttl: 60_000 } })
   @Post('menu/:qrToken/session')
-  joinSession(@Param('qrToken') qrToken: string, @Body() body: { code?: string }) {
-    return this.publicMenuService.joinSession(qrToken, typeof body?.code === 'string' ? body.code.slice(0, 20) : '');
+  joinSession(@Param('qrToken') qrToken: string, @Body() body: { code?: string }, @Req() req: Request) {
+    return this.publicMenuService.joinSession(qrToken, typeof body?.code === 'string' ? body.code.slice(0, 20) : '', req.ip);
   }
 
   @Get('menu/:qrToken/session')

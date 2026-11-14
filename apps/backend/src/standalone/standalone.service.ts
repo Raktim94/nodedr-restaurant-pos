@@ -270,6 +270,30 @@ export class StandaloneService {
         `Not on the server's menu any more: ${names}.`,
       );
     }
+    // The phone's prices and discounts are a claim, not authority. Selling below the menu price, or typing a
+    // discount, is a discount like any other: the normal checkout needs discounts.apply for it and applies the
+    // restaurant's cap, so the offline route does the same. (A waiter's phone with a price that went stale after
+    // a menu increase is refused with the current price; a manager can enter that sale.)
+    const mayDiscount = user.permissions.includes('discounts.apply') || mayExceedDiscountCap(user);
+    if ((sale.discountPercent || sale.discountFlat) && !mayDiscount) {
+      throw new SaleRefused('DISCOUNT_NOT_ALLOWED', 'This account may not give discounts. Ask a manager to enter this sale.');
+    }
+    const below = merged.filter((m) => m.unitPrice < Number(byId.get(m.menuItemId)!.price) - 0.005);
+    if (below.length) {
+      if (!mayDiscount) {
+        const names = below.map((m) => `${byId.get(m.menuItemId)!.name} (menu price ${Number(byId.get(m.menuItemId)!.price)}, sold at ${m.unitPrice})`).join(', ');
+        throw new SaleRefused('DISCOUNT_NOT_ALLOWED', `Sold below the menu price and this account may not give discounts: ${names}. Ask a manager to enter this sale.`);
+      }
+      if (!mayExceedDiscountCap(user)) {
+        const cap = Number((await this.prisma.branch.findUniqueOrThrow({ where: { id: branchId }, select: { restaurant: { select: { maxManualDiscountPercent: true } } } })).restaurant.maxManualDiscountPercent);
+        const menuTotal = merged.reduce((a, m) => a + Number(byId.get(m.menuItemId)!.price) * m.quantity, 0);
+        const soldTotal = merged.reduce((a, m) => a + m.unitPrice * m.quantity, 0);
+        const impliedPercent = menuTotal > 0 ? ((menuTotal - soldTotal) / menuTotal) * 100 : 0;
+        if (impliedPercent > cap + 0.005) {
+          throw new SaleRefused('DISCOUNT_NOT_ALLOWED', `Sold ${impliedPercent.toFixed(1)}% below the menu price; this restaurant allows ${cap}% for this account. Ask a manager to enter this sale.`);
+        }
+      }
+    }
     const review: SaleReviewFlag[] = merged.flatMap((m) => {
       const c = byId.get(m.menuItemId)!;
       return Math.abs(Number(c.price) - m.unitPrice) > 0.005

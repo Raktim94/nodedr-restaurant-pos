@@ -16,8 +16,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I/L
 const CODE_LENGTH = 6;
 const DEFAULT_HOURS = 4;
-const MAX_FAILS = 8;
+const MAX_FAILS = 8; // wrong codes from ONE source before that source is blocked
+const SESSION_MAX_FAILS = 60; // wrong codes from ALL sources together before the session itself locks (distributed guessing)
 const LOCK_MS = 10 * 60_000;
+
+// Wrong-code blocks are kept per (session, source). A single phone or script that keeps guessing blocks only itself:
+// it can no longer lock every real guest out of a table with the static QR. In memory on purpose: a restart only
+// forgives a blocked source, while the session-wide limit below is stored in the database.
+const sourceFails = new Map<string, { fails: number; until: number }>();
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -74,22 +80,28 @@ export class TableSessionsService {
   }
 
   /** The guest enters the code shown by staff. Returns a bearer grant for this session. */
-  async join(tableId: string, rawCode: string) {
+  async join(tableId: string, rawCode: string, source = 'unknown') {
     const s = await this.active(tableId);
     if (!s) throw new SessionError('This table is not open for ordering yet. Please ask the staff to open it and give you the table code.', 'TABLE_SESSION_EXPIRED');
     if (s.lockedUntil && s.lockedUntil > new Date()) throw new SessionError('Too many wrong codes. Please ask the staff for help.', 'TABLE_SESSION_LOCKED', HttpStatus.TOO_MANY_REQUESTS);
+    const key = `${s.id}|${source}`;
+    const mine = sourceFails.get(key);
+    if (mine && mine.until > Date.now()) throw new SessionError('Too many wrong codes. Please ask the staff for help.', 'TABLE_SESSION_LOCKED', HttpStatus.TOO_MANY_REQUESTS);
     const code = normalise(rawCode ?? '');
     if (code.length !== CODE_LENGTH || !same(sha(code), s.codeHash)) {
-      const fails = s.failedTries + 1;
-      const lock = fails >= MAX_FAILS;
-      await this.prisma.tableSession.update({ where: { id: s.id }, data: { failedTries: lock ? 0 : fails, ...(lock ? { lockedUntil: new Date(Date.now() + LOCK_MS) } : {}) } });
-      // Logged without the code that was tried.
-      if (lock) {
-        this.logger.warn(`Table session ${s.id}: ${MAX_FAILS} wrong codes, locked for 10 minutes`);
+      if (sourceFails.size > 5000) sourceFails.clear();
+      const fails = (mine && mine.until === 0 ? mine.fails : 0) + 1;
+      sourceFails.set(key, fails >= MAX_FAILS ? { fails: 0, until: Date.now() + LOCK_MS } : { fails, until: 0 });
+      // Atomic, so concurrent guesses are all counted. Logged without the code that was tried.
+      const row = await this.prisma.tableSession.update({ where: { id: s.id }, data: { failedTries: { increment: 1 } }, select: { failedTries: true } });
+      if (row.failedTries >= SESSION_MAX_FAILS) {
+        await this.prisma.tableSession.update({ where: { id: s.id }, data: { failedTries: 0, lockedUntil: new Date(Date.now() + LOCK_MS) } });
+        this.logger.warn(`Table session ${s.id}: ${SESSION_MAX_FAILS} wrong codes from many sources, locked for 10 minutes`);
         await this.audit.record({ userId: null, action: 'table_session.locked', entity: 'Table', entityId: tableId, metadata: { sessionId: s.id } });
       }
       throw new SessionError('That code is not right. Please check it with the staff.', 'TABLE_SESSION_BAD_CODE');
     }
+    sourceFails.delete(key);
     const token = randomBytes(32).toString('base64url');
     await this.prisma.tableSessionGrant.create({ data: { sessionId: s.id, tokenHash: sha(token) } });
     await this.prisma.tableSession.update({ where: { id: s.id }, data: { failedTries: 0 } });
