@@ -24,6 +24,7 @@ run('Aggregator webhook (e2e)', () => {
   let owner: ReturnType<typeof request.agent>;
   let restaurantId: string;
   let item: { id: string; name: string };
+  let categoryId: string;
   let url: string;
 
   const post = (
@@ -86,8 +87,21 @@ run('Aggregator webhook (e2e)', () => {
     await prisma.integrationConnection.deleteMany({
       where: { restaurantId, provider: 'zomato' },
     });
-    item = await prisma.menuItem.findFirstOrThrow({
-      where: { branchId: 'demo-branch', category: { showOnWebsite: true } },
+    // A dedicated dish. This used to be `findFirst` on the shared demo branch with no ordering, which
+    // returned whatever row Postgres listed first: often a leftover from another suite (stock-tracked at
+    // zero stock, for instance), so orders were refused intermittently depending on heap/vacuum timing.
+    const cat = await prisma.menuCategory.create({
+      data: { branchId: 'demo-branch', name: `Zomato cat ${tag}`, showOnWebsite: true },
+    });
+    categoryId = cat.id;
+    item = await prisma.menuItem.create({
+      data: {
+        branchId: 'demo-branch',
+        categoryId: cat.id,
+        name: `Zomato dish ${tag}`,
+        price: 120,
+        taxRatePercent: 0,
+      },
       select: { id: true, name: true },
     });
     url = `${H}/webhook/${restaurantId}/zomato`;
@@ -100,6 +114,8 @@ run('Aggregator webhook (e2e)', () => {
     await prisma.integrationConnection.deleteMany({
       where: { restaurantId, provider: 'zomato' },
     });
+    await prisma.menuItem.deleteMany({ where: { id: item.id } });
+    await prisma.menuCategory.deleteMany({ where: { id: categoryId } });
     await app.close();
   });
 
