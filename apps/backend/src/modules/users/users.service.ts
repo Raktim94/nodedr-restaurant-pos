@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import type {
+  SessionUser,
   CreateStaffDto,
   DepartmentDto,
   SetPermissionOverridesDto,
@@ -13,6 +15,7 @@ import type {
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuditService } from '../../audit/audit.service';
+import { assertMayManageRole } from '../../common/privilege-ceiling';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const SELECT = {
@@ -59,8 +62,9 @@ export class UsersService {
     });
   }
 
-  async create(restaurantId: string, actorId: string, dto: CreateStaffDto) {
+  async create(restaurantId: string, actorId: string, dto: CreateStaffDto, actor: SessionUser) {
     await this.assertRoleInRestaurant(restaurantId, dto.roleId);
+    assertMayManageRole(actor, await this.roleWithKeys(restaurantId, dto.roleId));
     await this.assertBranchesInRestaurant(restaurantId, dto.branchIds);
     await this.assertDepartmentInRestaurant(restaurantId, dto.departmentId);
 
@@ -108,6 +112,7 @@ export class UsersService {
     actorId: string,
     id: string,
     dto: UpdateStaffDto,
+    actor: SessionUser,
   ) {
     const existing = await this.prisma.user.findFirst({
       where: { id, restaurantId },
@@ -115,6 +120,12 @@ export class UsersService {
     });
     if (!existing) {
       throw new NotFoundException('Staff account not found');
+    }
+    // Only someone with at least the target's access may change their password, email, role or status.
+    assertMayManageRole(actor, await this.roleWithKeys(restaurantId, existing.roleId));
+    if (dto.roleId && dto.roleId !== existing.roleId) {
+      if (id === actor.id) throw new ForbiddenException('You cannot change your own role.');
+      assertMayManageRole(actor, await this.roleWithKeys(restaurantId, dto.roleId));
     }
 
     if (
@@ -195,7 +206,7 @@ export class UsersService {
     return updated;
   }
 
-  async remove(restaurantId: string, actorId: string, id: string) {
+  async remove(restaurantId: string, actorId: string, id: string, actor: SessionUser) {
     if (id === actorId) {
       throw new BadRequestException('You cannot delete your own account');
     }
@@ -207,6 +218,7 @@ export class UsersService {
     if (!existing) {
       throw new NotFoundException('Staff account not found');
     }
+    assertMayManageRole(actor, await this.roleWithKeys(restaurantId, existing.roleId));
 
     if (existing.role.name === 'OWNER') {
       const otherActiveOwners = await this.prisma.user.count({
@@ -446,6 +458,13 @@ export class UsersService {
     });
     if (!dept)
       throw new BadRequestException('Department not found for this restaurant');
+  }
+
+  private async roleWithKeys(restaurantId: string, roleId: string) {
+    return this.prisma.role.findFirstOrThrow({
+      where: { id: roleId, restaurantId },
+      select: { name: true, permissions: { select: { permission: { select: { key: true } } } } },
+    });
   }
 
   private async assertRoleInRestaurant(restaurantId: string, roleId: string) {

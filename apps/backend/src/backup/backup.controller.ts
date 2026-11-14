@@ -17,7 +17,7 @@ import {
   setBackupConfigSchema,
   type SessionUser,
 } from '@nodedr-restaurant/types';
-import { Auth } from '../common/decorators/auth.decorator';
+import { InstanceAuth } from '../common/decorators/instance-auth.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { BackupService } from './backup.service';
@@ -35,38 +35,38 @@ import { BackupService } from './backup.service';
 export class BackupController {
   constructor(private readonly backupService: BackupService) {}
 
-  @Auth('backup.manage')
+  @InstanceAuth('backup.manage')
   @Get('status')
   status() {
     return this.backupService.status();
   }
 
-  @Auth('backup.manage')
+  @InstanceAuth('backup.manage')
   @Get()
   list() {
     return this.backupService.list();
   }
 
-  @Auth('backup.manage')
+  @InstanceAuth('backup.manage')
   @Post('config')
   @UsePipes(new ZodValidationPipe(setBackupConfigSchema))
   setConfig(@CurrentUser() user: SessionUser, @Body() body: unknown) {
     return this.backupService.setConfig(user, body as never);
   }
 
-  @Auth('backup.manage')
+  @InstanceAuth('backup.manage')
   @Delete('config')
   clearConfig(@CurrentUser() user: SessionUser) {
     return this.backupService.clearConfig(user);
   }
 
-  @Auth('backup.manage')
+  @InstanceAuth('backup.manage')
   @Post()
   trigger(@CurrentUser() user: SessionUser) {
     return this.backupService.triggerManual(user);
   }
 
-  @Auth('backup.manage')
+  @InstanceAuth('backup.manage')
   @Post(':id/restore')
   @UsePipes(new ZodValidationPipe(restoreBackupSchema))
   restore(
@@ -84,7 +84,7 @@ export class BackupController {
   // Local backup: dump the database + uploads right now and stream them as
   // a zip to the browser, so an owner can keep a copy on their own machine
   // with no S3 bucket configured. Declared before ':id/download' routes.
-  @Auth('backup.manage')
+  @InstanceAuth('backup.manage')
   @Get('export')
   async exportLocal(@CurrentUser() user: SessionUser, @Res() res: Response) {
     const { workDir, dbDumpPath, uploadsArchivePath } =
@@ -109,7 +109,7 @@ export class BackupController {
     await archive.finalize();
   }
 
-  @Auth('backup.manage')
+  @InstanceAuth('backup.manage')
   @Get(':id/download')
   async download(
     @CurrentUser() user: SessionUser,

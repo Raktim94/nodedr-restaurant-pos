@@ -1946,6 +1946,11 @@ export class OrdersService {
     userId: string,
     dto: RefundDto,
   ) {
+    // The REST route validates this with a schema, but other callers (the MCP tools) reach this method directly:
+    // a zero or negative "refund" would be stored as a ledger entry and raise what can still be refunded.
+    if (!Number.isFinite(dto.amount) || dto.amount <= 0) {
+      throw new BadRequestException('A refund must be more than zero');
+    }
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, branchId },
     });

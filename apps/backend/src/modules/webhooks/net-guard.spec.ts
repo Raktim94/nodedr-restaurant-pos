@@ -110,3 +110,34 @@ describe('resolveWebhookTarget', () => {
     ).resolves.toMatchObject({ address: '192.168.1.50' });
   });
 });
+
+// Regression (security audit, November 2026): `new URL()` rewrites an IPv4-mapped literal into hex hextets, so the
+// dotted-quad-only check let loopback and cloud-metadata targets through when the address came from a URL.
+describe('embedded IPv4 in IPv6 literals', () => {
+  it.each([
+    'https://[::ffff:127.0.0.1]/hook',
+    'https://[::ffff:169.254.169.254]/hook',
+    'https://[::ffff:10.0.0.5]/hook',
+    'https://[::127.0.0.1]/hook',
+    'https://[64:ff9b::7f00:1]/hook', // NAT64 of 127.0.0.1
+    'https://[64:ff9b::a9fe:a9fe]/hook', // NAT64 of 169.254.169.254
+    'https://[2002:7f00:1::]/hook', // 6to4 of 127.0.0.1
+    'https://[2002:a9fe:a9fe::1]/hook', // 6to4 of 169.254.169.254
+    'https://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/hook', // Teredo
+    'https://[::ffff:0:7f00:1]/hook', // IPv4-translated
+  ])('refuses %s through the URL path', async (u) => {
+    await expect(resolveWebhookTarget(u, strict)).rejects.toThrow(/private or internal/);
+  });
+
+  it.each(['::ffff:7f00:1', '::ffff:a9fe:a9fe', '::7f00:1', '64:ff9b::7f00:1', '2002:7f00:1::'])(
+    'isPrivateAddress blocks %s',
+    (ip) => expect(isPrivateAddress(ip)).toBe(true),
+  );
+
+  it('still allows genuinely public addresses, including mapped and 6to4 forms of public IPv4', () => {
+    expect(isPrivateAddress('::ffff:808:808')).toBe(false); // 8.8.8.8
+    expect(isPrivateAddress('2002:808:808::')).toBe(false); // 6to4 of 8.8.8.8
+    expect(isPrivateAddress('2606:4700:4700::1111')).toBe(false);
+    expect(isPrivateAddress('2a00:1450:4009:81f::200e')).toBe(false);
+  });
+});

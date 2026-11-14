@@ -174,7 +174,7 @@ export class AuthController {
     @CurrentUser() user: SessionUser,
     @Param('userId') userId: string,
   ) {
-    return this.twoFactor.adminReset(user.id, user.restaurantId, userId);
+    return this.twoFactor.adminReset(user.id, user.restaurantId, userId, user);
   }
 
   @UseGuards(JwtAuthGuard)

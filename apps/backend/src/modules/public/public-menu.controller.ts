@@ -36,14 +36,14 @@ export class PublicMenuController {
   // Starts the guest's online payment (Stripe or whichever gateway is on). The amount is the server's bill.
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
   @Post('menu/:qrToken/orders/:orderId/pay-online')
-  payOnline(@Param('qrToken') qrToken: string, @Param('orderId') orderId: string, @Body() body: { origin?: string }) {
-    return this.publicMenuService.payOnline(qrToken, orderId, typeof body?.origin === 'string' ? body.origin.slice(0, 200) : undefined);
+  payOnline(@Param('qrToken') qrToken: string, @Param('orderId') orderId: string, @Body() body: { origin?: string }, @Headers('x-table-session') sessionToken?: string) {
+    return this.publicMenuService.payOnline(qrToken, orderId, typeof body?.origin === 'string' ? body.origin.slice(0, 200) : undefined, sessionToken);
   }
 
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
   @Post('menu/:qrToken/orders/:orderId/pay-cash')
-  payCash(@Param('qrToken') qrToken: string, @Param('orderId') orderId: string) {
-    return this.publicMenuService.switchToCash(qrToken, orderId);
+  payCash(@Param('qrToken') qrToken: string, @Param('orderId') orderId: string, @Headers('x-table-session') sessionToken?: string) {
+    return this.publicMenuService.switchToCash(qrToken, orderId, sessionToken);
   }
 
   // Wrong codes are also counted per session on the server (locks after 8); this is the outer rate limit.
