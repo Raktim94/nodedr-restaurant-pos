@@ -15,7 +15,7 @@ import type {
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuditService } from '../../audit/audit.service';
-import { assertMayManageRole } from '../../common/privilege-ceiling';
+import { assertMayManageRole, userCeilingSubject } from '../../common/privilege-ceiling';
 import { PrismaService } from '../../prisma/prisma.service';
 
 const SELECT = {
@@ -116,13 +116,13 @@ export class UsersService {
   ) {
     const existing = await this.prisma.user.findFirst({
       where: { id, restaurantId },
-      include: { role: true },
+      include: { role: { include: { permissions: { include: { permission: true } } } }, permissionOverrides: { include: { permission: true } } },
     });
     if (!existing) {
       throw new NotFoundException('Staff account not found');
     }
-    // Only someone with at least the target's access may change their password, email, role or status.
-    assertMayManageRole(actor, await this.roleWithKeys(restaurantId, existing.roleId));
+    // Only someone with at least the target's access (role plus any direct grants) may change their password, email, role or status.
+    assertMayManageRole(actor, userCeilingSubject(existing));
     if (dto.roleId && dto.roleId !== existing.roleId) {
       if (id === actor.id) throw new ForbiddenException('You cannot change your own role.');
       assertMayManageRole(actor, await this.roleWithKeys(restaurantId, dto.roleId));
@@ -213,12 +213,12 @@ export class UsersService {
 
     const existing = await this.prisma.user.findFirst({
       where: { id, restaurantId },
-      include: { role: true },
+      include: { role: { include: { permissions: { include: { permission: true } } } }, permissionOverrides: { include: { permission: true } } },
     });
     if (!existing) {
       throw new NotFoundException('Staff account not found');
     }
-    assertMayManageRole(actor, await this.roleWithKeys(restaurantId, existing.roleId));
+    assertMayManageRole(actor, userCeilingSubject(existing));
 
     if (existing.role.name === 'OWNER') {
       const otherActiveOwners = await this.prisma.user.count({

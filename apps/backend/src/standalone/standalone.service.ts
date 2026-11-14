@@ -279,19 +279,21 @@ export class StandaloneService {
       throw new SaleRefused('DISCOUNT_NOT_ALLOWED', 'This account may not give discounts. Ask a manager to enter this sale.');
     }
     const below = merged.filter((m) => m.unitPrice < Number(byId.get(m.menuItemId)!.price) - 0.005);
-    if (below.length) {
-      if (!mayDiscount) {
-        const names = below.map((m) => `${byId.get(m.menuItemId)!.name} (menu price ${Number(byId.get(m.menuItemId)!.price)}, sold at ${m.unitPrice})`).join(', ');
-        throw new SaleRefused('DISCOUNT_NOT_ALLOWED', `Sold below the menu price and this account may not give discounts: ${names}. Ask a manager to enter this sale.`);
-      }
-      if (!mayExceedDiscountCap(user)) {
-        const cap = Number((await this.prisma.branch.findUniqueOrThrow({ where: { id: branchId }, select: { restaurant: { select: { maxManualDiscountPercent: true } } } })).restaurant.maxManualDiscountPercent);
-        const menuTotal = merged.reduce((a, m) => a + Number(byId.get(m.menuItemId)!.price) * m.quantity, 0);
-        const soldTotal = merged.reduce((a, m) => a + m.unitPrice * m.quantity, 0);
-        const impliedPercent = menuTotal > 0 ? ((menuTotal - soldTotal) / menuTotal) * 100 : 0;
-        if (impliedPercent > cap + 0.005) {
-          throw new SaleRefused('DISCOUNT_NOT_ALLOWED', `Sold ${impliedPercent.toFixed(1)}% below the menu price; this restaurant allows ${cap}% for this account. Ask a manager to enter this sale.`);
-        }
+    if (below.length && !mayDiscount) {
+      const names = below.map((m) => `${byId.get(m.menuItemId)!.name} (menu price ${Number(byId.get(m.menuItemId)!.price)}, sold at ${m.unitPrice})`).join(', ');
+      throw new SaleRefused('DISCOUNT_NOT_ALLOWED', `Sold below the menu price and this account may not give discounts: ${names}. Ask a manager to enter this sale.`);
+    }
+    if (!mayExceedDiscountCap(user) && (below.length || sale.discountPercent || sale.discountFlat)) {
+      // The cap covers everything that lowers the price: selling under the menu price AND any typed discount, added
+      // together (a price just under the cap plus a typed discount up to the cap must not pass as two small discounts).
+      const cap = Number((await this.prisma.branch.findUniqueOrThrow({ where: { id: branchId }, select: { restaurant: { select: { maxManualDiscountPercent: true } } } })).restaurant.maxManualDiscountPercent);
+      const menuTotal = merged.reduce((a, m) => a + Number(byId.get(m.menuItemId)!.price) * m.quantity, 0);
+      const soldTotal = merged.reduce((a, m) => a + m.unitPrice * m.quantity, 0);
+      const priceCut = menuTotal > 0 ? Math.max(0, ((menuTotal - soldTotal) / menuTotal) * 100) : 0;
+      const typed = (sale.discountPercent ?? 0) + (menuTotal > 0 ? ((sale.discountFlat ?? 0) / menuTotal) * 100 : 0);
+      const total = priceCut + typed;
+      if (total > cap + 0.005) {
+        throw new SaleRefused('DISCOUNT_NOT_ALLOWED', `Together the price cut and discount come to ${total.toFixed(1)}% below the menu price; this restaurant allows ${cap}% for this account. Ask a manager to enter this sale.`);
       }
     }
     const review: SaleReviewFlag[] = merged.flatMap((m) => {

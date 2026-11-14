@@ -19,6 +19,22 @@ export function mayManageRole(actor: SessionUser, role: RoleForCeiling): boolean
   return role.permissions.every((p) => permissionSatisfied(actor.permissions, p.permission.key));
 }
 
+/** A staff account: its role plus any permission granted to it directly (a still-live GRANT override). */
+export interface UserForCeiling extends RoleForCeiling {
+  // role fields are flattened by the caller; see userCeilingSubject
+}
+
+export function userCeilingSubject(user: {
+  role: RoleForCeiling & { name: string };
+  permissionOverrides?: { effect: string; expiresAt: Date | null; permission: { key: string } }[];
+}): RoleForCeiling {
+  const now = Date.now();
+  const grants = (user.permissionOverrides ?? [])
+    .filter((o) => o.effect === 'GRANT' && (!o.expiresAt || o.expiresAt.getTime() > now))
+    .map((o) => ({ permission: { key: o.permission.key } }));
+  return { name: user.role.name, permissions: [...user.role.permissions, ...grants] };
+}
+
 export function assertMayManageRole(actor: SessionUser, role: RoleForCeiling): void {
   if (!mayManageRole(actor, role)) throw new ForbiddenException(DENIED);
 }
