@@ -200,6 +200,11 @@ run('Table ordering, paging and customer display (e2e)', () => {
     expect(fail.call.state).toBe('FAILED');
     expect(fail.call.error).toBeTruthy();
     expect((await owner.post(`/api/v1/paging/buzzers${q}`).send({ name: `Bad ${tag}`, driver: 'WEBHOOK', webhookUrl: 'ftp://x' })).status).toBe(400);
+    // Cloud-metadata and other link-local targets are refused, in every spelling; LAN addresses stay allowed.
+    for (const webhookUrl of ['http://169.254.169.254/latest', 'http://[::ffff:169.254.169.254]/x', 'http://[fe80::1]/x', 'http://user:pw@10.0.0.5/x']) {
+      expect((await owner.post(`/api/v1/paging/buzzers${q}`).send({ name: `Meta ${tag}`, driver: 'WEBHOOK', webhookUrl })).status).toBe(400);
+    }
+    expect((await owner.post(`/api/v1/paging/buzzers${q}`).send({ name: `Lan ${tag}`, driver: 'WEBHOOK', webhookUrl: 'http://192.168.1.50/page' })).status).toBe(201);
     void dead;
   });
 
