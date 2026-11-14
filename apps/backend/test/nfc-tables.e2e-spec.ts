@@ -185,7 +185,11 @@ run('Secure NFC table tags and automatic sessions (e2e)', () => {
       .send({ autoTableSessions: true });
     expect(bad.status).toBe(400);
     expect(bad.body.message).toMatch(/NFC table tags switched on first/);
+    await prisma.restaurant.updateMany({
+      data: { requireTableSession: false },
+    });
     const on = (await flags(true, true).expect(200)).body;
+    expect(on.requireTableSession).toBe(true); // switching tags on keeps table proof required
     expect(on).toEqual(
       expect.objectContaining({
         nfcTablesEnabled: true,
@@ -421,6 +425,45 @@ run('Secure NFC table tags and automatic sessions (e2e)', () => {
     expect(placed.every((r) => r.status === 201)).toBe(true);
     const sessions = await sessionsOf('B');
     expect(sessions.filter((s) => s.status === 'ACTIVE')).toHaveLength(1);
+  });
+
+  it('a table that never had an ordering link gets one when its first tag is created, so a tap can lead somewhere', async () => {
+    const bare = (
+      await owner
+        .post(`/api/v1/tables${q}`)
+        .send({ floorId, number: `N-${tag}`, capacity: 2 })
+        .expect(201)
+    ).body;
+    expect(
+      (await prisma.table.findUniqueOrThrow({ where: { id: bare.id } }))
+        .qrToken,
+    ).toBeNull();
+    const made = (
+      await owner
+        .post(`/api/v1/nfc/tags${q}`)
+        .send({ tableId: bare.id })
+        .expect(201)
+    ).body;
+    const keys = keysOf(made.provisioning);
+    await owner
+      .post(`/api/v1/nfc/tags/${made.tag.id}/test${q}`)
+      .send(simulateTap(keys, '04ABABABABABAB', ctr()))
+      .expect(201);
+    const t = (
+      await guest
+        .get(
+          tapUrl(
+            made.tag.publicRef,
+            simulateTap(keys, '04ABABABABABAB', ctr()),
+          ),
+        )
+        .expect(200)
+    ).body;
+    expect(t.qrToken).toMatch(/^[0-9a-f]{32}$/);
+    expect(
+      (await prisma.table.findUniqueOrThrow({ where: { id: bare.id } }))
+        .qrToken,
+    ).toBe(t.qrToken);
   });
 
   it('a burst of simultaneous orders gets distinct numbers and none are refused (a number race used to reject most of them)', async () => {
