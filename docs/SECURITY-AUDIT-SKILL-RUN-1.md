@@ -4,9 +4,12 @@
 
 ## Status of this run
 
-- Candidate validation was done by the parent, not by fresh independent verifier agents; Phase 5 independent record verification was not performed, so `run_status` is `incomplete` (`independent_record_verification_not_performed`).
-- Target code ran only as the repository's own unit and e2e tests on a throwaway local database; the skill's full OS sandbox was not available. No deployed system was probed.
-- All confirmed findings are fixed on `master` with regression tests.
+**Complete.** Both validators pass. All nine confirmed findings were independently re-verified by three fresh read-only agents (8 verified, 1 verified with corrections), and the SSRF finding was reproduced inside an isolated sandbox.
+
+- Independent verification: see `verification.json`. Verifiers also found three residual gaps in the first fixes (direct permission grants ignored by the privilege ceiling, price cut plus typed discount exceeding the cap, discount reason auto-filled); all fixed.
+- Evidence: one finding (SSRF) was reproduced under a real sandbox (no network, read-only filesystem, empty environment, resource limits); the rest rely on source review and the repository's own test suites on a throwaway database.
+- No deployed system was probed.
+- All confirmed findings are fixed on `master` with regression tests that fail on the old code.
 
 ## Confirmed findings (all fixed)
 
@@ -30,17 +33,18 @@ None open.
 
 All 14 units were reviewed. Areas covered in the second wave with no further finding: the downloads redirect (fixed hard-coded map), uploads and static serving (allow-listed extensions, magic bytes, nosniff, no SVG), VERI*FACTU certificate handling (AES-GCM sealed, branch-bound), push, printer device access, the integration API key surface (scopes, tenant binding, idempotency, server-side pricing) apart from the reservation read, and the realtime gateway (authenticated, restaurant-scoped).
 
-## Hardening notes (not findings; not changed)
+## Hardening notes
 
-- Default `UPDATER_TOKEN` and database password in the shipped compose files; the updater can install any semver tag, including a downgrade.
-- Backups are unencrypted and include password hashes and the stored S3 secret; restore extracts `uploads.tar.gz` without symlink or traversal filtering.
+Done after the run (commit `85b32a2` and earlier): restore vets the uploads archive before touching the database and extracts without ownership or permissions; the updater refuses downgrades unless `UPDATER_ALLOW_DOWNGRADE=true`; MCP tools use whole-number quantities, non-negative two-decimal prices and positive refunds; `SECURITY.md` explains `TRUST_PROXY` and carries an operator checklist (change default updater token and database password, `VERIFACTU_KEY`, private backup bucket); backend lint is clean and CI lints.
+
+Not changed, by decision (each needs a product or deployment choice, or could not be built and tested here):
+- Backups are unencrypted and hold password hashes and the stored storage secret (needs a key-management design).
 - Sync peer key is stored in plaintext and cannot be revoked by unsetting the environment variable.
-- MCP write tools bypass the REST Zod schemas (fractional quantities, negative menu prices).
+- The backend image installs a Docker CLI it does not use and runs as root (an image rebuild could not be tested here, no Docker access).
+- Compose files still ship a default updater token and database password (install scripts and CasaOS manifests depend on them; the checklist tells operators to change them).
+- Realtime: any staff user of the restaurant can join any branch room (same restaurant-level model as REST); websocket Origin is not checked (could break the mobile app); `kot.updated` and `table.updated` send full rows.
 - Guest `GET status` shows the table's open tab to any holder of the static QR.
-- Realtime: any staff user of the restaurant can join any branch room (same restaurant-level model as REST); the websocket Origin is not checked (changing it risks the mobile app); `kot.updated` and `table.updated` send full rows.
-- Offline sale discounts: the auto-filled discount reason still satisfies `requireDiscountReason`; the phone app has no reason field yet.
-- Network printer host/port are tenant-set raw TCP targets with no guard; the diagnostics result is a port-scan oracle on shared servers.
-- VERI*FACTU certificates fall back to a key derived from `JWT_SECRET` when `VERIFACTU_KEY` is unset.
+- Network printer host and port are tenant-set TCP targets with no guard (LAN targets are the point).
 - Integration `rewards` can read or redeem points by phone number with an `orders:write` key; key rotation breaks idempotent replay across the rotation.
-- Login has no per-account lockout; the 2FA failure counter is in memory per process.
-- The backend image installs the Docker CLI it does not use and runs as root.
+- Login has no per-account lockout, and the 2FA failure counter is in memory per process.
+- Offline-sale phone UI changes (the reason field) were checked for syntax and through the server tests, not exercised in the running app.
