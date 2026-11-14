@@ -43,7 +43,7 @@ export class UsersController {
   @Post()
   @UsePipes(new ZodValidationPipe(createStaffSchema))
   create(@CurrentUser() user: SessionUser, @Body() body: unknown) {
-    return this.usersService.create(user.restaurantId, user.id, body as never);
+    return this.usersService.create(user.restaurantId, user.id, body as never, user);
   }
 
   @Auth('users.manage')
@@ -59,13 +59,14 @@ export class UsersController {
       user.id,
       id,
       body as never,
+      user,
     );
   }
 
   @Auth('users.manage')
   @Delete(':id')
   remove(@CurrentUser() user: SessionUser, @Param('id') id: string) {
-    return this.usersService.remove(user.restaurantId, user.id, id);
+    return this.usersService.remove(user.restaurantId, user.id, id, user);
   }
 
   // --- Departments ---------------------------------------------------------

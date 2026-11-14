@@ -5,7 +5,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import type { SessionUser } from '@nodedr-restaurant/types';
 import { AuditService } from '../audit/audit.service';
+import { assertMayManageRole } from '../common/privilege-ceiling';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   generateRecoveryCode,
@@ -233,12 +235,15 @@ export class TwoFactorService {
     actorId: string,
     restaurantId: string,
     targetUserId: string,
+    actor: SessionUser,
   ) {
     const target = await this.prisma.user.findFirst({
       where: { id: targetUserId, restaurantId },
-      select: { id: true },
+      select: { id: true, role: { select: { name: true, permissions: { select: { permission: { select: { key: true } } } } } } },
     });
     if (!target) throw new BadRequestException('Staff member not found');
+    // Clearing someone's 2FA is a step toward taking over their account: not allowed above your own access.
+    assertMayManageRole(actor, target.role);
     await this.clear(targetUserId);
     await this.audit.record({
       userId: actorId,

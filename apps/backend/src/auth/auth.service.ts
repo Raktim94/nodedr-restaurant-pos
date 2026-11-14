@@ -120,11 +120,21 @@ export class AuthService {
     // An email address, or a phone number as the login ID (delivery riders).
     // Every failure gives the same message so nothing reveals which IDs exist.
     if (id.includes('@')) {
-      const u = await this.prisma.user.findFirst({
+      // An email is unique per restaurant, not across the server, so try every active account with it and take
+      // the one whose password matches. Picking an arbitrary first row let a second restaurant's staff account
+      // with the same email shadow the real one and lock its owner out.
+      const candidates = await this.prisma.user.findMany({
         where: { email: id, isActive: true },
         include,
+        orderBy: { createdAt: 'asc' },
+        take: 10,
       });
-      if (u && (await bcrypt.compare(dto.password, u.passwordHash))) user = u;
+      for (const u of candidates) {
+        if (await bcrypt.compare(dto.password, u.passwordHash)) {
+          user = u;
+          break;
+        }
+      }
     } else {
       user = await this.findLoginCandidate(id, dto.password);
     }

@@ -190,7 +190,7 @@ export default function PublicMenuPage({
   const startOnlinePayment = async (orderId: string) => {
     setPayError(null);
     try {
-      const pay = await api.post<{ checkoutUrl: string | null }>(`/public/menu/${qrToken}/orders/${orderId}/pay-online`, { origin: window.location.origin });
+      const pay = await api.post<{ checkoutUrl: string | null }>(`/public/menu/${qrToken}/orders/${orderId}/pay-online`, { origin: window.location.origin }, hdr());
       if (!pay.checkoutUrl) throw new Error("no link");
       window.location.href = pay.checkoutUrl;
     } catch (e) {
@@ -200,7 +200,7 @@ export default function PublicMenuPage({
   };
 
   const payAtRegister = useMutation({
-    mutationFn: (orderId: string) => api.post(`/public/menu/${qrToken}/orders/${orderId}/pay-cash`),
+    mutationFn: (orderId: string) => api.post(`/public/menu/${qrToken}/orders/${orderId}/pay-cash`, undefined, hdr()),
     onSuccess: () => { setPayError(null); void queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] }); },
     onError: (e) => setPayError(e instanceof ApiError ? e.message : "Could not change that. Please ask the staff."),
   });

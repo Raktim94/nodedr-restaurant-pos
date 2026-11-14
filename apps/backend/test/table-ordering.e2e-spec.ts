@@ -139,18 +139,19 @@ run('Table ordering, paging and customer display (e2e)', () => {
     const o = (await order('C', { payment: 'CASH' }).expect(201)).body;
     await prisma.kot.deleteMany({ where: { orderId: o.id } });
     await prisma.order.update({ where: { id: o.id }, data: { payIntent: 'ONLINE', heldForPayment: true } });
-    await guest.post(`/api/v1/public/menu/${tables.C.qr}/orders/${o.id}/pay-cash`).expect(201);
+    await guest.post(`/api/v1/public/menu/${tables.C.qr}/orders/${o.id}/pay-cash`).set('x-table-session', tables.C.tok ?? '').expect(201);
     const row = await prisma.order.findUniqueOrThrow({ where: { id: o.id } });
     expect(row.payIntent).toBe('CASH');
     expect(row.heldForPayment).toBe(false);
     expect(row.status).toBe('OPEN');
     expect(await kotCount(o.id)).toBeGreaterThan(0);
-    expect((await guest.post(`/api/v1/public/menu/${tables.C.qr}/orders/${o.id}/pay-cash`)).status).toBe(409);
+    expect((await guest.post(`/api/v1/public/menu/${tables.C.qr}/orders/${o.id}/pay-cash`).set('x-table-session', tables.C.tok ?? '')).status).toBe(409);
     (tables.C as { order?: string }).order = o.id;
   });
 
   it('a guest cannot start a payment for another table\'s order', async () => {
-    const wrong = await guest.post(`/api/v1/public/menu/${tables.A.qr}/orders/${(tables.B as { order?: string }).order}/pay-online`).send({});
+    // A guest with table A's own grant, asking about table B's order through table A's QR.
+    const wrong = await guest.post(`/api/v1/public/menu/${tables.A.qr}/orders/${(tables.B as { order?: string }).order}/pay-online`).set('x-table-session', tables.A.tok ?? '').send({});
     expect(wrong.status).toBe(404);
   });
 

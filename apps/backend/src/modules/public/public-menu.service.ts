@@ -161,8 +161,11 @@ export class PublicMenuService {
     );
   }
 
-  private async tableOrder(qrToken: string, orderId: string) {
+  private async tableOrder(qrToken: string, orderId: string, sessionToken?: string) {
     const table = await this.resolveTable(qrToken);
+    // Acting on a table's order needs the live session grant, like placing one: the static QR alone (it is printed,
+    // photographed and shared) must not be able to release a held order to the kitchen or open its payment page.
+    if (table.floor.branch.restaurant.requireTableSession) await this.sessions.assertGrant(table.id, sessionToken);
     const order = await this.prisma.order.findFirst({ where: { id: orderId, tableId: table.id, status: 'OPEN' } });
     if (!order) throw new NotFoundException('That order is not open at this table');
     return { table, order };
@@ -180,16 +183,16 @@ export class PublicMenuService {
   }
 
   /** Start (or restart after a failure) the guest's online payment. The amount always comes from the server bill. */
-  async payOnline(qrToken: string, orderId: string, origin?: string) {
-    const { table, order } = await this.tableOrder(qrToken, orderId);
+  async payOnline(qrToken: string, orderId: string, origin?: string, sessionToken?: string) {
+    const { table, order } = await this.tableOrder(qrToken, orderId, sessionToken);
     if (order.payIntent !== 'ONLINE') throw new BadRequestException('This order was not placed for online payment');
     const pay = await this.gatewayPayments.create(table.floor.branch.restaurantId, order.branchId, order.id, order.createdById, { origin });
     return pay;
   }
 
   /** The guest could not pay online (or changed their mind) and will pay at the register: send it to the kitchen. */
-  async switchToCash(qrToken: string, orderId: string) {
-    const { order } = await this.tableOrder(qrToken, orderId);
+  async switchToCash(qrToken: string, orderId: string, sessionToken?: string) {
+    const { order } = await this.tableOrder(qrToken, orderId, sessionToken);
     if (order.payIntent !== 'ONLINE') throw new ConflictException('This order is already set to pay at the register');
     // An online payment that is mid-flight must be allowed to finish or fail first.
     const inflight = await this.prisma.gatewayPayment.findFirst({ where: { orderId, status: 'CREATED', createdAt: { gt: new Date(Date.now() - 2 * 60_000) } } });

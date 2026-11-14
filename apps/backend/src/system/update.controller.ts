@@ -1,6 +1,6 @@
 import { Controller, Get, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Auth } from '../common/decorators/auth.decorator';
+import { InstanceAuth } from '../common/decorators/instance-auth.decorator';
 import { UpdateService, type VersionInfo } from './update.service';
 
 @ApiTags('system')
@@ -8,19 +8,19 @@ import { UpdateService, type VersionInfo } from './update.service';
 export class UpdateController {
   constructor(private readonly updateService: UpdateService) {}
 
-  @Auth('system.update')
+  @InstanceAuth('system.update')
   @Get('update/check')
   check(): Promise<VersionInfo> {
     return this.updateService.checkForUpdate();
   }
 
-  @Auth('system.update')
+  @InstanceAuth('system.update')
   @Get('update/progress')
   progress() {
     return this.updateService.getProgress();
   }
 
-  @Auth('system.update')
+  @InstanceAuth('system.update')
   @Post('update/apply')
   apply() {
     return this.updateService.applyUpdate();

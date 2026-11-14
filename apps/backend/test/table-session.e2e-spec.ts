@@ -120,6 +120,35 @@ run('Live table sessions (e2e)', () => {
     expect((await chef.post(`/api/v1/tables/${T.B.id}/session${q}`).send({})).status).toBe(403);
   });
 
+  it('paying or switching to cash needs the live session grant, not just the static table QR', async () => {
+    await mkTable('P');
+    const s = await open('P');
+    const g = (await join('P', s.code).expect(201)).body;
+    const o = (await order('P', g.token).expect(201)).body;
+    await prisma.order.update({ where: { id: o.id }, data: { payIntent: 'ONLINE', heldForPayment: true } });
+    const url = (what: string) => `/api/v1/public/menu/${T.P.qr}/orders/${o.id}/${what}`;
+
+    // The QR token and the order id are all a bystander can learn (status shows the id); that must not be enough.
+    for (const what of ['pay-cash', 'pay-online']) {
+      const none = await guest.post(url(what)).send({});
+      expect(none.status).toBe(403);
+      expect(JSON.stringify(none.body)).toContain('TABLE_SESSION_REQUIRED');
+      expect((await guest.post(url(what)).set('x-table-session', 'not-a-real-grant-token-0000000000000000').send({})).status).toBe(403);
+    }
+    const untouched = await prisma.order.findUniqueOrThrow({ where: { id: o.id } });
+    expect(untouched.payIntent).toBe('ONLINE');
+    expect(untouched.heldForPayment).toBe(true); // nothing was released to the kitchen
+
+    // A grant for a different table is no good either.
+    await mkTable('Q');
+    const other = (await join('Q', (await open('Q')).code).expect(201)).body;
+    expect((await guest.post(url('pay-cash')).set('x-table-session', other.token).send({})).status).toBe(403);
+
+    // The guest who holds this table's grant still can.
+    await guest.post(url('pay-cash')).set('x-table-session', g.token).send({}).expect(201);
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: o.id } })).payIntent).toBe('CASH');
+  });
+
   it('wrong codes are counted and lock the session; even the right code is refused while locked', async () => {
     const s = await open('B');
     for (let i = 0; i < 7; i++) expect((await join('B', 'ZZZZZZ')).body.code).toBe('TABLE_SESSION_BAD_CODE');

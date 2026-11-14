@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { CreateRoleDto, UpdateRoleDto } from '@nodedr-restaurant/types';
+import type { CreateRoleDto, SessionUser, UpdateRoleDto } from '@nodedr-restaurant/types';
 import { AuditService } from '../audit/audit.service';
+import { assertMayGrantKeys, assertMayManageRole } from '../common/privilege-ceiling';
 import { PrismaService } from '../prisma/prisma.service';
 
 const SELECT = {
@@ -42,7 +43,8 @@ export class RolesService {
     });
   }
 
-  async create(restaurantId: string, actorId: string, dto: CreateRoleDto) {
+  async create(restaurantId: string, actorId: string, dto: CreateRoleDto, actor: SessionUser) {
+    assertMayGrantKeys(actor, dto.permissionKeys);
     const permissions = await this.assertPermissionKeysValid(
       dto.permissionKeys,
     );
@@ -80,8 +82,12 @@ export class RolesService {
     actorId: string,
     id: string,
     dto: UpdateRoleDto,
+    actor: SessionUser,
   ) {
     const existing = await this.getForRestaurant(restaurantId, id);
+    // You cannot edit a role that already holds more than you do (OWNER included), nor add what you do not hold.
+    assertMayManageRole(actor, existing);
+    if (dto.permissionKeys) assertMayGrantKeys(actor, dto.permissionKeys);
 
     const nextPermissions = dto.permissionKeys
       ? await this.assertPermissionKeysValid(dto.permissionKeys)
@@ -129,8 +135,9 @@ export class RolesService {
     return updated;
   }
 
-  async remove(restaurantId: string, actorId: string, id: string) {
+  async remove(restaurantId: string, actorId: string, id: string, actor: SessionUser) {
     const existing = await this.getForRestaurant(restaurantId, id);
+    assertMayManageRole(actor, existing);
     if (existing.isSystem) {
       throw new BadRequestException(
         'Seeded system roles cannot be deleted — create a custom role instead',

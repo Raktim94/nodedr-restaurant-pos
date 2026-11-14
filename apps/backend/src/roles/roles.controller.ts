@@ -34,7 +34,7 @@ export class RolesController {
   @Post()
   @UsePipes(new ZodValidationPipe(createRoleSchema))
   create(@CurrentUser() user: SessionUser, @Body() body: unknown) {
-    return this.rolesService.create(user.restaurantId, user.id, body as never);
+    return this.rolesService.create(user.restaurantId, user.id, body as never, user);
   }
 
   @Auth('roles.manage')
@@ -50,12 +50,13 @@ export class RolesController {
       user.id,
       id,
       body as never,
+      user,
     );
   }
 
   @Auth('roles.manage')
   @Delete(':id')
   remove(@CurrentUser() user: SessionUser, @Param('id') id: string) {
-    return this.rolesService.remove(user.restaurantId, user.id, id);
+    return this.rolesService.remove(user.restaurantId, user.id, id, user);
   }
 }
