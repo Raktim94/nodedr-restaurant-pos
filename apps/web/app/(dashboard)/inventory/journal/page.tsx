@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useBranch } from "@/hooks/use-branch";
 import { StockJournalVoucher } from "@/components/inventory/stock-journal-voucher";
-import { csvUrl, useJournal, useJournalAdjust, useReceiveStock, useStockItems } from "@/hooks/use-stock-journal";
+import { csvUrl, usePlaces, useJournal, useJournalAdjust, useReceiveStock, useStockItems } from "@/hooks/use-stock-journal";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
@@ -28,14 +28,17 @@ export default function JournalPage() {
   const { branchId } = useBranch();
   const [ingredientId, setIngredientId] = useState("");
   const [type, setType] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const filters = {
-    ingredientId, type,
+    ingredientId, type, locationId,
     from: from ? new Date(`${from}T00:00:00`).toISOString() : undefined,
     to: to ? new Date(`${to}T23:59:59.999`).toISOString() : undefined,
   };
   const { data: items } = useStockItems(branchId);
+  const { data: places } = usePlaces(branchId);
+  const placeName = new Map((places ?? []).map((p) => [p.id, p.name]));
   const { data, isLoading, isError } = useJournal(branchId, filters);
   const [mode, setMode] = useState<Mode>(null);
   const [voucher, setVoucher] = useState(false);
@@ -76,7 +79,7 @@ export default function JournalPage() {
       </div>
       <InventoryTabs />
 
-      <Card className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5">
+      <Card className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="j-item">Item</Label>
           <select id="j-item" className={selectClass} value={ingredientId} onChange={(e) => setIngredientId(e.target.value)}>
@@ -91,6 +94,13 @@ export default function JournalPage() {
             {Object.entries(TYPES).map(([k, v]) => (<option key={k} value={k}>{v}</option>))}
           </select>
         </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="j-place">Place</Label>
+          <select id="j-place" className={selectClass} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+            <option value="">All places</option>
+            {(places ?? []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+          </select>
+        </div>
         <div className="flex flex-col gap-1.5"><Label htmlFor="j-from">From</Label><Input id="j-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
         <div className="flex flex-col gap-1.5"><Label htmlFor="j-to">To</Label><Input id="j-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         <div className="flex items-end"><a className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-sm hover:bg-muted" href={csvUrl("journal/export.csv", branchId, filters)}>Export CSV</a></div>
@@ -103,7 +113,7 @@ export default function JournalPage() {
           <p className="p-6 text-sm text-destructive">Could not load the journal.</p>
         ) : data && data.items.length > 0 ? (
           <Table>
-            <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Item</TableHead><TableHead>Type</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>By</TableHead><TableHead>Note</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>When</TableHead><TableHead>Item</TableHead><TableHead>Type</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Place</TableHead><TableHead>By</TableHead><TableHead>Note</TableHead></TableRow></TableHeader>
             <TableBody>
               {data.items.map((m) => (
                 <TableRow key={m.id}>
@@ -111,6 +121,7 @@ export default function JournalPage() {
                   <TableCell className="font-medium">{m.ingredient.name}</TableCell>
                   <TableCell><Badge variant="outline">{TYPES[m.type] ?? m.type}</Badge></TableCell>
                   <TableCell className={`text-right tabular-nums ${Number(m.quantity) < 0 ? "text-destructive" : ""}`}>{Number(m.quantity) > 0 ? "+" : ""}{m.quantity} {m.ingredient.unit}</TableCell>
+                  <TableCell className="text-muted-foreground">{m.locationId ? (placeName.get(m.locationId) ?? "Place removed") : "–"}</TableCell>
                   <TableCell className="text-muted-foreground">{m.createdBy.name}{m.deviceId ? ` (${m.deviceId})` : ""}</TableCell>
                   <TableCell className="max-w-64 truncate text-muted-foreground" title={m.note ?? ""}>{m.note}</TableCell>
                 </TableRow>

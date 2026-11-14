@@ -59,6 +59,7 @@ export interface JournalMovement {
   note: string | null;
   createdAt: string;
   productionEntryId: string | null;
+  locationId?: string | null;
   wasteEntryId: string | null;
   deviceId: string | null;
   ingredient: { id: string; name: string; unit: IngredientUnit };

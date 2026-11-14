@@ -136,3 +136,64 @@ session immediately.
 * **Inventory > Production** and the **POS** screen, as before.
 * The voucher shows the ingredient-use variance against the recipe (same-unit rows) after "Fill from recipe".
 * **Stock Journal Reports** gained **Daily production**: per day, what was consumed (with cost) and what was produced, from posted vouchers only, with CSV export.
+
+## Manufacturing journal v2 (1.34.0)
+
+**Voucher.** One voucher records materials consumed (Source / Consumption) and products made (Destination / Production)
+together, side by side on desktop, stacked on phones. Source rows: item, available stock, quantity, unit, expected (from the
+recipe) with variance, rate, amount, **place** to take from, optional lot, and "Only <product>" (direct material). Destination
+rows: item, **good quantity** (added to stock), **rejected quantity** (recorded, never stocked), unit, **place** to put into,
+lot, and a cost percent when the split is manual. Voucher-level: date, batch/reference no., location, shift, made-on/use-by,
+narration, quality result/grade/notes. The voucher number (`PR-YYYYMMDD-nnn`, local date) is assigned on posting; a draft
+changes nothing. A double submit (same idempotency key) posts once.
+
+**Recipes (BOM).** `Inventory > Recipes`: a recipe belongs to a finished product and says what a **base output quantity** takes.
+Several recipes per product are allowed; the voucher lets you choose one. "Fill from recipe" scales it to the planned good
+quantity; you then type what was actually used. Editing a recipe bumps its version. When a voucher is saved, the chosen recipe
+(name, version, base output, lines) is **copied into the voucher** (`recipeSnapshot`) and each line keeps its expected quantity,
+so later recipe edits never rewrite a posted batch. Menu-item recipes (the older "deduct on sale" lines) are offered too,
+labelled "menu recipe", with base output 1 unless the item has a costing batch size. A voucher with no recipe says so.
+
+**Cost basis (unchanged, now documented).** Ingredient rate = the rate typed on the row, else the item's **weighted-average
+cost** (`Ingredient.costPerUnit`, moved by receipts with a cost and by costed production). Not FIFO, not last purchase. The rate
+and line cost are frozen on the voucher at posting. Stock itself is drawn FIFO from batches; the cost basis is the average.
+
+**Cost formula.** batch cost = materials + included additional costs − recovered scrap/by-product value ("Recovered scrap /
+by-product" is a cost category that is subtracted). One product: unit cost = batch cost ÷ good quantity. Several products:
+a material marked "Only X" is direct to X; everything else plus additional costs and recovery is **shared** and is split by
+**good quantity** (all outputs in one unit) or **manual percent** (must total 100). Allocated cost = direct + share; unit cost =
+allocated ÷ that product's good quantity. Rounding: shares to 4 dp; the remainder goes to the first product so the parts always
+sum to the batch. Rejected pieces carry no stock; their cost stays in the batch and is carried by the good pieces (the screen
+says so). With the split missing or incomplete the review shows a message and **no** per-product cost. The menu selling price is
+never changed by a voucher.
+
+**Places per row.** `production_lines.locationId/locationName`, `stock_movements.locationId` (both plain columns, nullable;
+older rows stay null = "unassigned", never guessed). Posting takes from a place only if that place holds the quantity (else the
+whole voucher is refused) and adds output to its place; the item's total moves exactly as before. Reversing restores both.
+The Stock journal page and CSV have a Place filter/column.
+
+**Reports.**
+* `Inventory > Stock Journal Reports > Daily production` (`GET manufacturing/daily`, `.csv`): one block per **local** date (the
+  restaurant timezone, Asia/Kolkata by default), posted vouchers only (drafts and reversed ones never appear; a corrected
+  voucher shows once, as its replacement). Filters: date range, product, batch/reference, PO number or supplier, place. Each
+  voucher expands to the full Source/Destination with expected, variance, rate, cost, good, rejected, yield, allocated cost,
+  unit cost, split method, quality, narration, source PO and recipe/version. CSV uses the same filters; its rows add up to the
+  voucher totals.
+* `Inventory > Yield analysis` (`GET manufacturing/analysis`, `.csv`): per product, batch by batch: good, rejected, reject %,
+  yield vs plan, batch cost, cost per good unit, quality note, and each ingredient **per 100 good units** beside the recipe
+  expectation and variance %, plus the weighted cost per good unit by day. It never ranks a batch as better.
+* `Inventory > Stock report` still reconciles opening + receipts + manufacturing − use ± sales/waste/adjustments = closing.
+
+**POS.** Each menu item linked to a finished product shows its latest posted production cost under the selling price
+(`GET manufacturing/menu-costs`, needs `production.report`; cashiers without it see nothing and can still sell). Cost per
+portion = Σ allocated cost ÷ Σ good quantity over that product's posted vouchers on the latest day with any, × stock quantity
+one sale uses. It is labelled "Today's production cost" only when that day is today (restaurant time); otherwise it shows the
+date and says "not today". The difference shown is price − cost, before expenses, discounts and tax; prices are never changed.
+
+**Purchase orders.** `Manufacturing` on the PO list and on each PO opens the voucher; from a PO it carries the PO number as the
+batch/reference, a narration with the PO and supplier, and starts the source rows with the items that PO actually **received**
+(quantities left blank). The PO number, id and supplier are stored on the voucher as a reference only: producing never receives
+stock again, and repeated runs against one PO each get their own voucher number.
+
+**Migration** `20261118000000_manufacturing_journal_v2` is additive (new nullable columns, a column with a zero default, two new
+tables); nothing is dropped or rewritten, and every earlier voucher reads exactly as before.

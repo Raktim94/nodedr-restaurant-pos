@@ -11,6 +11,18 @@ export const productionLineSchema = z.object({
   unit: ingredientUnitSchema,
   // Costing only: the cost rate per STOCK unit of the item for this batch. Omitted = the item's current average cost.
   rate: z.union([z.string().trim().min(1), z.number()]).transform(String).optional(),
+  // ---- manufacturing journal v2 (all optional) ----
+  /** Place the quantity is taken from (inputs) or put into (outputs). Omitted = unassigned, as before. */
+  locationId: z.string().min(1).optional(),
+  /** Outputs: pieces made but not saleable. Recorded, never added to stock, cost stays with the good units. */
+  rejectedQuantity: qty.optional(),
+  lotNumber: z.string().trim().max(60).optional(),
+  /** Inputs: what the recipe expected for this batch, in the line's unit (kept for the variance report). */
+  expectedQuantity: qty.optional(),
+  /** Inputs: tie this material wholly to one finished product on the voucher (its ingredient id). */
+  directToIngredientId: z.string().min(1).optional(),
+  /** Outputs: share of the shared cost, used when the split method is MANUAL. */
+  allocationPercent: z.union([z.string().trim().min(1), z.number()]).transform(String).optional(),
 });
 
 export const extraCostSchema = z.object({
@@ -57,6 +69,12 @@ export const productionEntrySchema = z.object({
   manufacturedOn: z.coerce.date().optional(),
   expiryDate: z.coerce.date().optional(),
   costing: costingSchema.optional(),
+  /** Recipe the expected quantities came from. The server copies it into the voucher. Omit = no recipe baseline. */
+  recipe: z.object({ kind: z.enum(["RECIPE", "MENU"]), id: z.string().min(1) }).optional(),
+  /** Purchase order this run started from (recorded for reference only; it never receives stock). */
+  sourcePoId: z.string().min(1).optional(),
+  /** How shared cost is split when the voucher makes more than one product. */
+  allocationMethod: z.enum(["QUANTITY", "MANUAL"]).optional(),
   idempotencyKey: z.string().trim().min(8).max(120).optional(),
   deviceId: z.string().trim().max(120).optional(),
   /** true = post straight away, false/omitted = save as a draft. */
@@ -161,3 +179,15 @@ export const locationTransferSchema = z
   })
   .refine((v) => (v.fromLocationId ?? null) !== v.toLocationId, { message: "Choose two different places", path: ["toLocationId"] });
 export type LocationTransferDto = z.infer<typeof locationTransferSchema>;
+
+// A saved bill of materials (BOM): what `baseOutputQty` of a finished product takes.
+export const productRecipeSchema = z.object({
+  outputIngredientId: z.string().min(1),
+  name: z.string().trim().min(1).max(80),
+  baseOutputQty: z.union([z.string().trim().min(1), z.number()]).transform(String),
+  notes: z.string().trim().max(500).optional(),
+  lines: z
+    .array(z.object({ ingredientId: z.string().min(1), quantity: qty, unit: ingredientUnitSchema }))
+    .min(1, "Add at least one ingredient"),
+});
+export type ProductRecipeDto = z.infer<typeof productRecipeSchema>;

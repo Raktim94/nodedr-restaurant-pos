@@ -7,45 +7,44 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { type BatchBody, type MfgPreview, type QualityResult, useMfgSettings, usePostBatch, usePrefill, usePreviewBatch, useRecordQuality } from "@/hooks/use-manufacturing";
-import { useSaveProduction, usePreviewProduction, useStockItems } from "@/hooks/use-stock-journal";
+import { type QualityResult, type VoucherPreview, useMfgSettings, useRecipeFill, useRecipes, useRecordQuality, useVoucherPreview } from "@/hooks/use-manufacturing";
+import { usePlaces, useSaveProduction, useStockItems } from "@/hooks/use-stock-journal";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
-interface In { key: number; ingredientId: string; quantity: string; unit: IngredientUnit | ""; rate: string; expected?: string }
-interface Out { key: number; ingredientId: string; quantity: string; unit: IngredientUnit | "" }
+interface In { key: number; ingredientId: string; quantity: string; unit: IngredientUnit | ""; rate: string; expected?: string; locationId: string; lot: string; directTo: string }
+interface Out { key: number; ingredientId: string; quantity: string; rejected: string; unit: IngredientUnit | ""; locationId: string; lot: string; percent: string; expected?: string }
 interface Cost { key: number; category: string; amount: string }
 let k = 1;
-const blankIn = (o: Partial<In> = {}): In => ({ key: k++, ingredientId: "", quantity: "", unit: "", rate: "", ...o });
-const blankOut = (o: Partial<Out> = {}): Out => ({ key: k++, ingredientId: "", quantity: "", unit: "", ...o });
+const blankIn = (o: Partial<In> = {}): In => ({ key: k++, ingredientId: "", quantity: "", unit: "", rate: "", locationId: "", lot: "", directTo: "", ...o });
+const blankOut = (o: Partial<Out> = {}): Out => ({ key: k++, ingredientId: "", quantity: "", rejected: "", unit: "", locationId: "", lot: "", percent: "", ...o });
 const SHIFTS = ["Morning", "Afternoon", "Evening", "Night"];
-const COST_CATEGORIES = ["Labour", "Packaging", "Fuel & utilities", "Other overhead"];
+const RECOVERY = "Recovered scrap / by-product";
+const COST_CATEGORIES = ["Labour", "Packaging", "Fuel & utilities", "Other overhead", RECOVERY];
 const money = (v: number | string | null | undefined) => (v == null || v === "" || Number.isNaN(Number(v)) ? "–" : Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const q3 = (v: number) => String(Math.round(v * 1000) / 1000);
 const local = () => { const d = new Date(); const p = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
-type RLine = { role: "INPUT" | "OUTPUT"; ingredientId: string; name: string; quantity: string; unit: string; rate?: string | null; lineCost?: string | null };
 const head = "px-2 py-1.5 text-left text-xs font-medium text-muted-foreground";
 
-/**
- * Stock journal voucher (manufacturing entry). Source / Consumption on the left, Destination / Production on the
- * right, side by side from the lg breakpoint and stacked (source first) below it. Quantities are what really
- * happened; amounts are worked out by the server in the review step and frozen when posted. The menu selling price
- * is never touched here.
- */
-export interface VoucherContext { productId?: string; batchRef?: string; narration?: string; sourceIds?: string[] }
+export interface VoucherContext { productId?: string; batchRef?: string; narration?: string; sourceIds?: string[]; poId?: string; poNumber?: string; supplier?: string }
 
+/**
+ * Stock journal voucher (manufacturing entry), laid out like a Tally stock journal: Source / Consumption on the left,
+ * Destination / Production on the right, side by side from lg and stacked (source first) below it. Every number in the
+ * review step is worked out by the server and frozen when posted; the menu selling price is never touched here.
+ */
 export function StockJournalVoucher({ branchId, open, onOpenChange, productId, context }: { branchId: string | null; open: boolean; onOpenChange: (o: boolean) => void; productId?: string; context?: VoucherContext }) {
   productId = productId ?? context?.productId;
   const { data: items } = useStockItems(branchId);
+  const { data: places } = usePlaces(branchId);
   const { data: settings } = useMfgSettings(branchId);
-  const prefill = usePrefill(branchId);
-  const mfgPreview = usePreviewBatch(branchId);
-  const plainPreview = usePreviewProduction(branchId);
-  const { post: mfgPost } = usePostBatch(branchId);
-  const plainSave = useSaveProduction(branchId);
+  const fill = useRecipeFill(branchId);
+  const preview = useVoucherPreview(branchId);
+  const save = useSaveProduction(branchId);
   const quality = useRecordQuality(branchId);
   const [when, setWhen] = useState(local);
   const [batchRef, setBatchRef] = useState(context?.batchRef ?? "");
-  const [location, setLocation] = useState("");
+  const [place, setPlace] = useState(""); // voucher-level place name (printed on the voucher)
   const [shift, setShift] = useState("");
   const [madeOn, setMadeOn] = useState("");
   const [expiry, setExpiry] = useState("");
@@ -53,68 +52,103 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const [insRaw, setIns] = useState<In[]>(() => (context?.sourceIds?.length ? context.sourceIds.map((id) => blankIn({ ingredientId: id })) : [blankIn()]));
   const [outsRaw, setOuts] = useState<Out[]>([blankOut(productId ? { ingredientId: productId } : {})]);
   const [costs, setCosts] = useState<Cost[]>([]);
+  const [method, setMethod] = useState<"QUANTITY" | "MANUAL">("QUANTITY");
+  const [recipeKey, setRecipeKey] = useState(""); // "RECIPE:id" | "MENU:id" | ""
   const [qResult, setQResult] = useState<QualityResult | "">("");
   const [qGrade, setQGrade] = useState("");
   const [qNotes, setQNotes] = useState("");
-  const [review, setReview] = useState<{ lines: RLine[]; canPost: boolean; shortages: string[]; mfg: MfgPreview | null } | null>(null);
+  const [review, setReview] = useState<VoucherPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const key = useRef("");
 
   const byId = useMemo(() => new Map((items ?? []).map((i) => [i.id, i])), [items]);
   const raw = (items ?? []).filter((i) => i.kind === "PURCHASED");
   const products = (items ?? []).filter((i) => i.kind === "PREPARED");
+  const activePlaces = (places ?? []).filter((p) => p.isActive);
   // Rows started from a purchase order have an item but no unit yet; use the item's own unit until one is chosen.
   const ins = useMemo(() => insRaw.map((x) => (x.ingredientId && !x.unit ? { ...x, unit: (byId.get(x.ingredientId)?.unit ?? "") as IngredientUnit | "" } : x)), [insRaw, byId]);
   const outs = useMemo(() => outsRaw.map((x) => (x.ingredientId && !x.unit ? { ...x, unit: (byId.get(x.ingredientId)?.unit ?? "") as IngredientUnit | "" } : x)), [outsRaw, byId]);
+  const costed = !!settings?.enabled;
+  const busy = preview.isPending || save.isPending || fill.isPending;
+  const firstProduct = outs[0]?.ingredientId ?? "";
+  const { data: recipes } = useRecipes(branchId, firstProduct || undefined);
+  const recipe = (recipes ?? []).find((r) => `${r.kind}:${r.id}` === recipeKey);
+  const multi = outs.filter((o) => o.ingredientId).length > 1;
 
-  const costed = !!settings?.enabled && outs.length === 1;
-  const busy = mfgPreview.isPending || plainPreview.isPending || mfgPost.isPending || plainSave.isPending;
   const patchIn = (id: number, p: Partial<In>) => setIns((r) => r.map((x) => (x.key === id ? { ...x, ...p } : x)));
   const patchOut = (id: number, p: Partial<Out>) => setOuts((r) => r.map((x) => (x.key === id ? { ...x, ...p } : x)));
   const pickIn = (id: number, ing: string) => patchIn(id, { ingredientId: ing, unit: byId.get(ing)?.unit ?? "", expected: undefined });
-  const pickOut = (id: number, ing: string) => patchOut(id, { ingredientId: ing, unit: byId.get(ing)?.unit ?? "" });
+  const pickOut = (id: number, ing: string) => { patchOut(id, { ingredientId: ing, unit: byId.get(ing)?.unit ?? "" }); setRecipeKey(""); };
+  const enterAdds = (isLast: boolean, add: () => void) => (e: React.KeyboardEvent) => { if (e.key === "Enter" && isLast) { e.preventDefault(); add(); } };
 
   const usedIns = ins.filter((r) => r.ingredientId || r.quantity);
   const usedOuts = outs.filter((r) => r.ingredientId || r.quantity);
   const estimate = usedIns.reduce((s, r) => s + (Number(r.quantity) > 0 && r.rate !== "" ? Number(r.quantity) * Number(r.rate) : 0), 0);
-  const extra = costs.reduce((s, c) => s + (Number(c.amount) > 0 ? Number(c.amount) : 0), 0);
-  // Quick shortage hint while typing (same unit only); the server check in Review is the real one.
   const short = (r: In) => { const it = byId.get(r.ingredientId); return !!it && r.unit === it.unit && Number(r.quantity) > Number(it.currentStock); };
 
+  // Ingredient use against the recipe, same-unit rows only; shown beside the table and again per row.
   const yieldInfo = useMemo(() => {
-    const rows = ins.filter((r) => r.expected && Number(r.expected) > 0 && Number(r.quantity) > 0 && byId.get(r.ingredientId)?.unit === r.unit);
+    const rows = ins.filter((r) => r.expected && Number(r.expected) > 0 && Number(r.quantity) > 0 && r.unit === (byId.get(r.ingredientId)?.unit ?? r.unit));
     if (!rows.length) return null;
-    const expected = rows.reduce((a, r) => a + Number(r.expected), 0), used = rows.reduce((a, r) => a + Number(r.quantity), 0);
-    return { expected: Math.round(expected * 1000) / 1000, used: Math.round(used * 1000) / 1000, pct: ((used - expected) / expected) * 100 };
+    const expected = rows.reduce((a, r) => a + Number(r.expected), 0);
+    const used = rows.reduce((a, r) => a + Number(r.quantity), 0);
+    return { expected: q3(expected), used: q3(used), pct: ((used - expected) / expected) * 100 };
   }, [ins, byId]);
 
   const problem = () => {
     if (!usedOuts.length || usedOuts.some((r) => !r.ingredientId)) return "Choose the finished product in the Destination panel.";
     if (!usedIns.length || usedIns.some((r) => !r.ingredientId)) return "Choose every ingredient in the Source panel.";
-    if ([...usedIns, ...usedOuts].some((r) => !(Number(r.quantity) > 0))) return "Every row needs a quantity above zero.";
+    if ([...usedIns, ...usedOuts].some((r) => !(Number(r.quantity) > 0))) return "Every row needs a quantity above zero (for a product, the good quantity).";
+    if (usedOuts.some((r) => r.rejected !== "" && !(Number(r.rejected) >= 0))) return "Rejected quantity must be zero or more.";
     if (usedIns.some((r) => r.rate !== "" && !(Number(r.rate) >= 0))) return "A rate must be zero or more.";
     if (costs.some((c) => c.amount !== "" && !(Number(c.amount) >= 0))) return "An additional cost must be zero or more.";
     if (new Set([...usedIns, ...usedOuts].map((r) => r.ingredientId)).size !== usedIns.length + usedOuts.length) return "An item can appear only once, and an ingredient cannot also be produced.";
+    if (multi && method === "MANUAL") {
+      const sum = usedOuts.reduce((a, r) => a + Number(r.percent || 0), 0);
+      if (Math.abs(sum - 100) > 0.001) return `The percents add up to ${q3(sum)}; they must add up to 100.`;
+    }
     return null;
   };
   const lines = () => ({
-    inputs: usedIns.map((r) => ({ ingredientId: r.ingredientId, quantity: r.quantity.trim(), unit: r.unit as IngredientUnit, ...(r.rate.trim() !== "" ? { rate: r.rate.trim() } : {}) })),
-    outputs: usedOuts.map((r) => ({ ingredientId: r.ingredientId, quantity: r.quantity.trim(), unit: r.unit as IngredientUnit })),
+    inputs: usedIns.map((r) => ({
+      ingredientId: r.ingredientId, quantity: r.quantity.trim(), unit: r.unit as IngredientUnit,
+      ...(r.rate.trim() !== "" ? { rate: r.rate.trim() } : {}),
+      ...(r.expected ? { expectedQuantity: r.expected } : {}),
+      ...(r.locationId ? { locationId: r.locationId } : {}),
+      ...(r.lot.trim() ? { lotNumber: r.lot.trim() } : {}),
+      ...(multi && r.directTo ? { directToIngredientId: r.directTo } : {}),
+    })),
+    outputs: usedOuts.map((r) => ({
+      ingredientId: r.ingredientId, quantity: r.quantity.trim(), unit: r.unit as IngredientUnit,
+      ...(r.rejected.trim() !== "" && Number(r.rejected) > 0 ? { rejectedQuantity: r.rejected.trim() } : {}),
+      ...(r.expected ? { expectedQuantity: r.expected } : {}),
+      ...(r.locationId ? { locationId: r.locationId } : {}),
+      ...(r.lot.trim() ? { lotNumber: r.lot.trim() } : {}),
+      ...(multi && method === "MANUAL" ? { allocationPercent: r.percent } : {}),
+    })),
   });
   const costing = { enabled: true as const, costs: costs.filter((c) => c.category.trim() && c.amount !== "").map((c) => ({ category: c.category.trim(), amount: c.amount.trim(), included: true })) };
-  const details = () => ({ producedAt: new Date(when), shift: shift || undefined, location: location || undefined, batchRef: batchRef || undefined, notes: notes || undefined, manufacturedOn: madeOn ? new Date(madeOn) : undefined, expiryDate: expiry ? new Date(expiry) : undefined });
+  const extras = () => ({
+    ...(multi ? { allocationMethod: method } : {}),
+    ...(recipe ? { recipe: { kind: recipe.kind, id: recipe.id } } : {}),
+    ...(context?.poId ? { sourcePoId: context.poId } : {}),
+  });
+  const details = () => ({ producedAt: new Date(when), shift: shift || undefined, location: place || undefined, batchRef: batchRef || undefined, notes: notes || undefined, manufacturedOn: madeOn ? new Date(madeOn) : undefined, expiryDate: expiry ? new Date(expiry) : undefined });
   const fail = (e: unknown) => setError(e instanceof ApiError ? e.message : "Could not complete that. Nothing was changed.");
 
   const fillRecipe = () => {
     const o = usedOuts[0];
     if (!o?.ingredientId) return setError("Choose the finished product first.");
-    prefill.mutate({ ingredientId: o.ingredientId, quantity: o.quantity || "1" }, {
+    if (!recipe) return setError(recipes?.length ? "Choose which recipe to fill from." : "This product has no saved recipe. Add one under Inventory > Recipes, or enter the ingredients by hand.");
+    if (!(Number(o.quantity) > 0)) return setError("Type the planned good quantity first; the recipe is scaled to it.");
+    fill.mutate({ kind: recipe.kind, id: recipe.id, quantity: o.quantity }, {
       onSuccess: (r) => {
-        if (!r.lines.length) return toast.error("This product has no saved recipe. Add the ingredients by hand.");
-        setIns(r.lines.map((l) => blankIn({ ingredientId: l.ingredientId, quantity: l.quantity, expected: l.quantity, unit: (byId.get(l.ingredientId)?.unit ?? "") as IngredientUnit })));
+        setIns(r.lines.map((l) => blankIn({ ingredientId: l.ingredientId, quantity: l.quantity, expected: l.quantity, unit: l.unit })));
+        patchOut(o.key, { expected: o.quantity });
         setError(null);
-        toast.success(`Filled from the ${r.source}. Expected quantities are shown; type what was actually used.`);
+        toast.success(`Filled from ${r.recipe.name} v${r.recipe.version} for ${r.plannedOutput}. Type what was really used.`);
       },
+      onError: fail,
     });
   };
 
@@ -122,14 +156,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
     const p = problem();
     if (p) return setError(p);
     setError(null);
-    if (costed) {
-      mfgPreview.mutate({ ...lines(), costing } as Pick<BatchBody, "inputs" | "outputs" | "costing">, {
-        onSuccess: (m) => setReview({ lines: [...m.lines.map((l) => ({ ...l, role: "INPUT" as const })), { role: "OUTPUT" as const, ingredientId: usedOuts[0].ingredientId, name: m.finished.name, quantity: m.finished.quantity, unit: m.finished.unit as IngredientUnit, rate: m.unitCost, lineCost: m.totalCost }], canPost: m.canPost && m.shortages.length === 0, shortages: m.shortages, mfg: m }),
-        onError: fail,
-      });
-    } else {
-      plainPreview.mutate(lines(), { onSuccess: (r) => setReview({ lines: r.lines as RLine[], canPost: r.canPost, shortages: [], mfg: null }), onError: fail });
-    }
+    preview.mutate({ ...lines(), ...(costed ? { costing } : {}), ...(multi ? { allocationMethod: method } : {}) }, { onSuccess: setReview, onError: fail });
   };
 
   const finish = (id: string, no: string) => {
@@ -140,18 +167,26 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const submit = () => {
     setError(null);
     if (!key.current) key.current = `sjv-${crypto.randomUUID()}`;
-    if (costed) mfgPost.mutate({ ...details(), ...lines(), costing, idempotencyKey: key.current } as BatchBody & { idempotencyKey: string }, { onSuccess: (r) => finish(r.id, r.entryNo), onError: fail });
-    else plainSave.mutate({ ...details(), ...lines(), idempotencyKey: key.current, post: true } as never, { onSuccess: (r) => finish(r.id, r.entryNo), onError: fail });
+    save.mutate({ ...details(), ...lines(), ...extras(), ...(costed ? { costing } : {}), idempotencyKey: key.current, post: true } as never, { onSuccess: (r) => finish(r.id, r.entryNo), onError: fail });
   };
 
   const item = (r: In | Out) => byId.get(r.ingredientId);
+  const placeSelect = (value: string, onChange: (v: string) => void, label: string) => (
+    <select aria-label={label} className={selectClass} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">No place</option>
+      {activePlaces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+    </select>
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[96vw] sm:rounded-xl xl:max-w-7xl">
+      <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[96vw] sm:rounded-xl xl:max-w-[88rem]">
         <DialogHeader className="border-b border-border px-4 py-3">
-          <DialogTitle>Stock journal voucher <span className="ml-2 text-sm font-normal text-muted-foreground">Manufacturing entry · number assigned on posting</span></DialogTitle>
-          <DialogDescription>Materials consumed on the left, products made on the right. Nothing changes in stock until you post.</DialogDescription>
+          <DialogTitle>Stock journal voucher <span className="ml-2 text-sm font-normal text-muted-foreground">Manufacturing · {review ? "ready to post" : "draft, nothing posted yet"} · number assigned on posting</span></DialogTitle>
+          <DialogDescription>
+            Materials consumed on the left, products made on the right. Nothing changes in stock until you post.
+            {context?.poNumber ? ` Started from ${context.poNumber}${context.supplier ? ` (${context.supplier})` : ""}; the purchase order is only a reference and never receives stock again.` : ""}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -159,8 +194,14 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
             <div className="flex flex-col gap-4">
               <section aria-label="Voucher details" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
                 <div className="col-span-2 flex flex-col gap-1.5 md:col-span-1"><Label htmlFor="v-when">Date and time</Label><Input id="v-when" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} /></div>
-                <div className="flex flex-col gap-1.5"><Label htmlFor="v-batch">Batch / run no.</Label><Input id="v-batch" value={batchRef} onChange={(e) => setBatchRef(e.target.value)} placeholder="Optional" /></div>
-                <div className="flex flex-col gap-1.5"><Label htmlFor="v-loc">Location / godown</Label><Input id="v-loc" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Main kitchen" /></div>
+                <div className="flex flex-col gap-1.5"><Label htmlFor="v-batch">Batch / reference no.</Label><Input id="v-batch" value={batchRef} onChange={(e) => setBatchRef(e.target.value)} placeholder="Optional, e.g. MOMO-12" /></div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="v-loc">Location / godown</Label>
+                  <select id="v-loc" className={selectClass} value={place} onChange={(e) => setPlace(e.target.value)}>
+                    <option value="">Not stated</option>
+                    {activePlaces.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                  </select>
+                </div>
                 <div className="flex flex-col gap-1.5"><Label htmlFor="v-shift">Shift</Label><select id="v-shift" className={selectClass} value={shift} onChange={(e) => setShift(e.target.value)}><option value="">None</option>{SHIFTS.map((s) => <option key={s}>{s}</option>)}</select></div>
                 <div className="flex flex-col gap-1.5"><Label htmlFor="v-made">Made on</Label><Input id="v-made" type="date" value={madeOn} onChange={(e) => setMadeOn(e.target.value)} /></div>
                 <div className="flex flex-col gap-1.5"><Label htmlFor="v-exp">Use by</Label><Input id="v-exp" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></div>
@@ -168,26 +209,48 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <section aria-label="Source / Consumption" className="rounded-xl border border-border">
-                  <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2">
                     <h3 className="text-sm font-semibold">Source / Consumption</h3>
-                    <Button type="button" variant="outline" size="sm" disabled={prefill.isPending} onClick={fillRecipe}>Fill from recipe</Button>
+                    <div className="flex items-center gap-2">
+                      <select aria-label="Recipe" className={`${selectClass} w-48`} value={recipeKey} onChange={(e) => setRecipeKey(e.target.value)}>
+                        <option value="">{recipes?.length ? "No recipe (manual)" : "No saved recipe"}</option>
+                        {(recipes ?? []).map((r) => <option key={`${r.kind}:${r.id}`} value={`${r.kind}:${r.id}`}>{r.name} · base {r.baseOutputQty} {r.outputUnit.toLowerCase()} · v{r.version}</option>)}
+                      </select>
+                      <Button type="button" variant="outline" size="sm" disabled={fill.isPending || !recipeKey} onClick={fillRecipe}>Fill from recipe</Button>
+                    </div>
                   </div>
                   <div className="overflow-x-auto p-2">
-                    <table className="w-full min-w-[34rem] text-sm">
-                      <thead><tr><th className={head}>Name of item</th><th className={`${head} text-right`}>Available</th><th className={head}>Quantity</th><th className={head}>Unit</th><th className={head}>Rate</th><th className={`${head} text-right`}>Amount</th><th className="w-8" /></tr></thead>
+                    <table className="w-full min-w-[44rem] text-sm">
+                      <thead><tr><th className={head}>Name of item</th><th className={`${head} text-right`}>Available</th><th className={head}>Quantity</th><th className={head}>Unit</th><th className={`${head} text-right`}>Expected</th><th className={head}>Rate</th><th className={`${head} text-right`}>Amount</th><th className="w-8" /></tr></thead>
                       <tbody>
-                        {ins.map((r) => {
+                        {ins.map((r, idx) => {
                           const it = item(r);
                           const amt = Number(r.quantity) > 0 && r.rate !== "" ? Number(r.quantity) * Number(r.rate) : null;
-                          const diff = r.expected && r.unit === it?.unit && Number(r.quantity) > 0 ? Number(r.quantity) - Number(r.expected) : null;
+                          const exp = r.expected && it && r.unit === it.unit ? Number(r.expected) : null;
+                          const diff = exp != null && Number(r.quantity) > 0 ? Number(r.quantity) - exp : null;
                           return (
-                            <tr key={r.key} className="align-top">
-                              <td className="p-1"><select aria-label="Ingredient" className={selectClass} value={r.ingredientId} onChange={(e) => pickIn(r.key, e.target.value)}><option value="">Choose…</option>{raw.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
-                                {r.expected && <p className="mt-0.5 text-xs text-muted-foreground">Expected {r.expected}{diff != null && diff !== 0 ? `, ${diff > 0 ? "+" : ""}${Math.round(diff * 1000) / 1000} actual` : ""}</p>}</td>
+                            <tr key={r.key} className="align-top [&>td]:border-b [&>td]:border-border/60">
+                              <td className="p-1">
+                                <select aria-label="Ingredient" className={selectClass} value={r.ingredientId} onChange={(e) => pickIn(r.key, e.target.value)}><option value="">Choose…</option>{raw.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
+                                <div className="mt-1 grid grid-cols-[minmax(7rem,1fr)_5rem] gap-1">
+                                  {placeSelect(r.locationId, (v) => patchIn(r.key, { locationId: v }), "Take from place")}
+                                  <Input aria-label="Lot or batch no." className="h-9" placeholder="Lot" value={r.lot} onChange={(e) => patchIn(r.key, { lot: e.target.value })} />
+                                </div>
+                                {multi && (
+                                  <select aria-label="Cost belongs to" className={`${selectClass} mt-1`} value={r.directTo} onChange={(e) => patchIn(r.key, { directTo: e.target.value })}>
+                                    <option value="">Shared by all products</option>
+                                    {usedOuts.filter((o) => o.ingredientId).map((o) => <option key={o.key} value={o.ingredientId}>Only {byId.get(o.ingredientId)?.name}</option>)}
+                                  </select>
+                                )}
+                              </td>
                               <td className={`p-1 pt-2.5 text-right text-xs tabular-nums ${short(r) ? "font-semibold text-destructive" : "text-muted-foreground"}`}>{it ? `${it.currentStock} ${it.unit}` : "–"}{short(r) ? " · short" : ""}</td>
-                              <td className="p-1"><Input aria-label="Quantity consumed" inputMode="decimal" className="w-20" value={r.quantity} onChange={(e) => patchIn(r.key, { quantity: e.target.value })} /></td>
-                              <td className="p-1"><select aria-label="Unit" className={selectClass} value={r.unit} onChange={(e) => patchIn(r.key, { unit: e.target.value as IngredientUnit })}>{(it?.units ?? []).map((u) => <option key={u}>{u}</option>)}</select></td>
-                              <td className="p-1"><Input aria-label="Rate per unit" inputMode="decimal" className="w-20" placeholder="auto" value={r.rate} onChange={(e) => patchIn(r.key, { rate: e.target.value })} /></td>
+                              <td className="p-1"><Input aria-label="Quantity consumed" inputMode="decimal" className="w-20" value={r.quantity} onChange={(e) => patchIn(r.key, { quantity: e.target.value })} onKeyDown={enterAdds(idx === ins.length - 1, () => setIns([...ins, blankIn()]))} /></td>
+                              <td className="min-w-[5.5rem] p-1"><select aria-label="Unit" className={selectClass} value={r.unit} onChange={(e) => patchIn(r.key, { unit: e.target.value as IngredientUnit })}>{(it?.units ?? []).map((u) => <option key={u}>{u}</option>)}</select></td>
+                              <td className="p-1 pt-2.5 text-right text-xs tabular-nums text-muted-foreground">
+                                {r.expected ?? "–"}
+                                {diff != null && diff !== 0 && <span className={`block ${Math.abs(diff / exp!) > 0.05 ? "text-destructive" : ""}`}>{diff > 0 ? "+" : ""}{q3(diff)} ({diff > 0 ? "+" : ""}{((diff / exp!) * 100).toFixed(1)}%)</span>}
+                              </td>
+                              <td className="p-1"><Input aria-label="Rate per unit" inputMode="decimal" className="w-20" placeholder="avg" value={r.rate} onChange={(e) => patchIn(r.key, { rate: e.target.value })} /></td>
                               <td className="p-1 pt-2.5 text-right tabular-nums">{money(amt)}</td>
                               <td className="p-1"><Button type="button" variant="ghost" size="icon-sm" aria-label="Remove ingredient row" disabled={ins.length === 1} onClick={() => setIns((x) => x.filter((y) => y.key !== r.key))}>×</Button></td>
                             </tr>
@@ -195,36 +258,51 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                         })}
                       </tbody>
                     </table>
-                    {yieldInfo && <p className="px-1 pt-1 text-xs text-muted-foreground">Against the recipe: <b className={yieldInfo.pct > 5 ? "text-destructive" : "text-foreground"}>{yieldInfo.pct > 0 ? "+" : ""}{yieldInfo.pct.toFixed(1)}%</b> ingredient use ({yieldInfo.used} of {yieldInfo.expected} expected, same-unit rows only).</p>}
-                    <div className="flex items-center justify-between px-1 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add ingredient</Button><span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b></span></div>
+                    {yieldInfo && <p className="px-1 pt-1 text-xs text-muted-foreground">Against the recipe: <b className={Math.abs(yieldInfo.pct) > 5 ? "text-destructive" : "text-foreground"}>{yieldInfo.pct > 0 ? "+" : ""}{yieldInfo.pct.toFixed(1)}%</b> ingredient use ({yieldInfo.used} of {yieldInfo.expected} expected, same-unit rows). Less is not automatically better; check the quality note.</p>}
+                    <div className="flex items-center justify-between px-1 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add ingredient</Button><span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span></div>
                   </div>
                 </section>
 
                 <section aria-label="Destination / Production" className="rounded-xl border border-border">
                   <div className="border-b border-border bg-muted/40 px-3 py-2"><h3 className="text-sm font-semibold">Destination / Production</h3></div>
                   <div className="overflow-x-auto p-2">
-                    <table className="w-full min-w-[22rem] text-sm">
-                      <thead><tr><th className={head}>Name of item</th><th className={head}>Quantity made</th><th className={head}>Unit</th><th className="w-8" /></tr></thead>
+                    <table className="w-full min-w-[28rem] text-sm">
+                      <thead><tr><th className={head}>Name of item</th><th className={head}>Good qty</th><th className={head}>Rejected</th><th className={head}>Unit</th>{multi && method === "MANUAL" && <th className={head}>Cost %</th>}<th className="w-8" /></tr></thead>
                       <tbody>
-                        {outs.map((r) => {
+                        {outs.map((r, idx) => {
                           const it = item(r);
                           return (
-                            <tr key={r.key}>
-                              <td className="p-1"><select aria-label="Finished product" className={selectClass} value={r.ingredientId} onChange={(e) => pickOut(r.key, e.target.value)}><option value="">Choose…</option>{products.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select></td>
-                              <td className="p-1"><Input aria-label="Quantity produced" inputMode="decimal" className="w-24" value={r.quantity} onChange={(e) => patchOut(r.key, { quantity: e.target.value })} /></td>
-                              <td className="p-1"><select aria-label="Unit" className={selectClass} value={r.unit} onChange={(e) => patchOut(r.key, { unit: e.target.value as IngredientUnit })}>{(it?.units ?? []).map((u) => <option key={u}>{u}</option>)}</select></td>
+                            <tr key={r.key} className="align-top [&>td]:border-b [&>td]:border-border/60">
+                              <td className="p-1">
+                                <select aria-label="Finished product" className={selectClass} value={r.ingredientId} onChange={(e) => pickOut(r.key, e.target.value)}><option value="">Choose…</option>{products.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
+                                <div className="mt-1 grid grid-cols-[minmax(7rem,1fr)_5rem] gap-1">
+                                  {placeSelect(r.locationId, (v) => patchOut(r.key, { locationId: v }), "Put into place")}
+                                  <Input aria-label="Lot or batch no." className="h-9" placeholder="Lot" value={r.lot} onChange={(e) => patchOut(r.key, { lot: e.target.value })} />
+                                </div>
+                              </td>
+                              <td className="p-1"><Input aria-label="Good quantity produced" inputMode="decimal" className="w-20" value={r.quantity} onChange={(e) => patchOut(r.key, { quantity: e.target.value })} onKeyDown={enterAdds(idx === outs.length - 1 && false, () => undefined)} />{r.expected && <p className="mt-0.5 text-xs text-muted-foreground">Plan {r.expected}</p>}</td>
+                              <td className="p-1"><Input aria-label="Rejected quantity" inputMode="decimal" className="w-20" placeholder="0" value={r.rejected} onChange={(e) => patchOut(r.key, { rejected: e.target.value })} /></td>
+                              <td className="min-w-[5.5rem] p-1"><select aria-label="Unit" className={selectClass} value={r.unit} onChange={(e) => patchOut(r.key, { unit: e.target.value as IngredientUnit })}>{(it?.units ?? []).map((u) => <option key={u}>{u}</option>)}</select></td>
+                              {multi && method === "MANUAL" && <td className="p-1"><Input aria-label="Cost percent" inputMode="decimal" className="w-16" value={r.percent} onChange={(e) => patchOut(r.key, { percent: e.target.value })} /></td>}
                               <td className="p-1"><Button type="button" variant="ghost" size="icon-sm" aria-label="Remove product row" disabled={outs.length === 1} onClick={() => setOuts((x) => x.filter((y) => y.key !== r.key))}>×</Button></td>
                             </tr>
                           );
                         })}
                       </tbody>
                     </table>
-                    <div className="px-1 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Another finished product</Button></div>
+                    <div className="px-1 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Another product (co-product or by-product)</Button></div>
                     {products.length === 0 && <p className="px-1 text-xs text-muted-foreground">No finished products yet. Add one under Stock items with type &ldquo;Finished product&rdquo;.</p>}
-                    {settings?.enabled && outs.length > 1 && <p className="px-1 pt-1 text-xs text-muted-foreground">Cost per unit is worked out only when one product is made. With several products the voucher records quantities and consumption without a unit cost.</p>}
-                    {!settings?.enabled && <p className="px-1 pt-1 text-xs text-muted-foreground">Costing is switched off, so this voucher records quantities only.</p>}
+                    <p className="px-1 pt-1 text-xs text-muted-foreground">Good quantity goes into stock. Rejected pieces are only recorded; their cost stays in the batch and is carried by the good pieces.</p>
+                    {multi && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-muted/40 p-2 text-xs">
+                        <span className="font-medium">Split shared cost between products:</span>
+                        <label className="flex items-center gap-1"><input type="radio" name="alloc" checked={method === "QUANTITY"} onChange={() => setMethod("QUANTITY")} /> by good quantity (same unit)</label>
+                        <label className="flex items-center gap-1"><input type="radio" name="alloc" checked={method === "MANUAL"} onChange={() => setMethod("MANUAL")} /> by manual percent</label>
+                        <span className="text-muted-foreground">A material marked &ldquo;Only …&rdquo; goes wholly to that product.</span>
+                      </div>
+                    )}
                   </div>
-                  {settings?.enabled && outs.length === 1 && (
+                  {costed && (
                     <div className="border-t border-border p-3">
                       <h4 className="mb-1 text-xs font-medium text-muted-foreground">Additional production costs (optional)</h4>
                       {costs.map((c) => (
@@ -235,9 +313,10 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                         </div>
                       ))}
                       <Button type="button" variant="ghost" size="sm" onClick={() => setCosts([...costs, { key: k++, category: COST_CATEGORIES[0], amount: "" }])}>+ Add cost</Button>
-                      {extra > 0 && <span className="ml-2 text-xs text-muted-foreground">Total {money(extra)}</span>}
+                      <p className="text-xs text-muted-foreground">&ldquo;{RECOVERY}&rdquo; is subtracted from the batch cost.</p>
                     </div>
                   )}
+                  {!costed && <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">Costing is switched off, so this voucher records quantities only.</p>}
                   {settings?.canQuality && (
                     <div className="grid grid-cols-2 gap-2 border-t border-border p-3">
                       <div className="flex flex-col gap-1"><Label htmlFor="q-res">Quality result</Label><select id="q-res" className={selectClass} value={qResult} onChange={(e) => setQResult(e.target.value as QualityResult | "")}><option value="">Not recorded</option><option value="PASS">Passed</option><option value="NEEDS_REVIEW">Needs review</option><option value="FAIL">Failed</option></select></div>
@@ -250,23 +329,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
               <div className="flex flex-col gap-1.5"><Label htmlFor="v-narr">Narration</Label><Input id="v-narr" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional note for this voucher" /></div>
             </div>
           ) : (
-            <div className="flex flex-col gap-4">
-              <p className="text-sm font-medium">Check the voucher. Stock changes only when you press Post.</p>
-              <div className="grid gap-4 lg:grid-cols-2">
-                <ReviewPanel title="Source / Consumption" sign="-" lines={review.lines.filter((l) => l.role === "INPUT")} />
-                <ReviewPanel title="Destination / Production" sign="+" lines={review.lines.filter((l) => l.role === "OUTPUT")} />
-              </div>
-              {review.mfg && (
-                <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border p-3 text-sm sm:grid-cols-4">
-                  <div><dt className="text-xs text-muted-foreground">Material cost</dt><dd className="tabular-nums">{money(review.mfg.ingredientCost)}</dd></div>
-                  <div><dt className="text-xs text-muted-foreground">Additional costs</dt><dd className="tabular-nums">{money(review.mfg.additionalCost)}</dd></div>
-                  <div><dt className="text-xs text-muted-foreground">Total production cost</dt><dd className="font-semibold tabular-nums">{money(review.mfg.totalCost)}</dd></div>
-                  <div><dt className="text-xs text-muted-foreground">Cost per {review.mfg.finished.unit.toLowerCase()}</dt><dd className="font-semibold tabular-nums">{money(review.mfg.unitCost)}</dd></div>
-                </dl>
-              )}
-              {review.mfg && review.mfg.missingRates.length > 0 && <p role="alert" className="text-sm text-destructive">No rate known for: {review.mfg.missingRates.join(", ")}. Go back and type a rate, or the cost will be incomplete.</p>}
-              {(review.shortages.length > 0 || !review.canPost) && <p role="alert" className="text-sm text-destructive">Not enough stock{review.shortages.length ? `: ${review.shortages.join("; ")}` : " for at least one ingredient"}. Stock is never allowed to go below zero, so fix the count or the quantity first.</p>}
-            </div>
+            <ReviewBody review={review} recipe={recipe ? `${recipe.name} v${recipe.version}` : null} />
           )}
           {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
         </div>
@@ -283,23 +346,55 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   );
 }
 
-function ReviewPanel({ title, sign, lines }: { title: string; sign: "+" | "-"; lines: RLine[] }) {
+function ReviewBody({ review, recipe }: { review: VoucherPreview; recipe: string | null }) {
   return (
-    <section className="rounded-xl border border-border">
-      <h3 className="border-b border-border bg-muted/40 px-3 py-2 text-sm font-semibold">{title}</h3>
-      <table className="w-full text-sm">
-        <thead><tr><th className={head}>Item</th><th className={`${head} text-right`}>Quantity</th><th className={`${head} text-right`}>Rate</th><th className={`${head} text-right`}>Amount</th></tr></thead>
-        <tbody>
-          {lines.map((l) => (
-            <tr key={l.ingredientId} className="border-t border-border">
-              <td className="px-2 py-1.5">{l.name}</td>
-              <td className="px-2 text-right tabular-nums">{sign}{l.quantity} {l.unit}</td>
-              <td className="px-2 text-right tabular-nums">{money(l.rate)}</td>
-              <td className="px-2 text-right tabular-nums">{money(l.lineCost)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <div className="flex flex-col gap-4">
+      <p className="text-sm font-medium">Check the voucher. Stock changes only when you press Post.</p>
+      <p className="text-xs text-muted-foreground">{recipe ? `Recipe baseline: ${recipe}.` : "No recipe baseline: quantities were entered by hand."}</p>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="rounded-xl border border-border">
+          <h3 className="border-b border-border bg-muted/40 px-3 py-2 text-sm font-semibold">Source / Consumption</h3>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead><tr><th className={head}>Item</th><th className={`${head} text-right`}>Used</th><th className={`${head} text-right`}>Expected</th><th className={`${head} text-right`}>Rate</th><th className={`${head} text-right`}>Amount</th></tr></thead>
+            <tbody>{review.inputs.map((l) => (
+              <tr key={l.ingredientId} className="border-t border-border">
+                <td className="px-2 py-1.5">{l.name}{l.location ? <span className="block text-xs text-muted-foreground">from {l.location}{l.atLocation ? ` (has ${l.atLocation})` : ""}</span> : null}</td>
+                <td className="px-2 text-right tabular-nums">−{l.quantity} {l.unit}</td>
+                <td className="px-2 text-right text-xs tabular-nums text-muted-foreground">{l.expected ?? "–"}{l.variance && Number(l.variance) !== 0 ? <span className="block">{Number(l.variance) > 0 ? "+" : ""}{l.variance} ({l.variancePercent}%)</span> : null}</td>
+                <td className="px-2 text-right tabular-nums">{money(l.rate)}<span className="block text-xs text-muted-foreground">{l.rateSource}</span></td>
+                <td className="px-2 text-right tabular-nums">{money(l.lineCost)}</td>
+              </tr>))}</tbody>
+          </table></div>
+        </section>
+        <section className="rounded-xl border border-border">
+          <h3 className="border-b border-border bg-muted/40 px-3 py-2 text-sm font-semibold">Destination / Production</h3>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead><tr><th className={head}>Item</th><th className={`${head} text-right`}>Good</th><th className={`${head} text-right`}>Rejected</th><th className={`${head} text-right`}>Share</th><th className={`${head} text-right`}>Allocated</th><th className={`${head} text-right`}>Per good unit</th></tr></thead>
+            <tbody>{review.outputs.map((o) => (
+              <tr key={o.ingredientId} className="border-t border-border">
+                <td className="px-2 py-1.5">{o.name}{o.location ? <span className="block text-xs text-muted-foreground">into {o.location}</span> : null}{o.yieldPercent ? <span className="block text-xs text-muted-foreground">yield {o.yieldPercent}% of plan {o.expected}</span> : null}</td>
+                <td className="px-2 text-right tabular-nums">+{o.good} {o.unit}</td>
+                <td className="px-2 text-right tabular-nums">{Number(o.rejected) > 0 ? `${o.rejected} (${o.rejectRate}%)` : "–"}</td>
+                <td className="px-2 text-right tabular-nums">{o.percent ? `${Number(o.percent).toFixed(1)}%` : "–"}</td>
+                <td className="px-2 text-right tabular-nums">{money(o.allocatedCost)}</td>
+                <td className="px-2 text-right font-semibold tabular-nums">{money(o.unitCost)}</td>
+              </tr>))}</tbody>
+          </table></div>
+        </section>
+      </div>
+      {review.costed && (
+        <>
+          <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border p-3 text-sm sm:grid-cols-4">
+            <div><dt className="text-xs text-muted-foreground">Material cost</dt><dd className="tabular-nums">{money(review.ingredientCost)}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">Additional costs{Number(review.recovery) > 0 ? " (net of recovery)" : ""}</dt><dd className="tabular-nums">{money(review.additionalCost)}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">Total batch cost</dt><dd className="font-semibold tabular-nums">{money(review.totalCost)}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">Split method</dt><dd>{review.method === "QUANTITY" ? "By good quantity" : review.method === "MANUAL" ? "Manual percent" : "Single product"}</dd></div>
+          </dl>
+          <p className="text-xs text-muted-foreground">Cost per good unit = (materials + additional costs − recovered scrap value) × share ÷ good quantity. {review.rateBasis} {review.wastageTreatment}</p>
+        </>
+      )}
+      {review.costError && <p role="alert" className="text-sm text-destructive">{review.costError} Cost per product is not shown until this is fixed.</p>}
+      {review.shortages.length > 0 && <p role="alert" className="text-sm text-destructive">Not enough stock: {review.shortages.join("; ")}. Stock is never allowed to go below zero, so fix the count or the quantity first.</p>}
+    </div>
   );
 }

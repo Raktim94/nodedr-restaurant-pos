@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { QueryError } from "@/components/ui/query-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ResponsiveTabs } from "@/components/ui/nav-picker";
+import { useMenuCosts } from "@/hooks/use-manufacturing";
 import { useCategories, useMenuItems, type MenuItem } from "@/hooks/use-menu";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,10 @@ export function ProductGrid({
   const [activeCategoryId, setActiveCategoryId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
   const { data: items, isLoading, isError, error, refetch, isFetching } = useMenuItems(branchId, activeCategoryId);
+
+  // Posted production cost per item. Only people allowed to see reports get an answer; for everyone else this stays empty.
+  const { data: costs } = useMenuCosts(branchId);
+  const costOf = new Map((costs?.items ?? []).map((c) => [c.menuItemId, c]));
 
   const filtered = items?.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -109,6 +114,16 @@ export function ProductGrid({
                 </span>
               )}
             </span>
+            {costOf.get(item.id) && (() => {
+              const c = costOf.get(item.id)!;
+              return (
+                <span className="w-full border-t border-border/70 pt-1 text-[11px] leading-snug text-muted-foreground" data-testid="pos-production-cost">
+                  {c.isToday ? "Today\u2019s production cost" : `Production cost (${new Date(`${c.costDate}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" })}, not today)`}{" "}
+                  <b className="tabular-nums text-foreground">{formatCurrency(c.costPerPortion)}</b>
+                  <span className="hidden lg:block">Difference {formatCurrency(c.indicativeDifference)} before expenses, discounts and tax</span>
+                </span>
+              );
+            })()}
           </button>
         ))}
         {filtered?.length === 0 && !isLoading && (

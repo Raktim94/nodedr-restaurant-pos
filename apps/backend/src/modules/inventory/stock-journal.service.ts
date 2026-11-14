@@ -24,6 +24,7 @@ export interface JournalFilters {
   type?: string;
   productionEntryId?: string;
   wasteEntryId?: string;
+  locationId?: string;
   cursor?: string;
   take?: number;
 }
@@ -486,6 +487,7 @@ export class StockJournalService {
         ? { productionEntryId: f.productionEntryId }
         : {}),
       ...(f.wasteEntryId ? { wasteEntryId: f.wasteEntryId } : {}),
+      ...(f.locationId ? { locationId: f.locationId } : {}),
       ...(f.from || f.to
         ? {
             createdAt: {
@@ -709,6 +711,11 @@ export class StockJournalService {
       take: 500,
       cursor: undefined,
     });
+    const places = new Map(
+      (await this.prisma.stockLocation.findMany({ where: { branchId } })).map(
+        (p) => [p.id, p.name],
+      ),
+    );
     return toCsv(
       [
         'Movement',
@@ -721,6 +728,7 @@ export class StockJournalService {
         'Production entry',
         'Waste entry',
         'Device',
+        'Place',
         'Note',
       ],
       items.map((m) => [
@@ -734,6 +742,7 @@ export class StockJournalService {
         m.productionEntryId,
         m.wasteEntryId,
         m.deviceId,
+        m.locationId ? (places.get(m.locationId) ?? 'Place removed') : '',
         m.note,
       ]),
     );

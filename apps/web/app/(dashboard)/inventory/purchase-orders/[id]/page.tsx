@@ -156,6 +156,9 @@ export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ 
           open
           onOpenChange={setMaking}
           context={{
+            poId: po.id,
+            poNumber: po.poNumber,
+            supplier: po.supplier.name,
             batchRef: po.poNumber,
             narration: `Manufacturing from ${po.poNumber} (${po.supplier.name})`,
             sourceIds: po.items.filter((i) => Number(i.quantityReceived) > 0).map((i) => i.ingredientId),

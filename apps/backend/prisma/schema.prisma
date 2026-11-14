@@ -222,6 +222,7 @@ model Branch {
 
   @@index([restaurantId])
   @@map("branches")
+  productRecipes    ProductRecipe[]
 }
 
 // ---------------------------------------------------------------------------
@@ -763,6 +764,8 @@ model Ingredient {
   preparationLines   PreparationLine[]
   modifierLines      ModifierIngredient[]
   recipeLines        RecipeIngredient[]
+  productRecipes     ProductRecipe[]
+  productRecipeLines ProductRecipeLine[]
   directMenuItems    MenuItem[]           @relation("DirectStockItem")
   purchaseOrderItems PurchaseOrderItem[]
   goodsReceiptItems  GoodsReceiptItem[]
@@ -1262,6 +1265,9 @@ model StockMovement {
   productionEntryId String?
   wasteEntryId      String?
   deviceId          String?
+  // Place this quantity went into or came out of (production vouchers). Plain column, no FK. null = unassigned or
+  // unknown: every movement written before this column existed stays null; history is never guessed.
+  locationId        String?
 
   createdById String
   createdBy   User     @relation("StockMovementCreatedBy", fields: [createdById], references: [id])
@@ -3037,6 +3043,18 @@ model ProductionEntry {
   qualityById        String?
   qualityAt          DateTime?
 
+  // Manufacturing journal v2. The recipe actually used is copied in (recipeSnapshot) so later recipe edits never
+  // rewrite this batch; the PO it came from is recorded as text, not a link, so the ledger outlives the PO.
+  recipeKind         String? // RECIPE | MENU
+  recipeId           String?
+  recipeName         String?
+  recipeSnapshot     Json?
+  sourcePoId         String?
+  sourcePoNumber     String?
+  sourceSupplier     String?
+  // QUANTITY | MANUAL when the voucher made more than one product; null for a single product.
+  allocationMethod   String?
+
   costs ProductionCost[]
 
   correctsEntryId String?
@@ -3074,6 +3092,23 @@ model ProductionLine {
   // Costing: the rate per STOCK unit used for this batch and the resulting line cost (frozen at posting).
   unitRate        Decimal?       @db.Decimal(14, 4)
   lineCost        Decimal?       @db.Decimal(16, 4)
+
+  // Manufacturing journal v2 (all optional, so every earlier row stays valid and means exactly what it did).
+  // OUTPUT: `quantity` is the GOOD (saleable) quantity that is added to stock; rejected pieces are only recorded.
+  rejectedQuantity     Decimal  @default(0) @db.Decimal(12, 3)
+  // Row-level place. locationId is a plain column (no FK) so history survives a place being renamed or retired;
+  // locationName is the name at posting. null = the item's "unassigned" stock, exactly as before.
+  locationId           String?
+  locationName         String?
+  lotNumber            String?
+  // INPUT: what the recipe expected for this batch (stock unit), frozen with the voucher.
+  expectedQuantity     Decimal? @db.Decimal(12, 3)
+  // INPUT: tie this material wholly to one finished product (direct material); null = shared cost.
+  directToIngredientId String?
+  // OUTPUT: split of shared cost and the result, frozen at posting.
+  allocationPercent    Decimal? @db.Decimal(7, 3)
+  allocatedCost        Decimal? @db.Decimal(16, 4)
+  goodUnitCost         Decimal? @db.Decimal(14, 4)
 
   @@index([entryId])
   @@index([ingredientId])
@@ -3530,4 +3565,42 @@ model TableAccess {
 
   @@index([tableId, expiresAt])
   @@map("table_accesses")
+}
+
+
+// A saved bill of materials: what a base output quantity of a finished product takes. Editing it bumps `version`;
+// a posted voucher keeps its own snapshot, so history never changes. Legacy menu-item recipes still work (as "MENU").
+model ProductRecipe {
+  id                 String     @id @default(cuid())
+  branchId           String
+  branch             Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  outputIngredientId String
+  outputIngredient   Ingredient @relation(fields: [outputIngredientId], references: [id], onDelete: Cascade)
+  name               String
+  baseOutputQty      Decimal    @db.Decimal(12, 3) // good output this recipe makes, in the output item's stock unit
+  version            Int        @default(1)
+  isActive           Boolean    @default(true)
+  notes              String?
+  createdById        String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  lines ProductRecipeLine[]
+
+  @@unique([branchId, outputIngredientId, name])
+  @@index([branchId, outputIngredientId])
+  @@map("product_recipes")
+}
+
+model ProductRecipeLine {
+  id           String         @id @default(cuid())
+  recipeId     String
+  recipe       ProductRecipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   Ingredient     @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  quantity     Decimal        @db.Decimal(12, 3) // for baseOutputQty, in `unit`
+  unit         IngredientUnit
+
+  @@unique([recipeId, ingredientId])
+  @@map("product_recipe_lines")
 }
