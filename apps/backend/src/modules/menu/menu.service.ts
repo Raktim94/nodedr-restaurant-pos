@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,6 +11,16 @@ import type {
 } from '@nodedr-restaurant/types';
 import { AuditService } from '../../audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
+
+// Options that are still on the menu. A removed option that past orders used is kept (hidden), not deleted.
+const ACTIVE_MODIFIERS = {
+  modifiers: {
+    where: { isActive: true },
+    orderBy: { sortOrder: 'asc' as const },
+  },
+  // How many menu items use the group, so the menu screen can warn that editing a shared group changes them all.
+  _count: { select: { menuItems: true } },
+} as const;
 
 @Injectable()
 export class MenuService {
@@ -76,7 +87,7 @@ export class MenuService {
         category: true,
         station: true,
         modifierGroups: {
-          include: { modifierGroup: { include: { modifiers: true } } },
+          include: { modifierGroup: { include: ACTIVE_MODIFIERS } },
         },
       },
     });
@@ -87,7 +98,7 @@ export class MenuService {
       where: { id, branchId },
       include: {
         modifierGroups: {
-          include: { modifierGroup: { include: { modifiers: true } } },
+          include: { modifierGroup: { include: ACTIVE_MODIFIERS } },
         },
       },
     });
@@ -257,18 +268,40 @@ export class MenuService {
   listModifierGroups(branchId: string) {
     return this.prisma.modifierGroup.findMany({
       where: { branchId },
-      include: { modifiers: true },
+      orderBy: { name: 'asc' },
+      include: ACTIVE_MODIFIERS,
     });
   }
 
   createModifierGroup(branchId: string, dto: ModifierGroupDto) {
     const { modifiers, ...rest } = dto;
+    this.assertGroupShape(rest);
     return this.prisma.modifierGroup.create({
-      data: { ...rest, branchId, modifiers: { create: modifiers } },
-      include: { modifiers: true },
+      data: {
+        ...rest,
+        branchId,
+        // A new group never takes ids from the client; order is the order given.
+        modifiers: {
+          create: modifiers.map((m, i) => ({
+            name: m.name,
+            priceAdjustment: m.priceAdjustment,
+            taxRatePercent: m.taxRatePercent,
+            kitchenNote: m.kitchenNote,
+            isDefault: m.isDefault,
+            sortOrder: i,
+          })),
+        },
+      },
+      include: ACTIVE_MODIFIERS,
     });
   }
 
+  /**
+   * Edit a group IN PLACE. Options sent with an id are updated (so past orders keep pointing at them), options without one
+   * are added, and options left out are removed: deleted if nothing ever used them, otherwise hidden (isActive false),
+   * because order history references them. The old version deleted and re-created every option, which failed as soon as
+   * any option had ever been ordered and dropped each option's stock links.
+   */
   async updateModifierGroup(
     branchId: string,
     id: string,
@@ -277,25 +310,85 @@ export class MenuService {
     await this.assertModifierGroupInBranch(branchId, id);
 
     const { modifiers, ...rest } = dto;
+    if (Object.keys(rest).length) {
+      const current = await this.prisma.modifierGroup.findUniqueOrThrow({
+        where: { id },
+      });
+      this.assertGroupShape({ ...current, ...rest });
+    }
     return this.prisma.$transaction(async (tx) => {
       if (modifiers) {
-        await tx.modifier.deleteMany({ where: { groupId: id } });
-        await tx.modifier.createMany({
-          data: modifiers.map((m) => ({ ...m, groupId: id })),
+        const current = await tx.modifier.findMany({
+          where: { groupId: id, isActive: true },
         });
+        const known = new Set(current.map((m) => m.id));
+        for (const m of modifiers) {
+          if (m.id && !known.has(m.id))
+            throw new BadRequestException(
+              'One of those options does not belong to this group',
+            );
+        }
+        const keep = new Set(modifiers.flatMap((m) => (m.id ? [m.id] : [])));
+        for (const [i, m] of modifiers.entries()) {
+          const { id: optionId, ...data } = m;
+          if (optionId)
+            await tx.modifier.update({
+              where: { id: optionId },
+              data: { ...data, sortOrder: i },
+            });
+          else
+            await tx.modifier.create({
+              data: { ...data, sortOrder: i, groupId: id },
+            });
+        }
+        for (const gone of current.filter((m) => !keep.has(m.id))) {
+          const used = await tx.orderItemModifier.count({
+            where: { modifierId: gone.id },
+          });
+          if (used > 0)
+            await tx.modifier.update({
+              where: { id: gone.id },
+              data: { isActive: false, isDefault: false },
+            });
+          else await tx.modifier.delete({ where: { id: gone.id } });
+        }
       }
       return tx.modifierGroup.update({
         where: { id },
         data: rest,
-        include: { modifiers: true },
+        include: ACTIVE_MODIFIERS,
       });
     });
   }
 
   async deleteModifierGroup(branchId: string, id: string) {
     await this.assertModifierGroupInBranch(branchId, id);
+    const used = await this.prisma.orderItemModifier.count({
+      where: { modifier: { groupId: id } },
+    });
+    if (used > 0) {
+      throw new ConflictException(
+        'This option group has been ordered before, so it is kept for the order history. Remove it from the menu items instead.',
+      );
+    }
     await this.prisma.modifierGroup.delete({ where: { id } });
     return { ok: true };
+  }
+
+  /** "Choose up to" must be at least "must choose": a group nobody can satisfy would block every order of the item. */
+  private assertGroupShape(g: {
+    minSelect?: number;
+    maxSelect?: number;
+    isRequired?: boolean;
+  }) {
+    const min = g.isRequired
+      ? Math.max(1, g.minSelect ?? 0)
+      : (g.minSelect ?? 0);
+    if ((g.maxSelect ?? 1) < min) {
+      throw new BadRequestException(
+        '"Choose up to" cannot be less than the number the customer must choose',
+      );
+    }
   }
 
   private async assertModifierGroupInBranch(branchId: string, id: string) {

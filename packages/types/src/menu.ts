@@ -11,7 +11,9 @@ export const menuCategorySchema = z.object({
 export type MenuCategoryDto = z.infer<typeof menuCategorySchema>;
 
 export const modifierSchema = z.object({
-  name: z.string().min(1),
+  // Present when editing an existing option, so it is updated in place (past orders keep pointing at it).
+  id: z.string().optional(),
+  name: z.string().trim().min(1).max(80),
   priceAdjustment: z.coerce.number().default(0),
   taxRatePercent: z.coerce.number().optional(),
   kitchenNote: z.string().optional(),

@@ -23,6 +23,7 @@ export interface Modifier {
   name: string;
   priceAdjustment: string;
   isDefault: boolean;
+  sortOrder?: number;
 }
 
 export interface ModifierGroup {
@@ -32,6 +33,8 @@ export interface ModifierGroup {
   maxSelect: number;
   isRequired: boolean;
   modifiers: Modifier[];
+  /** Present on the group list: how many menu items use this group. */
+  _count?: { menuItems: number };
 }
 
 export interface MenuItem {
@@ -154,5 +157,14 @@ export function useBulkPrice(branchId: string | null) {
     onSuccess: (r) => {
       if (r.applied) void queryClient.invalidateQueries({ queryKey: ["menu", "items", branchId] });
     },
+  });
+}
+
+/** Every option group of the branch, so one group (for example "Extras") can be reused on several items. */
+export function useModifierGroups(branchId: string | null) {
+  return useQuery({
+    queryKey: ["menu", "modifier-groups", branchId],
+    queryFn: () => api.get<ModifierGroup[]>(`/menu/modifier-groups?branchId=${branchId}`),
+    enabled: !!branchId,
   });
 }

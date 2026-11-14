@@ -1401,6 +1401,8 @@ model Modifier {
   kitchenNote     String?
   isDefault       Boolean  @default(false)
   sortOrder       Int      @default(0)
+  // false = taken off the menu but kept: past orders still point at it, so it cannot be deleted.
+  isActive        Boolean  @default(true)
 
   orderItemModifiers OrderItemModifier[]
   ingredientLines    ModifierIngredient[]
