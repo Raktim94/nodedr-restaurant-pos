@@ -68,7 +68,7 @@ function isReservationStatus(value: string): value is ReservationStatusDto {
 }
 
 /** Reads and type-checks arguments tools/call sends as plain Record<string, unknown> — see McpToolsBuilder's doc comment for why this isn't zod-typed. */
-class Args {
+export class Args {
   constructor(private readonly raw: Record<string, unknown>) {}
 
   string(key: string): string {
@@ -98,6 +98,46 @@ class Args {
     if (typeof value !== 'number' || !Number.isFinite(value))
       throw new Error(`"${key}" must be a number`);
     return value;
+  }
+
+  /** A whole number within [min, max]: the REST schemas use integers for counts, so the tools must too. */
+  int(key: string, min: number, max: number): number {
+    const v = this.number(key);
+    return Args.checkInt(key, v, min, max);
+  }
+
+  optionalInt(key: string, min: number, max: number): number | undefined {
+    const v = this.optionalNumber(key);
+    return v === undefined ? undefined : Args.checkInt(key, v, min, max);
+  }
+
+  /** An amount of money: zero or more, at most two decimals, and a sane ceiling. */
+  money(key: string): number {
+    return Args.checkMoney(key, this.number(key));
+  }
+
+  /** Money that must be more than zero (a refund, a payment). */
+  positiveMoney(key: string): number {
+    const v = this.money(key);
+    if (v <= 0) throw new Error(`"${key}" must be more than zero`);
+    return v;
+  }
+
+  optionalMoney(key: string): number | undefined {
+    const v = this.optionalNumber(key);
+    return v === undefined ? undefined : Args.checkMoney(key, v);
+  }
+
+  static checkInt(key: string, v: number, min: number, max: number): number {
+    if (!Number.isInteger(v) || v < min || v > max) throw new Error(`"${key}" must be a whole number from ${min} to ${max}`);
+    return v;
+  }
+
+  static checkMoney(key: string, v: number): number {
+    if (v < 0 || v > 1_000_000 || Math.abs(Math.round(v * 100) - v * 100) > 1e-6) {
+      throw new Error(`"${key}" must be an amount from 0 to 1000000 with at most 2 decimals`);
+    }
+    return v;
   }
 
   optionalBoolean(key: string): boolean | undefined {
@@ -137,9 +177,9 @@ class Args {
           `${key}[${i}].menuItemId is required and must be a string`,
         );
       }
-      if (typeof item.quantity !== 'number' || item.quantity <= 0) {
+      if (typeof item.quantity !== 'number' || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 999) {
         throw new Error(
-          `${key}[${i}].quantity is required and must be a positive number`,
+          `${key}[${i}].quantity is required and must be a whole number from 1 to 999`,
         );
       }
       return {
@@ -899,9 +939,9 @@ export class McpToolsBuilder {
             await this.reservations.create(branchId, {
               customerName: args.string('customerName'),
               phone: args.optionalString('phone'),
-              guestCount: args.number('guestCount'),
+              guestCount: args.int('guestCount', 1, 500),
               reservedAt: new Date(args.string('reservedAt')),
-              durationMinutes: args.optionalNumber('durationMinutes') ?? 90,
+              durationMinutes: args.optionalInt('durationMinutes', 15, 600) ?? 90,
               tableId: args.optionalString('tableId'),
               specialRequests: args.optionalString('specialRequests'),
             }),
@@ -1007,7 +1047,7 @@ export class McpToolsBuilder {
             await this.menu.createItem(branchId, {
               categoryId: args.string('categoryId'),
               name: args.string('name'),
-              price: args.number('price'),
+              price: args.money('price'),
               description: args.optionalString('description'),
               imageUrl: args.optionalString('imageUrl'),
               taxRatePercent: 0,
@@ -1086,7 +1126,7 @@ export class McpToolsBuilder {
             await this.tables.createTables(branchId, {
               floorId: args.string('floorId'),
               numbers: args.stringArray('numbers'),
-              capacity: args.optionalNumber('capacity') ?? 4,
+              capacity: args.optionalInt('capacity', 1, 500) ?? 4,
               shape: shape as never,
               columns: 5,
             }),
@@ -1169,7 +1209,7 @@ export class McpToolsBuilder {
               args.string('orderId'),
               actor.id,
               {
-                amount: args.number('amount'),
+                amount: args.positiveMoney('amount'),
                 method: method as never,
                 reason: args.optionalString('reason'),
               },
@@ -1264,7 +1304,7 @@ export class McpToolsBuilder {
           await this.assertBranch(actor, branchId);
           const dto: Record<string, unknown> = {};
           const name = args.optionalString('name');
-          const price = args.optionalNumber('price');
+          const price = args.optionalMoney('price');
           const description = args.optionalString('description');
           const imageUrl = args.optionalString('imageUrl');
           const isVeg = args.optionalBoolean('isVeg');
@@ -1376,7 +1416,7 @@ export class McpToolsBuilder {
           const dto: Record<string, unknown> = {};
           const number = args.optionalString('number');
           const name = args.optionalString('name');
-          const capacity = args.optionalNumber('capacity');
+          const capacity = args.optionalInt('capacity', 1, 500);
           const shape = args.optionalString('shape');
           const notes = args.optionalString('notes');
           if (number !== undefined) dto.number = number;

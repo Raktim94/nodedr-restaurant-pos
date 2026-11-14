@@ -20,6 +20,13 @@ const TOKEN = process.env.UPDATER_TOKEN || '';
 const TARGETS = (process.env.TARGET_CONTAINERS || 'nodedr-restaurant-backend,nodedr-restaurant-web').split(',').map((s) => s.trim()).filter(Boolean);
 const PORT = Number(process.env.PORT || 8080);
 const VERSION_RE = /^\d+\.\d+\.\d+$/;
+// 1.10.0 > 1.9.2. A tag that is not plain x.y.z (a "latest", a branch name) is never treated as older or newer.
+function olderThan(a, b) {
+  if (!VERSION_RE.test(a) || !VERSION_RE.test(b)) return false;
+  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i];
+  return false;
+}
 
 const status = { state: 'idle', version: null, error: null, step: null };
 
@@ -115,6 +122,12 @@ async function run(version) {
       const info = await json('GET', `/containers/${enc(name)}/json`);
       const { repo, tag } = splitImage(info.Config.Image);
       plan.push({ name, repo, from: tag, to: version });
+    }
+    // The token is the only thing standing between the network and a root process with the Docker socket, so an
+    // update may not install an OLDER release (one with known holes) unless the operator opts in.
+    if (process.env.UPDATER_ALLOW_DOWNGRADE !== 'true') {
+      const down = plan.find((p) => olderThan(p.to, p.from));
+      if (down) throw new Error(`Refusing to move ${down.name} from ${down.from} back to ${down.to}. Set UPDATER_ALLOW_DOWNGRADE=true to allow a rollback.`);
     }
     for (const p of plan) await pull(p.repo, p.to);
     status.state = 'restarting';
