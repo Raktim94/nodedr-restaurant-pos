@@ -36,6 +36,14 @@ export const costingSchema = z.object({
 export type CostingDto = z.infer<typeof costingSchema>;
 export type ProductionLineDto = z.infer<typeof productionLineSchema>;
 
+// Optional quality inspection of a posted batch. A failed inspection must say what failed.
+export const productionQualitySchema = z.object({
+  result: z.enum(["PASS", "FAIL", "NEEDS_REVIEW"]),
+  grade: z.string().trim().max(20).optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+export type ProductionQualityDto = z.infer<typeof productionQualitySchema>;
+
 export const productionEntrySchema = z.object({
   producedAt: z.coerce.date().optional(),
   shift: z.string().trim().max(40).optional(),

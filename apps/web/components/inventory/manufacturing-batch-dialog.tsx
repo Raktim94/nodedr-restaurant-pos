@@ -135,20 +135,22 @@ export function ManufacturingBatchDialog({ branchId, open, onOpenChange }: { bra
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!busy) onOpenChange(o); }}>
-      <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-auto sm:max-h-[92vh] sm:w-full sm:max-w-2xl sm:rounded-xl">
+      <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-auto sm:max-h-[92vh] sm:w-full sm:max-w-2xl sm:rounded-xl lg:max-w-5xl">
         <DialogHeader className="border-b border-border px-4 py-3">
           <DialogTitle>New production batch</DialogTitle>
           <DialogDescription>Step {step + 1} of {STEPS.length}: {STEPS[step]}</DialogDescription>
           <ol className="mt-1 flex gap-1" aria-label="Progress">{STEPS.map((s, i) => (<li key={s} aria-current={i === step ? "step" : undefined} className={`h-1.5 flex-1 rounded-full ${i <= step ? "bg-primary" : "bg-muted"}`} />))}</ol>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-4 lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-6">
+          <div className="min-w-0">
           <div ref={top} />
           {error && <div role="alert" className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{error}{conflict && conflict !== "latest" && step === 4 && (
             <div className="mt-2"><Button size="sm" variant="outline" onClick={() => { setExpected(conflict); setConflict(null); setError(null); go(3); run(); }}>Review the latest price ({conflict})</Button></div>)}</div>}
 
           {step === 0 && (
             <div className="flex flex-col gap-4">
+              <h3 className="text-sm font-semibold">Destination (Production): what this batch made</h3>
               <div className="flex flex-col gap-1.5"><Label htmlFor="m-prod">Finished product</Label>
                 <select id="m-prod" className={`${selectClass} h-11`} value={product} onChange={(e) => { setProduct(e.target.value); setUnit(byId.get(e.target.value)?.unit ?? ""); setExpected(null); setPv(null); }}>
                   <option value="">Choose…</option>{products.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}</select>
@@ -168,6 +170,7 @@ export function ManufacturingBatchDialog({ branchId, open, onOpenChange }: { bra
 
           {step === 1 && (
             <div className="flex flex-col gap-3">
+              <h3 className="text-sm font-semibold">Source (Consumption): what this batch used</h3>
               <p className="text-sm text-muted-foreground">Type what this batch really used. The cost rate is per the item&rsquo;s stock unit; leave it empty to use the item&rsquo;s current average cost.</p>
               <Button type="button" variant="outline" className="h-11" disabled={prefill.isPending || !product} onClick={fillRecipe}>Fill from recipe (then adjust)</Button>
               {rows.map((r, i) => {
@@ -278,6 +281,26 @@ export function ManufacturingBatchDialog({ branchId, open, onOpenChange }: { bra
               <label className="flex min-h-12 items-start gap-3 rounded-lg border border-border p-3 text-sm"><input type="checkbox" className="mt-0.5 size-5" checked={ack} onChange={(e) => setAck(e.target.checked)} /> <span>I checked the quantities and costs and I want to post this batch{priceMode === "new" ? " and change the menu price" : ""}.</span></label>
             </div>
           )}
+          </div>
+
+          {/* Desktop: the voucher stays in view, Source (what leaves stock) beside Destination (what enters stock). On a phone the same two sections are the steps themselves, one under the other. */}
+          <aside aria-label="Voucher summary" className="sticky top-0 hidden flex-col gap-3 lg:flex">
+            <section aria-label="Source (Consumption)" className="rounded-xl border border-border p-3 text-sm">
+              <h3 className="font-semibold">Source (Consumption)</h3>
+              <p className="text-xs text-muted-foreground">Leaves stock when you post</p>
+              <ul className="mt-2 divide-y divide-border">
+                {rows.filter((r) => r.ingredientId && Number(r.quantity) > 0).map((r) => (<li key={r.key} className="flex justify-between gap-2 py-1"><span>{byId.get(r.ingredientId)?.name}</span><span className="tabular-nums">{r.quantity} {r.unit}</span></li>))}
+                {!rows.some((r) => r.ingredientId && Number(r.quantity) > 0) && <li className="py-1 text-muted-foreground">No ingredients entered yet</li>}
+              </ul>
+            </section>
+            <div aria-hidden className="text-center text-muted-foreground">↓</div>
+            <section aria-label="Destination (Production)" className="rounded-xl border border-border p-3 text-sm">
+              <h3 className="font-semibold">Destination (Production)</h3>
+              <p className="text-xs text-muted-foreground">Enters stock when you post</p>
+              <p className="mt-2">{out && Number(qty) > 0 ? <><b>{qty} {unit}</b> {out.name}</> : <span className="text-muted-foreground">Choose the finished product and quantity</span>}</p>
+              {pv && <p className="mt-2 text-xs text-muted-foreground">Cost per unit <b className="text-foreground tabular-nums">{num(pv.unitCost, 4)}</b> · batch total <b className="text-foreground tabular-nums">{num(pv.totalCost)}</b></p>}
+            </section>
+          </aside>
         </div>
 
         <div className="border-t border-border bg-background px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">

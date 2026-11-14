@@ -300,6 +300,42 @@ export class ProductionService {
     return this.get(branchId, id);
   }
 
+  /**
+   * Record or change the quality inspection of a posted batch. Optional by design: a batch with no inspection
+   * shows "Not recorded". The previous result is kept in the audit trail, so a change never erases history.
+   */
+  async recordQuality(
+    branchId: string,
+    userId: string,
+    id: string,
+    dto: { result: 'PASS' | 'FAIL' | 'NEEDS_REVIEW'; grade?: string; notes?: string },
+  ) {
+    const e = await this.prisma.productionEntry.findFirst({ where: { id, branchId } });
+    if (!e) throw new NotFoundException('Production entry not found');
+    if (e.status !== 'POSTED') throw new BadRequestException('Only a posted batch can be inspected');
+    const grade = dto.grade?.trim() || null;
+    const notes = dto.notes?.trim() || null;
+    if (dto.result === 'FAIL' && !notes) throw new BadRequestException('Say what failed: a failed inspection needs a note');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.productionEntry.update({
+        where: { id },
+        data: { qualityResult: dto.result, qualityGrade: grade, qualityNotes: notes, qualityById: userId, qualityAt: new Date() },
+      });
+      await this.audit.record({
+        userId,
+        action: 'production.quality',
+        entity: 'ProductionEntry',
+        entityId: id,
+        metadata: {
+          entryNo: e.entryNo,
+          before: e.qualityResult ? { result: e.qualityResult, grade: e.qualityGrade, notes: e.qualityNotes, by: e.qualityById, at: e.qualityAt } : null,
+          after: { result: dto.result, grade, notes },
+        },
+      });
+    });
+    return this.get(branchId, id);
+  }
+
   private async postInTx(tx: Tx, branchId: string, userId: string, id: string, deviceId?: string, opts: PostOpts = {}) {
     // The conditional update is the guard: a second post of the same draft changes nothing and fails.
     const claimed = await tx.productionEntry.updateMany({
@@ -406,6 +442,8 @@ export class ProductionService {
           currentPrice: Dec(mi.price).toFixed(2),
         });
       }
+      // The price as it stood when this batch was posted, before the batch changes it: frozen on the entry.
+      await tx.productionEntry.update({ where: { id }, data: { menuItemId: mi.id, sellingPriceAtPost: mi.price } });
       const change = await tx.menuPriceChange.create({
         data: { branchId, menuItemId: mi.id, oldPrice: mi.price, newPrice: entry.proposedPrice, changedById: userId, productionEntryId: id, unitCostAtChange: cost?.unitCost ?? null },
       });
@@ -418,6 +456,12 @@ export class ProductionService {
         entityId: mi.id,
         metadata: { priceBefore: Number(mi.price), priceAfter: Number(entry.proposedPrice), productionEntry: entry.entryNo },
       });
+    }
+    if (entry.costed && !entry.priceMenuItemId) {
+      // No price change in this batch: still freeze the menu price in force at posting, for the reports.
+      const outId = entry.lines.find((x) => x.role === 'OUTPUT')?.ingredientId;
+      const mi = outId ? await tx.menuItem.findFirst({ where: { branchId, stockIngredientId: outId }, orderBy: { id: 'asc' }, select: { id: true, price: true } }) : null;
+      if (mi) await tx.productionEntry.update({ where: { id }, data: { menuItemId: mi.id, sellingPriceAtPost: mi.price } });
     }
     await this.audit.record({
       userId,

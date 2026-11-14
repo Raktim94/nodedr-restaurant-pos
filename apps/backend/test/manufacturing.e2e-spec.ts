@@ -208,6 +208,46 @@ run('Manufacturing journal (e2e)', () => {
     expect(Number(r.body.unitCost)).toBe(50);
   });
 
+  it('freezes the menu price at posting and carries inspection, batch details and lines into the report; "Not recorded" until inspected', async () => {
+    await receive(id.rice, '10', 'KG', '60').expect(201);
+    await receive(id.dal, '5', 'KG', '120.5').expect(201);
+    const priceThen = await price();
+    const posted = (await make(owner, batch({ idempotencyKey: `mfg-${randomUUID()}`, batchRef: `B-${tag}` })).expect(201)).body;
+    const find = async () => {
+      const rep = (await owner.get(`/api/v1/inventory/manufacturing/report${q}&itemId=${id.idli}`).expect(200)).body;
+      return rep.batches.find((b: { id: string }) => b.id === posted.id);
+    };
+    let row = await find();
+    expect(Number(row.sellingPriceAtPost)).toBe(priceThen);
+    expect(row.quality).toBeNull(); // never implied to have passed
+    expect(row.lines.filter((l: { role: string }) => l.role === 'INPUT')).toHaveLength(2);
+    expect(row.additionalCosts.some((c: { category: string }) => c.category === 'Labour')).toBe(true);
+
+    // A later price edit never rewrites what the voucher recorded.
+    await owner.patch(`/api/v1/menu/items/${id.menu}${q}`).send({ price: priceThen + 7 }).expect(200);
+    expect(Number((await find()).sellingPriceAtPost)).toBe(priceThen);
+    await owner.patch(`/api/v1/menu/items/${id.menu}${q}`).send({ price: priceThen }).expect(200);
+
+    // Quality: needs its own permission; a fail needs a reason; the change history is kept in the audit log.
+    const url = `/api/v1/inventory/production/${posted.id}/quality${q}`;
+    expect((await cashier.patch(url).send({ result: 'PASS' })).status).toBe(403);
+    expect((await chef.patch(url).send({ result: 'FAIL' })).status).toBe(400);
+    expect((await chef.patch(url).send({ result: 'MAYBE' })).status).toBe(400);
+    await chef.patch(url).send({ result: 'PASS', grade: 'A', notes: 'Soft, even' }).expect(200);
+    row = await find();
+    expect(row.quality).toEqual(expect.objectContaining({ result: 'PASS', grade: 'A', notes: 'Soft, even' }));
+    await owner.patch(url).send({ result: 'NEEDS_REVIEW', notes: 'Slightly sour' }).expect(200);
+    expect((await find()).quality.result).toBe('NEEDS_REVIEW');
+    const audits = await prisma.auditLog.findMany({ where: { entity: 'ProductionEntry', entityId: posted.id, action: 'production.quality' }, orderBy: { createdAt: 'asc' } });
+    expect(audits).toHaveLength(2);
+    expect(JSON.stringify(audits[1].metadata)).toContain('"result":"PASS"'); // the earlier result is preserved in the trail
+    expect((await owner.get(`/api/v1/inventory/manufacturing/report.csv${q}&section=batches`).expect(200)).text).toContain('NEEDS_REVIEW');
+
+    // A draft cannot be inspected.
+    const draft = (await make(owner, batch({ post: false, idempotencyKey: `mfg-${randomUUID()}` })).expect(201)).body;
+    expect((await owner.patch(`/api/v1/inventory/production/${draft.id}/quality${q}`).send({ result: 'PASS' })).status).toBe(400);
+  });
+
   it('reports are built from posted snapshots: by day, by item, ingredients, cost categories; reversed batches are excluded from totals but listed', async () => {
     const before = (await owner.get(`/api/v1/inventory/manufacturing/report${q}&itemId=${id.idli}`).expect(200)).body;
     const qtyBefore = Number(before.produced[0].quantity);

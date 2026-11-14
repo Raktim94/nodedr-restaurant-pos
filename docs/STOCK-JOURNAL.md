@@ -87,3 +87,27 @@ local address first and need no internet: sales, shifts, production, waste and r
 Phones do not talk to each other directly; a phone with no route to the server keeps everything and sends it later.
 Each phone signs in with its own device id (`did` in its session); removing it under Settings > Phones ends that
 session immediately.
+
+
+## Costed batches, menu price and quality (added November 2026)
+
+* **Costing and menu price** are stored apart. The batch keeps its frozen `ingredientCost`, `additionalCost`,
+  `totalCost` and `unitCost`; the menu price is only ever changed by an explicit new price typed on the batch,
+  by someone with `menu.price`, and is recorded in `menu_price_changes` (old, new, who, when, batch, unit cost then).
+  A price that moved after the form opened is refused (`PRICE_CONFLICT`) and nothing is posted.
+* **Selling price at posting**: every costed batch freezes the menu price in force when it was posted
+  (`sellingPriceAtPost`, before any change the batch makes). Later price edits never alter it; batches posted before
+  this column existed show "not recorded".
+* **Quality inspection** is optional and separate: `PATCH /inventory/production/:id/quality` with
+  `{ result: PASS | FAIL | NEEDS_REVIEW, grade?, notes? }`, permission `production.quality` (chefs, managers and
+  inventory managers by default; owners always). A posted batch only; a fail needs a note. It never changes stock,
+  cost or price. Each change writes an audit row holding the previous result, so history is kept. A batch with no
+  inspection shows **Not recorded**, never "passed".
+* **Reports** (`Inventory > Stock Journal Reports`, permission `production.report`) show, per batch: cost breakdown,
+  menu price at posting, price changed to, batch ref, made/expiry dates, quality, and a full voucher drill-down
+  (Source / Destination lines with rate and amount, additional costs). Search by batch, item or batch ref; sort by date
+  or cost per unit; CSV for every section. Figures come from posted snapshots, never today's recipe or prices.
+* **Entry screen**: guided five steps on a phone. On a wide screen the Source (Consumption) and Destination
+  (Production) sections sit side by side in a live voucher summary.
+* **Not built**: admin-defined custom report definitions. The reports are fixed and permission-gated, so there is
+  nothing a configuration change could delete; production history cannot be removed from any report screen.
