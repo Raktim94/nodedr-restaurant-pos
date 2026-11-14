@@ -45,7 +45,11 @@ Tested live (local build, 2026-11-14, Postgres, fresh restaurant):
 - `GET …/delivery-quote` returned `{"deliverable":false}` for a location that has no delivery zones configured, so do not treat `false` as "delivery impossible" until the owner has set zones.
 - Webhook (`order.created`): delivered to a local receiver (needs `WEBHOOKS_ALLOW_PRIVATE=true` and `WEBHOOKS_ALLOW_INSECURE=true` for a non-public `http` URL). Delivery was **asynchronous and took several seconds**, so never block checkout on it. The verifier in `docs/integrations-api.md` returned valid for the real delivery and invalid for a tampered body.
 - MCP at `/api/v1/mcp` with a personal key (`ordr_staff_…`): 40 tools (18 flagged `readOnlyHint`), `401` without a key, and writes work (it created a category and a menu item). Because these are staff-level writes, confirm with the user before `create_*`, `update_*`, `delete_*`, `cancel_order`, `refund_order`.
-- Not verified: reservations booking, rewards/referrals, the 30 writes/min limit, key rotation and expiry, payment gateways.
+- Reservations (live): `POST …/reservations` with `reservations:write` returned `201`, `status: RESERVED`, `channel: ONLINE`; `GET …/reservations/:id` (`reservations:read`) returned it; a key without `reservations:write` got `403`. A `guestCount` of 50 was accepted because the test location had no tables configured (the party-size cap only applies once tables exist).
+- Rewards (live): `POST …/rewards` with `orders:write` returned the loyalty summary (`points`, `pointValue`, `rewards[]`, `code: null` while referral rewards are off).
+- Rate limit (live): with one key, 26 orders plus 4 earlier writes (30 in the minute) succeeded, then every further write returned `429` with a `Retry-After` header (54 s in the test) while reads on the same key still returned `200`.
+- Key rotation (live): `POST /api/v1/integration-api-keys/:id/rotate` (owner session) returned a new `ordr_ext_…` secret; the old secret immediately got `401`; the new secret kept the same scopes (a scope the old key lacked was still `403`) and could read an order the old key had placed.
+- Not verified: key expiry, payment gateways, referral rewards switched on, the `order.paid`, `order.cancelled`, `delivery.updated` and `campaign.message` webhooks.
 
 ## Credentials
 
@@ -91,7 +95,7 @@ claude mcp add --transport http orderrestro https://YOUR-DOMAIN/api/v1/mcp \
   --header "Authorization: Bearer $ORDERRESTRO_PERSONAL_KEY"
 ```
 
-Test the connection with the `tools/list` curl in `docs/integrations-api.md` before relying on it. This `claude mcp add` form is the standard Claude Code syntax; it was not run against a live OrderRestro in preparation of this file.
+Test the connection with the `tools/list` curl in `docs/integrations-api.md` before relying on it. The `claude mcp add --transport http … --header "Authorization: Bearer …"` command was run against a live OrderRestro and `claude mcp list` showed it connected.
 
 ## Verify before "done"
 
