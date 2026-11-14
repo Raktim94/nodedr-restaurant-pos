@@ -550,8 +550,12 @@ export class IntegrationsService {
     reservationId: string,
   ) {
     await this.assertBranch(ctx, branchId);
+    // A website key may look up a booking's status, as its scope says. Only online bookings, and only what a
+    // status page needs: walk-in and staff-made bookings, and contact details, deposits and table assignments of
+    // any booking, are not a website key's to read.
     const reservation = await this.prisma.reservation.findFirst({
-      where: { id: reservationId, branchId },
+      where: { id: reservationId, branchId, channel: 'ONLINE' },
+      select: { id: true, status: true, reservedAt: true, durationMinutes: true, guestCount: true, customerName: true, createdAt: true },
     });
     if (!reservation) throw new NotFoundException('Reservation not found');
     return reservation;

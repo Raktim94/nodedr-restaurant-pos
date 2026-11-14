@@ -46,6 +46,7 @@ run('Live table sessions (e2e)', () => {
       .compile();
     app = mod.createNestApplication();
     app.use(cookieParser());
+    (app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void }).set('trust proxy', 1); // so the test can act as different sources
     app.setGlobalPrefix('api', { exclude: [] });
     await app.init();
     prisma = app.get(PrismaService);
@@ -149,16 +150,26 @@ run('Live table sessions (e2e)', () => {
     expect((await prisma.order.findUniqueOrThrow({ where: { id: o.id } })).payIntent).toBe('CASH');
   });
 
-  it('wrong codes are counted and lock the session; even the right code is refused while locked', async () => {
+  it('a source that keeps guessing blocks only itself; distributed guessing still locks the session', async () => {
     const s = await open('B');
-    for (let i = 0; i < 7; i++) expect((await join('B', 'ZZZZZZ')).body.code).toBe('TABLE_SESSION_BAD_CODE');
-    const eighth = await join('B', 'ZZZZZZ');
-    expect(eighth.status).toBe(403);
-    const locked = await join('B', s.code);
+    const from = (ip: string, code: string) => guest.post(`/api/v1/public/menu/${T.B.qr}/session`).set('X-Forwarded-For', ip).send({ code });
+    for (let i = 0; i < 7; i++) expect((await from('10.0.0.1', 'ZZZZZZ')).body.code).toBe('TABLE_SESSION_BAD_CODE');
+    expect((await from('10.0.0.1', 'ZZZZZZ')).status).toBe(403); // eighth wrong code: this source is now blocked
+    const blocked = await from('10.0.0.1', s.code);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.code).toBe('TABLE_SESSION_LOCKED');
+
+    // Someone else at the table is NOT locked out by that source (the old behaviour locked the whole session).
+    expect((await from('10.0.0.2', s.code)).status).toBe(201);
+
+    // Guessing spread over many sources still trips the session-wide limit, with an audit row and no code in it.
+    await prisma.tableSession.update({ where: { id: s.sessionId }, data: { failedTries: 59 } });
+    expect((await from('10.0.0.3', 'ZZZZZZ')).status).toBe(403);
+    const locked = await from('10.0.0.4', s.code);
     expect(locked.status).toBe(429);
     expect(locked.body.code).toBe('TABLE_SESSION_LOCKED');
     const reopened = await open('B'); // staff reset clears the lock with a brand new code
-    expect((await join('B', reopened.code).expect(201)).body.token).toBeTruthy();
+    expect((await from('10.0.0.5', reopened.code)).status).toBe(201);
     const audit = await prisma.auditLog.findFirst({ where: { action: 'table_session.locked', entityId: T.B.id } });
     expect(audit).not.toBeNull();
     expect(JSON.stringify(audit)).not.toContain('ZZZZZZ');

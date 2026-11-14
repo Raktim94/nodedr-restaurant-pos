@@ -177,6 +177,65 @@ run('Security audit regressions (e2e)', () => {
     });
   });
 
+  describe('integration key reservation lookup', () => {
+    it("only shows online bookings, and only status fields, never staff bookings or contact details", async () => {
+      const key = (await owner.post('/api/v1/integration-api-keys').send({ name: `res-${tag}`, scopes: ['reservations:read'], branchId: 'demo-branch' }).expect(201)).body.token as string;
+      const base = { branchId: 'demo-branch', customerName: 'Guest', phone: '9876543210', email: 'g@example.com', guestCount: 2, reservedAt: new Date(Date.now() + 86_400_000), specialRequests: 'private note', deposit: 100 };
+      const staff = await prisma.reservation.create({ data: { ...base, channel: 'STAFF' } });
+      const online = await prisma.reservation.create({ data: { ...base, channel: 'ONLINE' } });
+      const get = (id: string) => request(app.getHttpServer()).get(`/api/v1/integrations/locations/demo-branch/reservations/${id}`).set({ Authorization: `Bearer ${key}` });
+      expect((await get(staff.id)).status).toBe(404);
+      const ok = await get(online.id);
+      expect(ok.status).toBe(200);
+      expect(ok.body.status).toBe('RESERVED');
+      const text = JSON.stringify(ok.body);
+      for (const secret of ['9876543210', 'g@example.com', 'private note', 'deposit']) expect(text).not.toContain(secret);
+    });
+  });
+
+  describe('offline sales from a phone', () => {
+    const post = (agent: ReturnType<typeof request.agent>, n: number, over: Record<string, unknown>, price: number) =>
+      agent.post('/api/v1/mobile/standalone/sales?branchId=demo-branch').send({
+        sales: [{ id: `sec-${tag}-${n}`, localNumber: `OFF-${n}`, soldAt: new Date(Date.now() - 60_000).toISOString(), type: 'TAKEAWAY', items: [{ menuItemId: dish.id, quantity: 1, unitPrice: price }], payments: [{ method: 'CASH', amount: Math.max(price, 1) }], ...over }],
+      });
+    let dish: { id: string; price: number };
+    beforeAll(async () => {
+      const m = await prisma.menuItem.findFirstOrThrow({ where: { branchId: 'demo-branch', isActive: true, isCombo: false, price: { gt: 100 }, inventoryTracking: 'NONE' } });
+      dish = { id: m.id, price: Number(m.price) };
+    });
+    const sold = (n: number) => prisma.order.count({ where: { branchId: 'demo-branch', clientRequestId: `sec-${tag}-${n}` } });
+
+    it('a waiter cannot sell below the menu price or type a discount, and nothing is recorded', async () => {
+      const w = await login((await mkUser('wtr', roles.WAITER)).email);
+      for (const [n, over, price] of [[1, {}, 0], [2, {}, dish.price - 1], [3, { discountPercent: 10 }, dish.price], [4, { discountFlat: 5 }, dish.price]] as const) {
+        const res = (await post(w, n, over, price).expect(201)).body.results[0];
+        expect(res.status).toBe('refused');
+        expect(res.code).toBe('DISCOUNT_NOT_ALLOWED');
+        expect(await sold(n)).toBe(0);
+      }
+      // ...but a normal sale at the menu price still goes through.
+      expect((await post(w, 5, {}, dish.price).expect(201)).body.results[0].status).toBe('created');
+      expect(await sold(5)).toBe(1);
+    });
+
+    it('a manager with discount rights may sell below menu; the restaurant cap applies to roles without discounts.unlimited', async () => {
+      const mgr = await login((await mkUser('mgr', roles.RESTAURANT_MANAGER)).email);
+      expect((await post(mgr, 6, {}, 1).expect(201)).body.results[0].status).toBe('created');
+      const rest = await prisma.branch.findUniqueOrThrow({ where: { id: 'demo-branch' } });
+      const cashier = await login((await mkUser('csh', roles.CASHIER)).email);
+      await prisma.restaurant.update({ where: { id: rest.restaurantId }, data: { maxManualDiscountPercent: 10 } });
+      try {
+        const over = (await post(cashier, 7, {}, Math.round(dish.price * 0.5)).expect(201)).body.results[0];
+        expect(over.status).toBe('refused');
+        expect(over.code).toBe('DISCOUNT_NOT_ALLOWED');
+        expect(await sold(7)).toBe(0);
+        expect((await post(cashier, 8, {}, Math.round(dish.price * 0.95)).expect(201)).body.results[0].status).toBe('created');
+      } finally {
+        await prisma.restaurant.update({ where: { id: rest.restaurantId }, data: { maxManualDiscountPercent: 100 } });
+      }
+    });
+  });
+
   describe('refunds', () => {
     it('are refused for zero, negative and non-finite amounts however they are reached', async () => {
       const orders = app.get(OrdersService);
