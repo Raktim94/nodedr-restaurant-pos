@@ -50,6 +50,10 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 
 ---
 
+## Integrate with AI Coding Agents
+
+Building a restaurant website or app on OrderRestro? Point your coding agent at [`prompts/AI_INTEGRATION_PROMPT.md`](prompts/AI_INTEGRATION_PROMPT.md) (verified endpoints, scopes, server-side Next.js pattern, MCP setup, test checklist). See also [`AGENTS.md`](AGENTS.md) and [`llms.txt`](llms.txt).
+
 ## What this is
 
 **Nodedr OrderRestro** is a purpose-built, offline-first Restaurant
