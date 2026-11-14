@@ -64,6 +64,7 @@ export type RefusalCode =
   | 'ALREADY_STARTED' // an earlier attempt left an unfinished order
   | 'PRICE_CONFLICT' // the same dish at two prices inside one sale
   | 'PAYMENT_REJECTED' // the server's checkout rules refused the payment or discount
+  | 'SALE_TOO_OLD' // the phone's sale time is older than the books can take automatically
   | 'OTHER';
 
 export type OfflineSaleResult =

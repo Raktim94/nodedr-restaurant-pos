@@ -146,12 +146,34 @@ export function saveKotWithOrder(kot, order) {
   );
 }
 
+/**
+ * Add one to a counter and return the new value, atomically. Reading and writing in two separate
+ * transactions let two quick taps read the same value and hand out the same number twice; a single
+ * readwrite transaction on the store is serialized by IndexedDB, so every caller gets its own.
+ */
+function bump(key) {
+  return open().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const t = db.transaction('kv', 'readwrite');
+        const st = t.objectStore('kv');
+        let n = 0;
+        const g = st.get(key);
+        g.onsuccess = () => {
+          n = (Number(g.result) || 0) + 1;
+          st.put(n, key);
+        };
+        t.oncomplete = () => resolve(n);
+        t.onerror = t.onabort = () => reject(t.error);
+      }),
+  );
+}
+
 /** ORD-YYMMDD-NNN, the name of an order while it is open or held. */
 export async function nextOrderNumber(now = new Date()) {
   const d = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   const key = `ordseq:${d}`;
-  const n = ((await kv.get(key)) || 0) + 1;
-  await kv.set(key, n);
+  const n = await bump(key);
   return `ORD-${d}-${String(n).padStart(3, '0')}`;
 }
 
@@ -159,8 +181,7 @@ export async function nextOrderNumber(now = new Date()) {
 export async function nextKotNumber(now = new Date()) {
   const d = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   const key = `kotseq:${d}`;
-  const n = ((await kv.get(key)) || 0) + 1;
-  await kv.set(key, n);
+  const n = await bump(key);
   return n;
 }
 
@@ -168,8 +189,7 @@ export async function nextKotNumber(now = new Date()) {
 export async function nextLocalNumber(now = new Date()) {
   const d = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   const key = `seq:${d}`;
-  const n = ((await kv.get(key)) || 0) + 1;
-  await kv.set(key, n);
+  const n = await bump(key);
   return `OFF-${d}-${String(n).padStart(3, '0')}`;
 }
 

@@ -136,6 +136,48 @@ run('Standalone mode (e2e)', () => {
     );
   });
 
+  it("does not trust the phone's clock: a far-future sale is booked now and flagged, an ancient one is refused", async () => {
+    const send = async (n: number, soldAt: string) =>
+      (
+        await owner
+          .post(`/api/v1/mobile/standalone/sales?branchId=${branchId}`)
+          .send({
+            sales: [
+              {
+                ...saleBase(n),
+                soldAt,
+                items: [{ menuItemId: itemId, quantity: 1, unitPrice: 50 }],
+                payments: [{ method: 'CASH', amount: 50 }],
+              },
+            ],
+          })
+          .expect(201)
+      ).body.results[0];
+
+    const future = await send(
+      901,
+      new Date(Date.now() + 5 * 86_400_000).toISOString(),
+    );
+    expect(future.status).toBe('created');
+    const o = await prisma.order.findFirstOrThrow({
+      where: { branchId, clientRequestId: `offline-${tag}-901` },
+    });
+    expect(o.createdAt.getTime()).toBeLessThan(Date.now() + 60_000);
+    expect(o.notes).toMatch(/clock was ahead/);
+
+    const old = await send(
+      902,
+      new Date(Date.now() - 400 * 86_400_000).toISOString(),
+    );
+    expect(old.status).toBe('refused');
+    expect(old.code).toBe('SALE_TOO_OLD');
+    expect(
+      await prisma.order.count({
+        where: { branchId, clientRequestId: `offline-${tag}-902` },
+      }),
+    ).toBe(0);
+  });
+
   it('applies a discount and a UPI payment', async () => {
     const sale = {
       ...saleBase(2),
