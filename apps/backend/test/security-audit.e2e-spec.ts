@@ -229,6 +229,26 @@ run('Security audit regressions (e2e)', () => {
       expect(await sold(5)).toBe(1);
     });
 
+    it('when the restaurant requires a discount reason, the phone must supply one: the server no longer invents it', async () => {
+      const rest = await prisma.branch.findUniqueOrThrow({ where: { id: 'demo-branch' } });
+      await prisma.restaurant.update({ where: { id: rest.restaurantId }, data: { requireDiscountReason: true } });
+      try {
+        const none = (await post(owner, 10, { discountPercent: 5 }, dish.price).expect(201)).body.results[0];
+        expect(none.status).toBe('refused');
+        expect(none.code).toBe('DISCOUNT_NOT_ALLOWED');
+        expect(await sold(10)).toBe(0);
+        const cut = (await post(owner, 11, {}, dish.price - 1).expect(201)).body.results[0]; // price cut counts as a discount too
+        expect(cut.status).toBe('refused');
+        const ok = (await post(owner, 12, { discountPercent: 5, discountReason: 'Regular customer' }, dish.price).expect(201)).body.results[0];
+        expect(ok.status).toBe('created');
+        expect(await sold(12)).toBe(1);
+        // No discount: no reason needed.
+        expect((await post(owner, 13, {}, dish.price).expect(201)).body.results[0].status).toBe('created');
+      } finally {
+        await prisma.restaurant.update({ where: { id: rest.restaurantId }, data: { requireDiscountReason: false } });
+      }
+    });
+
     it('a manager with discount rights may sell below menu; the restaurant cap applies to roles without discounts.unlimited', async () => {
       const mgr = await login((await mkUser('mgr', roles.RESTAURANT_MANAGER)).email);
       expect((await post(mgr, 6, {}, 1).expect(201)).body.results[0].status).toBe('created');

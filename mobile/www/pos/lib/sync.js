@@ -96,6 +96,7 @@ function payload(sale) {
     items: sale.items.map((i) => ({ menuItemId: i.menuItemId, quantity: i.quantity, unitPrice: i.price })),
     discountPercent: sale.discountPercent || undefined,
     discountFlat: sale.discountFlat || undefined,
+    discountReason: sale.discountReason || undefined,
     payments: sale.payments.map((p) => ({ method: p.method, amount: p.amount, tendered: p.tendered, reference: p.reference })),
   };
 }

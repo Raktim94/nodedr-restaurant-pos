@@ -24,6 +24,8 @@ export const offlineSaleSchema = z.object({
     .max(100),
   discountPercent: z.coerce.number().min(0).max(100).optional(),
   discountFlat: money.optional(),
+  // Why the discount was given (the phone asks for it when the restaurant requires one).
+  discountReason: z.string().trim().max(200).optional(),
   payments: z
     .array(
       z.object({

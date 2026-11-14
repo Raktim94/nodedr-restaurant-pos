@@ -28,6 +28,7 @@ const S = {
   type: 'TAKEAWAY',
   table: '',
   discountPercent: 0,
+  discountReason: '',
   online: false,
   syncing: false,
   pending: 0,
@@ -121,6 +122,7 @@ function saleFrom(localNumber, bill, payments, change) {
     items: cartLines().map((l) => ({ menuItemId: l.item.id, name: l.item.name, price: l.item.price, taxRate: l.item.taxRate, quantity: l.qty, ...(l.note ? { note: l.note } : {}) })),
     orderId: S.orderId || undefined,
     discountPercent: S.discountPercent || 0,
+    discountReason: S.discountPercent > 0 ? S.discountReason.trim() : '',
     taxMode: S.snap.branch.taxMode || 'INCLUSIVE',
     bill: { subtotal: bill.subtotal, discountAmount: bill.discountAmount, tax: bill.tax, total: bill.total },
     payments,
@@ -160,6 +162,7 @@ async function persistOrder() {
   o.type = S.type;
   o.tableLabel = S.type === 'DINE_IN' ? S.table || '' : '';
   o.discountPercent = S.discountPercent || 0;
+  o.discountReason = S.discountReason || '';
   o.updatedAt = new Date().toISOString();
   o.items = lines.map((l) => ({ menuItemId: l.item.id, name: l.item.name, price: l.item.price, taxRate: l.item.taxRate, qty: l.qty, sent: l.sent || 0, note: l.note || '' }));
   await orders.put(o);
@@ -169,6 +172,7 @@ function resetCart() {
   S.cart = new Map();
   S.orderId = null;
   S.discountPercent = 0;
+  S.discountReason = '';
   S.table = '';
   S.type = 'TAKEAWAY';
   S.noteOpen = null;
@@ -180,6 +184,7 @@ function loadOrder(o) {
   S.type = o.type;
   S.table = o.tableLabel || '';
   S.discountPercent = o.discountPercent || 0;
+  S.discountReason = o.discountReason || '';
   kv.set('currentOrderId', o.id);
 }
 async function restoreCurrent() {
@@ -834,6 +839,7 @@ function openCart() {
           )
           .join('')}</div>
         <label for="dp">Discount %</label><input id="dp" type="number" inputmode="decimal" min="0" max="${esc(S.snap.restaurant.maxManualDiscountPercent)}" value="${S.discountPercent || ''}" placeholder="0">
+        ${S.discountPercent > 0 ? `<label for="dr">Reason for the discount${S.snap.restaurant.requireDiscountReason ? '' : ' (optional)'}</label><input id="dr" maxlength="200" value="${esc(S.discountReason)}" ${S.snap.restaurant.requireDiscountReason ? 'required' : ''} autocomplete="off" enterkeyhint="done">` : ''}
         <div class="mt">
           <div class="tot"><span>Subtotal</span><span>${inr(bill.subtotal)}</span></div>
           ${bill.discountAmount > 0 ? `<div class="tot"><span>Discount</span><span>-${inr(bill.discountAmount)}</span></div>` : ''}
@@ -888,8 +894,17 @@ function openCart() {
       S.discountPercent = Math.min(Math.max(Number(e.target.value) || 0, 0), max);
       draw();
     };
+    const dr = root.querySelector('#dr');
+    if (dr) dr.oninput = (e) => { S.discountReason = e.target.value; persistSoon(); };
     bindPrint(root, saleFrom('Bill', bill, [], 0), true);
-    root.querySelector('#charge').onclick = () => openPay();
+    root.querySelector('#charge').onclick = () => {
+      if (S.discountPercent > 0 && S.snap.restaurant.requireDiscountReason && !S.discountReason.trim()) {
+        toast('Add a reason for the discount first.', 3500);
+        if (dr) dr.focus();
+        return;
+      }
+      openPay();
+    };
   };
   openSheet('', draw);
   draw();
