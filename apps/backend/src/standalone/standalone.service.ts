@@ -10,6 +10,7 @@ import {
 } from '../modules/orders/pricing';
 import { OrdersService } from '../modules/orders/orders.service';
 import { StandaloneReservationsService } from './standalone-reservations.service';
+import { resolveSoldAt } from './sold-at';
 import type {
   OfflineSaleDto,
   OfflineSaleResult,
@@ -225,6 +226,10 @@ export class StandaloneService {
       );
     }
 
+    // The phone's clock is not trusted: see sold-at.ts.
+    const when = resolveSoldAt(sale.soldAt);
+    if (!when.ok) throw new SaleRefused('SALE_TOO_OLD', when.reason);
+
     // Merge repeated lines of the same dish so each can be matched to its price.
     const lines = new Map<
       string,
@@ -284,6 +289,9 @@ export class StandaloneService {
       `Offline sale ${sale.localNumber}${deviceName ? ` on ${deviceName}` : ''}`,
       sale.tableLabel ? `(${sale.tableLabel})` : '',
       sale.note ?? '',
+      when.clamped
+        ? `[Review: the phone's clock was ahead (it said ${sale.soldAt}); booked at the time the server received it]`
+        : '',
       review.length
         ? `[Review: charged ${review.map((r) => `${r.name} ${r.phonePrice} (menu now ${r.serverPrice})`).join(', ')}]`
         : '',
@@ -305,7 +313,7 @@ export class StandaloneService {
       },
       {
         clientRequestId: sale.id,
-        historical: { createdAt: new Date(sale.soldAt) },
+        historical: { createdAt: when.at },
       },
     );
 

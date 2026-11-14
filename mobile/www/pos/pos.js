@@ -1560,6 +1560,7 @@ const REFUSAL_TITLE = {
   ALREADY_STARTED: 'The server already has an unfinished copy',
   PRICE_CONFLICT: 'Two prices for the same dish',
   PAYMENT_REJECTED: 'The server did not accept the payment or discount',
+  SALE_TOO_OLD: 'This sale is too old to add automatically',
   OTHER: 'The server did not accept this sale',
 };
 const REFUSAL_HELP = {
@@ -1567,6 +1568,7 @@ const REFUSAL_HELP = {
   ALREADY_STARTED: 'Ask the owner to check Orders for this sale, then try again or set it aside.',
   PRICE_CONFLICT: 'Set it aside and enter it again from the full app.',
   PAYMENT_REJECTED: 'Ask the owner to check the discount limit or payment, then try again.',
+  SALE_TOO_OLD: 'Check this phone\'s date and time, then ask the owner to enter the sale by hand.',
   OTHER: 'Ask the owner, then try again or set it aside.',
 };
 
