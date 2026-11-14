@@ -154,6 +154,8 @@ export class ManufacturingService {
       this.prisma.user.findMany({ where: { id: { in: [...new Set(prices.map((p) => p.changedById))] } }, select: { id: true, name: true } }),
       this.prisma.productionEntry.findMany({ where: { id: { in: prices.map((p) => p.productionEntryId).filter((x): x is string => !!x) } }, select: { id: true, entryNo: true } }),
     ]);
+    // A batch's own price change, looked up by id so it is found even outside the report's date window or row cap.
+    const entryPrices = await this.prisma.menuPriceChange.findMany({ where: { branchId, id: { in: entries.map((e) => e.priceChangeId).filter((x): x is string => !!x) } } });
     const statusCounts = ['DRAFT', 'POSTED', 'VOIDED'].map((s) => ({ status: s, count: entries.filter((e) => e.status === s).length }));
     return {
       note: 'Costs are the figures frozen when each batch was posted. Today’s recipe and ingredient prices are not used.',
@@ -168,6 +170,14 @@ export class ManufacturingService {
         quantity: e.lines.find((l) => l.role === 'OUTPUT')?.quantity.toString() ?? null,
         ingredientCost: money(e.ingredientCost), additionalCost: money(e.additionalCost), totalCost: money(e.totalCost), unitCost: money(e.unitCost, 4),
         corrects: e.correctsEntry?.entryNo ?? null, correctedBy: e.correctedBy.map((c) => c.entryNo), voidReason: e.voidReason,
+        manufacturedOn: e.manufacturedOn, expiryDate: e.expiryDate, batchRef: e.batchRef,
+        // Frozen at posting; null on batches posted before this was recorded.
+        sellingPriceAtPost: e.sellingPriceAtPost === null ? null : money(e.sellingPriceAtPost),
+        priceChange: e.priceChangeId ? (() => { const pc = entryPrices.find((p) => p.id === e.priceChangeId); return pc ? { oldPrice: money(pc.oldPrice), newPrice: money(pc.newPrice) } : null; })() : null,
+        // "Not recorded" is its own state: no inspection never means the batch passed.
+        quality: e.qualityResult ? { result: e.qualityResult, grade: e.qualityGrade, notes: e.qualityNotes, at: e.qualityAt } : null,
+        lines: e.lines.map((l) => ({ role: l.role, item: l.ingredient.name, quantity: l.quantity.toString(), unit: l.ingredient.unit, rate: l.unitRate === null ? null : money(l.unitRate, 4), amount: l.lineCost === null ? null : money(l.lineCost) })),
+        additionalCosts: e.costs.map((c) => ({ category: c.category, description: c.description, amount: money(c.amount), included: c.included })),
       })),
       statusCounts,
       priceChanges: prices.map((p) => ({
@@ -185,7 +195,7 @@ export class ManufacturingService {
       case 'consumed': return toCsv(['Date', 'Ingredient', 'Unit', 'Quantity', 'Cost'], r.consumed.map((c) => [c.date, c.name, c.unit, c.quantity, c.cost]));
       case 'costs': return toCsv(['Category', 'Amount'], r.additionalByCategory.map((c) => [c.category, c.amount]));
       case 'prices': return toCsv(['When', 'Menu item', 'Old price', 'New price', 'Changed by', 'Batch', 'Unit cost then'], r.priceChanges.map((p) => [p.changedAt, p.item, p.oldPrice, p.newPrice, p.by, p.entryNo, p.unitCost]));
-      default: return toCsv(['Batch', 'Date', 'Status', 'Item', 'Quantity', 'Unit', 'Ingredient cost', 'Additional cost', 'Total cost', 'Cost per unit', 'Corrects', 'Corrected by', 'Void reason'], r.batches.map((b) => [b.entryNo, b.producedAt, b.status, b.item, b.quantity, b.unit, b.ingredientCost, b.additionalCost, b.totalCost, b.unitCost, b.corrects, b.correctedBy.join(' '), b.voidReason]));
+      default: return toCsv(['Batch', 'Date', 'Status', 'Item', 'Quantity', 'Unit', 'Ingredient cost', 'Additional cost', 'Total cost', 'Cost per unit', 'Menu price at posting', 'Price changed to', 'Batch ref', 'Manufactured on', 'Expiry', 'Quality', 'Quality grade', 'Corrects', 'Corrected by', 'Void reason'], r.batches.map((b) => [b.entryNo, b.producedAt, b.status, b.item, b.quantity, b.unit, b.ingredientCost, b.additionalCost, b.totalCost, b.unitCost, b.sellingPriceAtPost, b.priceChange?.newPrice ?? '', b.batchRef, b.manufacturedOn, b.expiryDate, b.quality ? b.quality.result : 'Not recorded', b.quality?.grade ?? '', b.corrects, b.correctedBy.join(' '), b.voidReason]));
     }
   }
 }

@@ -3018,6 +3018,16 @@ model ProductionEntry {
   proposedPrice   Decimal? @db.Decimal(12, 2)
   expectedPrice   Decimal? @db.Decimal(12, 2)
   priceChangeId   String?
+  // The menu item this product is sold as and its selling price when the batch was posted (before any change made
+  // by the batch). Frozen history: later price edits never alter it.
+  menuItemId         String?
+  sellingPriceAtPost Decimal? @db.Decimal(12, 2)
+  // Optional quality inspection. All null = "Not recorded"; it never implies the batch passed.
+  qualityResult String? // PASS | FAIL | NEEDS_REVIEW
+  qualityGrade  String?
+  qualityNotes  String?
+  qualityById   String?
+  qualityAt     DateTime?
 
   costs ProductionCost[]
 

@@ -3,6 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { assertValidImageSignature, imageUploadOptions } from '../../common/upload/image-upload.config';
 import { ApiTags } from '@nestjs/swagger';
 import {
+  productionQualitySchema,
   correctProductionSchema,
   decisionSchema,
   journalAdjustmentSchema,
@@ -298,6 +299,14 @@ export class StockJournalController {
     return this.production.post(branchId, u.id, id, undefined, this.opts(u));
   }
 
+  @Auth('production.quality')
+  @Patch('production/:id/quality')
+  @UsePipes(new ZodValidationPipe(productionQualitySchema))
+  async recordQuality(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body() body: unknown) {
+    await this.access(u, branchId);
+    return this.production.recordQuality(branchId, u.id, id, body as never);
+  }
+
   @Auth('production.void')
   @Post('production/:id/void')
   async voidProduction(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string, @Param('id') id: string, @Body(reason) body: { reason: string }) {
@@ -321,7 +330,7 @@ export class StockJournalController {
   @Get('manufacturing/settings')
   async mfgSettings(@CurrentUser() u: SessionUser, @Query('branchId') branchId: string) {
     await this.access(u, branchId);
-    return { ...(await this.mfg.settings(u.restaurantId, branchId)), canPost: permissionSatisfied(u.permissions, 'production.post'), canPrice: permissionSatisfied(u.permissions, 'menu.price'), canReport: permissionSatisfied(u.permissions, 'production.report') };
+    return { ...(await this.mfg.settings(u.restaurantId, branchId)), canPost: permissionSatisfied(u.permissions, 'production.post'), canPrice: permissionSatisfied(u.permissions, 'menu.price'), canReport: permissionSatisfied(u.permissions, 'production.report'), canQuality: permissionSatisfied(u.permissions, 'production.quality') };
   }
 
   @Auth('settings.manage')

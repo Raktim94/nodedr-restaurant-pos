@@ -16,6 +16,7 @@ export interface MfgSettings {
   canPost: boolean;
   canPrice: boolean;
   canReport: boolean;
+  canQuality: boolean;
   latest: { entryNo: string; producedAt: string; item: string | null; unit: string | null; unitCost: string | null; quantity: string | null } | null;
 }
 export const useMfgSettings = (branchId: string | null) =>
@@ -74,13 +75,23 @@ export function usePostBatch(branchId: string | null) {
   };
 }
 
+export type QualityResult = "PASS" | "FAIL" | "NEEDS_REVIEW";
+
+export function useRecordQuality(branchId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; result: QualityResult; grade?: string; notes?: string }) => api.patch(`/inventory/production/${v.id}/quality?${q(branchId)}`, { result: v.result, grade: v.grade, notes: v.notes }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["mfg-report"] }); void qc.invalidateQueries({ queryKey: ["production"] }); },
+  });
+}
+
 export interface MfgReport {
   note: string;
   batchesByDay: { date: string; batches: number; totalCost: string }[];
   produced: { itemId: string; name: string; unit: string; quantity: string; batches: number; totalCost: string; avgUnitCost: string | null }[];
   consumed: { date: string; itemId: string; name: string; unit: string; quantity: string; cost: string }[];
   additionalByCategory: { category: string; amount: string }[];
-  batches: { id: string; entryNo: string; producedAt: string; status: "DRAFT" | "POSTED" | "VOIDED"; item: string | null; itemId: string | null; unit: string | null; quantity: string | null; ingredientCost: string | null; additionalCost: string | null; totalCost: string | null; unitCost: string | null; corrects: string | null; correctedBy: string[]; voidReason: string | null }[];
+  batches: { id: string; entryNo: string; producedAt: string; status: "DRAFT" | "POSTED" | "VOIDED"; item: string | null; itemId: string | null; unit: string | null; quantity: string | null; ingredientCost: string | null; additionalCost: string | null; totalCost: string | null; unitCost: string | null; corrects: string | null; correctedBy: string[]; voidReason: string | null; manufacturedOn: string | null; expiryDate: string | null; batchRef: string | null; sellingPriceAtPost: string | null; priceChange: { oldPrice: string; newPrice: string } | null; quality: { result: QualityResult; grade: string | null; notes: string | null; at: string | null } | null; lines: { role: "INPUT" | "OUTPUT"; item: string; quantity: string; unit: string; rate: string | null; amount: string | null }[]; additionalCosts: { category: string; description: string | null; amount: string; included: boolean }[] }[];
   statusCounts: { status: string; count: number }[];
   priceChanges: { id: string; changedAt: string; item: string; oldPrice: string; newPrice: string; by: string | null; entryNo: string | null; unitCost: string | null }[];
 }

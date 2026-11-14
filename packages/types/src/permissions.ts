@@ -44,6 +44,7 @@ export const PERMISSIONS = [
   { key: "production.void", label: "Reverse Production & Approve Food Waste", category: "Inventory" },
   { key: "production.post", label: "Post Production Batches (drafting needs only Record)", category: "Inventory" },
   { key: "production.report", label: "View Manufacturing Reports", category: "Inventory" },
+  { key: "production.quality", label: "Record Batch Quality Inspection Results", category: "Inventory" },
   { key: "menu.price", label: "Change Menu Selling Prices from the Stock Journal", category: "Menu" },
   { key: "table.session", label: "Open & Close Table Sessions (guest ordering codes)", category: "Tables" },
   { key: "ratings.view", label: "View Customer Ratings", category: "CRM" },
@@ -57,7 +58,7 @@ export const PERMISSION_IMPLIES: Partial<Record<PermissionKey, PermissionKey[]>>
   "menu.manage": ["menu.view"],
   "tables.manage": ["tables.view"],
   // Whoever manages inventory may also record and reverse production.
-  "inventory.manage": ["production.record", "production.void", "production.post", "production.report"],
+  "inventory.manage": ["production.record", "production.void", "production.post", "production.report", "production.quality"],
 };
 
 /** True when `held` satisfies `required`, directly or through PERMISSION_IMPLIES. */
