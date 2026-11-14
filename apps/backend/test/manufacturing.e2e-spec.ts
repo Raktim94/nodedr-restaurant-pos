@@ -619,4 +619,41 @@ run('Manufacturing journal (e2e)', () => {
       .send({ enabled: true })
       .expect(200);
   });
+  it('the stock report reconciles with the ledger: opening + movements = closing = live stock', async () => {
+    const all = (
+      await owner.get(`/api/v1/inventory/journal/summary${q}`).expect(200)
+    ).body.rows as Record<string, string>[];
+    for (const key of ['rice', 'dal', 'idli']) {
+      const r = all.find((x) => x.ingredientId === id[key]);
+      expect(r).toBeDefined();
+      const sum =
+        Number(r!.opening) +
+        Number(r!.receipts) +
+        Number(r!.manufacturingUsed) +
+        Number(r!.manufacturingProduced) +
+        Number(r!.sales) +
+        Number(r!.waste) +
+        Number(r!.adjustments);
+      expect(sum).toBeCloseTo(Number(r!.closing), 3);
+      expect(Number(r!.closing)).toBeCloseTo(await stock(id[key]), 3);
+    }
+    const rice = all.find((x) => x.ingredientId === id.rice)!;
+    expect(Number(rice.manufacturingUsed)).toBeLessThan(0);
+    expect(Number(rice.receipts)).toBeGreaterThan(0);
+    // A window that starts in the future: everything is opening, nothing moves.
+    const later = new Date(Date.now() + 86400000).toISOString();
+    const win = (
+      await owner
+        .get(`/api/v1/inventory/journal/summary${q}&from=${later}`)
+        .expect(200)
+    ).body.rows as Record<string, string>[];
+    const w = win.find((x) => x.ingredientId === id.rice)!;
+    expect(Number(w.opening)).toBeCloseTo(await stock(id.rice), 3);
+    expect(Number(w.manufacturingUsed)).toBe(0);
+    expect(Number(w.closing)).toBeCloseTo(Number(w.opening), 3);
+    const csv = await owner
+      .get(`/api/v1/inventory/journal/summary.csv${q}`)
+      .expect(200);
+    expect(csv.text).toContain('Manufacturing consumption');
+  });
 });

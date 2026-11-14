@@ -270,3 +270,14 @@ export function usePlaceActions(branchId: string | null) {
     transfer: useMutation({ mutationFn: (v: { ingredientId: string; fromLocationId: string | null; toLocationId: string; quantity: string; unit: IngredientUnit; note?: string }) => api.post(`/inventory/locations/transfers?${qs(branchId)}`, { ...v, idempotencyKey: `web-${crypto.randomUUID()}` }), onSuccess: done }),
   };
 }
+
+export interface StockSummaryRow {
+  ingredientId: string; name: string; unit: IngredientUnit; kind: "PURCHASED" | "PREPARED"; category: string | null; location: string | null;
+  opening: string; receipts: string; manufacturingUsed: string; manufacturingProduced: string; sales: string; waste: string; adjustments: string; closing: string; liveStock: string | null;
+}
+export const useStockSummary = (branchId: string | null, filters: Record<string, string | undefined>) =>
+  useQuery({
+    queryKey: ["stock-summary", branchId, filters],
+    queryFn: () => api.get<{ note: string; rows: StockSummaryRow[] }>(`/inventory/journal/summary?${qs(branchId, filters)}`),
+    enabled: !!branchId,
+  });

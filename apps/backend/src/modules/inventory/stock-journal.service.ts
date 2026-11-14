@@ -534,6 +534,175 @@ export class StockJournalService {
     return items;
   }
 
+  /**
+   * Stock summary per item for a date range: opening, then each kind of movement, then closing.
+   * Everything is summed from the StockMovement ledger, so it reconciles with the journal by
+   * construction: closing = opening + every movement in the range. Moving stock between areas
+   * does not change an item's total, so it is not a column.
+   */
+  async summary(
+    branchId: string,
+    f: { from?: Date; to?: Date; ingredientId?: string },
+  ) {
+    const itemWhere: Prisma.IngredientWhereInput = {
+      branchId,
+      ...(f.ingredientId ? { id: f.ingredientId } : {}),
+    };
+    const items = await this.prisma.ingredient.findMany({
+      where: itemWhere,
+      orderBy: [{ kind: 'asc' }, { name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        unit: true,
+        kind: true,
+        category: true,
+        storageLocation: true,
+        currentStock: true,
+        isActive: true,
+      },
+    });
+    const ids = items.map((i) => i.id);
+    const base = { branchId, ingredientId: { in: ids } };
+    const [before, within] = await Promise.all([
+      f.from
+        ? this.prisma.stockMovement.groupBy({
+            by: ['ingredientId'],
+            where: { ...base, createdAt: { lt: f.from } },
+            _sum: { quantity: true },
+          })
+        : Promise.resolve(
+            [] as {
+              ingredientId: string;
+              _sum: { quantity: Prisma.Decimal | null };
+            }[],
+          ),
+      this.prisma.stockMovement.groupBy({
+        by: ['ingredientId', 'type'],
+        where: {
+          ...base,
+          ...(f.from || f.to
+            ? {
+                createdAt: {
+                  ...(f.from ? { gte: f.from } : {}),
+                  ...(f.to ? { lte: f.to } : {}),
+                },
+              }
+            : {}),
+        },
+        _sum: { quantity: true },
+      }),
+    ]);
+    const open = new Map(
+      before.map((b) => [b.ingredientId, b._sum.quantity ?? Dec(0)]),
+    );
+    const by = new Map<string, Record<string, Prisma.Decimal>>();
+    for (const w of within) {
+      const m = by.get(w.ingredientId) ?? {};
+      m[w.type] = w._sum.quantity ?? Dec(0);
+      by.set(w.ingredientId, m);
+    }
+    const z = Dec(0);
+    const rows = items
+      .map((i) => {
+        const m = by.get(i.id) ?? {};
+        const opening = open.get(i.id) ?? z;
+        const receipts = m.RECEIPT ?? z;
+        const used = m.PRODUCTION_USE ?? z;
+        const made = m.PRODUCTION ?? z;
+        const sold = m.CONSUMPTION ?? z;
+        const waste = m.WASTE ?? z;
+        const adjustments = (m.ADJUSTMENT ?? z)
+          .add(m.REVERSAL ?? z)
+          .add(m.OPENING ?? z);
+        const closing = opening
+          .add(receipts)
+          .add(used)
+          .add(made)
+          .add(sold)
+          .add(waste)
+          .add(adjustments);
+        return {
+          i,
+          opening,
+          receipts,
+          used,
+          made,
+          sold,
+          waste,
+          adjustments,
+          closing,
+        };
+      })
+      .filter(
+        (r) =>
+          r.i.isActive ||
+          !r.opening.isZero() ||
+          !r.closing.isZero() ||
+          !r.receipts.isZero() ||
+          !r.used.isZero() ||
+          !r.made.isZero(),
+      );
+    return {
+      note: "Opening is the sum of every stock movement before the start date; closing is opening plus every movement in the range. Quantities in each item's own stock unit. Consumption and waste are negative; moving stock between areas does not change an item's total.",
+      rows: rows.map((r) => ({
+        ingredientId: r.i.id,
+        name: r.i.name,
+        unit: r.i.unit,
+        kind: r.i.kind,
+        category: r.i.category,
+        location: r.i.storageLocation,
+        opening: r.opening.toString(),
+        receipts: r.receipts.toString(),
+        manufacturingUsed: r.used.toString(),
+        manufacturingProduced: r.made.toString(),
+        sales: r.sold.toString(),
+        waste: r.waste.toString(),
+        adjustments: r.adjustments.toString(),
+        closing: r.closing.toString(),
+        // Only meaningful when the range runs to now: a closing that differs from the item's live stock means the ledger and the balance disagree.
+        liveStock: f.to ? null : r.i.currentStock.toString(),
+      })),
+    };
+  }
+
+  async summaryCsv(
+    branchId: string,
+    f: { from?: Date; to?: Date; ingredientId?: string },
+  ) {
+    const { rows } = await this.summary(branchId, f);
+    return toCsv(
+      [
+        'Item',
+        'Unit',
+        'Type',
+        'Location',
+        'Opening',
+        'Purchases/receipts',
+        'Manufacturing consumption',
+        'Manufacturing production',
+        'Sales',
+        'Waste',
+        'Adjustments',
+        'Closing',
+      ],
+      rows.map((r) => [
+        r.name,
+        r.unit,
+        r.kind === 'PREPARED' ? 'Finished' : 'Raw material',
+        r.location,
+        r.opening,
+        r.receipts,
+        r.manufacturingUsed,
+        r.manufacturingProduced,
+        r.sales,
+        r.waste,
+        r.adjustments,
+        r.closing,
+      ]),
+    );
+  }
+
   async exportCsv(branchId: string, f: JournalFilters) {
     const { items } = await this.list(branchId, {
       ...f,

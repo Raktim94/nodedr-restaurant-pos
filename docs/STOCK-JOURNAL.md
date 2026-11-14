@@ -111,3 +111,20 @@ session immediately.
   (Production) sections sit side by side in a live voucher summary.
 * **Not built**: admin-defined custom report definitions. The reports are fixed and permission-gated, so there is
   nothing a configuration change could delete; production history cannot be removed from any report screen.
+
+## Stock journal voucher and stock report (added November 2026)
+
+* **Voucher** (`Inventory > Production > Stock journal voucher`, and the **Manufacturing** card under the menu on the
+  POS screen). Tally-style: header (date, batch/run no., location, shift, made on, use by), **Source / Consumption**
+  on the left (item, available stock, quantity, unit, rate, amount; "Fill from recipe" shows expected quantity beside
+  what you type), **Destination / Production** on the right (several finished products allowed), optional additional
+  costs, quality result and grade, narration. Side by side from the lg breakpoint; stacked, source first, below it.
+  The voucher number is assigned on posting. Posting is the existing single transaction; the review step shows
+  server-calculated rates, amounts, total production cost and cost per unit, and blocks posting on a shortage.
+  Costs are worked out only when exactly one product is made and costing is on; with several products the voucher
+  records quantities and consumption only. The menu selling price is never changed here.
+* **POS card**: always shown to anyone with `production.record`, whether or not costing is switched on.
+* **Stock report** (`Inventory > Stock report`, `GET journal/summary`, `journal/summary.csv`): per item and storage
+  location, opening, purchases/receipts, manufacturing used, manufacturing produced, sales, waste, adjustments,
+  closing for a date range. Every figure is summed from the stock ledger; the e2e test checks
+  opening + movements = closing = live stock.

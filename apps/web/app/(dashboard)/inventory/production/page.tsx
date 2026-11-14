@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { InventoryTabs } from "@/components/inventory/inventory-tabs";
+import { StockJournalVoucher } from "@/components/inventory/stock-journal-voucher";
 import { ManufacturingBatchDialog } from "@/components/inventory/manufacturing-batch-dialog";
 import { useMfgSettings, useSetMfgEnabled } from "@/hooks/use-manufacturing";
 import { ProductionEntryDialog, selectClass } from "@/components/inventory/production-entry-dialog";
@@ -47,6 +48,7 @@ export default function ProductionPage() {
   const act = useProductionAction(branchId);
   const [creating, setCreating] = useState(false);
   const [costed, setCosted] = useState(false);
+  const [voucher, setVoucher] = useState(false);
   const { data: mfg } = useMfgSettings(branchId);
   const setMfg = useSetMfgEnabled(branchId);
   const canAdmin = hasPermission(me?.user, "settings.manage");
@@ -75,7 +77,8 @@ export default function ProductionPage() {
           <p className="text-sm text-muted-foreground">Stock, daily production, purchasing, and food waste</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {mfg?.enabled && <Button onClick={() => setCosted(true)}>New costed batch</Button>}
+          <Button onClick={() => setVoucher(true)}>Stock journal voucher</Button>
+          {mfg?.enabled && <Button variant="outline" onClick={() => setCosted(true)}>Guided costed batch</Button>}
           <Button variant={mfg?.enabled ? "outline" : "default"} onClick={() => setCreating(true)}>{mfg?.enabled ? "Quantity-only entry" : "New production entry"}</Button>
         </div>
       </div>
@@ -175,6 +178,7 @@ export default function ProductionPage() {
         )}
       </section>
 
+      {voucher && <StockJournalVoucher branchId={branchId} open onOpenChange={setVoucher} />}
       {costed && <ManufacturingBatchDialog branchId={branchId} open onOpenChange={setCosted} />}
       {creating && <ProductionEntryDialog key="new" branchId={branchId} open onOpenChange={setCreating} />}
       {correcting && <ProductionEntryDialog key={correcting.id} branchId={branchId} open correcting={correcting} onOpenChange={(o) => !o && setCorrecting(null)} />}

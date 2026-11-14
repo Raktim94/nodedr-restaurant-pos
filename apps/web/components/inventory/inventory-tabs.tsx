@@ -10,6 +10,7 @@ const TABS = [
   { label: "Stock take", href: "/inventory/stock-take" },
   { label: "Shopping list", href: "/inventory/shopping-list" },
   { label: "Stock journal", href: "/inventory/journal" },
+  { label: "Stock report", href: "/inventory/stock-report" },
   { label: "Production", href: "/inventory/production" },
   { label: "Mfg reports", href: "/inventory/manufacturing-reports" },
   { label: "Suppliers", href: "/inventory/suppliers" },

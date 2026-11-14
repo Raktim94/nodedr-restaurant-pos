@@ -149,6 +149,37 @@ export class StockJournalController {
   }
 
   @Auth('inventory.manage')
+  @Get('journal/summary')
+  async summary(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
+    await this.access(u, branchId);
+    return this.journal.summary(branchId, {
+      from: date(q.from),
+      to: date(q.to),
+      ingredientId: q.ingredientId || undefined,
+    });
+  }
+
+  @Auth('inventory.manage')
+  @Get('journal/summary.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async summaryCsv(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
+    await this.access(u, branchId);
+    return this.journal.summaryCsv(branchId, {
+      from: date(q.from),
+      to: date(q.to),
+      ingredientId: q.ingredientId || undefined,
+    });
+  }
+
+  @Auth('inventory.manage')
   @Get('journal/export.csv')
   @Header('Content-Type', 'text/csv; charset=utf-8')
   async exportJournal(
