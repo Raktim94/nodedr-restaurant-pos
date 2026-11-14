@@ -111,10 +111,27 @@ export class DeliveryController {
     @CurrentUser() u: SessionUser,
     @Query('branchId') branchId: string,
     @Param('orderId') orderId: string,
-    @Body() body: { driverId: string },
+    @Body() body: { driverId: string; reason?: string },
   ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
-    return this.delivery.assignDriver(branchId, orderId, body.driverId);
+    return this.delivery.assignDriver(
+      branchId,
+      orderId,
+      body.driverId,
+      u.id,
+      body.reason,
+    );
+  }
+
+  @Auth('delivery.manage')
+  @Get(':orderId/assignments')
+  async assignments(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('orderId') orderId: string,
+  ) {
+    await this.branchAccess.assertAccess(u.restaurantId, branchId);
+    return this.delivery.assignmentHistory(branchId, orderId);
   }
 
   @Auth('delivery.manage')
@@ -127,6 +144,12 @@ export class DeliveryController {
     @Body() body: { status: DeliveryStatusDto },
   ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
-    return this.delivery.setStatus(branchId, orderId, body.status);
+    return this.delivery.setStatus(
+      branchId,
+      orderId,
+      body.status,
+      undefined,
+      u.id,
+    );
   }
 }

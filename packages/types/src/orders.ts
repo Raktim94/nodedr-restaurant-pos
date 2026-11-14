@@ -87,7 +87,7 @@ export type DeliveryZoneDto = z.infer<typeof deliveryZoneSchema>;
 export const deliveryZoneUpdateSchema = deliveryZoneSchema.partial();
 export type DeliveryZoneUpdateDto = z.infer<typeof deliveryZoneUpdateSchema>;
 
-export const assignDriverSchema = z.object({ driverId: z.string().min(1) });
+export const assignDriverSchema = z.object({ driverId: z.string().min(1), reason: z.string().max(200).optional() });
 export const deliveryStatusUpdateSchema = z.object({
   status: deliveryStatusSchema,
 });

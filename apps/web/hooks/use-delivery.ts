@@ -70,9 +70,12 @@ export function useDeliveryActions(branchId: string | null) {
   const done = () => qc.invalidateQueries({ queryKey: ["deliveries"] });
   return {
     assign: useMutation({
-      mutationFn: (v: { orderId: string; driverId: string }) =>
-        api.patch(`/delivery/${v.orderId}/assign?branchId=${branchId}`, { driverId: v.driverId }),
-      onSuccess: done,
+      mutationFn: (v: { orderId: string; driverId: string; reason?: string }) =>
+        api.patch(`/delivery/${v.orderId}/assign?branchId=${branchId}`, { driverId: v.driverId, reason: v.reason }),
+      onSuccess: (_d, v) => {
+        done();
+        qc.invalidateQueries({ queryKey: ["delivery-assignments", v.orderId] });
+      },
     }),
     setStatus: useMutation({
       mutationFn: (v: { orderId: string; status: DeliveryStatus }) =>
@@ -108,4 +111,13 @@ export function useZoneActions(branchId: string | null) {
       onSuccess: done,
     }),
   };
+}
+
+export interface AssignmentRow { id: string; at: string; from: string | null; to: string | null; reason: string | null; by: string }
+export function useAssignmentHistory(branchId: string | null, orderId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["delivery-assignments", orderId],
+    queryFn: () => api.get<AssignmentRow[]>(`/delivery/${orderId}/assignments?branchId=${branchId}`),
+    enabled: enabled && !!branchId,
+  });
 }

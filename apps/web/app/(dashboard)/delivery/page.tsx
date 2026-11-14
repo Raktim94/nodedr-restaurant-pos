@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
 import {
+  useAssignmentHistory,
   useDeliveries,
   useDeliveryActions,
   useDrivers,
@@ -21,8 +22,8 @@ import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const STATUS_LABEL: Record<DeliveryStatus, string> = {
-  UNASSIGNED: "Needs driver",
-  ASSIGNED: "Driver assigned",
+  UNASSIGNED: "Unassigned",
+  ASSIGNED: "Rider assigned",
   PICKED_UP: "Out for delivery",
   DELIVERED: "Delivered",
   FAILED: "Failed",
@@ -35,6 +36,16 @@ function DeliveryCard({ order, branchId }: { order: DeliveryOrder; branchId: str
   const { data: drivers } = useDrivers(branchId);
   const { assign, setStatus } = useDeliveryActions(branchId);
   const status = order.deliveryStatus ?? "UNASSIGNED";
+  const [pending, setPending] = useState<string | null>(null); // rider chosen for a reassignment, waiting for a reason
+  const [reason, setReason] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+  const { data: history } = useAssignmentHistory(branchId, order.id, showHistory);
+  const chosen = drivers?.find((d) => d.id === pending);
+  const doAssign = (driverId: string, why?: string) =>
+    assign.mutate(
+      { orderId: order.id, driverId, reason: why },
+      { onSuccess: () => { setPending(null); setReason(""); }, onError: (err) => toast.error(errMsg(err)) },
+    );
   const move = (next: DeliveryStatus) =>
     setStatus.mutate({ orderId: order.id, status: next }, { onError: (e) => toast.error(errMsg(e)) });
 
@@ -81,29 +92,29 @@ function DeliveryCard({ order, branchId }: { order: DeliveryOrder; branchId: str
       <div className="flex flex-wrap items-center gap-2">
         {(status === "UNASSIGNED" || status === "ASSIGNED") && (
           <select
-            aria-label="Driver"
-            value={order.driver?.id ?? ""}
-            onChange={(e) =>
-              e.target.value &&
-              assign.mutate(
-                { orderId: order.id, driverId: e.target.value },
-                { onError: (err) => toast.error(errMsg(err)) },
-              )
-            }
+            aria-label="Rider"
+            value=""
+            onChange={(e) => {
+              const id = e.target.value;
+              if (!id || id === order.driver?.id) return;
+              if (order.driver) setPending(id); // moving it to someone else: ask why first
+              else doAssign(id);
+            }}
             className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm"
           >
-            <option value="">Assign driver…</option>
-            {drivers?.map((d) => (
+            <option value="">{order.driver ? "Reassign rider…" : "Assign rider…"}</option>
+            {drivers?.filter((d) => d.id !== order.driver?.id).map((d) => (
               <option key={d.id} value={d.id}>
-                {d.riderOnline ? "● Online" : "○ Offline"} · {d.name}
-                {d.activeDeliveries > 0 ? ` (${d.activeDeliveries} active)` : ""}
+                {d.riderOnline ? "● On shift" : "○ Off shift"} · {d.name}
+                {d.activeDeliveries > 0 ? ` (${d.activeDeliveries} active)` : " (free)"}
               </option>
             ))}
           </select>
         )}
-        {status === "PICKED_UP" && order.driver && (
-          <span className="text-xs text-muted-foreground">Driver: {order.driver.name}</span>
+        {order.driver && status !== "UNASSIGNED" && (
+          <span className="text-xs font-medium text-foreground">Rider: {order.driver.name}</span>
         )}
+        {status === "UNASSIGNED" && <span className="text-xs font-medium text-muted-foreground">Unassigned</span>}
         {status === "ASSIGNED" && <Button size="sm" onClick={() => move("PICKED_UP")}>Picked up</Button>}
         {status === "PICKED_UP" && <Button size="sm" onClick={() => move("DELIVERED")}>Delivered</Button>}
         {status !== "DELIVERED" && status !== "FAILED" && (
@@ -112,6 +123,26 @@ function DeliveryCard({ order, branchId }: { order: DeliveryOrder; branchId: str
           </Button>
         )}
       </div>
+      {pending && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 p-2">
+          <Input aria-label="Reason for reassigning" className="h-8 min-w-48 flex-1" placeholder={`Why move this to ${chosen?.name ?? "another rider"}? (required)`} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+          <Button size="sm" disabled={reason.trim().length < 3 || assign.isPending} onClick={() => doAssign(pending, reason)}>Reassign</Button>
+          <Button size="sm" variant="outline" onClick={() => { setPending(null); setReason(""); }}>Cancel</Button>
+        </div>
+      )}
+      {(order.driver || showHistory) && (
+        <div className="text-xs">
+          <button type="button" className="text-primary underline underline-offset-2" onClick={() => setShowHistory((v) => !v)}>{showHistory ? "Hide rider history" : "Rider history"}</button>
+          {showHistory && (
+            <ul className="mt-1 flex flex-col gap-0.5 text-muted-foreground">
+              {(history ?? []).length === 0 && <li>No rider changes yet.</li>}
+              {(history ?? []).map((h) => (
+                <li key={h.id}>{time(h.at)} · {h.from ?? "Unassigned"} → {h.to ?? "Unassigned"} · by {h.by}{h.reason ? ` · ${h.reason}` : ""}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </Card>
   );
 }

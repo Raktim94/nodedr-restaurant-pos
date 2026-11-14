@@ -11,6 +11,9 @@ function setup(order: Record<string, unknown> | null, zoneClash = false) {
         .mockImplementation(({ data }) => ({ ...order, ...data })),
     },
     user: { findFirst: jest.fn().mockResolvedValue({ id: 'd1' }) },
+    deliveryAssignment: { create: jest.fn().mockResolvedValue({}) },
+    $executeRaw: jest.fn().mockResolvedValue(1),
+    $transaction: jest.fn(),
     deliveryZone: {
       findFirst: jest
         .fn()
@@ -18,6 +21,12 @@ function setup(order: Record<string, unknown> | null, zoneClash = false) {
       create: jest.fn().mockResolvedValue({ id: 'z1' }),
     },
   };
+  prisma.$transaction.mockImplementation((fn: (tx: unknown) => unknown) =>
+    fn(prisma),
+  );
+  (prisma.order as Record<string, unknown>).findUniqueOrThrow = jest
+    .fn()
+    .mockImplementation(() => ({ ...order, driverId: 'd1' }));
   const realtime = { emitToBranch: jest.fn(), emitToUsers: jest.fn() };
   const webhooks = { emitForBranch: jest.fn() };
   const svc = new DeliveryService(
@@ -35,7 +44,12 @@ describe('DeliveryService', () => {
       id: 'o1',
       deliveryStatus: 'UNASSIGNED',
     });
-    await svc.assignDriver('b1', 'o1', 'd1');
+    await svc.assignDriver('b1', 'o1', 'd1', 'staff1');
+    expect(prisma.deliveryAssignment.create.mock.calls[0][0].data).toMatchObject({
+      fromDriverId: undefined,
+      toDriverId: 'd1',
+      assignedById: 'staff1',
+    });
     expect(prisma.order.update.mock.calls[0][0].data).toEqual({
       driverId: 'd1',
       deliveryStatus: 'ASSIGNED',
@@ -55,8 +69,41 @@ describe('DeliveryService', () => {
 
   it('refuses to reassign once picked up', async () => {
     const { svc } = setup({ id: 'o1', deliveryStatus: 'PICKED_UP' });
-    await expect(svc.assignDriver('b1', 'o1', 'd1')).rejects.toBeInstanceOf(
-      BadRequestException,
+    await expect(svc.assignDriver('b1', 'o1', 'd1', 'staff1'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('giving the same rider again does nothing (double click, retry)', async () => {
+    const { svc, prisma, realtime } = setup({
+      id: 'o1',
+      deliveryStatus: 'ASSIGNED',
+      driverId: 'd1',
+    });
+    await svc.assignDriver('b1', 'o1', 'd1', 'staff1');
+    expect(prisma.order.update).not.toHaveBeenCalled();
+    expect(prisma.deliveryAssignment.create).not.toHaveBeenCalled();
+    expect(realtime.emitToUsers).not.toHaveBeenCalled();
+  });
+
+  it('moving to a different rider needs a reason, then records it and tells the old rider', async () => {
+    const { svc, prisma, realtime } = setup({
+      id: 'o1',
+      deliveryStatus: 'ASSIGNED',
+      driverId: 'd0',
+    });
+    await expect(
+      svc.assignDriver('b1', 'o1', 'd1', 'staff1'),
+    ).rejects.toThrow(/why/);
+    await svc.assignDriver('b1', 'o1', 'd1', 'staff1', 'Rider d0 is off sick');
+    expect(prisma.deliveryAssignment.create.mock.calls[0][0].data).toMatchObject({
+      fromDriverId: 'd0',
+      toDriverId: 'd1',
+      reason: 'Rider d0 is off sick',
+    });
+    expect(realtime.emitToUsers).toHaveBeenCalledWith(
+      ['d0'],
+      'rider.unassigned',
+      expect.anything(),
     );
   });
 

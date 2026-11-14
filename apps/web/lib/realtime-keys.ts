@@ -17,7 +17,10 @@ export function realtimeInvalidations(event: string, branchId: string): string[]
     case "order.deleted":
       // ["kds"]: incoming orders waiting to be accepted, and tickets that a
       // cancel/decline/payment changed, live on the kitchen screen too.
-      return [["dashboard"], ["floors", branchId], ["orders"], ["kds"]];
+      return [["dashboard"], ["floors", branchId], ["orders"], ["kds"], ["deliveries"], ["rider"]];
+    case "rider.assigned":
+    case "rider.unassigned":
+      return [["rider"], ["deliveries"]];
     case "reservation.created":
     case "reservation.updated":
       return [["reservations", branchId], ["dashboard"]];
@@ -37,4 +40,6 @@ export const REALTIME_EVENTS = [
   "order.deleted",
   "reservation.created",
   "reservation.updated",
+  "rider.assigned",
+  "rider.unassigned",
 ] as const;

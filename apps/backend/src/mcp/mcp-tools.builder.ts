@@ -495,6 +495,8 @@ export class McpToolsBuilder {
               branchId,
               args.string('orderId'),
               args.string('driverId'),
+              actor.id,
+              args.optionalString('reason'),
             ),
           );
         },

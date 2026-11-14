@@ -219,10 +219,10 @@ model Branch {
   wasteEntries      WasteEntry[]
   preparations      Preparation[]
   productionRuns    ProductionRun[]
+  productRecipes    ProductRecipe[]
 
   @@index([restaurantId])
   @@map("branches")
-  productRecipes    ProductRecipe[]
 }
 
 // ---------------------------------------------------------------------------
@@ -356,18 +356,19 @@ model User {
   posDevices    PosDevice[]
   deviceTokens  DeviceToken[]
 
-  purchaseOrdersCreated PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
-  goodsReceiptsReceived GoodsReceipt[]  @relation("GoodsReceiptReceivedBy")
-  stockMovementsCreated StockMovement[] @relation("StockMovementCreatedBy")
-  wasteLogsCreated      WasteLog[]      @relation("WasteLogCreatedBy")
-  attendance            Attendance[]
-  deliveriesDriven      Order[]         @relation("OrderDriver")
-  shifts                Shift[]
-  leaveRequests         LeaveRequest[]  @relation("LeaveRequester")
-  leaveDecided          LeaveRequest[]  @relation("LeaveDecider")
-  payProfile            StaffPay?
-  payrollLines          PayrollLine[]
-  expensesCreated       Expense[]
+  purchaseOrdersCreated   PurchaseOrder[]      @relation("PurchaseOrderCreatedBy")
+  goodsReceiptsReceived   GoodsReceipt[]       @relation("GoodsReceiptReceivedBy")
+  stockMovementsCreated   StockMovement[]      @relation("StockMovementCreatedBy")
+  wasteLogsCreated        WasteLog[]           @relation("WasteLogCreatedBy")
+  attendance              Attendance[]
+  deliveriesDriven        Order[]              @relation("OrderDriver")
+  deliveryAssignmentsMade DeliveryAssignment[] @relation("DeliveryAssignmentBy")
+  shifts                  Shift[]
+  leaveRequests           LeaveRequest[]       @relation("LeaveRequester")
+  leaveDecided            LeaveRequest[]       @relation("LeaveDecider")
+  payProfile              StaffPay?
+  payrollLines            PayrollLine[]
+  expensesCreated         Expense[]
 
   purchaseRequestsRequested PurchaseRequest[]   @relation("PurchaseRequestRequestedBy")
   purchaseRequestsApproved  PurchaseRequest[]   @relation("PurchaseRequestApprovedBy")
@@ -1674,8 +1675,8 @@ model Order {
   // checkout; the zone's fee is snapshotted so later zone edits never
   // rewrite history.
   deliveryZoneId       String?
-  deliveryZone         DeliveryZone?   @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
-  deliveryFee          Decimal         @default(0) @db.Decimal(12, 2)
+  deliveryZone         DeliveryZone?        @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
+  deliveryFee          Decimal              @default(0) @db.Decimal(12, 2)
   deliveryAddress      String?
   deliveryPincode      String?
   deliveryPhone        String?
@@ -1685,7 +1686,8 @@ model Order {
   deliveryPlace        String?
   deliveryStatus       DeliveryStatus?
   driverId             String?
-  driver               User?           @relation("OrderDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  driver               User?                @relation("OrderDriver", fields: [driverId], references: [id], onDelete: SetNull)
+  deliveryAssignments  DeliveryAssignment[]
   deliveryEtaAt        DateTime?
   assignedAt           DateTime?
   pickedUpAt           DateTime?
@@ -3045,15 +3047,15 @@ model ProductionEntry {
 
   // Manufacturing journal v2. The recipe actually used is copied in (recipeSnapshot) so later recipe edits never
   // rewrite this batch; the PO it came from is recorded as text, not a link, so the ledger outlives the PO.
-  recipeKind         String? // RECIPE | MENU
-  recipeId           String?
-  recipeName         String?
-  recipeSnapshot     Json?
-  sourcePoId         String?
-  sourcePoNumber     String?
-  sourceSupplier     String?
+  recipeKind       String? // RECIPE | MENU
+  recipeId         String?
+  recipeName       String?
+  recipeSnapshot   Json?
+  sourcePoId       String?
+  sourcePoNumber   String?
+  sourceSupplier   String?
   // QUANTITY | MANUAL when the voucher made more than one product; null for a single product.
-  allocationMethod   String?
+  allocationMethod String?
 
   costs ProductionCost[]
 
@@ -3567,7 +3569,6 @@ model TableAccess {
   @@map("table_accesses")
 }
 
-
 // A saved bill of materials: what a base output quantity of a finished product takes. Editing it bumps `version`;
 // a posted voucher keeps its own snapshot, so history never changes. Legacy menu-item recipes still work (as "MENU").
 model ProductRecipe {
@@ -3603,4 +3604,23 @@ model ProductRecipeLine {
 
   @@unique([recipeId, ingredientId])
   @@map("product_recipe_lines")
+}
+
+/// Append-only history of who a delivery order was given to. The order row holds the current rider
+/// (driverId); every assign, reassign and release adds one row here, never edits one.
+model DeliveryAssignment {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  branchId     String
+  fromDriverId String?
+  toDriverId   String?
+  reason       String?
+  assignedById String
+  assignedBy   User     @relation("DeliveryAssignmentBy", fields: [assignedById], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now())
+
+  @@index([orderId, createdAt])
+  @@index([branchId, createdAt])
+  @@map("delivery_assignments")
 }

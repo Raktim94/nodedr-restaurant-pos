@@ -161,24 +161,80 @@ export class DeliveryService {
     }));
   }
 
-  async assignDriver(branchId: string, orderId: string, driverId: string) {
-    const order = await this.getDelivery(branchId, orderId);
-    if (!['UNASSIGNED', 'ASSIGNED'].includes(order.deliveryStatus ?? ''))
-      throw new BadRequestException(
-        'This delivery can no longer be reassigned',
-      );
+  /**
+   * Give a delivery to one rider. Safe against double clicks, retries and two staff acting at once: the order row
+   * is locked for the check-and-write, giving the same rider twice is a no-op (no second history row, no second
+   * notification), and moving it to a different rider needs a reason. Every change adds a history row.
+   */
+  async assignDriver(
+    branchId: string,
+    orderId: string,
+    driverId: string,
+    actorId: string,
+    reason?: string,
+  ) {
+    const note = reason?.trim().slice(0, 200) || null;
     const driver = await this.prisma.user.findFirst({
-      where: { id: driverId, isActive: true, branches: { some: { branchId } } },
+      where: {
+        id: driverId,
+        isActive: true,
+        branches: { some: { branchId } },
+        role: { name: 'DELIVERY_STAFF' },
+      },
       select: { id: true },
     });
     if (!driver)
-      throw new BadRequestException('Driver not found for this branch');
-    const saved = await this.save(branchId, orderId, {
-      driverId,
-      deliveryStatus: 'ASSIGNED',
-      assignedAt: new Date(),
+      throw new BadRequestException(
+        'That person is not an active delivery rider for this branch',
+      );
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT 1 FROM "orders" WHERE "id" = ${orderId} AND "branchId" = ${branchId} FOR UPDATE`;
+      const order = await tx.order.findFirst({
+        where: { id: orderId, branchId, type: 'DELIVERY' },
+      });
+      if (!order) throw new NotFoundException('Delivery order not found');
+      if (!['UNASSIGNED', 'ASSIGNED'].includes(order.deliveryStatus ?? ''))
+        throw new BadRequestException(
+          'This delivery can no longer be reassigned',
+        );
+      if (order.driverId === driverId && order.deliveryStatus === 'ASSIGNED')
+        return { changed: false as const, previous: order.driverId };
+      if (order.driverId && !note)
+        throw new BadRequestException(
+          'Say why this delivery is moving to a different rider',
+        );
+      await tx.order.update({
+        where: { id: orderId },
+        data: { driverId, deliveryStatus: 'ASSIGNED', assignedAt: new Date() },
+      });
+      await tx.deliveryAssignment.create({
+        data: {
+          orderId,
+          branchId,
+          fromDriverId: order.driverId,
+          toDriverId: driverId,
+          reason: note,
+          assignedById: actorId,
+        },
+      });
+      return { changed: true as const, previous: order.driverId };
     });
-    // Tell the rider's phone straight away.
+
+    const saved = await this.prisma.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: ORDER_INCLUDE,
+    });
+    if (!result.changed) return saved;
+    this.realtime.emitToBranch(branchId, 'order.updated', { id: orderId });
+    void this.webhooks.emitForBranch(branchId, 'delivery.updated', {
+      orderId,
+      orderNumber: saved.orderNumber,
+      status: saved.deliveryStatus,
+      driver: saved.driver?.name ?? null,
+      address: saved.deliveryAddress,
+    });
+    // Tell the new rider's phone straight away, and the previous rider that it was taken away.
     this.realtime.emitToUsers([driverId], 'rider.assigned', {
       orderId,
       orderNumber: saved.orderNumber,
@@ -189,7 +245,47 @@ export class DeliveryService {
       path: '/my-deliveries',
       data: { type: 'rider.assigned' },
     });
+    if (result.previous && result.previous !== driverId) {
+      this.realtime.emitToUsers([result.previous], 'rider.unassigned', {
+        orderId,
+        orderNumber: saved.orderNumber,
+      });
+      this.push.sendToUsers([result.previous], {
+        title: 'Delivery reassigned',
+        body: `Order ${saved.orderNumber} was moved to another rider`,
+        path: '/my-deliveries',
+        data: { type: 'rider.unassigned' },
+      });
+    }
     return saved;
+  }
+
+  /** Who the delivery has been given to over time, oldest first. */
+  async assignmentHistory(branchId: string, orderId: string) {
+    await this.getDelivery(branchId, orderId);
+    const rows = await this.prisma.deliveryAssignment.findMany({
+      where: { orderId, branchId },
+      orderBy: { createdAt: 'asc' },
+      include: { assignedBy: { select: { name: true } } },
+    });
+    const ids = [
+      ...new Set(
+        rows.flatMap((r) => [r.fromDriverId, r.toDriverId]).filter(Boolean),
+      ),
+    ] as string[];
+    const people = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true },
+    });
+    const name = new Map(people.map((p) => [p.id, p.name]));
+    return rows.map((r) => ({
+      id: r.id,
+      at: r.createdAt,
+      from: r.fromDriverId ? (name.get(r.fromDriverId) ?? null) : null,
+      to: r.toDriverId ? (name.get(r.toDriverId) ?? null) : null,
+      reason: r.reason,
+      by: r.assignedBy.name,
+    }));
   }
 
   async setStatus(
@@ -197,6 +293,7 @@ export class DeliveryService {
     orderId: string,
     status: DeliveryStatusDto,
     reason?: string,
+    actorId?: string,
   ) {
     const order = await this.getDelivery(branchId, orderId);
     const current: DeliveryStatusDto = order.deliveryStatus ?? 'UNASSIGNED';
@@ -204,6 +301,18 @@ export class DeliveryService {
       throw new BadRequestException(`Cannot move from ${current} to ${status}`);
     if (status === 'PICKED_UP' && !order.driverId)
       throw new BadRequestException('Assign a driver first');
+    if (status === 'UNASSIGNED' && order.driverId && actorId) {
+      await this.prisma.deliveryAssignment.create({
+        data: {
+          orderId,
+          branchId,
+          fromDriverId: order.driverId,
+          toDriverId: null,
+          reason: reason?.trim().slice(0, 200) || 'Released',
+          assignedById: actorId,
+        },
+      });
+    }
     return this.save(branchId, orderId, {
       deliveryStatus: status,
       ...(status === 'UNASSIGNED' ? { driverId: null } : {}),
