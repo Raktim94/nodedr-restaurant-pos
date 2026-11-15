@@ -9,7 +9,7 @@ import { KOT_NEXT, dayReport, kotDelta, markSent, minutesSince, newOrder, openOr
 import { escposKot, htmlKot } from './lib/kot.js';
 import { STATUS_LABEL, clashes, grouped, heldSoon, newBooking, setStatus } from './lib/reservations.js';
 import { native, pickServer, reachable, savedServers, setDeviceId } from './lib/net.js';
-import { queueEvent, retryEvent, shiftState } from './lib/journal.js';
+import { counts as eventCounts, dismissEvent, queueEvent, retryEvent, shiftState } from './lib/journal.js';
 import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
 import { addSection, addTable, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
@@ -32,6 +32,9 @@ const S = {
   online: false,
   syncing: false,
   pending: 0,
+  pendingEvents: 0,
+  failedEvents: 0,
+  pendingBookings: 0,
   lastSync: null,
   note: null,
   unlocked: false,
@@ -682,7 +685,7 @@ function shell() {
   <main class="view" id="view"></main>
   <div id="barwrap"></div>
   <nav class="nav" aria-label="Sections">
-    ${tabs.map(([k, label, icon]) => `<button data-tab="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${icon}<span>${label}${k === 'sales' && S.pending ? ` <span class="badge">${S.pending}</span>` : ''}</span></button>`).join('')}
+    ${tabs.map(([k, label, icon]) => `<button data-tab="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${icon}<span>${label}${k === 'sales' && S.pending ? ` <span class="badge">${S.pending}</span>` : ''}${k === 'kitchen' && S.pendingEvents + S.failedEvents ? ` <span class="badge">${S.pendingEvents + S.failedEvents}</span>` : ''}</span></button>`).join('')}
   </nav>`;
   document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => go(b.dataset.tab)));
 }
@@ -727,7 +730,13 @@ async function refreshBadges() {
 }
 async function refreshPending() {
   S.pending = (await sales.pending()).length;
+  // Kitchen records (and attendance) and table bookings also wait for the server; the phone must say so.
+  const ev = await eventCounts();
+  S.pendingEvents = ev.pending;
+  S.failedEvents = ev.failed;
+  S.pendingBookings = (await reservations.all()).filter((b) => b.dirty).length;
 }
+const waitingText = () => [S.pending && `${S.pending} sale${S.pending === 1 ? '' : 's'}`, S.pendingEvents && `${S.pendingEvents} kitchen/shift record${S.pendingEvents === 1 ? '' : 's'}`, S.pendingBookings && `${S.pendingBookings} booking${S.pendingBookings === 1 ? '' : 's'}`].filter(Boolean).join(', ') || 'Nothing';
 async function render() {
   if (!S.snap) return renderLogin();
   if (S.snap.local && !S.unlocked) return renderUnlock();
@@ -1644,14 +1653,14 @@ async function viewSync() {
     <div class="card mt">
       <dl class="kv">
         <dt>Connection</dt><dd>${S.online ? 'Online' : 'Offline'}</dd>
-        <dt>Waiting to send</dt><dd>${S.pending} sale${S.pending === 1 ? '' : 's'}</dd>
+        <dt>Waiting to send</dt><dd>${esc(waitingText())}</dd>
         <dt>Last sync</dt><dd>${last ? esc(new Date(last).toLocaleString()) : 'Never'}</dd>
-        <dt>Menu saved</dt><dd>${snapAt ? esc(new Date(snapAt).toLocaleString()) : 'Never'} (${S.snap.items.length} dishes)</dd>
+        <dt>Menu saved</dt><dd>${snapAt ? esc(new Date(snapAt).toLocaleString()) : 'Never'} (${S.snap.items.length} dishes)${snapAt && Date.now() - snapAt > 86400000 ? '<br><b>Older than a day. Connect and tap Sync now so prices are current.</b>' : ''}</dd>
         <dt>Signed in as</dt><dd>${esc(S.snap.user.name)}</dd>
         <dt>This phone</dt><dd>${esc(device)}</dd>
       </dl>
       <button class="btn block mt" id="syncnow" ${S.syncing ? 'disabled' : ''}>${S.syncing ? 'Syncing…' : 'Sync now'}</button>
-      <p class="mute center">Sync sends your sales and refreshes the menu and prices.</p>
+      <p class="mute center">Sync sends your sales, kitchen records and bookings, and refreshes the menu and prices.</p>
     </div>
     ${servers}
     <div class="card mt">
@@ -1671,8 +1680,9 @@ async function viewSync() {
     else location.href = '../index.html?stay=1';
   };
   $('out').onclick = async () => {
-    const waiting = (await sales.pending()).length;
-    if (waiting && !confirm(`${waiting} sale(s) are not on the server yet. Signing out keeps them on this phone, but they cannot be sent until you sign in again. Sign out anyway?`)) return;
+    await refreshPending();
+    const waiting = S.pending + S.pendingEvents + S.failedEvents + S.pendingBookings;
+    if (waiting && !confirm(`Not on the server yet: ${waitingText()}${S.failedEvents ? `, and ${S.failedEvents} refused kitchen record${S.failedEvents === 1 ? '' : 's'}` : ''}. Signing out keeps them on this phone, but they cannot be sent until you sign in again. Sign out anyway?`)) return;
     const back = S.hasPhoneAccount && (await kv.get('localMenuBackup'));
     if (back) {
       // Signed up on this phone, then connected: go back to the phone account (its menu and sales stay).
@@ -1727,29 +1737,37 @@ async function doSync() {
 // waits for the network, and an event is never sent twice (its id is the server's idempotency key).
 const kitchenOn = () => !!(S.snap && !S.snap.local && Array.isArray(S.snap.stockItems));
 const KIT_REASONS = [['SPOILED', 'Spoiled'], ['EXPIRED', 'Expired'], ['OVER_PRODUCTION', 'Over-prepared'], ['DAMAGED', 'Dropped / damaged'], ['RETURNED_PLATE', 'Returned / plate waste'], ['PREP_TRIM', 'Preparation trim'], ['STORAGE_TEMPERATURE', 'Temperature / storage'], ['OTHER', 'Other']];
-const EV_LABEL = { pending: 'Waiting to send', synced: 'Sent', failed: 'Needs attention' };
+const EV_LABEL = { pending: 'Waiting to send', synced: 'Sent', failed: 'Needs attention', dismissed: 'Set aside' };
 const unitOpts = (it, sel) => (it ? it.units : []).map((u) => `<option ${u === sel ? 'selected' : ''}>${u}</option>`).join('');
 const itemOpts = (list) => `<option value="">Choose…</option>${list.map((i) => `<option value="${esc(i.id)}">${esc(i.name)}</option>`).join('')}`;
 
 async function viewKitchen() {
   const evs = (await events.all()).filter((e) => e.kind !== 'attendance').slice(0, 40);
   const nameOf = (id) => (S.snap.stockItems.find((i) => i.id === id) || {}).name || 'Item';
+  const placeOf = (id) => ((S.snap.stockPlaces || []).find((p) => p.id === id) || {}).name || 'another place';
   const describe = (e) =>
     e.kind === 'production'
       ? `Made ${e.payload.outputs.map((o) => `${o.quantity} ${o.unit} ${nameOf(o.ingredientId)}`).join(', ')}`
       : e.kind === 'receipt'
         ? `Received ${e.payload.quantity} ${e.payload.unit} ${nameOf(e.payload.ingredientId)}`
+        : e.kind === 'transfer'
+          ? `Moved ${e.payload.lines.map((l) => `${l.quantity} ${l.unit} ${nameOf(l.ingredientId)}`).join(', ')} to ${placeOf(e.payload.lines[0].toLocationId)}`
+          : e.kind === 'correction'
+            ? `Correction: ${e.payload.lines.map((l) => `${l.direction === 'IN' ? '+' : '-'}${l.quantity} ${l.unit} ${nameOf(l.ingredientId)}`).join(', ')}`
         : `Waste: ${e.payload.quantity} ${e.payload.unit} ${nameOf(e.payload.ingredientId)} (${(KIT_REASONS.find((r) => r[0] === e.payload.reason) || [, e.payload.reason])[1]})`;
   $('view').innerHTML = `
     ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
-    <div class="card mt"><button class="btn block" id="k-prod">Record production</button><button class="btn line block mt" id="k-waste">Record food waste</button>${S.snap.canReceive ? '<button class="btn line block mt" id="k-recv">Receive stock</button>' : ''}
+    <div class="card mt"><button class="btn block" id="k-prod">Record production</button><button class="btn line block mt" id="k-waste">Record food waste</button>${S.snap.canReceive ? '<button class="btn line block mt" id="k-recv">Receive stock</button>' : ''}${S.snap.canReceive && (S.snap.stockPlaces || []).length > 1 ? '<button class="btn line block mt" id="k-move">Move stock</button>' : ''}${S.snap.canReceive ? '<button class="btn line block mt" id="k-fix">Correct stock</button>' : ''}
       <p class="mute center">Works without a connection. It is sent when the phone is online.</p></div>
     <h2 class="mt">Recent</h2>
-    ${evs.length ? evs.map((e) => `<div class="card mt" data-ev="${esc(e.id)}"><b>${esc(describe(e))}</b><div class="mute">${esc(new Date(e.createdAt).toLocaleString())} &middot; ${EV_LABEL[e.status]}</div>${e.status === 'failed' ? `<div class="note bad mt">${esc(e.error || 'Refused')}</div><button class="btn ghost mt" data-retry="${esc(e.id)}">Try again</button>` : ''}</div>`).join('') : '<p class="mute center mt">Nothing recorded on this phone yet.</p>'}`;
+    ${evs.length ? evs.map((e) => `<div class="card mt" data-ev="${esc(e.id)}"><b>${esc(describe(e))}</b><div class="mute">${esc(new Date(e.createdAt).toLocaleString())} &middot; ${EV_LABEL[e.status]}</div>${e.status === 'failed' ? `<div class="note bad mt">${esc(e.error || 'Refused')}</div><div class="row mt"><button class="btn ghost" data-retry="${esc(e.id)}">Try again</button><button class="btn line" data-dismiss="${esc(e.id)}">Set aside</button></div>` : ''}</div>`).join('') : '<p class="mute center mt">Nothing recorded on this phone yet.</p>'}`;
   $('k-prod').onclick = openProduction;
   $('k-waste').onclick = openWaste;
   if ($('k-recv')) $('k-recv').onclick = openReceive;
+  if ($('k-move')) $('k-move').onclick = openMove;
+  if ($('k-fix')) $('k-fix').onclick = openCorrect;
   document.querySelectorAll('[data-retry]').forEach((b) => (b.onclick = async () => (await retryEvent(b.dataset.retry), syncNow({ refreshMenu: false }).then(afterSync), viewKitchen())));
+  document.querySelectorAll('[data-dismiss]').forEach((b) => (b.onclick = async () => { if (!confirm('Set this record aside? It stays on the phone for reference but will not be sent to the server.')) return; await dismissEvent(b.dataset.dismiss); await refreshPending(); viewKitchen(); }));
 }
 
 function openProduction() {
@@ -1775,7 +1793,7 @@ function openProduction() {
         const inputs = [...p.querySelectorAll('#pr-used .row')].map((r) => ({ ingredientId: r.querySelector('[data-i]').value, quantity: r.querySelector('[data-q]').value.trim(), unit: r.querySelector('[data-u]').value })).filter((l) => l.ingredientId || l.quantity);
         const o = { ingredientId: out.value, quantity: p.querySelector('#pr-oq').value.trim(), unit: p.querySelector('#pr-ou').value };
         if (!o.ingredientId || !(Number(o.quantity) > 0) || !inputs.length || inputs.some((l) => !l.ingredientId || !(Number(l.quantity) > 0))) { err.textContent = 'Choose the product, and type a quantity on every row.'; err.hidden = false; return; }
-        await queueEvent('production', { producedAt: new Date().toISOString(), shift: p.querySelector('#pr-shift').value || undefined, inputs, outputs: [o] }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
+        if (!(await saveKitchenEvent(p.querySelector('#pr-save'), p.querySelector('#pr-err'), 'production', { producedAt: new Date().toISOString(), shift: p.querySelector('#pr-shift').value || undefined, inputs, outputs: [o] }))) return;
         closeSheet();
         S.note = { text: 'Saved on this phone. It will be sent when there is a connection.' };
         syncNow({ refreshMenu: false }).then(afterSync);
@@ -1805,7 +1823,7 @@ function openWaste() {
         const qty = p.querySelector('#w-q').value.trim();
         if (!it.value || !(Number(qty) > 0)) { err.textContent = 'Choose the item and type a quantity.'; err.hidden = false; return; }
         if (reason === 'OTHER' && note.length < 3) { err.textContent = 'Say what happened.'; err.hidden = false; return; }
-        await queueEvent('waste', { ingredientId: it.value, quantity: qty, unit: p.querySelector('#w-u').value, reason, note: note || undefined, occurredAt: new Date().toISOString() }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
+        if (!(await saveKitchenEvent(p.querySelector('#w-save'), p.querySelector('#w-err'), 'waste', { ingredientId: it.value, quantity: qty, unit: p.querySelector('#w-u').value, reason, note: note || undefined, occurredAt: new Date().toISOString() }))) return;
         closeSheet();
         S.note = { text: 'Saved on this phone. It will be sent when there is a connection.' };
         syncNow({ refreshMenu: false }).then(afterSync);
@@ -1833,9 +1851,93 @@ function openReceive() {
         const qty = p.querySelector('#rc-q').value.trim();
         if (!it.value || !(Number(qty) > 0)) { err.textContent = 'Choose the item and type a quantity.'; err.hidden = false; return; }
         const x = p.querySelector('#rc-x').value;
-        await queueEvent('receipt', { ingredientId: it.value, quantity: qty, unit: p.querySelector('#rc-u').value, reference: p.querySelector('#rc-r').value.trim() || undefined, expiryDate: x ? new Date(`${x}T00:00:00`).toISOString() : undefined, receivedAt: new Date().toISOString() }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
+        if (!(await saveKitchenEvent(p.querySelector('#rc-save'), p.querySelector('#rc-err'), 'receipt', { ingredientId: it.value, quantity: qty, unit: p.querySelector('#rc-u').value, reference: p.querySelector('#rc-r').value.trim() || undefined, expiryDate: x ? new Date(`${x}T00:00:00`).toISOString() : undefined, receivedAt: new Date().toISOString() }))) return;
         closeSheet();
         S.note = { text: 'Saved on this phone. It will be sent when there is a connection.' };
+        syncNow({ refreshMenu: false }).then(afterSync);
+        viewKitchen();
+      };
+    },
+  );
+}
+
+
+/**
+ * Save one kitchen record on the phone. The button is locked while it saves so a double tap cannot queue the
+ * same stock movement twice, and a full or blocked phone store shows a message instead of failing silently.
+ */
+async function saveKitchenEvent(btn, errBox, kind, payload) {
+  if (btn.disabled) return false;
+  btn.disabled = true;
+  try {
+    await queueEvent(kind, payload, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
+    return true;
+  } catch {
+    btn.disabled = false;
+    errBox.textContent = 'This phone could not save it (its storage may be full). Nothing was recorded. Free some space and try again.';
+    errBox.hidden = false;
+    return false;
+  }
+}
+const placeOpts = (sel, empty) => `<option value="">${empty}</option>${(S.snap.stockPlaces || []).map((p) => `<option value="${esc(p.id)}" ${p.id === sel ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}`;
+const savedNote = () => { S.note = { text: 'Saved on this phone. It will be sent when there is a connection.' }; };
+
+// Moving stock between places. The server checks the quantity against what the place holds when it receives
+// the entry; a refusal comes back as a card with the reason and a Try again button.
+function openMove() {
+  const list = S.snap.stockItems;
+  openSheet(
+    `<h2>Move stock</h2><p class="mute">The total does not change; only where it is kept.</p>
+     <label>Item<select id="mv-i">${itemOpts(list)}</select></label>
+     <div class="row"><input id="mv-q" inputmode="decimal" placeholder="Quantity" aria-label="Quantity"><select id="mv-u" aria-label="Unit"></select></div>
+     <label>From<select id="mv-f">${placeOpts('', 'Not yet placed anywhere')}</select></label>
+     <label>To<select id="mv-t">${placeOpts('', 'Choose a place…')}</select></label>
+     <div id="mv-err" class="note bad" hidden></div>
+     <button class="btn block mt" id="mv-save">Save</button><button class="btn line block mt" data-close>Cancel</button>`,
+    (p) => {
+      const it = p.querySelector('#mv-i');
+      it.onchange = () => { const x = list.find((i) => i.id === it.value); p.querySelector('#mv-u').innerHTML = unitOpts(x, x && x.unit); };
+      p.querySelector('#mv-save').onclick = async () => {
+        const err = p.querySelector('#mv-err');
+        const qty = p.querySelector('#mv-q').value.trim().replace(',', '.');
+        const from = p.querySelector('#mv-f').value;
+        const to = p.querySelector('#mv-t').value;
+        if (!it.value || !(Number(qty) > 0)) { err.textContent = 'Choose the item and type a quantity.'; err.hidden = false; return; }
+        if (!to) { err.textContent = 'Choose where the stock goes.'; err.hidden = false; return; }
+        if (from === to) { err.textContent = 'From and To must be different places.'; err.hidden = false; return; }
+        if (!(await saveKitchenEvent(p.querySelector('#mv-save'), p.querySelector('#mv-err'), 'transfer', { occurredAt: new Date().toISOString(), lines: [{ ingredientId: it.value, quantity: qty, unit: p.querySelector('#mv-u').value, direction: 'OUT', ...(from ? { fromLocationId: from } : {}), toLocationId: to }] }))) return;
+        closeSheet();
+        savedNote();
+        syncNow({ refreshMenu: false }).then(afterSync);
+        viewKitchen();
+      };
+    },
+  );
+}
+
+// Correcting a count: remove or add the difference, with a reason.
+function openCorrect() {
+  const list = S.snap.stockItems;
+  openSheet(
+    `<h2>Correct stock</h2><p class="mute">Use when the shelf and the system disagree.</p>
+     <label>Item<select id="cr-i">${itemOpts(list)}</select></label>
+     <label>What is wrong<select id="cr-d"><option value="OUT">There is less than the system says (remove)</option><option value="IN">There is more than the system says (add)</option></select></label>
+     <div class="row"><input id="cr-q" inputmode="decimal" placeholder="Difference" aria-label="Difference"><select id="cr-u" aria-label="Unit"></select></div>
+     <input id="cr-r" placeholder="Why (required)" aria-label="Reason">
+     <div id="cr-err" class="note bad" hidden></div>
+     <button class="btn block mt" id="cr-save">Save</button><button class="btn line block mt" data-close>Cancel</button>`,
+    (p) => {
+      const it = p.querySelector('#cr-i');
+      it.onchange = () => { const x = list.find((i) => i.id === it.value); p.querySelector('#cr-u').innerHTML = unitOpts(x, x && x.unit); };
+      p.querySelector('#cr-save').onclick = async () => {
+        const err = p.querySelector('#cr-err');
+        const qty = p.querySelector('#cr-q').value.trim().replace(',', '.');
+        const why = p.querySelector('#cr-r').value.trim();
+        if (!it.value || !(Number(qty) > 0)) { err.textContent = 'Choose the item and type the difference.'; err.hidden = false; return; }
+        if (why.length < 3) { err.textContent = 'Say why the stock was wrong.'; err.hidden = false; return; }
+        if (!(await saveKitchenEvent(p.querySelector('#cr-save'), p.querySelector('#cr-err'), 'correction', { occurredAt: new Date().toISOString(), reason: why, lines: [{ ingredientId: it.value, quantity: qty, unit: p.querySelector('#cr-u').value, direction: p.querySelector('#cr-d').value }] }))) return;
+        closeSheet();
+        savedNote();
         syncNow({ refreshMenu: false }).then(afterSync);
         viewKitchen();
       };
@@ -1888,6 +1990,14 @@ async function start() {
   S.online = !!(await pickServer(await kv.get('serverBase')));
   render();
   if (S.online) syncNow().then(afterSync);
+}
+
+// Ask the phone not to clear this app's saved sales and records when it runs low on space. Unsent sales are real money;
+// without this, a browser-based phone may evict them. Harmless where it is already granted or unsupported.
+try {
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+} catch {
+  /* unsupported */
 }
 
 // Quietly try again when the phone is back online or the app is reopened.

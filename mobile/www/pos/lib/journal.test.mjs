@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { queueEvent, pushEvents, retryEvent, counts, DeviceRevoked, AuthExpired } from './journal.js';
+import { queueEvent, pushEvents, retryEvent, dismissEvent, pruneSynced, counts, DeviceRevoked, AuthExpired } from './journal.js';
 
 const memory = () => {
   const m = new Map();
-  return { put: async (e) => void m.set(e.id, structuredClone(e)), get: async (id) => m.get(id), all: async () => [...m.values()] };
+  return { put: async (e) => void m.set(e.id, structuredClone(e)), get: async (id) => m.get(id), del: async (id) => void m.delete(id), all: async () => [...m.values()] };
 };
 const mk = (store, kind = 'waste', at = '2026-11-13T10:00:00Z') => queueEvent(kind, { ingredientId: 'i1', quantity: '1', unit: 'KG', reason: 'SPOILED' }, { userId: 'u', deviceId: 'phone-1234', now: new Date(at), store });
 
@@ -102,4 +102,56 @@ test('a clash (already clocked in) is kept for the person to read, with the serv
   assert.equal(got.status, 'failed');
   assert.match(got.error, /Already clocked in/);
   assert.equal(shiftState(await s.all()).on, false); // a refused clock-in does not count as being on shift
+});
+
+test('a transfer and a correction go to the stock journal as posted entries with their own key and time', async () => {
+  const s = memory();
+  const t = await queueEvent('transfer', { reason: 'Dinner prep', lines: [{ ingredientId: 'i1', quantity: '2', unit: 'KG', fromLocationId: 'a', toLocationId: 'b' }] }, { userId: 'u', deviceId: 'phone-1234', now: new Date('2026-11-15T10:00:00Z'), store: s });
+  const c = await queueEvent('correction', { reason: 'Count', lines: [{ ingredientId: 'i1', quantity: '1', unit: 'KG', direction: 'OUT' }] }, { userId: 'u', deviceId: 'phone-1234', now: new Date('2026-11-15T11:00:00Z'), store: s });
+  const sent = [];
+  const r = await pushEvents('http://x', 'br1', async (_b, _m, path, body) => (sent.push({ path, body }), { status: 201, data: {} }), s);
+  assert.deepEqual(r, { done: 2, failed: 0 });
+  assert.match(sent[0].path, /journal\/entries\?branchId=br1/);
+  assert.equal(sent[0].body.type, 'TRANSFER');
+  assert.equal(sent[0].body.post, true);
+  assert.equal(sent[0].body.idempotencyKey, t.id);
+  assert.equal(sent[0].body.occurredAt, '2026-11-15T10:00:00.000Z');
+  assert.equal('deviceId' in sent[0].body, false);
+  assert.equal(sent[1].body.type, 'CORRECTION');
+  assert.equal(sent[1].body.idempotencyKey, c.id);
+});
+
+test('a refused transfer keeps the server words so the person can fix it', async () => {
+  const s = memory();
+  const t = await queueEvent('transfer', { lines: [] }, { userId: 'u', deviceId: 'phone-1234', store: s });
+  await pushEvents('b', 'x', async () => ({ status: 400, data: { message: 'Only 1 KG of Rice is recorded in Dry store.' } }), s);
+  assert.equal((await s.get(t.id)).error, 'Only 1 KG of Rice is recorded in Dry store.');
+});
+
+test('a refused record can be set aside: it stops counting and is never sent again', async () => {
+  const s = memory();
+  const e = await mk(s);
+  await pushEvents('b', 'x', async () => ({ status: 400, data: { message: 'Item was removed' } }), s);
+  assert.deepEqual(await counts(s), { pending: 0, failed: 1 });
+  assert.equal(await dismissEvent(e.id, s), true);
+  assert.deepEqual(await counts(s), { pending: 0, failed: 0 });
+  assert.equal((await s.get(e.id)).status, 'dismissed');
+  let sent = 0;
+  await pushEvents('b', 'x', async () => (sent++, { status: 201, data: {} }), s);
+  assert.equal(sent, 0);
+  assert.equal(await dismissEvent(e.id, s), false); // only failed ones
+  assert.equal(await retryEvent(e.id, s), false);
+});
+
+test('old sent records are pruned but waiting, refused and recent ones never are', async () => {
+  const s = memory();
+  const now = new Date('2026-12-30T00:00:00Z');
+  const old = await mk(s, 'waste', '2026-10-01T00:00:00Z');
+  const recent = await mk(s, 'waste', '2026-12-29T00:00:00Z');
+  const waiting = await mk(s, 'waste', '2026-10-02T00:00:00Z');
+  for (const e of [old, recent]) await s.put({ ...(await s.get(e.id)), status: 'synced' });
+  assert.equal(await pruneSynced(s, { keep: 0, days: 14, now }), 1);
+  assert.equal(await s.get(old.id), undefined);
+  assert.ok(await s.get(recent.id));
+  assert.ok(await s.get(waiting.id)); // still pending: never dropped
 });

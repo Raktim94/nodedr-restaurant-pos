@@ -135,9 +135,18 @@ export class StandaloneService {
           units: allowedUnits(i.unit, i.conversions),
         }))
       : undefined;
+    // Places stock is kept in, for moving stock on the phone (names only).
+    const stockPlaces = canKitchen
+      ? await this.prisma.stockLocation.findMany({
+          where: { branchId, isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          select: { id: true, name: true },
+        })
+      : undefined;
     return {
       generatedAt: new Date().toISOString(),
       stockItems,
+      stockPlaces,
       canVoid: permissionSatisfied(user.permissions, 'production.void'),
       canReceive: permissionSatisfied(user.permissions, 'inventory.manage'),
       user: { id: user.id, name: user.name, permissions: user.permissions },

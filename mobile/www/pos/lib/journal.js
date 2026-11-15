@@ -1,4 +1,4 @@
-// Production and waste taken in the kitchen, kept on the phone until the server has them.
+// Production, waste, stock transfers and corrections taken in the kitchen, kept on the phone until the server has them.
 // Each event has its own id, which is also the idempotency key the server uses, so sending one twice
 // (a dropped connection, a retry after a crash) never changes stock twice.
 import { events } from './store.js';
@@ -9,7 +9,7 @@ export const newId = () => (globalThis.crypto && crypto.randomUUID ? crypto.rand
 export async function queueEvent(kind, payload, { userId, deviceId, now = new Date(), store = events } = {}) {
   const ev = {
     id: `${deviceId || 'dev'}-${newId()}`, // >= 8 chars, unique per event
-    kind, // 'production' | 'waste' | 'receipt'
+    kind, // 'production' | 'waste' | 'receipt' | 'transfer' | 'correction' | 'attendance'
     payload,
     userId,
     deviceId,
@@ -26,6 +26,8 @@ const PATH = {
   production: '/api/v1/inventory/production',
   waste: '/api/v1/inventory/waste/entries',
   receipt: '/api/v1/inventory/journal/receipts',
+  transfer: '/api/v1/inventory/journal/entries',
+  correction: '/api/v1/inventory/journal/entries',
   attendance: '/api/v1/attendance/events',
 };
 
@@ -33,6 +35,14 @@ const PATH = {
 export function bodyFor(ev, branchId) {
   const body = { ...ev.payload, idempotencyKey: ev.id, deviceId: ev.deviceId };
   if (ev.kind === 'production') body.post = true;
+  if (ev.kind === 'transfer' || ev.kind === 'correction') {
+    // A stock journal entry: posted straight away, dated when it was done on the phone. The server posts it in one
+    // transaction and the key makes a retry return the first result.
+    body.type = ev.kind === 'transfer' ? 'TRANSFER' : 'CORRECTION';
+    body.occurredAt = ev.payload.occurredAt || ev.createdAt;
+    body.post = true;
+    delete body.deviceId;
+  }
   if (ev.kind === 'attendance') {
     body.branchId = branchId;
     body.at = ev.payload.at || ev.createdAt;
@@ -100,6 +110,26 @@ export async function retryEvent(id, store = events) {
   delete ev.error;
   await store.put(ev);
   return true;
+}
+
+/** Set a refused record aside (the item was removed, the stock was never there...). It is kept, but no longer nags or sends. */
+export async function dismissEvent(id, store = events) {
+  const ev = await store.get(id);
+  if (!ev || ev.status !== 'failed') return false;
+  ev.status = 'dismissed';
+  ev.dismissedAt = new Date().toISOString();
+  await store.put(ev);
+  return true;
+}
+
+/** Sent records are only history. Keep the newest `keep` and anything from the last `days`; drop the rest so the phone's storage never fills with them. */
+export async function pruneSynced(store = events, { keep = 100, days = 14, now = new Date() } = {}) {
+  if (!store.del) return 0;
+  const cutoff = new Date(now.getTime() - days * 86400000).toISOString();
+  const synced = (await store.all()).filter((e) => e.status === 'synced').sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const drop = synced.slice(keep).filter((e) => e.createdAt < cutoff);
+  for (const e of drop) await store.del(e.id);
+  return drop.length;
 }
 
 export async function counts(store = events) {

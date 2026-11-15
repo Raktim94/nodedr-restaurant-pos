@@ -199,5 +199,6 @@ export const newId = () =>
 export const events = {
   put: (e) => tx('events', 'readwrite', (s) => s.put(e)),
   get: (id) => tx('events', 'readonly', (s) => s.get(id)),
+  del: (id) => tx('events', 'readwrite', (s) => s.delete(id)),
   all: () => tx('events', 'readonly', (s) => s.getAll()).then((a) => a.sort((x, y) => (x.createdAt < y.createdAt ? 1 : -1))),
 };

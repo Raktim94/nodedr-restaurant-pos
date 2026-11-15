@@ -4,7 +4,7 @@
 import { kv, reservations, sales } from './store.js';
 import { mergeFromServer, toPayload } from './reservations.js';
 import { pickServer, request } from './net.js';
-import { counts, pushEvents, DeviceRevoked, AuthExpired as EventAuthExpired } from './journal.js';
+import { counts, pruneSynced, pushEvents, DeviceRevoked, AuthExpired as EventAuthExpired } from './journal.js';
 
 export class AuthExpired extends Error {}
 
@@ -163,7 +163,16 @@ export function syncNow({ refreshMenu = true } = {}) {
       const base = await pickServer(await kv.get('serverBase'));
       if (!base) return out;
       out.online = true;
-      const r = await pushSales(base);
+      // Each part is tried on its own: a sales upload that fails must not stop the kitchen records or bookings from
+      // being sent, and a refusal in one never hides what happened to the others.
+      let r = { done: 0, refused: 0, reviewed: 0 };
+      let partial = null;
+      try {
+        r = await pushSales(base);
+      } catch (e) {
+        if (e instanceof AuthExpired) throw e;
+        partial = e.message;
+      }
       try {
         const ev = await pushEvents(base, await kv.get('branchId'), request);
         out.events = ev.done;
@@ -179,12 +188,33 @@ export function syncNow({ refreshMenu = true } = {}) {
       out.done = r.done;
       out.refused = r.refused;
       out.reviewed = r.reviewed;
-      if (refreshMenu) await pullSnapshot(base); // also brings the server's bookings
-      const b = await pushBookings(base);
-      out.bookings = b.sent;
-      out.bookingsNewer = b.newer;
-      await kv.set('lastSync', Date.now());
-      await heartbeat(base, true, out.error);
+      if (refreshMenu) {
+        try {
+          await pullSnapshot(base); // also brings the server's bookings
+        } catch (e) {
+          if (e instanceof AuthExpired) throw e;
+          partial = partial || e.message;
+        }
+      }
+      try {
+        const b = await pushBookings(base);
+        out.bookings = b.sent;
+        out.bookingsNewer = b.newer;
+      } catch (e) {
+        if (e instanceof AuthExpired) throw e;
+        partial = partial || e.message;
+      }
+      try {
+        await pruneSynced();
+      } catch {
+        /* housekeeping only */
+      }
+      if (partial) {
+        out.error = partial;
+      } else {
+        await kv.set('lastSync', Date.now());
+      }
+      await heartbeat(base, !partial, out.error);
     } catch (e) {
       if (e instanceof AuthExpired) out.authExpired = true;
       else out.error = e.message;
