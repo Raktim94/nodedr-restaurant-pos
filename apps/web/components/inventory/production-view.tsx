@@ -5,7 +5,7 @@ import { InventoryTabs } from "@/components/inventory/inventory-tabs";
 import { StockJournalVoucher } from "@/components/inventory/stock-journal-voucher";
 import { ManufacturingBatchDialog } from "@/components/inventory/manufacturing-batch-dialog";
 import { useMfgSettings, useSetMfgEnabled } from "@/hooks/use-manufacturing";
-import { ProductionEntryDialog, selectClass } from "@/components/inventory/production-entry-dialog";
+import { ProductionEntryDialog } from "@/components/inventory/production-entry-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,6 +25,7 @@ import {
 } from "@/hooks/use-stock-journal";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
+import { SearchSelect } from "@/components/ui/search-select";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const startOf = (d: string) => (d ? new Date(`${d}T00:00:00`).toISOString() : undefined);
@@ -106,17 +107,13 @@ export function ProductionView({ embedded = false }: { embedded?: boolean }) {
         <div className="flex flex-col gap-1.5"><Label htmlFor="f-to">To</Label><Input id="f-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="f-prod">Product</Label>
-          <select id="f-prod" className={selectClass} value={productId} onChange={(e) => setProductId(e.target.value)}>
-            <option value="">All</option>
-            {(items ?? []).filter((i) => i.kind === "PREPARED").map((i) => (<option key={i.id} value={i.id}>{i.name}</option>))}
-          </select>
+          <SearchSelect id="f-prod" value={productId} onChange={setProductId} placeholder="All"
+            options={[{ value: "", label: "All" }, ...(items ?? []).filter((i) => i.kind === "PREPARED").map((i) => ({ value: i.id, label: i.name, hint: i.category ?? undefined }))]} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="f-shift">Shift</Label>
-          <select id="f-shift" className={selectClass} value={shift} onChange={(e) => setShift(e.target.value)}>
-            <option value="">All</option>
-            {["Morning", "Afternoon", "Evening", "Night"].map((s) => (<option key={s}>{s}</option>))}
-          </select>
+          <SearchSelect id="f-shift" value={shift} onChange={setShift} placeholder="All"
+            options={[{ value: "", label: "All" }, ...["Morning", "Afternoon", "Evening", "Night"].map((s) => ({ value: s, label: s }))]} />
         </div>
         <div className="flex flex-col gap-1.5"><Label htmlFor="f-loc">Location</Label><Input id="f-loc" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Any" /></div>
         <div className="flex items-end"><a className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-sm hover:bg-muted" href={csvUrl("production/export.csv", branchId, filters)}>Export CSV</a></div>

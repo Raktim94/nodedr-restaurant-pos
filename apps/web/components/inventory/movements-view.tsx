@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { selectClass } from "@/components/inventory/production-entry-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,6 +13,8 @@ import { useBranch } from "@/hooks/use-branch";
 import { csvUrl, usePlaces, useJournal, useJournalAdjust, useReceiveStock, useStockItems } from "@/hooks/use-stock-journal";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
+import { SearchSelect } from "@/components/ui/search-select";
+import { stockItemOptions } from "@/components/inventory/item-combobox";
 
 const TYPES: Record<string, string> = {
   OPENING: "Opening balance", RECEIPT: "Received", PRODUCTION_USE: "Used in production", PRODUCTION: "Produced",
@@ -71,24 +72,18 @@ export function MovementsView() {
       <Card className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="j-item">Item</Label>
-          <select id="j-item" className={selectClass} value={ingredientId} onChange={(e) => setIngredientId(e.target.value)}>
-            <option value="">All items</option>
-            {(items ?? []).map((i) => (<option key={i.id} value={i.id}>{i.name}</option>))}
-          </select>
+          <SearchSelect id="j-item" value={ingredientId} onChange={setIngredientId} placeholder="All items"
+            options={[{ value: "", label: "All items" }, ...stockItemOptions(items ?? [])]} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="j-type">Type</Label>
-          <select id="j-type" className={selectClass} value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="">All</option>
-            {Object.entries(TYPES).map(([k, v]) => (<option key={k} value={k}>{v}</option>))}
-          </select>
+          <SearchSelect id="j-type" value={type} onChange={setType} placeholder="All"
+            options={[{ value: "", label: "All" }, ...Object.entries(TYPES).map(([k, v]) => ({ value: k, label: v }))]} />
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="j-place">Place</Label>
-          <select id="j-place" className={selectClass} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-            <option value="">All places</option>
-            {(places ?? []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
-          </select>
+          <SearchSelect id="j-place" value={locationId} onChange={setLocationId} placeholder="All places"
+            options={[{ value: "", label: "All places" }, ...(places ?? []).map((p) => ({ value: p.id, label: p.name }))]} />
         </div>
         <div className="flex flex-col gap-1.5"><Label htmlFor="j-from">From</Label><Input id="j-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
         <div className="flex flex-col gap-1.5"><Label htmlFor="j-to">To</Label><Input id="j-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
@@ -130,20 +125,13 @@ export function MovementsView() {
             <DialogDescription>{mode === "receive" ? "Record raw material that arrived." : "Correct a count. A reason is required and stock cannot go below zero."}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <select aria-label="Item" className={selectClass} value={item} onChange={(e) => { setItem(e.target.value); setUnit(""); }}>
-              <option value="">Choose item…</option>
-              {(items ?? []).map((i) => (<option key={i.id} value={i.id}>{i.name} ({i.currentStock} {i.unit})</option>))}
-            </select>
+            <SearchSelect aria-label="Item" value={item} onChange={(v) => { setItem(v); setUnit(""); }} placeholder="Search items…" emptyText="No item matches" options={stockItemOptions(items ?? [])} />
             {mode === "adjust" && (
-              <select aria-label="Direction" className={selectClass} value={dir} onChange={(e) => setDir(e.target.value as "ADD" | "REMOVE")}>
-                <option value="REMOVE">Remove from stock</option><option value="ADD">Add to stock</option>
-              </select>
+              <SearchSelect aria-label="Direction" value={dir} onChange={(v) => v && setDir(v as "ADD" | "REMOVE")} options={[{ value: "REMOVE", label: "Remove from stock" }, { value: "ADD", label: "Add to stock" }]} />
             )}
             <div className="grid grid-cols-[1fr_6rem] gap-2">
               <Input aria-label="Quantity" inputMode="decimal" placeholder="Quantity" value={qty} onChange={(e) => setQty(e.target.value)} />
-              <select aria-label="Unit" className={selectClass} value={unit || chosen?.unit || ""} onChange={(e) => setUnit(e.target.value)}>
-                {(chosen?.units ?? []).map((u) => (<option key={u}>{u}</option>))}
-              </select>
+              <SearchSelect aria-label="Unit" value={unit || chosen?.unit || ""} onChange={(v) => v && setUnit(v)} placeholder="Unit" disabled={!chosen} options={(chosen?.units ?? []).map((u) => ({ value: u, label: u }))} />
             </div>
             <Input aria-label={mode === "receive" ? "Supplier or invoice reference" : "Reason"} placeholder={mode === "receive" ? "Supplier / invoice reference (optional)" : "Reason (required)"} value={text} onChange={(e) => setText(e.target.value)} />
             {mode === "receive" && (

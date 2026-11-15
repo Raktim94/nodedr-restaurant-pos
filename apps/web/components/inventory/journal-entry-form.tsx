@@ -4,8 +4,8 @@ import type { IngredientUnit, StockJournalType, WasteReason } from "@nodedr-rest
 import { ArrowRight, Minus, Plus, Trash2 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { ItemCombobox } from "@/components/inventory/item-combobox";
+import { SearchSelect } from "@/components/ui/search-select";
 import { WASTE_REASONS } from "@/components/inventory/log-waste-dialog";
-import { selectClass } from "@/components/inventory/production-entry-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -216,10 +216,8 @@ export function JournalEntryForm({
   const fieldError = (k: number, f: string) => (err(k, f) ? <p id={`err-${k}-${f}`} className="mt-1 text-xs text-destructive">{err(k, f)}</p> : null);
 
   const placeSelect = (id: string, value: string, onChange: (v: string) => void, empty: string, invalid?: boolean, describedBy?: string) => (
-    <select id={id} className={cn(selectClass, "h-10", invalid && "border-destructive")} value={value} onChange={(e) => onChange(e.target.value)} aria-invalid={invalid || undefined} aria-describedby={describedBy}>
-      <option value="">{empty}</option>
-      {activePlaces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-    </select>
+    <SearchSelect id={id} value={value} onChange={onChange} invalid={invalid} aria-describedby={describedBy} placeholder={empty} emptyText="No place matches"
+      options={[{ value: "", label: empty }, ...activePlaces.map((p) => ({ value: p.id, label: p.name }))]} />
   );
 
   if (step === "review") {
@@ -389,10 +387,8 @@ export function JournalEntryForm({
                       </div>
                       <div>
                         <Label htmlFor={`u-${r.key}`} className="sr-only">Unit for item {idx + 1}</Label>
-                        <select id={`u-${r.key}`} className={cn(selectClass, "h-10")} value={r.unit} disabled={!it} onChange={(e) => patch(r.key, { unit: e.target.value as IngredientUnit })}>
-                          {!it && <option value="">Unit</option>}
-                          {(it?.units ?? []).map((u) => <option key={u} value={u}>{u.toLowerCase()}</option>)}
-                        </select>
+                        <SearchSelect id={`u-${r.key}`} value={r.unit} disabled={!it} placeholder="Unit" onChange={(v) => v && patch(r.key, { unit: v as IngredientUnit })}
+                          options={(it?.units ?? []).map((u) => ({ value: u, label: u.toLowerCase() }))} />
                       </div>
                     </div>
                     {type !== "CORRECTION" && <div className="hidden md:col-span-3 md:block" />}
@@ -409,10 +405,8 @@ export function JournalEntryForm({
                       <>
                         <div className="flex flex-col gap-1.5">
                           <Label htmlFor={`r-${r.key}`}>Reason</Label>
-                          <select id={`r-${r.key}`} className={cn(selectClass, "h-10", err(r.key, "reason") && "border-destructive")} value={r.wasteReason} onChange={(e) => patch(r.key, { wasteReason: e.target.value as WasteReason })} aria-invalid={!!err(r.key, "reason") || undefined} aria-describedby={errId(r.key, "reason")}>
-                            <option value="">Choose…</option>
-                            {WASTE_REASONS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
-                          </select>
+                          <SearchSelect id={`r-${r.key}`} value={r.wasteReason} placeholder="Choose or type a reason…" onChange={(v) => patch(r.key, { wasteReason: v as WasteReason })} invalid={!!err(r.key, "reason")} aria-describedby={errId(r.key, "reason")}
+                            options={WASTE_REASONS.map((w) => ({ value: w.value, label: w.label }))} />
                           {fieldError(r.key, "reason")}
                         </div>
                         {activePlaces.length > 0 && <div className="flex flex-col gap-1.5"><Label htmlFor={`f-${r.key}`}>Taken from (optional)</Label>{placeSelect(`f-${r.key}`, r.from, (v) => patch(r.key, { from: v }), "Not stated")}</div>}

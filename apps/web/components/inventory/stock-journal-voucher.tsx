@@ -2,7 +2,8 @@
 
 import type { IngredientUnit } from "@nodedr-restaurant/types";
 import { useMemo, useRef, useState } from "react";
-import { selectClass } from "@/components/inventory/production-entry-dialog";
+import { ItemCombobox } from "@/components/inventory/item-combobox";
+import { SearchSelect } from "@/components/ui/search-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -184,10 +185,8 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
 
   const item = (r: In | Out) => byId.get(r.ingredientId);
   const placeSelect = (value: string, onChange: (v: string) => void, label: string) => (
-    <select aria-label={label} className={selectClass} value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">No place</option>
-      {activePlaces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-    </select>
+    <SearchSelect aria-label={label} value={value} onChange={onChange} placeholder="No place" emptyText="No place matches"
+      options={[{ value: "", label: "No place" }, ...activePlaces.map((p) => ({ value: p.id, label: p.name }))]} />
   );
 
   const cancelText = inline ? "Clear" : "Cancel";
@@ -201,12 +200,10 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                 <div className="flex flex-col gap-1.5"><Label htmlFor="v-batch">Batch / reference no.</Label><Input id="v-batch" value={batchRef} onChange={(e) => setBatchRef(e.target.value)} placeholder="Optional, e.g. MOMO-12" /></div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="v-loc">Location / godown</Label>
-                  <select id="v-loc" className={selectClass} value={place} onChange={(e) => setPlace(e.target.value)}>
-                    <option value="">Not stated</option>
-                    {activePlaces.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
-                  </select>
+                  <SearchSelect id="v-loc" value={place} onChange={setPlace} placeholder="Not stated"
+                    options={[{ value: "", label: "Not stated" }, ...activePlaces.map((p) => ({ value: p.name, label: p.name }))]} />
                 </div>
-                <div className="flex flex-col gap-1.5"><Label htmlFor="v-shift">Shift</Label><select id="v-shift" className={selectClass} value={shift} onChange={(e) => setShift(e.target.value)}><option value="">None</option>{SHIFTS.map((s) => <option key={s}>{s}</option>)}</select></div>
+                <div className="flex flex-col gap-1.5"><Label htmlFor="v-shift">Shift</Label><SearchSelect id="v-shift" value={shift} onChange={setShift} placeholder="None" options={[{ value: "", label: "None" }, ...SHIFTS.map((s) => ({ value: s, label: s }))]} /></div>
                 <div className="flex flex-col gap-1.5"><Label htmlFor="v-made">Made on</Label><Input id="v-made" type="date" value={madeOn} onChange={(e) => setMadeOn(e.target.value)} /></div>
                 <div className="flex flex-col gap-1.5"><Label htmlFor="v-exp">Use by</Label><Input id="v-exp" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></div>
               </section>
@@ -216,10 +213,8 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2">
                     <h3 className="text-sm font-semibold">Source / Consumption</h3>
                     <div className="flex items-center gap-2">
-                      <select aria-label="Recipe" className={`${selectClass} w-48`} value={recipeKey} onChange={(e) => setRecipeKey(e.target.value)}>
-                        <option value="">{recipes?.length ? "No recipe (manual)" : "No saved recipe"}</option>
-                        {(recipes ?? []).map((r) => <option key={`${r.kind}:${r.id}`} value={`${r.kind}:${r.id}`}>{r.name} · base {r.baseOutputQty} {r.outputUnit.toLowerCase()} · v{r.version}</option>)}
-                      </select>
+                      <SearchSelect aria-label="Recipe" className="w-56" value={recipeKey} onChange={setRecipeKey} placeholder="Search recipes…" emptyText="No recipe matches"
+                        options={[{ value: "", label: recipes?.length ? "No recipe (manual)" : "No saved recipe" }, ...(recipes ?? []).map((r) => ({ value: `${r.kind}:${r.id}`, label: r.name, hint: `base ${r.baseOutputQty} ${r.outputUnit.toLowerCase()} · v${r.version}` }))]} />
                       <Button type="button" variant="outline" size="sm" disabled={fill.isPending || !recipeKey} onClick={fillRecipe}>Fill from recipe</Button>
                     </div>
                   </div>
@@ -235,21 +230,19 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                           return (
                             <tr key={r.key} className="align-top [&>td]:border-b [&>td]:border-border/60">
                               <td className="p-1">
-                                <select aria-label="Ingredient" className={selectClass} value={r.ingredientId} onChange={(e) => pickIn(r.key, e.target.value)}><option value="">Choose…</option>{raw.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
+                                <ItemCombobox label="Ingredient" items={raw} value={r.ingredientId} onChange={(id) => pickIn(r.key, id)} />
                                 <div className="mt-1 grid grid-cols-[minmax(7rem,1fr)_5rem] gap-1">
                                   {placeSelect(r.locationId, (v) => patchIn(r.key, { locationId: v }), "Take from place")}
                                   <Input aria-label="Lot or batch no." className="h-9" placeholder="Lot" value={r.lot} onChange={(e) => patchIn(r.key, { lot: e.target.value })} />
                                 </div>
                                 {multi && (
-                                  <select aria-label="Cost belongs to" className={`${selectClass} mt-1`} value={r.directTo} onChange={(e) => patchIn(r.key, { directTo: e.target.value })}>
-                                    <option value="">Shared by all products</option>
-                                    {usedOuts.filter((o) => o.ingredientId).map((o) => <option key={o.key} value={o.ingredientId}>Only {byId.get(o.ingredientId)?.name}</option>)}
-                                  </select>
+                                  <SearchSelect aria-label="Cost belongs to" className="mt-1" value={r.directTo} onChange={(v) => patchIn(r.key, { directTo: v })} placeholder="Shared by all products"
+                                    options={[{ value: "", label: "Shared by all products" }, ...usedOuts.filter((o) => o.ingredientId).map((o) => ({ value: o.ingredientId, label: `Only ${byId.get(o.ingredientId)?.name ?? ""}` }))]} />
                                 )}
                               </td>
                               <td className={`p-1 pt-2.5 text-right text-xs tabular-nums ${short(r) ? "font-semibold text-destructive" : "text-muted-foreground"}`}>{it ? `${it.currentStock} ${it.unit}` : "–"}{short(r) ? " · short" : ""}</td>
                               <td className="p-1"><Input aria-label="Quantity consumed" inputMode="decimal" className="w-20" value={r.quantity} onChange={(e) => patchIn(r.key, { quantity: e.target.value })} onKeyDown={enterAdds(idx === ins.length - 1, () => setIns([...ins, blankIn()]))} /></td>
-                              <td className="min-w-[5.5rem] p-1"><select aria-label="Unit" className={selectClass} value={r.unit} onChange={(e) => patchIn(r.key, { unit: e.target.value as IngredientUnit })}>{(it?.units ?? []).map((u) => <option key={u}>{u}</option>)}</select></td>
+                              <td className="min-w-[5.5rem] p-1"><SearchSelect aria-label="Unit" value={r.unit} placeholder="Unit" disabled={!it} onChange={(v) => v && patchIn(r.key, { unit: v as IngredientUnit })} options={(it?.units ?? []).map((u) => ({ value: u, label: u }))} /></td>
                               <td className="p-1 pt-2.5 text-right text-xs tabular-nums text-muted-foreground">
                                 {r.expected ?? "–"}
                                 {diff != null && diff !== 0 && <span className={`block ${Math.abs(diff / exp!) > 0.05 ? "text-destructive" : ""}`}>{diff > 0 ? "+" : ""}{q3(diff)} ({diff > 0 ? "+" : ""}{((diff / exp!) * 100).toFixed(1)}%)</span>}
@@ -278,7 +271,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                           return (
                             <tr key={r.key} className="align-top [&>td]:border-b [&>td]:border-border/60">
                               <td className="p-1">
-                                <select aria-label="Finished product" className={selectClass} value={r.ingredientId} onChange={(e) => pickOut(r.key, e.target.value)}><option value="">Choose…</option>{products.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
+                                <ItemCombobox label="Finished product" placeholder="Search products…" items={products} value={r.ingredientId} onChange={(id) => pickOut(r.key, id)} />
                                 <div className="mt-1 grid grid-cols-[minmax(7rem,1fr)_5rem] gap-1">
                                   {placeSelect(r.locationId, (v) => patchOut(r.key, { locationId: v }), "Put into place")}
                                   <Input aria-label="Lot or batch no." className="h-9" placeholder="Lot" value={r.lot} onChange={(e) => patchOut(r.key, { lot: e.target.value })} />
@@ -286,7 +279,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                               </td>
                               <td className="p-1"><Input aria-label="Good quantity produced" inputMode="decimal" className="w-20" value={r.quantity} onChange={(e) => patchOut(r.key, { quantity: e.target.value })} onKeyDown={enterAdds(idx === outs.length - 1 && false, () => undefined)} />{r.expected && <p className="mt-0.5 text-xs text-muted-foreground">Plan {r.expected}</p>}</td>
                               <td className="p-1"><Input aria-label="Rejected quantity" inputMode="decimal" className="w-20" placeholder="0" value={r.rejected} onChange={(e) => patchOut(r.key, { rejected: e.target.value })} /></td>
-                              <td className="min-w-[5.5rem] p-1"><select aria-label="Unit" className={selectClass} value={r.unit} onChange={(e) => patchOut(r.key, { unit: e.target.value as IngredientUnit })}>{(it?.units ?? []).map((u) => <option key={u}>{u}</option>)}</select></td>
+                              <td className="min-w-[5.5rem] p-1"><SearchSelect aria-label="Unit" value={r.unit} placeholder="Unit" disabled={!it} onChange={(v) => v && patchOut(r.key, { unit: v as IngredientUnit })} options={(it?.units ?? []).map((u) => ({ value: u, label: u }))} /></td>
                               {multi && method === "MANUAL" && <td className="p-1"><Input aria-label="Cost percent" inputMode="decimal" className="w-16" value={r.percent} onChange={(e) => patchOut(r.key, { percent: e.target.value })} /></td>}
                               <td className="p-1"><Button type="button" variant="ghost" size="icon-sm" aria-label="Remove product row" disabled={outs.length === 1} onClick={() => setOuts((x) => x.filter((y) => y.key !== r.key))}>×</Button></td>
                             </tr>
@@ -311,7 +304,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                       <h4 className="mb-1 text-xs font-medium text-muted-foreground">Additional production costs (optional)</h4>
                       {costs.map((c) => (
                         <div key={c.key} className="mb-1 grid grid-cols-[1fr_6rem_2rem] gap-2">
-                          <select aria-label="Cost category" className={selectClass} value={c.category} onChange={(e) => setCosts((x) => x.map((y) => (y.key === c.key ? { ...y, category: e.target.value } : y)))}>{COST_CATEGORIES.map((n) => <option key={n}>{n}</option>)}</select>
+                          <SearchSelect aria-label="Cost category" value={c.category} onChange={(v) => v && setCosts((x) => x.map((y) => (y.key === c.key ? { ...y, category: v } : y)))} options={COST_CATEGORIES.map((n) => ({ value: n, label: n }))} />
                           <Input aria-label="Cost amount" inputMode="decimal" value={c.amount} onChange={(e) => setCosts((x) => x.map((y) => (y.key === c.key ? { ...y, amount: e.target.value } : y)))} />
                           <Button type="button" variant="ghost" size="icon-sm" aria-label="Remove cost" onClick={() => setCosts((x) => x.filter((y) => y.key !== c.key))}>×</Button>
                         </div>
@@ -323,7 +316,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                   {!costed && <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">Costing is switched off, so this voucher records quantities only.</p>}
                   {settings?.canQuality && (
                     <div className="grid grid-cols-2 gap-2 border-t border-border p-3">
-                      <div className="flex flex-col gap-1"><Label htmlFor="q-res">Quality result</Label><select id="q-res" className={selectClass} value={qResult} onChange={(e) => setQResult(e.target.value as QualityResult | "")}><option value="">Not recorded</option><option value="PASS">Passed</option><option value="NEEDS_REVIEW">Needs review</option><option value="FAIL">Failed</option></select></div>
+                      <div className="flex flex-col gap-1"><Label htmlFor="q-res">Quality result</Label><SearchSelect id="q-res" value={qResult} onChange={(v) => setQResult(v as QualityResult | "")} placeholder="Not recorded" options={[{ value: "", label: "Not recorded" }, { value: "PASS", label: "Passed" }, { value: "NEEDS_REVIEW", label: "Needs review" }, { value: "FAIL", label: "Failed" }]} /></div>
                       <div className="flex flex-col gap-1"><Label htmlFor="q-grade">Grade</Label><Input id="q-grade" value={qGrade} onChange={(e) => setQGrade(e.target.value)} placeholder="e.g. A" disabled={!qResult} /></div>
                       <div className="col-span-2 flex flex-col gap-1"><Label htmlFor="q-notes">Quality notes {qResult === "FAIL" && "(required)"}</Label><Input id="q-notes" value={qNotes} onChange={(e) => setQNotes(e.target.value)} disabled={!qResult} /></div>
                     </div>

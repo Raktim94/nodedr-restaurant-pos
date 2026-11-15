@@ -4,7 +4,7 @@ import { ArrowDown, ArrowRight, ArrowUp, ArrowUpDown, Search, X } from "lucide-r
 import { useEffect, useState } from "react";
 import { JOURNAL_TYPES } from "@/components/inventory/journal-entry-form";
 import { WASTE_REASONS } from "@/components/inventory/log-waste-dialog";
-import { ProductionEntryDialog, selectClass } from "@/components/inventory/production-entry-dialog";
+import { ProductionEntryDialog } from "@/components/inventory/production-entry-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,6 +28,7 @@ import {
 } from "@/hooks/use-stock-journal";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { SearchSelect } from "@/components/ui/search-select";
 
 export const KIND_LABEL: Record<JournalKind, string> = {
   PRODUCTION: "Production",
@@ -126,11 +127,11 @@ export function JournalList({ branchId, onNew, onEdit, notice }: { branchId: str
           <div className="flex flex-col gap-1"><Label htmlFor="sj-from" className="text-xs text-muted-foreground">From</Label><Input id="sj-from" type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="h-9" /></div>
           <div className="flex flex-col gap-1"><Label htmlFor="sj-to" className="text-xs text-muted-foreground">To</Label><Input id="sj-to" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className="h-9" /></div>
           <div className="flex flex-col gap-1"><Label htmlFor="sj-type" className="text-xs text-muted-foreground">Type</Label>
-            <select id="sj-type" className={selectClass} value={type} onChange={(e) => setType(e.target.value as JournalKind | "")}><option value="">All types</option>{kinds.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}</select></div>
+            <SearchSelect id="sj-type" value={type} onChange={(v) => setType(v as JournalKind | "")} placeholder="All types" options={[{ value: "", label: "All types" }, ...kinds.map((k) => ({ value: k, label: KIND_LABEL[k] }))]} /></div>
           <div className="flex flex-col gap-1"><Label htmlFor="sj-status" className="text-xs text-muted-foreground">Status</Label>
-            <select id="sj-status" className={selectClass} value={status} onChange={(e) => setStatus(e.target.value as JournalStatus | "")}><option value="">Any status</option>{(["DRAFT", "POSTED", "VOIDED"] as const).map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select></div>
+            <SearchSelect id="sj-status" value={status} onChange={(v) => setStatus(v as JournalStatus | "")} placeholder="Any status" options={[{ value: "", label: "Any status" }, ...(["DRAFT", "POSTED", "VOIDED"] as const).map((s) => ({ value: s, label: STATUS_LABEL[s] }))]} /></div>
           <div className="col-span-2 flex flex-col gap-1 md:col-span-1"><Label htmlFor="sj-place" className="text-xs text-muted-foreground">Place</Label>
-            <select id="sj-place" className={selectClass} value={place} onChange={(e) => setPlace(e.target.value)}><option value="">All places</option>{(places ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}{p.isActive ? "" : " (off)"}</option>)}</select></div>
+            <SearchSelect id="sj-place" value={place} onChange={setPlace} placeholder="All places" options={[{ value: "", label: "All places" }, ...(places ?? []).map((p) => ({ value: p.id, label: p.name, hint: p.isActive ? undefined : "off" }))]} /></div>
         </div>
       </div>
 
