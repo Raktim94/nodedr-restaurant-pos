@@ -198,7 +198,7 @@ stock again, and repeated runs against one PO each get their own voucher number.
 **Migration** `20261118000000_manufacturing_journal_v2` is additive (new nullable columns, a column with a zero default, two new
 tables); nothing is dropped or rewritten, and every earlier voucher reads exactly as before.
 
-## One stock journal for every kind of entry (after 1.35.0)
+## One stock journal for every kind of entry (1.36.0)
 
 `Inventory > Stock journal` now opens on **Journal**: every entry in one list, whatever kind it is.
 **New stock journal** asks what happened first, because each kind moves stock differently:
@@ -225,4 +225,6 @@ The form for transfer, waste and correction has three parts: details (date and t
 
 **API** (`/api/v1/inventory`, `?branchId=`): `GET|POST journal/entries`, `GET|PATCH|DELETE journal/entries/:id`, `POST journal/entries/:id/post`, `POST journal/entries/:id/void`. `GET journal/entries` merges production entries in, filtered by `q`, `type`, `status`, `from`, `to`, `locationId`, `sort=date|ref`, `dir=asc|desc` (300 rows max).
 
-**Not built**: offline queueing of these three kinds on the phone app (the web form needs the server; the idempotency key protects retries). Export/print of the merged list: the existing CSV exports (Stock movements, Production, Waste) still cover the same data.
+**Export**: `GET journal/entries.csv` (same filters, one row per item line; values only with `production.report`).
+
+**Not built**: offline queueing of these three kinds on the phone app (the web form needs the server; the idempotency key protects retries).

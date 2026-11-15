@@ -56,6 +56,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { toCsv } from '../reports/csv';
 import { allowedUnits } from './units';
 import {
   ProductionService,
@@ -178,18 +179,11 @@ export class StockJournalController {
     return e.type;
   }
 
-  @Auth('production.record')
-  @Get('journal/entries')
-  async listEntries(
-    @CurrentUser() u: SessionUser,
-    @Query('branchId') branchId: string,
-    @Query() q: Record<string, string>,
-  ) {
-    await this.access(u, branchId);
+  private entryFilters(u: SessionUser, q: Record<string, string>) {
     const kinds: JournalKind[] = ['PRODUCTION', 'WASTE'];
     if (permissionSatisfied(u.permissions, 'inventory.manage'))
       kinds.push('TRANSFER', 'CORRECTION');
-    const rows = await this.entries.list(branchId, {
+    return {
       q: q.q?.slice(0, 80) || undefined,
       type: (['PRODUCTION', 'TRANSFER', 'WASTE', 'CORRECTION'] as const).find(
         (t) => t === q.type,
@@ -200,15 +194,88 @@ export class StockJournalController {
       from: date(q.from),
       to: date(q.to),
       locationId: q.locationId || undefined,
-      sort: q.sort === 'ref' ? 'ref' : 'date',
-      dir: q.dir === 'asc' ? 'asc' : 'desc',
+      sort: q.sort === 'ref' ? ('ref' as const) : ('date' as const),
+      dir: q.dir === 'asc' ? ('asc' as const) : ('desc' as const),
       includeProduction: true,
       kinds,
-    });
+    };
+  }
+
+  @Auth('production.record')
+  @Get('journal/entries')
+  async listEntries(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
+    await this.access(u, branchId);
+    const rows = await this.entries.list(branchId, this.entryFilters(u, q));
     // Values come from average costs: only for people who may see production costs.
     return permissionSatisfied(u.permissions, 'production.report')
       ? rows
       : rows.map((r) => ({ ...r, value: null }));
+  }
+
+  /** The list as a spreadsheet: one row per item line, with the same filters and the same visibility rules. */
+  @Auth('production.record')
+  @Get('journal/entries.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async exportEntries(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
+    await this.access(u, branchId);
+    const showValue = permissionSatisfied(u.permissions, 'production.report');
+    const rows = await this.entries.list(
+      branchId,
+      this.entryFilters(u, q),
+      5000,
+    );
+    const out: (string | number | null)[][] = [];
+    for (const r of rows) {
+      const lines = [
+        ...r.out.map((l) => ['Out', l] as const),
+        ...r.in.map((l) => ['In', l] as const),
+      ];
+      lines.forEach(([dir, l], i) =>
+        out.push([
+          r.entryNo,
+          r.kind,
+          r.status,
+          r.date,
+          dir,
+          l.name,
+          l.quantity,
+          l.unit,
+          l.place,
+          r.reason,
+          i === 0 && showValue ? r.value : null,
+          r.createdBy,
+          r.postedBy,
+          r.postedAt,
+        ]),
+      );
+    }
+    return toCsv(
+      [
+        'Reference',
+        'Type',
+        'Status',
+        'Date',
+        'Direction',
+        'Item',
+        'Quantity',
+        'Unit',
+        'Place',
+        'Reason',
+        'Value (entry, average cost)',
+        'Created by',
+        'Posted by',
+        'Posted at',
+      ],
+      out,
+    );
   }
 
   private hideCost<

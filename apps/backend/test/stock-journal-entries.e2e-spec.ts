@@ -502,6 +502,14 @@ run('Stock journal entries: transfer, waste, correction (e2e)', () => {
       chefRows.every((r) => r.kind === 'WASTE' || r.kind === 'PRODUCTION'),
     ).toBe(true);
     await cashier.get(`${E}${q}`).expect(403);
+    // the same filters as a spreadsheet: one row per item line
+    const csv = (
+      await owner.get(`${E}.csv${q}&type=TRANSFER&status=POSTED`).expect(200)
+    ).text;
+    expect(csv).toContain('Reference,Type,Status');
+    expect(csv).toContain(`Rice-${tag}`);
+    expect(csv).not.toContain('CORRECTION');
+    await cashier.get(`${E}.csv${q}`).expect(403);
   });
 
   it('deleting a draft never lets two entries share a number', async () => {

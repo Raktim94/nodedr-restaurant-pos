@@ -24,6 +24,7 @@ import {
   usePlaces,
   useProductionAction,
   useProductionEntry,
+  csvUrl,
 } from "@/hooks/use-stock-journal";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -119,6 +120,7 @@ export function JournalList({ branchId, onNew, onEdit, notice }: { branchId: str
             <Input id="sj-search" type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder="Search reference (SJ-…, PR-…) or item" className="h-10 pl-9" />
           </div>
           {filtered && <Button variant="ghost" size="sm" onClick={clear}><X aria-hidden className="size-4" /> Clear filters</Button>}
+          <a href={csvUrl("journal/entries.csv", branchId, filters)} download className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-lg border border-border px-3 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50">Export CSV</a>
         </div>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
           <div className="flex flex-col gap-1"><Label htmlFor="sj-from" className="text-xs text-muted-foreground">From</Label><Input id="sj-from" type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className="h-9" /></div>
