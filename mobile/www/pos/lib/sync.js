@@ -3,8 +3,8 @@
 //   pushSales     phone -> server   every sale taken (each only ever recorded once)
 import { kv, reservations, sales } from './store.js';
 import { mergeFromServer, toPayload } from './reservations.js';
-import { pickServer, request } from './net.js';
-import { SALE_EVENTS, counts, pruneSynced, pushEvents, DeviceRevoked, AuthExpired as EventAuthExpired } from './journal.js';
+import { pickServer, request, serverInfo } from './net.js';
+import { BOOK_EVENTS, SALE_EVENTS, counts, pruneSynced, pushEvents, DeviceRevoked, AuthExpired as EventAuthExpired } from './journal.js';
 
 export class AuthExpired extends Error {}
 
@@ -29,6 +29,7 @@ export async function pullSnapshot(base) {
   if (s.status === 403) throw new Error('This account may not take orders.');
   if (s.status !== 200) throw new Error('The server could not send the menu. Try again in a moment.');
   await kv.set('branchId', branch.id);
+  await saveServerCaps(base);
   await kv.set('snapshot', s.data);
   await kv.set('snapshotAt', Date.now());
   await mergeBookings(s.data);
@@ -38,6 +39,21 @@ export async function pullSnapshot(base) {
     /* storage blocked */
   }
   return s.data;
+}
+
+/**
+ * What this server can take from a phone (GET /mobile/server-info). Servers older than 1.38 drop add-ons, pay later
+ * and the service charge from a sale without saying so, and have nowhere to put refunds or expenses, so the phone
+ * only offers those when the server says it can. Kept with the snapshot; refreshed on every menu refresh, so updating
+ * the server switches them on at the next sync.
+ */
+async function saveServerCaps(base) {
+  try {
+    const info = await serverInfo(base);
+    if (info) await kv.set('serverCaps', { ...(info.capabilities || {}), version: info.version || 'unknown' });
+  } catch {
+    /* keep what we had */
+  }
 }
 
 const tablesOf = (snap) => ((snap && snap.floors) || []).flatMap((f) => f.tables);
@@ -192,7 +208,11 @@ export function syncNow({ refreshMenu = true } = {}) {
       }
       try {
         // A refund or a collection waits until the server has its sale (it may still be waiting, or was refused).
+        if (!(await kv.get('serverCaps'))) await saveServerCaps(base); // first sync after this app update
+        const caps = (await kv.get('serverCaps')) || {};
         const hold = async (e) => {
+          // An older server has no route for these yet: keep them waiting (not refused) until it is updated.
+          if (BOOK_EVENTS.has(e.kind) && !caps.phoneBooksSync) return true;
           if (!SALE_EVENTS.has(e.kind)) return false;
           const s = await sales.get(e.payload.saleId);
           return !!s && s.status !== 'synced';

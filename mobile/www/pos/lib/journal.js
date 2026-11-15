@@ -38,6 +38,8 @@ const PATH = {
 
 /** Events about one sale (a refund, money collected later) need that sale on the server first. */
 export const SALE_EVENTS = new Set(['refund', 'collect']);
+/** Phone books records: only servers that say `phoneBooksSync` (1.38+) have routes for them. */
+export const BOOK_EVENTS = new Set(['refund', 'expense', 'collect', 'tillclose']);
 
 /** What the server wants for each kind. Production is posted straight away; attendance names its branch in the body. */
 export function bodyFor(ev, branchId) {

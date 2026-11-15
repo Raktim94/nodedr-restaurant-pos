@@ -62,6 +62,9 @@ const ICON = {
   sync: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18.5 2v4h-4M5.5 22v-4h4"/></svg>',
 };
 
+/** A phone account can do everything; a server-linked phone only what its server says it takes (see sync.js). */
+const can = (cap) => !!(S.snap && S.snap.local) || !!(S.caps && S.caps[cap]);
+
 function toast(msg, ms = 2600) {
   const t = $('toast');
   t.textContent = msg;
@@ -122,7 +125,7 @@ const qtyOf = (itemId) => [...S.cart.values()].filter((l) => l.item.id === itemI
 const billOf = (extra = {}) =>
   computeBill(
     cartLines().map((l) => ({ price: l.item.price, quantity: l.qty, taxRate: l.item.taxRate })),
-    { taxMode: S.snap.branch.taxMode, discountPercent: S.discountPercent, serviceChargePct: S.serviceCharge ? S.scPct : 0, ...extra },
+    { taxMode: S.snap.branch.taxMode, discountPercent: S.discountPercent, serviceChargePct: S.serviceCharge && can('offlineOptions') ? S.scPct : 0, ...extra },
   );
 const cartCount = () => cartLines().reduce((n, l) => n + l.qty, 0);
 
@@ -234,7 +237,7 @@ async function restoreCurrent() {
 const orderBill = (o) =>
   computeBill(
     o.items.filter((l) => l.qty > 0).map((l) => ({ price: l.price, quantity: l.qty, taxRate: l.taxRate })),
-    { taxMode: S.snap.branch.taxMode, discountPercent: o.discountPercent || 0, serviceChargePct: o.serviceCharge ? S.scPct : 0 },
+    { taxMode: S.snap.branch.taxMode, discountPercent: o.discountPercent || 0, serviceChargePct: o.serviceCharge && can('offlineOptions') ? S.scPct : 0 },
   );
 
 /** Move to another order (or a fresh one), keeping the current one saved. */
@@ -817,6 +820,7 @@ const staffOn = () => S.staff.some((p) => p.active !== false);
 async function loadStaff() {
   S.staff = (await kv.get('staff')) || [];
   S.scPct = Number(await kv.get('serviceChargePct')) || 0;
+  S.caps = (await kv.get('serverCaps')) || {};
   S.autoLockMin = Number(await kv.get('autoLockMin')) || 0;
   if (S.who && !S.staff.some((p) => p.id === S.who.id && p.active !== false)) S.who = null;
 }
@@ -924,7 +928,7 @@ async function staffSheet(message) {
   if (staffOn() && !(await managerOK('Only a manager can change staff and PINs.'))) return;
   const server = !S.snap.local ? S.snap.staff || [] : [];
   // Server staff without a PIN yet are listed so a manager can give them one.
-  const rows = [...S.staff, ...server.filter((u) => !S.staff.some((p) => p.serverId === u.id)).map((u) => ({ id: `srv-${u.id}`, serverId: u.id, name: u.name, manager: !!u.manager, role: u.role, nopin: true }))];
+  const rows = [...S.staff, ...server.filter((u) => !S.staff.some((p) => p.serverId === u.id)).map((u) => ({ id: `srv-${u.id}`, serverId: u.id, name: u.name, manager: !!u.manager, role: u.role, nopin: true }))].sort((a, b) => Number(!!b.manager) - Number(!!a.manager)); // managers first: the first PIN must be one
   openSheet(
     `${head('Staff & PINs')}
      <div class="body">
@@ -945,16 +949,19 @@ async function staffSheet(message) {
   );
 }
 
-function personSheet(person, message) {
+function personSheet(person, message, draft = {}) {
   const isNew = !person || person.nopin;
   const firstOne = !staffOn();
+  // After a refused save the form comes back with what was typed (never the PIN itself).
+  const draftName = draft.name ?? (person ? person.name : '');
+  const draftMgr = draft.manager ?? (person ? !!person.manager : firstOne);
   const fromServer = person && person.serverId;
   openSheet(
     `${head(person && !person.nopin ? `Edit ${person.name}` : person ? `PIN for ${person.name}` : 'Add a person')}
      <form class="body" id="pf" novalidate>
        ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
-       ${fromServer ? `<p><b>${esc(person.name)}</b> &middot; ${person.manager ? 'Manager' : 'Staff'} <small class="mute">(from the server)</small></p>` : `<label for="pn">Name</label><input id="pn" value="${esc(person ? person.name : '')}" maxlength="40" autocomplete="off">
-       <label>Role</label><div class="seg" role="group" aria-label="Role"><button type="button" data-r="staff" aria-pressed="${!(person ? person.manager : firstOne)}" ${firstOne && isNew ? 'disabled' : ''}>Staff</button><button type="button" data-r="manager" aria-pressed="${!!(person ? person.manager : firstOne)}">Manager</button></div>
+       ${fromServer ? `<p><b>${esc(person.name)}</b> &middot; ${person.manager ? 'Manager' : 'Staff'} <small class="mute">(from the server)</small></p>` : `<label for="pn">Name</label><input id="pn" value="${esc(draftName)}" maxlength="40" autocomplete="off">
+       <label>Role</label><div class="seg" role="group" aria-label="Role"><button type="button" data-r="staff" aria-pressed="${!draftMgr}" ${firstOne && isNew ? 'disabled' : ''}>Staff</button><button type="button" data-r="manager" aria-pressed="${!!draftMgr}">Manager</button></div>
        ${firstOne && isNew ? '<small class="mute">The first person is a manager, so someone can always approve.</small>' : ''}`}
        <label for="pp">${isNew ? 'PIN' : 'New PIN'} <span class="mute">(4 to 8 digits${isNew ? '' : ', leave empty to keep'})</span></label><input id="pp" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
        <label for="pp2">Same PIN again</label><input id="pp2" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
@@ -962,13 +969,13 @@ function personSheet(person, message) {
        ${person && !person.nopin ? `<button class="btn line block mt" type="button" id="toggle">${person.active === false ? 'Switch on again' : 'Switch off (keeps their past sales)'}</button>` : ''}
      </form>`,
     (p) => {
-      let manager = person ? !!person.manager : firstOne;
+      let manager = draftMgr;
       p.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => ((manager = b.dataset.r === 'manager'), p.querySelectorAll('[data-r]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))))));
       const tg = p.querySelector('#toggle');
       if (tg)
         tg.onclick = async () => {
           const mgrsLeft = S.staff.filter((x) => x.id !== person.id && x.manager && x.active !== false).length;
-          if (person.active !== false && person.manager && !mgrsLeft && S.staff.some((x) => x.id !== person.id && x.active !== false)) return personSheet(person, 'Keep at least one manager switched on.');
+          if (person.active !== false && person.manager && !mgrsLeft && S.staff.some((x) => x.id !== person.id && x.active !== false)) return personSheet(person, 'Keep at least one manager switched on.', { name, manager });
           S.staff = S.staff.map((x) => (x.id === person.id ? { ...x, active: x.active === false } : x));
           await saveStaff();
           booksDirty = true;
@@ -978,14 +985,17 @@ function personSheet(person, message) {
         ev.preventDefault();
         const name = fromServer ? person.name : ($('pn').value || '').trim();
         const pin = $('pp').value;
-        if (!name) return personSheet(person, 'Enter the name.');
+        if (!name) return personSheet(person, 'Enter the name.', { name, manager });
+        // The first PIN on this phone must belong to a manager: after it the phone asks a manager to approve changes, and
+        // with only a cashier's PIN nobody could (a server-linked phone cannot promote a server cashier itself).
+        if (firstOne && !(fromServer ? person.manager : manager)) return personSheet(person, 'Set a manager\'s PIN first, so someone can approve discounts, refunds and staff changes.', { name, manager });
         if (isNew || pin) {
-          if (!validPin(pin)) return personSheet(person, 'The PIN must be 4 to 8 digits.');
-          if (weakPin(pin)) return personSheet(person, 'That PIN is too easy to guess (like 1111 or 1234). Choose another.');
-          if (pin !== $('pp2').value) return personSheet(person, 'The two PINs are not the same.');
-          if (await pinTaken(S.staff, pin, person && person.id)) return personSheet(person, 'Someone else already uses that PIN. Choose another.');
+          if (!validPin(pin)) return personSheet(person, 'The PIN must be 4 to 8 digits.', { name, manager });
+          if (weakPin(pin)) return personSheet(person, 'That PIN is too easy to guess (like 1111 or 1234). Choose another.', { name, manager });
+          if (pin !== $('pp2').value) return personSheet(person, 'The two PINs are not the same.', { name, manager });
+          if (await pinTaken(S.staff, pin, person && person.id)) return personSheet(person, 'Someone else already uses that PIN. Choose another.', { name, manager });
         }
-        if (!fromServer && person && person.manager && !manager && !S.staff.some((x) => x.id !== person.id && x.manager && x.active !== false)) return personSheet(person, 'Keep at least one manager.');
+        if (!fromServer && person && person.manager && !manager && !S.staff.some((x) => x.id !== person.id && x.manager && x.active !== false)) return personSheet(person, 'Keep at least one manager.', { name, manager });
         const pinRec = pin ? await hashPin(pin) : person && person.pin;
         const id = person && !person.nopin ? person.id : `st-${newId()}`;
         const rec = { id, name, manager: fromServer ? !!person.manager : manager, pin: pinRec, active: person && person.active === false ? false : true, ...(fromServer ? { serverId: person.serverId } : {}) };
@@ -1197,7 +1207,7 @@ function openCart() {
           .join('')}</div>
         <label for="dp">Discount %</label><input id="dp" type="number" inputmode="decimal" min="0" max="${esc(S.snap.restaurant.maxManualDiscountPercent)}" value="${S.discountPercent || ''}" placeholder="0">
         ${S.discountPercent > 0 ? `<label for="dr">Reason for the discount${S.snap.restaurant.requireDiscountReason ? '' : ' (optional)'}</label><input id="dr" maxlength="200" value="${esc(S.discountReason)}" ${S.snap.restaurant.requireDiscountReason ? 'required' : ''} autocomplete="off" enterkeyhint="done">` : ''}
-        ${S.scPct > 0 ? `<label class="chk mt"><input type="checkbox" id="sc" ${S.serviceCharge ? 'checked' : ''}> Service charge ${esc(S.scPct)}% <small class="mute">(only if the guest agrees)</small></label>` : ''}
+        ${S.scPct > 0 && can('offlineOptions') ? `<label class="chk mt"><input type="checkbox" id="sc" ${S.serviceCharge ? 'checked' : ''}> Service charge ${esc(S.scPct)}% <small class="mute">(only if the guest agrees)</small></label>` : ''}
         <div class="mt">
           <div class="tot"><span>Subtotal</span><span>${inr(bill.subtotal)}</span></div>
           ${bill.discountAmount > 0 ? `<div class="tot"><span>Discount</span><span>-${inr(bill.discountAmount)}</span></div>` : ''}
@@ -1340,7 +1350,7 @@ function openPay() {
           ${!st.fullyPaid ? `<div class="tot big" style="color:var(--bad)"><span>Still to pay</span><span>${inr(st.balance)}</span></div>` : ''}
         </div>
       </div>
-      <footer>${!st.fullyPaid ? `<button class="btn line" id="later" ${phoneOk(S.customer.phone) ? '' : 'aria-disabled="true"'}>Pay later (${inr(st.balance)} due)</button>` : ''}<button class="btn ${st.fullyPaid ? 'block' : ''}" id="done" ${st.fullyPaid ? '' : 'disabled'}>Complete sale</button></footer>`;
+      <footer>${!st.fullyPaid && can('offlineOptions') ? `<button class="btn line" id="later" ${phoneOk(S.customer.phone) ? '' : 'aria-disabled="true"'}>Pay later (${inr(st.balance)} due)</button>` : ''}<button class="btn ${st.fullyPaid ? 'block' : ''}" id="done" ${st.fullyPaid ? '' : 'disabled'}>Complete sale</button></footer>`;
     root.querySelector('[data-close]').onclick = openCart;
     root.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((rows[Number(b.dataset.m.split(':')[0])].method = b.dataset.m.split(':')[1]), draw())));
     root.querySelectorAll('[data-am]').forEach((el) => (el.oninput = () => ((rows[Number(el.dataset.am)].amount = el.value), softRedraw())));
@@ -1981,7 +1991,7 @@ async function closeDaySheet(message, draft = {}) {
          ${books.refundTotal ? line('Refunds', `&minus;${inr(books.refundTotal)}`) : ''}
          ${line('Net sales', `<b>${inr(books.net)}</b>`)}
          ${Object.entries(books.byMethod).filter(([, v]) => v).map(([m, v]) => line(METHOD_LABEL[m], inr(v))).join('')}
-         ${books.collected ? line('Collected on earlier bills', inr(books.collected)) : ''}
+         ${books.collected ? line('<small>of which collected on owed bills</small>', `<small>${inr(books.collected)}</small>`) : ''}
          ${books.dueToday ? line('Still owed on today\'s bills', inr(books.dueToday)) : ''}
          ${books.serviceCharge ? line('Service charge (optional)', inr(books.serviceCharge)) : ''}
          ${books.expenseTotal ? line('Expenses', `&minus;${inr(books.expenseTotal)}`) : ''}
@@ -2152,6 +2162,7 @@ async function settingsCard() {
   return `${refused.length ? `<div class="card mt"><h2 style="font-size:1.05rem">Refused by the server</h2>${refused
       .map((e) => `<div class="row"><div class="grow"><b>${BOOK_KIND[e.kind]}</b>${e.payload.amount ? ` ${inr(e.payload.amount || e.payload.countedCash || 0)}` : ''}<br><small class="mute">${esc(new Date(e.createdAt).toLocaleString())}</small><div class="note bad">${esc(e.error || 'Refused')}</div></div><div><button class="btn ghost" data-evretry="${esc(e.id)}">Try again</button><button class="btn line mt" data-evaside="${esc(e.id)}">Set aside</button></div></div>`)
       .join('')}</div>` : ''}
+    ${!S.snap.local && !can('offlineOptions') ? `<div class="note warn mt" role="status">Your server${S.caps.version && S.caps.version !== 'unknown' ? ` (version ${esc(S.caps.version)})` : ''} is older than this app. Pay later, the service charge, half portions and add-ons, and sending refunds, expenses and cash counts need OrderRestro server 1.38 or newer. Refunds and expenses stay on this phone and are sent once the server is updated.</div>` : ''}
     <div class="card mt">
       <h2 style="font-size:1.05rem">Shop settings</h2>
       <button class="btn line block" id="st-staff">Staff &amp; PINs${S.staff.length ? ` (${S.staff.filter((p) => p.active !== false).length})` : ''}</button>
@@ -2318,6 +2329,7 @@ function afterSync(r) {
     if (r.refused) S.note = { kind: 'bad', text: `${r.refused} sale${r.refused > 1 ? 's were' : ' was'} refused by the server. Open Sales to retry or set aside.` };
   } else S.note = null;
   kv.get('snapshot').then(async (snap) => {
+    S.caps = (await kv.get('serverCaps')) || {};
     if (snap) {
       S.snap = snap;
       await syncStaffFromServer();

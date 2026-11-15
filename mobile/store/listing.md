@@ -1,7 +1,7 @@
 # Store listing text (Google Play and App Store)
 
 **App name:** OrderRestro
-**Subtitle / short description (80):** Orders, deliveries and your kitchen, connected to your own server.
+**Subtitle / short description (80):** Restaurant billing, KOT, tables and kitchen. Works offline, no server needed.
 **Category:** Business (Play: Business; App Store: Business, secondary Food & Drink)
 **Contact email:** info@nodedr.com
 **Website:** https://orderrestro.nodedr.com
@@ -12,25 +12,50 @@
 
 ## Full description
 
-OrderRestro is the staff and delivery rider app for restaurants that run NodeDR OrderRestro, the free, open-source restaurant system you host yourself. This app needs an OrderRestro server; ask your restaurant for its address or scan the QR code in Settings > Mobile app.
+OrderRestro is a free restaurant point of sale for your phone. Start on the phone with no server and no internet: add your dishes and tables, take orders, print bills and kitchen tickets, and close the day. When you grow, connect the restaurant's own OrderRestro server (open source, hosted by you) and the same app becomes the staff and rider app for it.
+
+Billing on the phone
+- Menu with categories, tax, half portions, add-ons and barcodes (camera or a USB/Bluetooth scanner)
+- Dine in by table or takeaway; orders are saved as you go, held and resumed
+- Cash, UPI, card or split payments, with change; UPI "scan to pay" QR on the bill
+- Customer name and phone, pay later, and Money owed with collect payment
+- Discounts with a reason, and an optional service charge only when the guest agrees
+- Print bills and kitchen tickets (KOT) on a Bluetooth thermal printer, or as a PDF
+
+Staff and control
+- Each person switches in with their own PIN; every bill shows who took it
+- Discounts, refunds, pay later, closing the day and menu changes need a manager's PIN
+
+Books
+- Refunds by dish, expenses, close the day with a cash count, and reports for 1, 7 and 30 days
+- Stock count per dish that switches a dish off at 0
+- Sales and expenses as a spreadsheet, a full backup to restore, and an automatic daily backup on the phone
+
+With your restaurant server
+- Sales taken with no connection are sent when you are back online, never twice
+- Refunds, expenses, collections and the day's cash count reach the server's accounts
+- Kitchen: record production, waste, stock received, moves and corrections offline
+- Shift: clock in and out with breaks
+- Table bookings that sync both ways
 
 For riders
-- Sign in with your phone number and password
-- Go online and share your live location while you are on duty
-- New deliveries arrive with a sound and a notification
-- Open the customer's address or shared location in your maps app and call them
-- See the cash to collect, then mark each delivery picked up, delivered or not delivered with a reason
-- Updates you make with no signal are kept on the phone and sent when you are back online
+- Go online and share your live location while on duty; new deliveries arrive with a sound and a notification
+- Open the customer's address in your maps app, call them, see the cash to collect and mark each delivery done
 
-For waiters, cashiers and managers
-- See new online orders with the customer's address, landmark and a Google Maps link, then accept or decline
-- Watch orders, tables and the kitchen queue update live
+For waiters, cashiers and managers on a server
+- New online orders with the customer's address, accept or decline; orders, tables and the kitchen queue live
 - A dashboard with today's revenue, orders, tables and kitchen queue
-- Change all menu prices by a percentage, with a preview first
 
-Works on the restaurant's own network, with no internet needed day to day. Your data stays on your restaurant's server.
+Works on the restaurant's own network, with no internet needed day to day. Your data stays on your phone or your restaurant's server.
 
-Free. No ads. No tracking. Delete your account any time from the user menu.
+Free. No ads. No tracking. Delete your account any time.
+
+## What's new (1.38.0)
+- Half portions, add-ons and barcode scanning
+- Customer on the bill, pay later and Money owed
+- Optional service charge, only when the guest agrees
+- Staff PINs: each bill shows who took it; refunds and discounts need a manager
+- Refunds, expenses and cash counts reach your server; daily automatic backup
 
 ## What's new (1.29.0)
 - Shift: clock in and out on the phone, with or without a connection, with the unpaid break

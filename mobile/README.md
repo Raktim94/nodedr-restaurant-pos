@@ -45,6 +45,8 @@ Open orders, tables and kitchen tickets are on that phone only. A shared kitchen
 - **Voluntary service charge**: set a % under Sync > Shop settings. It is never added by itself: the cashier ticks it only when the guest agrees (India's CCPA guidelines do not allow a compulsory one). It is not taxed and reaches the server as a tip.
 - **Staff PINs**: Sync > Shop settings > Staff & PINs. Each person switches in with a 4-8 digit PIN (salted PBKDF2 hash, never leaves the phone; 5 wrong tries lock the pad, doubling). Every bill records who took it (the server books it to that person). Discounts, refunds, pay later, cancelling dishes the kitchen has, expenses deleted, closing the day, menu changes and restoring a backup need a manager's PIN. Optional idle lock. Server-linked phones list the server's staff; a phone account adds its own people.
 
+**Older servers.** The phone reads `GET /api/v1/mobile/server-info` capabilities on every menu refresh (`serverCaps`). Without `offlineOptions` (servers before 1.38, which strip unknown sale fields) it hides pay later and the service charge; without `phoneBooksSync` refunds, expenses, collections and cash counts stay pending on the phone (not refused) until the server is updated. The Sync tab says so.
+
 Tests: `node --test www/pos/lib/*.test.mjs`.
 
 ## Standalone POS on the phone
