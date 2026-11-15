@@ -59,12 +59,16 @@ internal sealed class ServerSupervisor : IDisposable
         Report("Starting server…");
         StartBackend();
         LogStartup("backend process started, waiting for health check");
-        await WaitForHttpHealthAsync($"http://127.0.0.1:{ServerPaths.BackendPort}/api/health", TimeSpan.FromSeconds(45), ct);
+        // Generous budget: the first start after install or update runs from a freshly copied runtime that antivirus
+        // (Windows Defender) scans file by file, which on a modest PC can take minutes. A crash is still reported at
+        // once - the wait ends as soon as the process exits (see WaitForHttpHealthAsync).
+        await WaitForHttpHealthAsync($"http://127.0.0.1:{ServerPaths.BackendPort}/api/health", TimeSpan.FromMinutes(3), _backend, "backend", ct);
         LogStartup("backend health check: OK");
 
+        Report("Starting the web app…");
         StartWeb();
         LogStartup("web process started, waiting for health check");
-        await WaitForHttpHealthAsync($"http://127.0.0.1:{ServerPaths.WebPort}/api/health", TimeSpan.FromSeconds(45), ct);
+        await WaitForHttpHealthAsync($"http://127.0.0.1:{ServerPaths.WebPort}/api/health", TimeSpan.FromMinutes(3), _web, "web", ct);
         LogStartup("web health check: OK");
 
         Report("Ready.");
@@ -684,26 +688,77 @@ internal sealed class ServerSupervisor : IDisposable
         return proc.ExitCode;
     }
 
-    private async Task WaitForHttpHealthAsync(string url, TimeSpan timeout, CancellationToken ct)
+    /// <summary>
+    /// Waits for the process's health URL. Ends at once, with the end of that process's own log, if the process exits
+    /// (a crash at boot used to be reported only after the whole wait, as a bare "did not become healthy", with the
+    /// real reason left in backend.log). While it is alive but slow, the status line says how long it has been.
+    /// </summary>
+    private async Task WaitForHttpHealthAsync(string url, TimeSpan timeout, Process? proc, string logName, CancellationToken ct)
     {
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-        var deadline = DateTime.UtcNow + timeout;
+        var started = DateTime.UtcNow;
+        var deadline = started + timeout;
         Exception? lastError = null;
+        var logPath = Path.Combine(ServerPaths.ServerLogDir, $"{logName}.log");
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
+            if (proc is not null && HasExited(proc))
+            {
+                var code = SafeExitCode(proc);
+                LogStartup($"{logName} exited during start-up (exit {code})");
+                throw new InvalidOperationException(
+                    $"The {logName} stopped while starting (exit code {code}).\n\n{LogTail(logPath, 20)}\n\nFull log: {logPath}");
+            }
             try
             {
                 using var response = await client.GetAsync(url, ct);
                 if (response.IsSuccessStatusCode) return;
+                lastError = new HttpRequestException($"HTTP {(int)response.StatusCode}");
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 lastError = ex;
             }
+            var waited = (int)(DateTime.UtcNow - started).TotalSeconds;
+            if (waited >= 20 && waited % 10 < 1)
+            {
+                Report($"Starting the {logName}… ({waited}s - the first start after installing can take a few minutes)");
+            }
             await Task.Delay(500, ct);
         }
-        throw new TimeoutException($"{url} did not become healthy in time.", lastError);
+        LogStartup($"{logName} health check timed out after {timeout.TotalSeconds:0}s: {lastError?.Message}");
+        throw new TimeoutException(
+            $"{url} did not become healthy within {timeout.TotalMinutes:0} minutes ({lastError?.Message ?? "no answer"}).\n\n{LogTail(logPath, 20)}\n\nFull log: {logPath}",
+            lastError);
+    }
+
+    private static bool HasExited(Process p)
+    {
+        try { return p.HasExited; } catch { return false; }
+    }
+
+    private static string SafeExitCode(Process p)
+    {
+        try { return DescribeExitCode(p.ExitCode); } catch { return "unknown"; }
+    }
+
+    /// <summary>Last lines of a log that may still be open for writing by the process.</summary>
+    private static string LogTail(string path, int lines)
+    {
+        try
+        {
+            if (!File.Exists(path)) return "(no log was written)";
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(fs);
+            var all = reader.ReadToEnd().Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0).ToArray();
+            if (all.Length == 0) return "(the log is empty)";
+            return "Last lines of the log:\n" + string.Join("\n", all.TakeLast(lines));
+        }
+        catch (Exception ex)
+        {
+            return $"(could not read {Path.GetFileName(path)}: {ex.Message})";
+        }
     }
 
     private void Report(string message) => StatusChanged?.Invoke(message);
