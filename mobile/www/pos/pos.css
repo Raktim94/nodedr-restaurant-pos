@@ -25,6 +25,7 @@ h1,h2{margin:0}
 .btn:active{background:var(--brand-d)}.btn[disabled]{opacity:.5}
 .btn.ghost{background:var(--chip);color:var(--ink)}.btn.block{display:flex;width:100%}
 .btn.line{background:none;border:1.5px solid var(--line);color:var(--ink)}
+#welcome .btn{flex-direction:column;gap:.2rem;text-align:center;padding:.8rem 1.1rem}#welcome .btn br{display:none}#welcome .btn small{font-weight:500;font-size:.85rem;opacity:.9}
 .chips{display:flex;gap:.5rem;overflow-x:auto;padding:.1rem 0 .7rem;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:.45rem .95rem;min-height:44px;font-weight:600;color:var(--ink)}
