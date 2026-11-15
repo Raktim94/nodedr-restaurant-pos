@@ -465,4 +465,15 @@ if ($strayEnvFiles) {
     $strayEnvFiles | Remove-Item -Force
 }
 
+# --- 7. Prune build-only files and write the update manifest ----------------
+# See finalize-server-payload.js: removes ~430 MB / ~20,000 files nothing reads
+# at runtime, then writes runtime-manifest.tsv so the launcher can copy only
+# the files an update actually changed.
+Write-Host "-- Pruning build-only files and writing runtime-manifest.tsv" -ForegroundColor Yellow
+& node (Join-Path $PSScriptRoot 'finalize-server-payload.js') $serverDir
+if ($LASTEXITCODE -ne 0) { throw "finalize-server-payload.js failed with exit code $LASTEXITCODE" }
+# Pruning must not have removed anything migrations need.
+& node $prismaCliPath --version | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "The staged prisma CLI no longer starts after pruning (exit $LASTEXITCODE)." }
+
 Write-Host "Done staging server assets at $serverDir" -ForegroundColor Green

@@ -369,6 +369,8 @@ jobs:
               throw "Embedded server did not become healthy in time"
           }
           Write-Host "Both backend and web health checks passed." -ForegroundColor Green
+          Write-Host "---- startup.log (first launch timings) ----"
+          Get-Content (Join-Path $configDir 'server\logs\startup.log') -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
 
           if (-not (Test-Path (Join-Path $configDir 'server\backend.env'))) {
               throw "backend.env was not generated on first run"
@@ -497,6 +499,52 @@ jobs:
               throw "startup.log doesn't show the relaunch detected the already-running Postgres instance — check GetPostgresStatusAsync"
           }
           Write-Host "Confirmed via startup.log: relaunch correctly detected and reused the existing Postgres instance (not a fresh start)." -ForegroundColor Green
+
+      - name: Update path - only changed files are copied, normal start skips migrations
+        shell: pwsh
+        timeout-minutes: 10
+        run: |
+          [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
+          $exePath = Join-Path $pkg.InstallLocation 'OrderRestro.exe'
+          $serverDir = Join-Path $env:LOCALAPPDATA 'OrderRestro\server'
+          $runtime = Join-Path $serverDir 'server-runtime'
+          $startupLog = Join-Path $serverDir 'logs\startup.log'
+          $supervisorErrorLog = Join-Path $serverDir 'logs\supervisor-error.log'
+
+          Get-Process -Name 'OrderRestro' -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 2
+          # Pretend an update arrived: a different version stamp, and one file whose hash in the local manifest no
+          # longer matches the package (and is missing on disk). The launcher must copy just that file back.
+          '0.0.0.0' | Set-Content (Join-Path $serverDir 'runtime.version')
+          $localManifest = Join-Path $runtime 'runtime-manifest.tsv'
+          if (-not (Test-Path $localManifest)) { throw "runtime-manifest.tsv was not copied with the runtime" }
+          $lines = Get-Content $localManifest
+          $idx = [Array]::FindIndex($lines, [Predicate[string]]{ param($l) $l.StartsWith('backend/dist/src/main.js') })
+          if ($idx -lt 0) { throw "backend/dist/src/main.js not in the manifest" }
+          $parts = $lines[$idx].Split("`t"); $lines[$idx] = "$($parts[0])`t$($parts[1])`t0000"
+          Set-Content $localManifest $lines
+          Remove-Item (Join-Path $runtime 'backend\dist\src\main.js') -Force
+          if (Test-Path $supervisorErrorLog) { Remove-Item $supervisorErrorLog -Force }
+          $before = (Get-Content $startupLog).Count
+
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          Start-Process -FilePath $exePath
+          $ok = $false
+          while ($sw.Elapsed.TotalSeconds -lt 300) {
+              try { if ((Invoke-WebRequest 'http://localhost:1995/api/health' -UseBasicParsing -TimeoutSec 5).StatusCode -eq 200) { $ok = $true; break } } catch { }
+              if (Test-Path $supervisorErrorLog) { Write-Host (Get-Content $supervisorErrorLog -Raw) -ForegroundColor Red; break }
+              Start-Sleep -Seconds 2
+          }
+          $newLines = (Get-Content $startupLog) | Select-Object -Skip $before
+          Write-Host "---- startup.log (this launch) ----"; $newLines | ForEach-Object { Write-Host $_ }
+          if (-not $ok) { throw "App did not come back healthy after the simulated update" }
+          Write-Host "Healthy again after simulated update in $([int]$sw.Elapsed.TotalSeconds)s" -ForegroundColor Green
+          $joined = $newLines -join "`n"
+          if ($joined -notmatch 'incremental update: 1 changed/new files, 0 removed') { throw "Expected an incremental update copying exactly 1 file" }
+          if ($joined -notmatch 'migrations: all applied, skipping') { throw "Expected the migration check to skip prisma migrate deploy" }
+          if (-not (Test-Path (Join-Path $runtime 'backend\dist\src\main.js'))) { throw "main.js was not restored" }
+          Write-Host "Incremental update and migration skip both verified." -ForegroundColor Green
 
       - name: Stop embedded server and app (cleanup)
         if: always()

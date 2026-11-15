@@ -53,22 +53,32 @@ internal sealed class ServerSupervisor : IDisposable
             WriteBackendEnv();
         }
 
-        Report("Running database migrations…");
-        await RunMigrationsAsync(ct);
+        if (await AllMigrationsAppliedAsync(ct))
+        {
+            // Normal start: nothing new to apply. Skipping the Prisma CLI here saves 30-60 s on every launch (it is a
+            // large Node program, and loading it is most of what "Running database migrations" used to cost).
+            LogStartup("migrations: all applied, skipping prisma migrate deploy");
+        }
+        else
+        {
+            Report("Updating the database…");
+            await RunMigrationsAsync(ct);
+        }
 
         Report("Starting server…");
         StartBackend();
-        LogStartup("backend process started, waiting for health check");
-        // Generous budget: the first start after install or update runs from a freshly copied runtime that antivirus
-        // (Windows Defender) scans file by file, which on a modest PC can take minutes. A crash is still reported at
-        // once - the wait ends as soon as the process exits (see WaitForHttpHealthAsync).
-        await WaitForHttpHealthAsync($"http://127.0.0.1:{ServerPaths.BackendPort}/api/health", TimeSpan.FromMinutes(3), _backend, "backend", ct);
+        // The web app boots in parallel: it does not need the backend to start, only to answer requests, so starting
+        // it now instead of after the backend's health check takes its whole boot time off the wait.
+        StartWeb();
+        LogStartup("backend and web processes started, waiting for health checks");
+        // Generous budget: the first start after install or update runs files that antivirus (Windows Defender) scans
+        // on first read, which on a modest PC can take minutes (backend took 2.5 min on a customer PC with 1.0.13.0,
+        // past the old limit). A crash is still reported at once - the wait ends as soon as the process exits.
+        await WaitForHttpHealthAsync($"http://127.0.0.1:{ServerPaths.BackendPort}/api/health", TimeSpan.FromMinutes(10), _backend, "backend", ct);
         LogStartup("backend health check: OK");
 
         Report("Starting the web app…");
-        StartWeb();
-        LogStartup("web process started, waiting for health check");
-        await WaitForHttpHealthAsync($"http://127.0.0.1:{ServerPaths.WebPort}/api/health", TimeSpan.FromMinutes(3), _web, "web", ct);
+        await WaitForHttpHealthAsync($"http://127.0.0.1:{ServerPaths.WebPort}/api/health", TimeSpan.FromMinutes(5), _web, "web", ct);
         LogStartup("web health check: OK");
 
         Report("Ready.");
@@ -143,40 +153,111 @@ internal sealed class ServerSupervisor : IDisposable
                 $"Delete \"{AppConfig.ConfigPath}\" and relaunch to choose again, or reinstall using a package built with -IncludeEmbeddedServer.");
         }
 
-        Report("Setting up (first launch only — this can take a minute)…");
-        if (Directory.Exists(ServerPaths.RuntimeServerDir))
+        Directory.CreateDirectory(ServerPaths.RuntimeServerDir);
+        var copyWatch = Stopwatch.StartNew();
+        if (!await TrySyncChangedFilesAsync(ct))
         {
-            for (var attempt = 0; ; attempt++)
+            Report("Setting up (first launch only — this can take a minute)…");
+            // robocopy, not a hand-rolled copy loop: this source tree is the final packaged/dereferenced output (see
+            // stage-server-assets.ps1) with no symlinks left in it. /MIR instead of delete-then-copy: files that are
+            // already identical are skipped and leftovers from an older version are removed. /MT copies many files at
+            // once (tens of thousands of small files - one at a time took almost 4 minutes on a customer PC).
+            // /NFL /NDL keep the log to a summary instead of one line per file.
+            var exitCode = await RunToolAsync(
+                "robocopy.exe",
+                $"\"{ServerPaths.InstallServerDir}\" \"{ServerPaths.RuntimeServerDir}\" /MIR /MT:16 /R:2 /W:2 /NFL /NDL /NP",
+                workingDir: ServerPaths.DataDir,
+                env: null,
+                "runtime-copy",
+                ct);
+            // robocopy's exit codes are a bitmask where 0-7 are all "success" variants - only 8+ is a real failure.
+            if (exitCode >= 8)
             {
-                try { Directory.Delete(ServerPaths.RuntimeServerDir, recursive: true); break; }
-                catch (IOException) when (attempt < 5) { await Task.Delay(1000, ct); }
-                catch (UnauthorizedAccessException) when (attempt < 5) { await Task.Delay(1000, ct); }
+                throw new InvalidOperationException($"Could not copy the embedded server runtime to a writable location (robocopy exit {exitCode}) — see {ServerPaths.ServerLogDir}\\runtime-copy.log");
             }
         }
-        Directory.CreateDirectory(ServerPaths.RuntimeServerDir);
-
-        // robocopy, not a hand-rolled copy loop: this source tree is the
-        // final packaged/dereferenced output (see stage-server-assets.ps1)
-        // with no symlinks left in it, so none of the reparse-point issues
-        // that ruled out robocopy for STAGING apply here — a plain
-        // real-file-to-real-file bulk copy is exactly what robocopy is
-        // actually good at.
-        var exitCode = await RunToolAsync(
-            "robocopy.exe",
-            $"\"{ServerPaths.InstallServerDir}\" \"{ServerPaths.RuntimeServerDir}\" /E /R:2 /W:2",
-            workingDir: ServerPaths.DataDir,
-            env: null,
-            "runtime-copy",
-            ct);
-        // robocopy's exit codes are a bitmask where 0-7 are all "success"
-        // variants (files copied / extra files present / etc.) — only 8+
-        // means a real failure.
-        if (exitCode >= 8)
-        {
-            throw new InvalidOperationException($"Could not copy the embedded server runtime to a writable location (robocopy exit {exitCode}) — see {ServerPaths.ServerLogDir}\\runtime-copy.log");
-        }
+        LogStartup($"runtime copy done in {copyWatch.Elapsed.TotalSeconds:0.0}s");
         File.WriteAllText(stamp, pkgVersion);
     }
+
+    private const string ManifestName = "runtime-manifest.tsv";
+
+    /// <summary>
+    /// Update path: the package ships runtime-manifest.tsv (path, size, sha1 of every file - written at build time by
+    /// finalize-server-payload.js). If the copy we already have has the previous version's manifest, only the files
+    /// whose hash changed are copied and files the new version no longer has are deleted - usually a few hundred
+    /// files of app code instead of the whole 800 MB runtime. Returns false when there is nothing to diff against
+    /// (first install, or a copy made by a version without a manifest); the caller then does a full copy.
+    /// </summary>
+    private async Task<bool> TrySyncChangedFilesAsync(CancellationToken ct)
+    {
+        var newManifestPath = Path.Combine(ServerPaths.InstallServerDir, ManifestName);
+        var oldManifestPath = Path.Combine(ServerPaths.RuntimeServerDir, ManifestName);
+        if (!File.Exists(newManifestPath) || !File.Exists(oldManifestPath) || !File.Exists(ServerPaths.NodeExePath)) return false;
+
+        Dictionary<string, string> newEntries, oldEntries;
+        try
+        {
+            newEntries = ReadManifest(newManifestPath);
+            oldEntries = ReadManifest(oldManifestPath);
+        }
+        catch (Exception ex)
+        {
+            LogStartup($"manifest unreadable, doing a full copy: {ex.Message}");
+            return false;
+        }
+        if (newEntries.Count == 0) return false;
+
+        var toCopy = newEntries
+            .Where(e => !oldEntries.TryGetValue(e.Key, out var oldSig) || oldSig != e.Value || !File.Exists(RuntimePath(e.Key)))
+            .Select(e => e.Key)
+            .ToList();
+        var toDelete = oldEntries.Keys.Where(k => !newEntries.ContainsKey(k)).ToList();
+        LogStartup($"incremental update: {toCopy.Count} changed/new files, {toDelete.Count} removed, {newEntries.Count - toCopy.Count} unchanged");
+
+        // Drop the old manifest first: if this is interrupted, the next start does a full copy instead of trusting a
+        // half-updated tree.
+        File.Delete(oldManifestPath);
+
+        var done = 0;
+        await Parallel.ForEachAsync(toCopy, new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = ct }, async (relPath, innerCt) =>
+        {
+            var dst = RuntimePath(relPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+            for (var attempt = 0; ; attempt++)
+            {
+                try { File.Copy(InstallPath(relPath), dst, overwrite: true); break; }
+                catch (IOException) when (attempt < 3) { await Task.Delay(500, innerCt); }
+                catch (UnauthorizedAccessException) when (attempt < 3) { await Task.Delay(500, innerCt); }
+            }
+            var n = Interlocked.Increment(ref done);
+            if (n % 500 == 0) Report($"Updating… ({n} of {toCopy.Count} files)");
+        });
+        foreach (var relPath in toDelete)
+        {
+            try { File.Delete(RuntimePath(relPath)); } catch (Exception ex) { LogStartup($"could not delete old file {relPath}: {ex.Message}"); }
+        }
+        File.Copy(newManifestPath, oldManifestPath, overwrite: true);
+        return true;
+    }
+
+    private static Dictionary<string, string> ReadManifest(string path)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in File.ReadLines(path))
+        {
+            var parts = line.Split('\t');
+            if (parts.Length != 3) continue;
+            map[parts[0]] = parts[1] + ":" + parts[2];
+        }
+        return map;
+    }
+
+    private static string RuntimePath(string relPath) =>
+        Path.Combine(ServerPaths.RuntimeServerDir, relPath.Replace('/', Path.DirectorySeparatorChar));
+
+    private static string InstallPath(string relPath) =>
+        Path.Combine(ServerPaths.InstallServerDir, relPath.Replace('/', Path.DirectorySeparatorChar));
 
     // An old runtime copy may still have its own postgres/node running from
     // a previous launch; they hold file locks that block the re-copy.
@@ -482,9 +563,68 @@ internal sealed class ServerSupervisor : IDisposable
 
     // --- Backend ------------------------------------------------------------
 
+    /// <summary>
+    /// True when every migration folder this build ships is already recorded as applied in _prisma_migrations. Asked
+    /// with psql (a native tool that answers in well under a second) instead of starting the Prisma CLI. Any doubt -
+    /// psql missing or failing, no table yet (first run), a pending or rolled-back migration - returns false, and the
+    /// real `prisma migrate deploy` runs exactly as before.
+    /// </summary>
+    private async Task<bool> AllMigrationsAppliedAsync(CancellationToken ct)
+    {
+        try
+        {
+            var migrationsDir = Path.Combine(ServerPaths.BackendWorkingDir, "prisma", "migrations");
+            var psql = Path.Combine(ServerPaths.PostgresBinDir, "psql.exe");
+            if (!Directory.Exists(migrationsDir) || !File.Exists(psql)) return false;
+            var shipped = Directory.GetDirectories(migrationsDir)
+                .Where(d => File.Exists(Path.Combine(d, "migration.sql")))
+                .Select(Path.GetFileName)
+                .ToList();
+            if (shipped.Count == 0) return false;
+
+            var (exit, stdout, _) = await WithTimeoutAsync(ct, TimeSpan.FromSeconds(20), "migration check", innerCt =>
+                RunToolCapturedAsync(
+                    psql,
+                    $"-h 127.0.0.1 -p {ServerPaths.PostgresPort} -U orderrestro -d orderrestro -X -A -t -c " +
+                    "\"select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null\"",
+                    ServerPaths.PostgresBinDir,
+                    env: null,
+                    "migration-check",
+                    innerCt));
+            if (exit != 0) return false;
+            var applied = new HashSet<string>(
+                stdout.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0), StringComparer.Ordinal);
+            var pending = shipped.Where(m => !applied.Contains(m!)).ToList();
+            if (pending.Count > 0) LogStartup($"migrations pending: {pending.Count} (first: {pending[0]})");
+            return pending.Count == 0;
+        }
+        catch (Exception ex)
+        {
+            LogStartup($"migration check failed, running migrate deploy: {ex.Message}");
+            return false;
+        }
+    }
+
+    // Node's on-disk compile cache (Node 22.1+): the second and later starts reuse the compiled bytecode of every
+    // module instead of parsing thousands of JS files again. Keyed by file content, so an update just adds entries.
+    private static void AddNodeCompileCache(Dictionary<string, string> env)
+    {
+        try
+        {
+            var dir = Path.Combine(ServerPaths.DataDir, "node-compile-cache");
+            Directory.CreateDirectory(dir);
+            env["NODE_COMPILE_CACHE"] = dir;
+        }
+        catch
+        {
+            // optional speed-up only
+        }
+    }
+
     private async Task RunMigrationsAsync(CancellationToken ct)
     {
         var env = ReadBackendEnv();
+        AddNodeCompileCache(env);
         var prismaCli = Path.Combine(ServerPaths.BackendWorkingDir, ServerPaths.BackendPrismaCliRelativePath);
         var exit = await WithTimeoutAsync(ct, TimeSpan.FromMinutes(2), "prisma migrate deploy", innerCt =>
             RunToolAsync(
@@ -503,6 +643,7 @@ internal sealed class ServerSupervisor : IDisposable
     private void StartBackend()
     {
         var env = ReadBackendEnv();
+        AddNodeCompileCache(env);
         var mainJs = Path.Combine(ServerPaths.BackendWorkingDir, ServerPaths.BackendMainJsRelativePath);
         _backend = StartLongRunning(ServerPaths.NodeExePath, $"\"{mainJs}\"", ServerPaths.BackendWorkingDir, env, "backend");
     }
@@ -516,6 +657,7 @@ internal sealed class ServerSupervisor : IDisposable
             // reach this port directly — that's the whole point.
             ["HOSTNAME"] = "0.0.0.0",
         };
+        AddNodeCompileCache(env);
         _web = StartLongRunning(ServerPaths.NodeExePath, $"\"{ServerPaths.WebServerScriptRelativePath}\"", ServerPaths.WebDir, env, "web");
     }
 
@@ -721,9 +863,9 @@ internal sealed class ServerSupervisor : IDisposable
                 lastError = ex;
             }
             var waited = (int)(DateTime.UtcNow - started).TotalSeconds;
-            if (waited >= 20 && waited % 10 < 1)
+            if (waited >= 15 && waited % 5 < 1)
             {
-                Report($"Starting the {logName}… ({waited}s - the first start after installing can take a few minutes)");
+                Report($"Starting the {logName}… ({waited}s - the first start after installing or updating takes longer)");
             }
             await Task.Delay(500, ct);
         }

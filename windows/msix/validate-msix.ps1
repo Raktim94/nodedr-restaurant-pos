@@ -216,6 +216,8 @@ try {
                 'postgres\bin\postgres.exe',
                 'postgres\bin\vcruntime140.dll',
                 'postgres\bin\msvcp140.dll',
+                'postgres\bin\psql.exe',
+                'runtime-manifest.tsv',
                 'node\node.exe',
                 'backend\dist\src\main.js',
                 'backend\node_modules\prisma\build\index.js',
