@@ -345,9 +345,14 @@ export class ProductionService {
       '',
     );
     const prefix = `PR-${day}-`;
-    const n = await tx.productionEntry.count({
+    // Highest number used that day, not a count: deleting a draft must never hand its number to a second entry
+    // (a count would, and the unique constraint would then refuse the next save).
+    const last = await tx.productionEntry.findFirst({
       where: { branchId, entryNo: { startsWith: prefix } },
+      orderBy: { entryNo: 'desc' },
+      select: { entryNo: true },
     });
+    const n = last ? Number(last.entryNo.slice(prefix.length)) || 0 : 0;
     return `${prefix}${String(n + 1).padStart(3, '0')}`;
   }
 

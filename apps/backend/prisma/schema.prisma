@@ -209,17 +209,18 @@ model Branch {
   notifications      Notification[]
   integrationApiKeys IntegrationApiKey[]
 
-  menuItemCostings  MenuItemCosting[]
-  productionEntries ProductionEntry[]
-  buzzers           Buzzer[]
-  displayTerminals  DisplayTerminal[]
-  displayAds        DisplayAd[]
-  stockTakes        StockTake[]
-  stockLocations    StockLocation[]
-  wasteEntries      WasteEntry[]
-  preparations      Preparation[]
-  productionRuns    ProductionRun[]
-  productRecipes    ProductRecipe[]
+  menuItemCostings    MenuItemCosting[]
+  productionEntries   ProductionEntry[]
+  buzzers             Buzzer[]
+  displayTerminals    DisplayTerminal[]
+  displayAds          DisplayAd[]
+  stockTakes          StockTake[]
+  stockLocations      StockLocation[]
+  wasteEntries        WasteEntry[]
+  stockJournalEntries StockJournalEntry[]
+  preparations        Preparation[]
+  productionRuns      ProductionRun[]
+  productRecipes      ProductRecipe[]
 
   @@index([restaurantId])
   @@map("branches")
@@ -759,6 +760,7 @@ model Ingredient {
   updatedAt DateTime @updatedAt
 
   productionLines    ProductionLine[]
+  stockJournalLines  StockJournalLine[]
   stockLevels        StockLevel[]
   wasteEntries       WasteEntry[]
   preparation        Preparation?
@@ -1269,6 +1271,8 @@ model StockMovement {
   // Place this quantity went into or came out of (production vouchers). Plain column, no FK. null = unassigned or
   // unknown: every movement written before this column existed stays null; history is never guessed.
   locationId        String?
+  // Stock journal entry (transfer / waste / correction) that wrote this line. Plain column, like the others.
+  journalEntryId    String?
 
   createdById String
   createdBy   User     @relation("StockMovementCreatedBy", fields: [createdById], references: [id])
@@ -1278,6 +1282,7 @@ model StockMovement {
   @@index([orderId])
   @@index([productionEntryId])
   @@index([wasteEntryId])
+  @@index([journalEntryId])
   @@index([branchId, createdAt])
   @@map("stock_movements")
 }
@@ -3625,4 +3630,78 @@ model DeliveryAssignment {
   @@index([orderId, createdAt])
   @@index([branchId, createdAt])
   @@map("delivery_assignments")
+}
+
+// ---- Stock journal entries (transfer, waste/spoilage, correction) ----------------------------------------
+// Production keeps its own voucher (ProductionEntry). These three kinds share one entry/line shape and post into the
+// same ledger as everything else: StockMovement (corrections, waste), WasteEntry (waste, so the Waste reports see it)
+// and StockLevel/LocationTransfer (transfers between places). A draft changes nothing; posting is one transaction;
+// a posted entry is never edited, only reversed.
+enum StockJournalType {
+  TRANSFER // move stock between places; the item's total does not change
+  WASTE // spoiled, expired, dropped: stock leaves and a waste record is written
+  CORRECTION // the count was wrong: stock goes up or down, reason required
+}
+
+model StockJournalEntry {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  entryNo        String // SJ-YYYYMMDD-nnn, restaurant's local date
+  type           StockJournalType
+  status         ProductionStatus @default(DRAFT)
+  occurredAt     DateTime
+  reason         String?
+  notes          String?
+  idempotencyKey String?
+
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  postedById  String?
+  postedAt    DateTime?
+  voidedById  String?
+  voidedAt    DateTime?
+  voidReason  String?
+
+  lines StockJournalLine[]
+
+  @@unique([branchId, entryNo])
+  @@unique([branchId, idempotencyKey])
+  @@index([branchId, occurredAt])
+  @@map("stock_journal_entries")
+}
+
+model StockJournalLine {
+  id           String            @id @default(cuid())
+  entryId      String
+  entry        StockJournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   Ingredient        @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  sortOrder    Int               @default(0)
+
+  // OUT = leaves stock (or leaves the "from" place for a transfer); IN = enters stock (corrections only).
+  direction       String
+  enteredQuantity Decimal        @db.Decimal(12, 3)
+  enteredUnit     IngredientUnit
+  quantity        Decimal        @db.Decimal(12, 3) // in the item's stock unit
+
+  // Places are plain columns plus the name at the time, so history survives a rename. null from = unassigned stock.
+  fromLocationId   String?
+  fromLocationName String?
+  toLocationId     String?
+  toLocationName   String?
+
+  wasteReason  WasteReason?
+  note         String?
+  // The item's weighted-average cost per stock unit when posted (the app's cost basis); display only, never posted
+  // to any account. null on drafts and for items with no cost yet.
+  unitCost     Decimal?     @db.Decimal(14, 4)
+  // WASTE: the waste record this line created when posted.
+  wasteEntryId String?
+
+  @@index([entryId])
+  @@index([ingredientId])
+  @@map("stock_journal_lines")
 }

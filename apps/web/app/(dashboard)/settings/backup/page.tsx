@@ -154,7 +154,7 @@ export default function BackupPage() {
               private cloud folder. Contains customer and sales data, so store it safely.
             </p>
           </div>
-          <Button render={<a href={LOCAL_BACKUP_URL} download />}>Download backup now</Button>
+          <Button nativeButton={false} render={<a href={LOCAL_BACKUP_URL} download />}>Download backup now</Button>
         </div>
       </Card>
 
@@ -383,7 +383,7 @@ export default function BackupPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          render={<a href={backupDownloadUrl(b.id)} />}
+                          nativeButton={false} render={<a href={backupDownloadUrl(b.id)} />}
                         >
                           Download
                         </Button>

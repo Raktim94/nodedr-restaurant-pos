@@ -19,6 +19,7 @@ import { ManufacturingService } from './manufacturing.service';
 import { StockLocationsService } from './stock-locations.service';
 import { StockJournalController } from './stock-journal.controller';
 import { StockJournalService } from './stock-journal.service';
+import { StockJournalEntriesService } from './stock-journal-entries.service';
 import { WasteEntriesService } from './waste-entries.service';
 import { WasteService } from './waste.service';
 
@@ -36,6 +37,7 @@ import { WasteService } from './waste.service';
     WasteService,
     ProductionService,
     StockJournalService,
+    StockJournalEntriesService,
     StockLocationsService,
     ManufacturingService,
     RecipesService,

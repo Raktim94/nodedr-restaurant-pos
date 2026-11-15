@@ -13,6 +13,9 @@ import { toBaseQuantity } from './units';
 
 const Dec = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
 
+/** idempotencyKey prefix of a waste entry written by a posted stock journal line (`sj:<lineId>`). */
+export const JOURNAL_KEY_PREFIX = 'sj:';
+
 export interface WasteFilters {
   from?: Date;
   to?: Date;
@@ -60,111 +63,13 @@ export class WasteEntriesService {
     }
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const ing = await tx.ingredient.findFirst({
-          where: { id: dto.ingredientId, branchId },
-        });
-        if (!ing) throw new NotFoundException('Stock item not found');
-        const entered = Dec(dto.quantity);
-        const qty = toBaseQuantity(
-          entered,
-          dto.unit,
-          ing.unit,
-          ing.conversions,
-          ing.name,
-        );
-
-        if (dto.includedInProduction) {
-          const prod = await tx.productionEntry.findFirst({
-            where: { id: dto.productionEntryId, branchId, status: 'POSTED' },
-            include: { lines: true },
-          });
-          if (!prod)
-            throw new BadRequestException(
-              'That production entry is not posted, so the loss cannot be attached to it',
-            );
-          if (!prod.lines.some((l) => l.ingredientId === ing.id)) {
-            throw new BadRequestException(
-              `${ing.name} is not part of that production entry`,
-            );
-          }
-        }
-
-        const needsApproval =
-          !dto.includedInProduction &&
-          !canApprove &&
-          ing.wasteApprovalQty != null &&
-          qty.gt(ing.wasteApprovalQty);
-
-        const entry = await tx.wasteEntry.create({
-          data: {
-            branchId,
-            kind: ing.kind === 'PREPARED' ? 'FINISHED' : 'INGREDIENT',
-            ingredientId: ing.id,
-            enteredQuantity: entered,
-            enteredUnit: dto.unit,
-            quantity: qty,
-            reason: dto.reason,
-            shift: dto.shift,
-            location: dto.location,
-            note: dto.note,
-            photoUrl: dto.photoUrl,
-            occurredAt: dto.occurredAt ?? new Date(),
-            includedInProduction: dto.includedInProduction,
-            productionEntryId: dto.includedInProduction
-              ? dto.productionEntryId
-              : null,
-            status: needsApproval ? 'PENDING_APPROVAL' : 'POSTED',
-            idempotencyKey: dto.idempotencyKey,
-            deviceId: dto.deviceId,
-            createdById: userId,
-          },
-        });
-
-        if (!dto.includedInProduction) {
-          // Stock leaves now: the food is already in the bin. A manager can still reject it later,
-          // which puts the quantity back through a reversal.
-          await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${ing.id} FOR UPDATE`;
-          const portions = await this.stock.consumeStock(
-            tx,
-            branchId,
-            ing.id,
-            qty,
-            {
-              type: 'WASTE',
-              note: dto.note ?? dto.reason,
-              userId,
-              allowNegative: false,
-              refs: { wasteEntryId: entry.id, deviceId: dto.deviceId },
-            },
-          );
-          for (const p of portions) {
-            await tx.wasteLog.create({
-              data: {
-                branchId,
-                ingredientId: ing.id,
-                batchId: p.batchId,
-                quantity: p.quantity,
-                reason: dto.reason,
-                unitCostAtWaste: p.unitCost,
-                notes: dto.note,
-                createdById: userId,
-                entryId: entry.id,
-              },
-            });
-          }
-        }
-        await this.audit.record({
+        const entry = await this.createInTx(
+          tx,
+          branchId,
           userId,
-          action: 'waste.record',
-          entity: 'WasteEntry',
-          entityId: entry.id,
-          metadata: {
-            qty: qty.toString(),
-            reason: dto.reason,
-            status: entry.status,
-            includedInProduction: dto.includedInProduction,
-          },
-        });
+          dto,
+          canApprove,
+        );
         return tx.wasteEntry.findUniqueOrThrow({
           where: { id: entry.id },
           include: INCLUDE,
@@ -189,6 +94,130 @@ export class WasteEntriesService {
       }
       throw e;
     }
+  }
+
+  /**
+   * Record one waste event inside the caller's transaction (the Waste screen, or a posted stock journal entry).
+   * `journalEntryId` links the stock movements to the journal entry that caused them.
+   */
+  async createInTx(
+    tx: Prisma.TransactionClient,
+    branchId: string,
+    userId: string,
+    dto: WasteEntryDto,
+    canApprove: boolean,
+    journalEntryId?: string,
+  ) {
+    const ing = await tx.ingredient.findFirst({
+      where: { id: dto.ingredientId, branchId },
+    });
+    if (!ing) throw new NotFoundException('Stock item not found');
+    const entered = Dec(dto.quantity);
+    const qty = toBaseQuantity(
+      entered,
+      dto.unit,
+      ing.unit,
+      ing.conversions,
+      ing.name,
+    );
+
+    if (dto.includedInProduction) {
+      const prod = await tx.productionEntry.findFirst({
+        where: { id: dto.productionEntryId, branchId, status: 'POSTED' },
+        include: { lines: true },
+      });
+      if (!prod)
+        throw new BadRequestException(
+          'That production entry is not posted, so the loss cannot be attached to it',
+        );
+      if (!prod.lines.some((l) => l.ingredientId === ing.id)) {
+        throw new BadRequestException(
+          `${ing.name} is not part of that production entry`,
+        );
+      }
+    }
+
+    const needsApproval =
+      !dto.includedInProduction &&
+      !canApprove &&
+      ing.wasteApprovalQty != null &&
+      qty.gt(ing.wasteApprovalQty);
+
+    const entry = await tx.wasteEntry.create({
+      data: {
+        branchId,
+        kind: ing.kind === 'PREPARED' ? 'FINISHED' : 'INGREDIENT',
+        ingredientId: ing.id,
+        enteredQuantity: entered,
+        enteredUnit: dto.unit,
+        quantity: qty,
+        reason: dto.reason,
+        shift: dto.shift,
+        location: dto.location,
+        note: dto.note,
+        photoUrl: dto.photoUrl,
+        occurredAt: dto.occurredAt ?? new Date(),
+        includedInProduction: dto.includedInProduction,
+        productionEntryId: dto.includedInProduction
+          ? dto.productionEntryId
+          : null,
+        status: needsApproval ? 'PENDING_APPROVAL' : 'POSTED',
+        idempotencyKey: dto.idempotencyKey,
+        deviceId: dto.deviceId,
+        createdById: userId,
+      },
+    });
+
+    if (!dto.includedInProduction) {
+      // Stock leaves now: the food is already in the bin. A manager can still reject it later,
+      // which puts the quantity back through a reversal.
+      await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${ing.id} FOR UPDATE`;
+      const portions = await this.stock.consumeStock(
+        tx,
+        branchId,
+        ing.id,
+        qty,
+        {
+          type: 'WASTE',
+          note: dto.note ?? dto.reason,
+          userId,
+          allowNegative: false,
+          refs: {
+            wasteEntryId: entry.id,
+            deviceId: dto.deviceId,
+            journalEntryId,
+          },
+        },
+      );
+      for (const p of portions) {
+        await tx.wasteLog.create({
+          data: {
+            branchId,
+            ingredientId: ing.id,
+            batchId: p.batchId,
+            quantity: p.quantity,
+            reason: dto.reason,
+            unitCostAtWaste: p.unitCost,
+            notes: dto.note,
+            createdById: userId,
+            entryId: entry.id,
+          },
+        });
+      }
+    }
+    await this.audit.record({
+      userId,
+      action: 'waste.record',
+      entity: 'WasteEntry',
+      entityId: entry.id,
+      metadata: {
+        qty: qty.toString(),
+        reason: dto.reason,
+        status: entry.status,
+        includedInProduction: dto.includedInProduction,
+      },
+    });
+    return entry;
   }
 
   async approve(branchId: string, userId: string, id: string, note?: string) {
@@ -227,6 +256,16 @@ export class WasteEntriesService {
   }
 
   async reverse(branchId: string, userId: string, id: string, reason: string) {
+    const e = await this.prisma.wasteEntry.findFirst({
+      where: { id, branchId },
+      select: { idempotencyKey: true },
+    });
+    if (e?.idempotencyKey?.startsWith(JOURNAL_KEY_PREFIX)) {
+      // Posted by a stock journal entry: reverse the whole entry there, so the journal and the waste record agree.
+      throw new BadRequestException(
+        'This waste was recorded by a stock journal entry. Reverse that entry under Inventory > Stock journal instead.',
+      );
+    }
     return this.reverseWith(branchId, userId, id, reason, 'REVERSED');
   }
 
@@ -237,7 +276,23 @@ export class WasteEntriesService {
     reason: string,
     to: 'REVERSED' | 'REJECTED',
   ) {
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction((tx) =>
+      this.reverseInTx(tx, branchId, userId, id, reason, to),
+    );
+    return this.get(branchId, id);
+  }
+
+  /** Put a waste entry's stock back inside the caller's transaction. Returns false when it was already reversed. */
+  async reverseInTx(
+    tx: Prisma.TransactionClient,
+    branchId: string,
+    userId: string,
+    id: string,
+    reason: string,
+    to: 'REVERSED' | 'REJECTED',
+    opts: { allowAlreadyReversed?: boolean; journalEntryId?: string } = {},
+  ): Promise<boolean> {
+    {
       const claimed = await tx.wasteEntry.updateMany({
         where: { id, branchId, status: { in: ['POSTED', 'PENDING_APPROVAL'] } },
         data: {
@@ -247,10 +302,12 @@ export class WasteEntriesService {
           reverseReason: reason,
         },
       });
-      if (claimed.count === 0)
+      if (claimed.count === 0) {
+        if (opts.allowAlreadyReversed) return false;
         throw new BadRequestException(
           'This entry is already reversed or rejected',
         );
+      }
       const moves = await tx.stockMovement.findMany({
         where: { wasteEntryId: id, branchId, type: 'WASTE' },
       });
@@ -283,6 +340,8 @@ export class WasteEntriesService {
             note: `Reversal of waste: ${reason}`,
             createdById: userId,
             wasteEntryId: id,
+            locationId: m.locationId,
+            journalEntryId: opts.journalEntryId ?? m.journalEntryId,
           },
         });
         await tx.ingredient.update({
@@ -297,8 +356,8 @@ export class WasteEntriesService {
         entityId: id,
         metadata: { reason },
       });
-    });
-    return this.get(branchId, id);
+    }
+    return true;
   }
 
   async get(branchId: string, id: string) {

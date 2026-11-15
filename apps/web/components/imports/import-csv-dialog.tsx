@@ -138,10 +138,10 @@ export function ImportCsvDialog({ kind, branchId }: { kind: ImportKind; branchId
             <p className="text-xs text-muted-foreground">{copy.key}</p>
 
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" render={<a href={templateUrl(kind, true)} download />}>
+              <Button variant="outline" size="sm" nativeButton={false} render={<a href={templateUrl(kind, true)} download />}>
                 <FileSpreadsheet className="h-3.5 w-3.5" /> Download example file
               </Button>
-              <Button variant="ghost" size="sm" render={<a href={templateUrl(kind, false)} download />}>
+              <Button variant="ghost" size="sm" nativeButton={false} render={<a href={templateUrl(kind, false)} download />}>
                 Blank template
               </Button>
             </div>

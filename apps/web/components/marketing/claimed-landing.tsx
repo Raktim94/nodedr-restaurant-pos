@@ -18,10 +18,10 @@ export function ClaimedLanding() {
         This instance is already set up. Sign in to your dashboard, or check the docs.
       </p>
       <div className="mt-8 flex items-center gap-3">
-        <Button size="lg" render={<Link href="/login" />}>
+        <Button size="lg" nativeButton={false} render={<Link href="/login" />}>
           Sign in
         </Button>
-        <Button variant="outline" size="lg" render={<Link href="/docs" />}>
+        <Button variant="outline" size="lg" nativeButton={false} render={<Link href="/docs" />}>
           View documentation
         </Button>
       </div>

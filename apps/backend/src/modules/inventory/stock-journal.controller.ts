@@ -39,6 +39,11 @@ import {
   productRecipeSchema,
   type ProductRecipeDto,
   reasonSchema,
+  stockJournalEntrySchema,
+  stockJournalDraftSchema,
+  type StockJournalEntryDto,
+  type StockJournalDraftDto,
+  type StockJournalType,
   wasteEntrySchema,
   type CorrectProductionDto,
   type ProductionEntryDto,
@@ -57,6 +62,10 @@ import {
   type ProductionFilters,
 } from './production.service';
 import { StockJournalService } from './stock-journal.service';
+import {
+  StockJournalEntriesService,
+  type JournalKind,
+} from './stock-journal-entries.service';
 import { ManufacturingService } from './manufacturing.service';
 import { RecipesService } from './recipes.service';
 import {
@@ -129,6 +138,7 @@ export class StockJournalController {
     private readonly recipes: RecipesService,
     private readonly prodReports: ProductionReportsService,
     private readonly prisma: PrismaService,
+    private readonly entries: StockJournalEntriesService,
     private readonly branchAccess: BranchAccessService,
   ) {}
 
@@ -138,6 +148,169 @@ export class StockJournalController {
 
   private opts(u: SessionUser) {
     return { canPrice: permissionSatisfied(u.permissions, 'menu.price') };
+  }
+
+  // ---- stock journal entries: transfer, waste, correction (production has its own routes) ----------------
+
+  /** Waste is a kitchen job (production.record); moving stock between places and correcting counts need inventory.manage. */
+  private assertKind(u: SessionUser, type: StockJournalType) {
+    const need = type === 'WASTE' ? 'production.record' : 'inventory.manage';
+    if (!permissionSatisfied(u.permissions, need))
+      throw new ForbiddenException(
+        type === 'WASTE'
+          ? 'Recording waste needs the production permission.'
+          : 'Transfers and stock corrections need the manage inventory permission.',
+      );
+  }
+
+  private caller(u: SessionUser) {
+    return {
+      canApproveWaste: permissionSatisfied(u.permissions, 'production.void'),
+    };
+  }
+
+  private async entryType(branchId: string, id: string) {
+    const e = await this.prisma.stockJournalEntry.findFirst({
+      where: { id, branchId },
+      select: { type: true },
+    });
+    if (!e) throw new BadRequestException('Stock journal entry not found');
+    return e.type;
+  }
+
+  @Auth('production.record')
+  @Get('journal/entries')
+  async listEntries(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Query() q: Record<string, string>,
+  ) {
+    await this.access(u, branchId);
+    const kinds: JournalKind[] = ['PRODUCTION', 'WASTE'];
+    if (permissionSatisfied(u.permissions, 'inventory.manage'))
+      kinds.push('TRANSFER', 'CORRECTION');
+    const rows = await this.entries.list(branchId, {
+      q: q.q?.slice(0, 80) || undefined,
+      type: (['PRODUCTION', 'TRANSFER', 'WASTE', 'CORRECTION'] as const).find(
+        (t) => t === q.type,
+      ),
+      status: (['DRAFT', 'POSTED', 'VOIDED'] as const).find(
+        (t) => t === q.status,
+      ),
+      from: date(q.from),
+      to: date(q.to),
+      locationId: q.locationId || undefined,
+      sort: q.sort === 'ref' ? 'ref' : 'date',
+      dir: q.dir === 'asc' ? 'asc' : 'desc',
+      includeProduction: true,
+      kinds,
+    });
+    // Values come from average costs: only for people who may see production costs.
+    return permissionSatisfied(u.permissions, 'production.report')
+      ? rows
+      : rows.map((r) => ({ ...r, value: null }));
+  }
+
+  private hideCost<
+    T extends {
+      value: string | null;
+      lines: { value: string | null; unitCost: unknown }[];
+    },
+  >(u: SessionUser, e: T): T {
+    if (permissionSatisfied(u.permissions, 'production.report')) return e;
+    return {
+      ...e,
+      value: null,
+      lines: e.lines.map((l) => ({ ...l, value: null, unitCost: null })),
+    };
+  }
+
+  @Auth('production.record')
+  @Post('journal/entries')
+  async createEntry(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Body(new ZodValidationPipe(stockJournalEntrySchema))
+    body: StockJournalEntryDto,
+  ) {
+    await this.access(u, branchId);
+    this.assertKind(u, body.type);
+    return this.hideCost(
+      u,
+      await this.entries.create(branchId, u.id, body, this.caller(u)),
+    );
+  }
+
+  @Auth('production.record')
+  @Get('journal/entries/:id')
+  async getEntry(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.access(u, branchId);
+    this.assertKind(u, await this.entryType(branchId, id));
+    return this.hideCost(u, await this.entries.get(branchId, id));
+  }
+
+  @Auth('production.record')
+  @Patch('journal/entries/:id')
+  async updateEntry(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(stockJournalDraftSchema))
+    body: StockJournalDraftDto,
+  ) {
+    await this.access(u, branchId);
+    this.assertKind(u, await this.entryType(branchId, id));
+    return this.hideCost(
+      u,
+      await this.entries.updateDraft(branchId, u.id, id, body),
+    );
+  }
+
+  @Auth('production.record')
+  @Delete('journal/entries/:id')
+  async deleteEntry(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.access(u, branchId);
+    this.assertKind(u, await this.entryType(branchId, id));
+    return this.entries.deleteDraft(branchId, u.id, id);
+  }
+
+  @Auth('production.record')
+  @Post('journal/entries/:id/post')
+  async postEntry(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+  ) {
+    await this.access(u, branchId);
+    this.assertKind(u, await this.entryType(branchId, id));
+    return this.hideCost(
+      u,
+      await this.entries.post(branchId, u.id, id, this.caller(u)),
+    );
+  }
+
+  @Auth('production.void')
+  @Post('journal/entries/:id/void')
+  async voidEntry(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body(reason) body: { reason: string },
+  ) {
+    await this.access(u, branchId);
+    this.assertKind(u, await this.entryType(branchId, id));
+    return this.hideCost(
+      u,
+      await this.entries.void(branchId, u.id, id, body.reason),
+    );
   }
 
   // ---- stock journal (the ledger) ------------------------------------------------------------
@@ -223,7 +396,7 @@ export class StockJournalController {
 
   // ---- places stock is kept in -------------------------------------------------------------
 
-  @Auth('inventory.manage')
+  @Auth('production.record') // place names only: cooks pick a place on vouchers and waste
   @Get('locations')
   async listLocations(
     @CurrentUser() u: SessionUser,
@@ -391,11 +564,15 @@ export class StockJournalController {
         category: true,
         currentStock: true,
         conversions: true,
+        costPerUnit: true,
       },
     });
-    return rows.map((r) => ({
+    // The average cost is shown (for the journal's value preview) only to people who may see production costs.
+    const showCost = permissionSatisfied(u.permissions, 'production.report');
+    return rows.map(({ costPerUnit, ...r }) => ({
       ...r,
       units: allowedUnits(r.unit, r.conversions),
+      ...(showCost ? { costPerUnit: costPerUnit.toString() } : {}),
     }));
   }
 

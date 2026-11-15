@@ -1,6 +1,6 @@
 "use client";
 
-import type { IngredientUnit, ProductionEntryDto, WasteEntryDto, WasteReason } from "@nodedr-restaurant/types";
+import type { IngredientUnit, ProductionEntryDto, StockJournalDraftDto, StockJournalEntryDto, StockJournalType, WasteEntryDto, WasteReason } from "@nodedr-restaurant/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -12,6 +12,8 @@ export interface StockItem {
   category: string | null;
   currentStock: string;
   units: IngredientUnit[];
+  /** Weighted-average cost per stock unit; only sent to people who may see production costs. */
+  costPerUnit?: string;
 }
 
 export interface ProductionLine {
@@ -144,7 +146,7 @@ export const useSuggestions = (branchId: string | null, productId: string) =>
 function useRefresh() {
   const qc = useQueryClient();
   return () => {
-    for (const k of ["production", "production-report", "stock-items", "journal", "ingredients", "waste-entries", "waste-report", "expiring", "reorder"]) {
+    for (const k of ["production", "production-report", "stock-items", "journal", "journal-entries", "journal-entry", "ingredients", "waste-entries", "waste-report", "expiring", "reorder", "places", "places-list", "place-transfers"]) {
       void qc.invalidateQueries({ queryKey: [k] });
     }
   };
@@ -282,3 +284,121 @@ export const useStockSummary = (branchId: string | null, filters: Record<string,
     queryFn: () => api.get<{ note: string; rows: StockSummaryRow[] }>(`/inventory/journal/summary?${qs(branchId, filters)}`),
     enabled: !!branchId,
   });
+
+// ---- Stock journal entries: one list for every kind; transfer / waste / correction have their own form ----------
+
+export type JournalKind = "PRODUCTION" | StockJournalType;
+export type JournalStatus = "DRAFT" | "POSTED" | "VOIDED";
+
+export interface JournalRowLine { name: string; quantity: string; unit: string; place: string | null }
+export interface JournalRow {
+  id: string;
+  kind: JournalKind;
+  entryNo: string;
+  status: JournalStatus;
+  date: string;
+  reason: string | null;
+  out: JournalRowLine[];
+  in: JournalRowLine[];
+  places: string[];
+  value: string | null;
+  createdBy: string | null;
+  postedBy: string | null;
+  postedAt: string | null;
+}
+
+export interface JournalEntryLine {
+  id: string;
+  ingredientId: string;
+  direction: "OUT" | "IN";
+  enteredQuantity: string;
+  enteredUnit: IngredientUnit;
+  quantity: string;
+  fromLocationId: string | null;
+  fromLocationName: string | null;
+  toLocationId: string | null;
+  toLocationName: string | null;
+  wasteReason: WasteReason | null;
+  note: string | null;
+  unitCost: string | null;
+  value: string | null;
+  wasteStatus: WasteEntry["status"] | null;
+  ingredient: { id: string; name: string; unit: IngredientUnit; kind: "PURCHASED" | "PREPARED" };
+}
+
+export interface JournalEntry {
+  id: string;
+  kind: StockJournalType;
+  type: StockJournalType;
+  entryNo: string;
+  status: JournalStatus;
+  occurredAt: string;
+  reason: string | null;
+  notes: string | null;
+  value: string | null;
+  createdAt: string;
+  createdByName: string | null;
+  postedAt: string | null;
+  postedByName: string | null;
+  voidedAt: string | null;
+  voidedByName: string | null;
+  voidReason: string | null;
+  lines: JournalEntryLine[];
+}
+
+export const useJournalEntries = (branchId: string | null, filters: Record<string, string | undefined>) =>
+  useQuery({
+    queryKey: ["journal-entries", branchId, filters],
+    queryFn: () => api.get<JournalRow[]>(`/inventory/journal/entries?${qs(branchId, filters)}`),
+    enabled: !!branchId,
+    placeholderData: (prev) => prev,
+  });
+
+export const useJournalEntry = (branchId: string | null, id: string | null) =>
+  useQuery({
+    queryKey: ["journal-entry", branchId, id],
+    queryFn: () => api.get<JournalEntry>(`/inventory/journal/entries/${id}?${qs(branchId)}`),
+    enabled: !!branchId && !!id,
+  });
+
+export const useProductionEntry = (branchId: string | null, id: string | null) =>
+  useQuery({
+    queryKey: ["production", branchId, "one", id],
+    queryFn: () => api.get<ProductionEntryFull>(`/inventory/production/${id}?${qs(branchId)}`),
+    enabled: !!branchId && !!id,
+  });
+
+export interface ProductionEntryFull extends ProductionEntry {
+  createdAt: string;
+  postedAt: string | null;
+  voidedAt: string | null;
+  totalCost: string | null;
+  lines: (ProductionLine & { locationName: string | null; rejectedQuantity: string; lineCost: string | null })[];
+}
+
+export function useJournalEntryActions(branchId: string | null) {
+  const refresh = useRefresh();
+  const base = `/inventory/journal/entries`;
+  return {
+    create: useMutation({
+      mutationFn: (body: StockJournalEntryDto) => api.post<JournalEntry>(`${base}?${qs(branchId)}`, body),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: (v: { id: string; body: StockJournalDraftDto }) => api.patch<JournalEntry>(`${base}/${v.id}?${qs(branchId)}`, v.body),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => api.delete(`${base}/${id}?${qs(branchId)}`),
+      onSuccess: refresh,
+    }),
+    post: useMutation({
+      mutationFn: (id: string) => api.post<JournalEntry>(`${base}/${id}/post?${qs(branchId)}`, {}),
+      onSuccess: refresh,
+    }),
+    void: useMutation({
+      mutationFn: (v: { id: string; reason: string }) => api.post<JournalEntry>(`${base}/${v.id}/void?${qs(branchId)}`, { reason: v.reason }),
+      onSuccess: refresh,
+    }),
+  };
+}

@@ -197,3 +197,32 @@ stock again, and repeated runs against one PO each get their own voucher number.
 
 **Migration** `20261118000000_manufacturing_journal_v2` is additive (new nullable columns, a column with a zero default, two new
 tables); nothing is dropped or rewritten, and every earlier voucher reads exactly as before.
+
+## One stock journal for every kind of entry (after 1.35.0)
+
+`Inventory > Stock journal` now opens on **Journal**: every entry in one list, whatever kind it is.
+**New stock journal** asks what happened first, because each kind moves stock differently:
+
+| Kind | What it does to stock | Who |
+|---|---|---|
+| **Stock transfer** | Moves quantity from one place to another (or from "not yet placed" into a place). The item's total never changes. A destination is required and must differ from the source. Writes the same place levels and `location_transfers` history as Areas > Move stock. | `inventory.manage` |
+| **Production or preparation** | The existing voucher: ingredients consumed, products made, in one transaction. Now also has **Save draft**. | `production.record` to draft, `production.post` to post |
+| **Waste or spoilage** | Stock leaves, and each row becomes a real waste record (`waste_entries`, key `sj:<lineId>`), so the Waste reports, costs and large-waste approval all include it. A reason per row is required; "Other" needs a note. | `production.record` |
+| **Stock correction** | Each row either **removes** or **adds** the difference, as an `ADJUSTMENT` movement. A reason is required. Adding uses a zero-cost batch and leaves the average cost alone, exactly like Adjust stock > Add. | `inventory.manage` |
+
+The form for transfer, waste and correction has three parts: details (date and time, reference given when saved, reason), items (searchable item picker, quantity, unit, places, reason/note) and a **review** that lists what leaves stock, what enters it, the places affected, the value at average cost (only for people with `production.report`, and only when every item has a cost) and any shortage. A shortage blocks posting. **Save draft** changes nothing; **Post journal** asks for confirmation and then updates stock.
+
+**Rules**
+
+* Tables `stock_journal_entries` / `stock_journal_lines` (migration `20261120000000_stock_journal_entries`, additive; also adds `stock_movements.journalEntryId`). Numbers `SJ-YYYYMMDD-nnn` on the restaurant's local date.
+* Posting claims the draft with a conditional update, locks every item in a fixed order and makes every change in one transaction. A second post is refused (409) and changes nothing. A retried create with the same `idempotencyKey` returns the first entry.
+* Posted entries are never edited. **Reverse** (`production.void`, reason required) puts every change back and keeps the entry as *Reversed*. A transfer cannot be reversed once the destination no longer holds the quantity; a correction that added stock cannot be reversed once that stock was used.
+* A waste record written by a journal entry cannot be reversed from the Waste page (reverse the entry instead). A manager can still reject it there; the journal then shows that row's waste record as rejected.
+* Quantities: more than zero, up to 3 decimals, units converted exactly as elsewhere. Stock and places never go below zero.
+* Entry numbers (stock journal and production) now take the highest number used that day instead of counting rows, so deleting a draft can no longer make the next save collide with an existing number.
+
+**List**: search by reference (SJ-…, PR-…, batch ref) or item name; filter by date range, kind, status (Draft / Posted / Reversed) and place; sort by date or reference. Click a row for the full movement, the audit trail (created / posted / reversed, by whom and when) and the actions that apply (post, edit or delete a draft; reverse; correct for production).
+
+**API** (`/api/v1/inventory`, `?branchId=`): `GET|POST journal/entries`, `GET|PATCH|DELETE journal/entries/:id`, `POST journal/entries/:id/post`, `POST journal/entries/:id/void`. `GET journal/entries` merges production entries in, filtered by `q`, `type`, `status`, `from`, `to`, `locationId`, `sort=date|ref`, `dir=asc|desc` (300 rows max).
+
+**Not built**: offline queueing of these three kinds on the phone app (the web form needs the server; the idempotency key protects retries). Export/print of the merged list: the existing CSV exports (Stock movements, Production, Waste) still cover the same data.

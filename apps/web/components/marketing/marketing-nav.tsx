@@ -46,10 +46,10 @@ export function MarketingNav() {
             <Github className="size-4" />
             GitHub
           </a>
-          <Button variant="ghost" size="default" render={<Link href="/login" />}>
+          <Button variant="ghost" size="default" nativeButton={false} render={<Link href="/login" />}>
             Sign in
           </Button>
-          <Button variant="default" size="default" render={<Link href="/signup" />}>
+          <Button variant="default" size="default" nativeButton={false} render={<Link href="/signup" />}>
             Get started free
           </Button>
         </div>
@@ -79,10 +79,10 @@ export function MarketingNav() {
               </a>
             ))}
             <div className="mt-2 flex flex-col gap-2">
-              <Button variant="outline" render={<Link href="/login" />}>
+              <Button variant="outline" nativeButton={false} render={<Link href="/login" />}>
                 Sign in
               </Button>
-              <Button variant="default" render={<Link href="/signup" />}>
+              <Button variant="default" nativeButton={false} render={<Link href="/signup" />}>
                 Get started free
               </Button>
             </div>

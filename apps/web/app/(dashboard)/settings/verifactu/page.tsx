@@ -212,7 +212,7 @@ function Records({ branchId, s }: { branchId: string; s: VerifactuSettings }) {
           >
             Send now
           </Button>
-          <Button variant="outline" size="sm" render={<a href={`/api/v1/verifactu/export.xml?branchId=${encodeURIComponent(branchId)}`} />}>
+          <Button variant="outline" size="sm" nativeButton={false} render={<a href={`/api/v1/verifactu/export.xml?branchId=${encodeURIComponent(branchId)}`} />}>
             Export XML
           </Button>
         </div>

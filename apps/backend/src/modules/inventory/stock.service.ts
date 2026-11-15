@@ -16,6 +16,7 @@ export interface MovementRefs {
   productionEntryId?: string;
   wasteEntryId?: string;
   deviceId?: string;
+  journalEntryId?: string;
 }
 
 export interface StockConsumptionPortion {

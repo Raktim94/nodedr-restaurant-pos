@@ -33,7 +33,7 @@ export interface VoucherContext { productId?: string; batchRef?: string; narrati
  * Destination / Production on the right, side by side from lg and stacked (source first) below it. Every number in the
  * review step is worked out by the server and frozen when posted; the menu selling price is never touched here.
  */
-export function StockJournalVoucher({ branchId, open, onOpenChange, productId, context, inline }: { branchId: string | null; open: boolean; onOpenChange: (o: boolean) => void; productId?: string; context?: VoucherContext; inline?: boolean }) {
+export function StockJournalVoucher({ branchId, open, onOpenChange, productId, context, inline, onSaved }: { branchId: string | null; open: boolean; onOpenChange: (o: boolean) => void; productId?: string; context?: VoucherContext; inline?: boolean; /** Told what was saved, so the page can confirm it (success toasts are off app-wide). */ onSaved?: (r: { id: string; entryNo: string; posted: boolean }) => void }) {
   productId = productId ?? context?.productId;
   const { data: items } = useStockItems(branchId);
   const { data: places } = usePlaces(branchId);
@@ -160,14 +160,26 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   };
 
   const finish = (id: string, no: string) => {
-    const done = () => { toast.success(`Voucher ${no} posted`); onOpenChange(false); };
-    if (qResult && settings?.canQuality) quality.mutate({ id, result: qResult, grade: qGrade || undefined, notes: qNotes || undefined }, { onSuccess: done, onError: () => { toast.error(`Voucher ${no} posted, but the quality result was not saved. Record it from the reports page.`); onOpenChange(false); } });
+    const done = () => { onSaved?.({ id, entryNo: no, posted: true }); onOpenChange(false); };
+    if (qResult && settings?.canQuality) quality.mutate({ id, result: qResult, grade: qGrade || undefined, notes: qNotes || undefined }, { onSuccess: done, onError: () => { toast.error(`Voucher ${no} posted, but the quality result was not saved. Record it from the reports page.`); done(); } });
     else done();
   };
   const submit = () => {
     setError(null);
     if (!key.current) key.current = `sjv-${crypto.randomUUID()}`;
     save.mutate({ ...details(), ...lines(), ...extras(), ...(costed ? { costing } : {}), idempotencyKey: key.current, post: true } as never, { onSuccess: (r) => finish(r.id, r.entryNo), onError: fail });
+  };
+  // A draft changes no stock; it shows in the journal list, where it can be posted or deleted later.
+  const draftKey = useRef("");
+  const saveDraft = () => {
+    const p = problem();
+    if (p) return setError(p);
+    setError(null);
+    if (!draftKey.current) draftKey.current = `sjd-${crypto.randomUUID()}`;
+    save.mutate({ ...details(), ...lines(), ...extras(), ...(costed ? { costing } : {}), idempotencyKey: draftKey.current, post: false } as never, {
+      onSuccess: (r) => { onSaved?.({ id: r.id, entryNo: r.entryNo, posted: false }); onOpenChange(false); },
+      onError: fail,
+    });
   };
 
   const item = (r: In | Out) => byId.get(r.ingredientId);
@@ -328,9 +340,9 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
 
         <div className="flex items-center justify-between gap-2 border-t border-border bg-background px-4 py-3">
           {!review ? (
-            <><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{cancelText}</Button><Button type="button" onClick={goReview} disabled={busy}>{busy ? "Checking…" : "Review voucher"}</Button></>
+            <><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{cancelText}</Button><div className="flex gap-2"><Button type="button" variant="outline" onClick={saveDraft} disabled={busy}>Save draft</Button><Button type="button" onClick={goReview} disabled={busy}>{busy ? "Checking…" : "Review voucher"}</Button></div></>
           ) : (
-            <><Button type="button" variant="outline" onClick={() => { setReview(null); setError(null); }}>Back</Button><Button type="button" onClick={submit} disabled={busy || !review.canPost}>{busy ? "Posting…" : "Post voucher"}</Button></>
+            <><Button type="button" variant="outline" onClick={() => { setReview(null); setError(null); }}>Back</Button><div className="flex gap-2"><Button type="button" variant="outline" onClick={saveDraft} disabled={busy}>Save draft</Button><Button type="button" onClick={submit} disabled={busy || !review.canPost}>{busy ? "Posting…" : "Post voucher"}</Button></div></>
           )}
         </div>
     </>
@@ -345,8 +357,8 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
         </div>
         <div className="flex flex-wrap items-center gap-3 px-3 py-2">
           <span className="rounded-sm bg-[#2f5fa7] px-3 py-0.5 text-sm font-semibold text-white">Stock Journal</span>
-          <span className="text-sm">No. <b>{review ? "ready to post" : "assigned on posting"}</b></span>
-          <span className="mx-auto text-sm font-semibold underline underline-offset-4">Manufacturing / Transfer of Materials</span>
+          <span className="text-sm">No. <b>given when saved</b></span>
+          <span className="mx-auto text-sm font-semibold underline underline-offset-4">Manufacturing: materials used, products made</span>
           <span className="text-xs text-muted-foreground">Nothing changes in stock until you post</span>
         </div>
         <div className="flex min-h-0 flex-1 flex-col bg-background">{inner}</div>
@@ -358,7 +370,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[100dvh] max-h-[100dvh] w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[96vw] sm:rounded-xl xl:max-w-[88rem]">
         <DialogHeader className="border-b border-border px-4 py-3">
-          <DialogTitle>Stock journal voucher <span className="ml-2 text-sm font-normal text-muted-foreground">Manufacturing · {review ? "ready to post" : "draft, nothing posted yet"} · number assigned on posting</span></DialogTitle>
+          <DialogTitle>Stock journal voucher <span className="ml-2 text-sm font-normal text-muted-foreground">Manufacturing · {review ? "ready to post" : "nothing posted yet"} · number given when saved</span></DialogTitle>
           <DialogDescription>
             Materials consumed on the left, products made on the right. Nothing changes in stock until you post.
             {context?.poNumber ? ` Started from ${context.poNumber}${context.supplier ? ` (${context.supplier})` : ""}; the purchase order is only a reference and never receives stock again.` : ""}
