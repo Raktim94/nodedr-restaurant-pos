@@ -12,7 +12,7 @@
 
 ## Full description
 
-OrderRestro is a free restaurant point of sale for your phone. Start on the phone with no server and no internet: add your dishes and tables, take orders, print bills and kitchen tickets, and close the day. When you grow, connect the restaurant's own OrderRestro server (open source, hosted by you) and the same app becomes the staff and rider app for it.
+OrderRestro is a restaurant point of sale for your phone. Start on the phone with no server and no internet: add your dishes and tables, take orders, print bills and kitchen tickets, and close the day. When you grow, connect the restaurant's own OrderRestro server (open source, hosted by you) and the same app becomes the staff and rider app for it.
 
 Billing on the phone
 - Menu with categories, tax, half portions, add-ons and barcodes (camera or a USB/Bluetooth scanner)
@@ -48,7 +48,7 @@ For waiters, cashiers and managers on a server
 
 Works on the restaurant's own network, with no internet needed day to day. Your data stays on your phone or your restaurant's server.
 
-Free. No ads. No tracking. Delete your account any time.
+No ads. No tracking. Delete your account any time.
 
 ## What's new (1.38.0)
 - Half portions, add-ons and barcode scanning
