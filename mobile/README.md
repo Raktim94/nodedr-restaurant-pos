@@ -35,7 +35,15 @@ Without a server the phone keeps its own account, menu and sales (`www/pos/`). I
 - **Kitchen screen** for this phone: New, Preparing, Ready, Served, with minutes waiting.
 - **Today** report on the Sales tab (sales, cash/UPI/card, tax, discounts, top dishes, cancelled orders).
 
-Open orders, tables and kitchen tickets are on that phone only; only paid sales go to the server (item notes travel in the sale note). A shared kitchen display and shared tables across phones need the server's own web app.
+Open orders, tables and kitchen tickets are on that phone only. A shared kitchen display and shared tables across phones need the server: run it on a restaurant computer (the Windows app's "main computer" mode, or Docker) and point every phone at its local address. That works with no internet, only the restaurant WiFi.
+
+### Selling (1.38)
+
+- **Half portions and add-ons**: dishes with a half price or option groups open an options sheet (required groups, min/max). Each dish + portion + add-ons combination is its own line, priced from the menu, and reaches the server as the same modifiers and portion (`apps/backend/src/standalone/offline-lines.ts`). Only combos still need the full app.
+- **Barcodes**: type or scan a barcode/SKU in the search box and press Enter (USB and Bluetooth scanners work as keyboards), or tap Scan to use the camera.
+- **Customer and pay later**: name and phone on the bill; with a phone number the rest can be left owed. Sales > Money owed lists who owes what; Collect payment records it (part or all, change for cash). On the server the order stays open with its balance until paid.
+- **Voluntary service charge**: set a % under Sync > Shop settings. It is never added by itself: the cashier ticks it only when the guest agrees (India's CCPA guidelines do not allow a compulsory one). It is not taxed and reaches the server as a tip.
+- **Staff PINs**: Sync > Shop settings > Staff & PINs. Each person switches in with a 4-8 digit PIN (salted PBKDF2 hash, never leaves the phone; 5 wrong tries lock the pad, doubling). Every bill records who took it (the server books it to that person). Discounts, refunds, pay later, cancelling dishes the kitchen has, expenses deleted, closing the day, menu changes and restoring a backup need a manager's PIN. Optional idle lock. Server-linked phones list the server's staff; a phone account adds its own people.
 
 Tests: `node --test www/pos/lib/*.test.mjs`.
 
@@ -43,13 +51,14 @@ Tests: `node --test www/pos/lib/*.test.mjs`.
 
 With no server the app opens its own POS (`www/pos/`): menu, selling, tables and held orders, kitchen tickets and the kitchen screen, Bluetooth and PDF printing, and sync to a server later. Everything is kept in the phone's IndexedDB (`lib/store.js`).
 
-Books (`lib/books.js`, unit tested in `lib/books.test.mjs`), all kept on the phone and never sent to a server:
+Books (`lib/books.js`, unit tested in `lib/books.test.mjs`). On a phone account they stay on the phone. On a server-linked phone, refunds (money only), expenses, money collected on owed bills and the phone's own day-end cash count are also sent to the server through the event queue (`lib/journal.js`, each with its own id so a resend is harmless; a refund or collection waits until its sale is on the server). The cash counts appear in the web app under Accounting > Cash close > Phone tills.
 
 - **Refunds** on a sale, by dish and quantity. The sale total (after any discount) is shared across lines by tax-inclusive price; the last refund takes exactly what is left, so the total refunded never exceeds what was paid.
 - **Expenses**, from the cash drawer or other.
 - **Close the day**: opening cash + cash sales - cash refunds - cash expenses = expected cash, compared with the cash counted.
 - **Reports** for today, 7 and 30 days.
 - **Stock**: an optional count per dish; counted dishes count down with each sale and switch off at 0. "Sold out" can also be set by hand.
+- **Automatic backup**: once a day (and after closing the day) the whole phone is saved to `Download/OrderRestro` on the phone (MediaStore, no permission; it survives clearing or uninstalling the app; the newest 7 are kept). Android 7-9 keep it in the app's own folder instead. It never contains the password or staff PINs.
 - **Export and backup**: sales and expenses as CSV (formula characters are neutralised), the whole phone as one JSON backup that restores all-or-nothing and never contains the password. Files go out through Android's share sheet (`NativePrinter.shareFile`, via the FileProvider, no storage permission).
 
 Tests: `node --test www/pos/lib/*.test.mjs`.

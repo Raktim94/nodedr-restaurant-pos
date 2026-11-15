@@ -4,7 +4,7 @@
 import { kv, reservations, sales } from './store.js';
 import { mergeFromServer, toPayload } from './reservations.js';
 import { pickServer, request } from './net.js';
-import { counts, pruneSynced, pushEvents, DeviceRevoked, AuthExpired as EventAuthExpired } from './journal.js';
+import { SALE_EVENTS, counts, pruneSynced, pushEvents, DeviceRevoked, AuthExpired as EventAuthExpired } from './journal.js';
 
 export class AuthExpired extends Error {}
 
@@ -85,6 +85,8 @@ export async function pushBookings(base) {
   return { sent, newer };
 }
 
+const paidAtSend = (sale) => [...sale.payments, ...(sale.collections || []).filter((c) => !c.eventId)].reduce((n, p) => n + p.amount, 0);
+
 function payload(sale) {
   return {
     id: sale.id,
@@ -93,11 +95,23 @@ function payload(sale) {
     type: sale.type,
     tableLabel: sale.tableLabel || undefined,
     note: sale.note || undefined,
-    items: sale.items.map((i) => ({ menuItemId: i.menuItemId, quantity: i.quantity, unitPrice: i.price })),
+    items: sale.items.map((i) => ({
+      menuItemId: i.menuItemId,
+      quantity: i.quantity,
+      unitPrice: i.price,
+      ...(i.modifierIds && i.modifierIds.length ? { modifierIds: i.modifierIds } : {}),
+      ...(i.portion ? { portion: i.portion } : {}),
+      ...(i.note ? { note: i.note } : {}),
+    })),
     discountPercent: sale.discountPercent || undefined,
     discountFlat: sale.discountFlat || undefined,
     discountReason: sale.discountReason || undefined,
-    payments: sale.payments.map((p) => ({ method: p.method, amount: p.amount, tendered: p.tendered, reference: p.reference })),
+    tipAmount: sale.bill.serviceCharge || undefined,
+    customer: sale.customer && sale.customer.phone ? { phone: sale.customer.phone, ...(sale.customer.name ? { name: sale.customer.name } : {}) } : undefined,
+    takenByUserId: sale.staffServerId || undefined,
+    // Money collected before the sale reached the server goes with it; after that, each collection is its own event.
+    payments: [...sale.payments, ...(sale.collections || []).filter((c) => !c.eventId)].map((p) => ({ method: p.method, amount: p.amount, tendered: p.tendered, reference: p.reference })),
+    payLater: sale.payLater && paidAtSend(sale) < sale.bill.total - 0.004 ? true : undefined,
   };
 }
 
@@ -142,6 +156,9 @@ export async function pushSales(base) {
         delete sale.refusedReason;
         delete sale.refusedCode;
         sale.serverOrderNumber = res.orderNumber;
+        sale.serverOrderId = res.orderId;
+        // Collections taken before this point went with the sale.
+        for (const c of sale.collections || []) if (!c.eventId) c.sentWithSale = true;
         sale.syncedAt = new Date().toISOString();
         done++;
       }
@@ -174,7 +191,13 @@ export function syncNow({ refreshMenu = true } = {}) {
         partial = e.message;
       }
       try {
-        const ev = await pushEvents(base, await kv.get('branchId'), request);
+        // A refund or a collection waits until the server has its sale (it may still be waiting, or was refused).
+        const hold = async (e) => {
+          if (!SALE_EVENTS.has(e.kind)) return false;
+          const s = await sales.get(e.payload.saleId);
+          return !!s && s.status !== 'synced';
+        };
+        const ev = await pushEvents(base, await kv.get('branchId'), request, undefined, { hold });
         out.events = ev.done;
         out.eventsFailed = ev.failed;
       } catch (e) {

@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusNote, useStatusNote } from "@/components/ui/status-note";
 import {
   useAccountingActions,
   useBranchOverview,
   useClosingPreview,
   useClosings,
+  usePhoneTills,
   useExpenses,
   useGst,
   useProfitLoss,
@@ -64,18 +66,19 @@ function Expenses({ branchId }: { branchId: string | null }) {
   const { addExpense, deleteExpense } = useAccountingActions(branchId);
   const [f, setF] = useState({ spentOn: iso(new Date()), category: "", amount: "", note: "", paidFromCash: false });
   const total = data?.reduce((s, e) => s + Number(e.amount), 0) ?? 0;
+  const { note: status, show, clear } = useStatusNote();
 
   const submit = () => {
     const amount = Number(f.amount);
-    if (!f.category.trim() || !(amount > 0)) return toast.error("Enter a category and an amount");
+    if (!f.category.trim() || !(amount > 0)) return show("error", "Enter a category and an amount");
     addExpense.mutate(
       { spentOn: f.spentOn, category: f.category.trim(), amount, note: f.note || undefined, paidFromCash: f.paidFromCash },
       {
         onSuccess: () => {
-          toast.success("Expense added");
+          show("success", `Expense of ${formatCurrency(amount)} added.`);
           setF({ ...f, category: "", amount: "", note: "" });
         },
-        onError: (e) => toast.error(errMsg(e)),
+        onError: (e) => show("error", errMsg(e)),
       },
     );
   };
@@ -94,6 +97,7 @@ function Expenses({ branchId }: { branchId: string | null }) {
         <div className="sm:col-span-2 lg:col-span-5">
           <Button onClick={submit} disabled={addExpense.isPending}>Add expense</Button>
         </div>
+        <div className="sm:col-span-2 lg:col-span-5"><StatusNote note={status} onClear={clear} /></div>
       </Card>
       <RangePicker range={range} onChange={setRange} />
       <Card className="flex flex-col divide-y divide-border p-2">
@@ -135,7 +139,9 @@ function CashClose({ branchId }: { branchId: string | null }) {
   const [note, setNote] = useState("");
   const { data: preview } = useClosingPreview(branchId, date, Number(floor) || 0);
   const { data: closings } = useClosings(branchId);
+  const { data: phoneTills } = usePhoneTills(branchId);
   const { closeDay } = useAccountingActions(branchId);
+  const { note: status, show, clear } = useStatusNote();
   const variance = preview && counted !== "" ? Number(counted) - preview.expectedCash : null;
 
   return (
@@ -168,13 +174,14 @@ function CashClose({ branchId }: { branchId: string | null }) {
             onClick={() =>
               closeDay.mutate(
                 { businessDate: date, openingFloat: Number(floor) || 0, countedCash: Number(counted), note: note || undefined },
-                { onSuccess: () => { toast.success("Day closed"); setCounted(""); setNote(""); }, onError: (e) => toast.error(errMsg(e)) },
+                { onSuccess: () => { show("success", `Day ${date} closed.`); setCounted(""); setNote(""); }, onError: (e) => show("error", errMsg(e)) },
               )
             }
           >
             Close day
           </Button>
         </div>
+        <StatusNote note={status} onClear={clear} />
       </Card>
       <Card className="flex flex-col divide-y divide-border p-2">
         {closings && closings.length > 0 ? (
@@ -190,6 +197,40 @@ function CashClose({ branchId }: { branchId: string | null }) {
           <p className="p-6 text-center text-sm text-muted-foreground">No closed days yet.</p>
         )}
       </Card>
+      {phoneTills && phoneTills.length > 0 && (
+        <section aria-labelledby="phone-tills" className="flex flex-col gap-2">
+          <h2 id="phone-tills" className="text-sm font-semibold">Phone tills</h2>
+          <p className="text-xs text-muted-foreground">Each phone&apos;s own cash drawer, counted at the end of its day in the phone app. Their cash is already part of the branch figures above.</p>
+          <Card className="overflow-x-auto p-2">
+            <table className="w-full min-w-[36rem] text-sm">
+              <thead>
+                <tr className="text-left text-xs text-muted-foreground">
+                  <th className="px-3 py-2 font-medium">Day</th>
+                  <th className="px-3 py-2 font-medium">Phone</th>
+                  <th className="px-3 py-2 font-medium">Counted by</th>
+                  <th className="px-3 py-2 text-right font-medium">Expected</th>
+                  <th className="px-3 py-2 text-right font-medium">Counted</th>
+                  <th className="px-3 py-2 text-right font-medium">Difference</th>
+                </tr>
+              </thead>
+              <tbody>
+                {phoneTills.map((t) => (
+                  <tr key={t.id} className="border-t border-border">
+                    <td className="px-3 py-2 tabular-nums">{t.businessDate}</td>
+                    <td className="px-3 py-2">{t.deviceName}</td>
+                    <td className="px-3 py-2">{t.closedByName ?? "—"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(t.expectedCash)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(t.countedCash)}</td>
+                    <td className={cn("px-3 py-2 text-right tabular-nums", t.variance === 0 ? "text-success" : "text-destructive")}>
+                      {t.variance === 0 ? "Matches" : `${t.variance > 0 ? "Over" : "Short"} ${formatCurrency(Math.abs(t.variance))}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </section>
+      )}
     </div>
   );
 }

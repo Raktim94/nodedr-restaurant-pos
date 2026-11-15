@@ -101,6 +101,13 @@ function wrap(s, width) {
   return out.length ? out : [''];
 }
 
+/** Still owed on a pay-later bill (kept here so the receipt needs nothing else). */
+function owedOn(sale) {
+  if (!sale.payLater) return 0;
+  const paid = [...sale.payments, ...(sale.collections || [])].reduce((n, p) => n + p.amount, 0);
+  return Math.max(Math.round((sale.bill.total - paid) * 100) / 100, 0);
+}
+
 export function columnsFor(snap) {
   return snap.branch.printerColumns || (snap.branch.printerPaperWidthMm >= 80 ? 48 : 32);
 }
@@ -116,6 +123,8 @@ export function escposReceipt(sale, snap, { provisional = false, upiUri = null }
   w.row(new Date(sale.soldAt).toLocaleString(), '');
   w.row(`Bill ${sale.localNumber}`, sale.type === 'DINE_IN' ? 'DINE IN' : 'TAKEAWAY');
   if (sale.tableLabel) w.row(sale.tableLabel, '');
+  if (sale.customer && (sale.customer.name || sale.customer.phone)) w.row(`For ${[sale.customer.name, sale.customer.phone].filter(Boolean).join(' ')}`, '');
+  if (sale.staffName) w.row(`Served by ${sale.staffName}`, '');
   w.rule();
   for (const it of sale.items) {
     w.row(`${it.quantity} x ${it.name}`, money(it.price * it.quantity));
@@ -123,12 +132,15 @@ export function escposReceipt(sale, snap, { provisional = false, upiUri = null }
   w.rule();
   w.row('Subtotal', money(sale.bill.subtotal));
   if (sale.bill.discountAmount > 0) w.row('Discount', `-${money(sale.bill.discountAmount)}`);
+  if (sale.bill.serviceCharge > 0) w.row('Service charge (optional)', money(sale.bill.serviceCharge));
   if (sale.bill.tax > 0) w.row(`${snap.branch.taxLabel || 'Tax'} (incl.)`, money(sale.bill.tax));
   w.row(provisional ? 'TOTAL DUE' : 'TOTAL', money(sale.bill.total), { bold: true });
   if (!provisional) {
     w.rule();
-    for (const p of sale.payments) w.row(`Paid (${METHOD[p.method] || p.method})`, money(p.amount));
+    for (const p of [...sale.payments, ...(sale.collections || [])]) w.row(`Paid (${METHOD[p.method] || p.method})`, money(p.amount));
     if (sale.change > 0) w.row('Change', money(sale.change));
+    const owed = owedOn(sale);
+    if (owed > 0) w.row('BALANCE DUE', money(owed), { bold: true });
   }
   if (provisional && upiUri) {
     w.rule();
@@ -161,11 +173,12 @@ export function htmlReceipt(sale, snap, { provisional = false, upiSvg = null } =
         `<tr><td>${esc(it.name)}</td><td class="n">${it.quantity}</td><td class="n">${m(it.price)}</td><td class="n">${m(it.price * it.quantity)}</td></tr>`,
     )
     .join('');
+  const owed = owedOn(sale);
   const pay = provisional
     ? ''
-    : `<hr>${sale.payments.map((p) => `<div class="r"><span>Paid (${esc(METHOD[p.method] || p.method)})</span><span>${m(p.amount)}</span></div>`).join('')}${
+    : `<hr>${[...sale.payments, ...(sale.collections || [])].map((p) => `<div class="r"><span>Paid (${esc(METHOD[p.method] || p.method)})</span><span>${m(p.amount)}</span></div>`).join('')}${
         sale.change > 0 ? `<div class="r"><span>Change</span><span>${m(sale.change)}</span></div>` : ''
-      }`;
+      }${owed > 0 ? `<div class="r t"><span>BALANCE DUE</span><span>${m(owed)}</span></div>` : ''}`;
   const upi =
     provisional && upiSvg
       ? `<hr><div class="c"><strong>Scan to pay by UPI</strong><div class="qr">${upiSvg}</div><strong>Amount: ${esc(cur)}${money(sale.bill.total)}</strong><div>${esc(snap.restaurant.upiPayeeName || '')}</div></div>`
@@ -186,9 +199,12 @@ ${snap.branch.gstNumber ? `<div class="s">GSTIN ${esc(snap.branch.gstNumber)}</d
 <hr><div class="r"><span>${esc(new Date(sale.soldAt).toLocaleString())}</span></div>
 <div class="r"><span>Bill ${esc(sale.localNumber)}</span><span>${sale.type === 'DINE_IN' ? 'DINE IN' : 'TAKEAWAY'}</span></div>
 ${sale.tableLabel ? `<div>${esc(sale.tableLabel)}</div>` : ''}
+${sale.customer && (sale.customer.name || sale.customer.phone) ? `<div>For ${esc([sale.customer.name, sale.customer.phone].filter(Boolean).join(' '))}</div>` : ''}
+${sale.staffName ? `<div>Served by ${esc(sale.staffName)}</div>` : ''}
 <hr><table><tr><th>ITEM</th><th class="n">QTY</th><th class="n">RATE</th><th class="n">AMOUNT</th></tr>${rows}</table><hr>
 <div class="r"><span>Subtotal</span><span>${m(sale.bill.subtotal)}</span></div>
 ${sale.bill.discountAmount > 0 ? `<div class="r"><span>Discount</span><span>-${m(sale.bill.discountAmount)}</span></div>` : ''}
+${sale.bill.serviceCharge > 0 ? `<div class="r"><span>Service charge (optional)</span><span>${m(sale.bill.serviceCharge)}</span></div>` : ''}
 ${sale.bill.tax > 0 ? `<div class="r"><span>${esc(snap.branch.taxLabel || 'Tax')} (incl.)</span><span>${m(sale.bill.tax)}</span></div>` : ''}
 <div class="r t"><span>${provisional ? 'TOTAL DUE' : 'TOTAL'}</span><span>${m(sale.bill.total)}</span></div>
 ${pay}${upi}

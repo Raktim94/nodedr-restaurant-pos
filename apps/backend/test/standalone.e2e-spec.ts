@@ -18,6 +18,8 @@ run('Standalone mode (e2e)', () => {
   let owner: ReturnType<typeof request.agent>;
   let branchId: string;
   let itemId: string;
+  let optItemId: string;
+  let cheeseId: string;
   const http = () => request(app.getHttpServer());
   const saleBase = (n: number) => ({
     id: `offline-${tag}-${n}`,
@@ -409,5 +411,291 @@ run('Standalone mode (e2e)', () => {
     expect(r).toEqual(
       expect.objectContaining({ status: 'refused', code: 'PAYMENT_REJECTED' }),
     );
+  });
+
+  // ---------------------------------------------- options, dues and phone books ---
+
+  const post = (path: string, body: object) =>
+    owner
+      .post(`/api/v1/mobile/standalone/${path}?branchId=${branchId}`)
+      .send(body);
+
+  it('the snapshot carries add-ons, half prices, barcodes and the staff list', async () => {
+    const dish = await prisma.menuItem.findUniqueOrThrow({
+      where: { id: itemId },
+    });
+    const group = await prisma.modifierGroup.create({
+      data: {
+        branchId,
+        name: `Extras ${tag}`,
+        maxSelect: 3,
+        modifiers: { create: [{ name: `Cheese ${tag}`, priceAdjustment: 30 }] },
+      },
+      include: { modifiers: true },
+    });
+    const opt = await prisma.menuItem.create({
+      data: {
+        branchId,
+        categoryId: dish.categoryId,
+        name: `Options dish ${tag}`,
+        price: 200,
+        halfPrice: 120,
+        barcode: `89${tag}`,
+        modifierGroups: { create: { modifierGroupId: group.id } },
+      },
+    });
+    optItemId = opt.id;
+    cheeseId = group.modifiers[0].id;
+    const s = (
+      await owner
+        .get(`/api/v1/mobile/standalone/snapshot?branchId=${branchId}`)
+        .expect(200)
+    ).body;
+    const it = s.items.find((i: { id: string }) => i.id === opt.id);
+    expect(it).toEqual(
+      expect.objectContaining({
+        halfPrice: 120,
+        barcode: `89${tag}`,
+        sellOffline: true,
+        options: [
+          expect.objectContaining({
+            id: group.id,
+            max: 3,
+            choices: [expect.objectContaining({ id: cheeseId, price: 30 })],
+          }),
+        ],
+      }),
+    );
+    expect(s.staff).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: expect.any(String), manager: true }),
+      ]),
+    );
+  });
+
+  it('records a half portion with an add-on at the menu price without a review flag', async () => {
+    const sale = {
+      ...saleBase(20),
+      items: [
+        {
+          menuItemId: optItemId,
+          quantity: 2,
+          unitPrice: 150,
+          portion: 'HALF',
+          modifierIds: [cheeseId],
+          note: 'extra crisp',
+        },
+        { menuItemId: optItemId, quantity: 1, unitPrice: 200 },
+      ],
+      tipAmount: 25,
+      payments: [{ method: 'UPI', amount: 525 }],
+    };
+    const r = (await post('sales', { sales: [sale] }).expect(201)).body
+      .results[0];
+    expect(r.status).toBe('created');
+    expect(r.review).toBeUndefined();
+    const o = await prisma.order.findFirstOrThrow({
+      where: { branchId, clientRequestId: sale.id },
+      include: { items: { include: { modifiers: true } } },
+    });
+    expect(o.status).toBe('PAID');
+    expect(Number(o.subtotal)).toBe(500);
+    expect(Number(o.tipAmount)).toBe(25);
+    expect(Number(o.totalAmount)).toBe(525);
+    const half = o.items.find((i) => i.portion === 'HALF')!;
+    expect(half.modifiers).toHaveLength(1);
+    expect(half.kitchenNote).toBe('extra crisp');
+    expect(Number(half.lineTotal)).toBe(300);
+  });
+
+  it('prices an add-on line charged below the menu with the add-on kept separate', async () => {
+    const sale = {
+      ...saleBase(21),
+      items: [
+        {
+          menuItemId: optItemId,
+          quantity: 1,
+          unitPrice: 220,
+          modifierIds: [cheeseId],
+        },
+      ],
+      payments: [{ method: 'CASH', amount: 220 }],
+    };
+    const r = (await post('sales', { sales: [sale] }).expect(201)).body
+      .results[0];
+    expect(r.status).toBe('created');
+    expect(r.review[0]).toEqual(
+      expect.objectContaining({ phonePrice: 220, serverPrice: 230 }),
+    );
+    const o = await prisma.order.findFirstOrThrow({
+      where: { branchId, clientRequestId: sale.id },
+      include: { items: true },
+    });
+    expect(Number(o.totalAmount)).toBe(220);
+    expect(Number(o.items[0].unitPriceSnapshot)).toBe(190); // 220 charged, 30 of it the add-on
+  });
+
+  it('keeps a pay-later sale open with the customer, then collects the rest once', async () => {
+    const sale = {
+      ...saleBase(22),
+      items: [{ menuItemId: itemId, quantity: 1, unitPrice: 100 }],
+      payments: [{ method: 'CASH', amount: 30 }],
+      payLater: true,
+      customer: { name: 'Due Guest', phone: `90000 ${tag.slice(-5)}` },
+    };
+    expect(
+      (await post('sales', { sales: [sale] }).expect(201)).body.results[0]
+        .status,
+    ).toBe('created');
+    // Sent again: a duplicate, not a second order.
+    expect(
+      (await post('sales', { sales: [sale] }).expect(201)).body.results[0]
+        .status,
+    ).toBe('duplicate');
+    const o = await prisma.order.findFirstOrThrow({
+      where: { branchId, clientRequestId: sale.id },
+      include: { payments: true, customer: true },
+    });
+    expect(o.status).toBe('OPEN');
+    expect(o.customer?.phone).toBe(`90000${tag.slice(-5)}`);
+    expect(o.payments.map((p) => Number(p.amount))).toEqual([30]);
+
+    const col = {
+      idempotencyKey: `col-${tag}-1`,
+      saleId: sale.id,
+      payments: [{ method: 'UPI', amount: 70 }],
+    };
+    const c = (await post('collections', col).expect(201)).body;
+    expect(c.orderStatus).toBe('PAID');
+    await post('collections', col).expect(201); // repeat: same answer, no second payment
+    const paid = await prisma.order.findFirstOrThrow({
+      where: { id: o.id },
+      include: { payments: true },
+    });
+    expect(paid.payments).toHaveLength(2);
+  });
+
+  it('refuses pay later without a customer phone', async () => {
+    const sale = {
+      ...saleBase(23),
+      items: [{ menuItemId: itemId, quantity: 1, unitPrice: 100 }],
+      payments: [],
+      payLater: true,
+    };
+    await post('sales', { sales: [sale] }).expect(400);
+  });
+
+  it('records a phone refund and an expense once each, and keeps the phone cash count', async () => {
+    const saleId = saleBase(20).id;
+    const ref = {
+      idempotencyKey: `ref-${tag}-1`,
+      saleId,
+      amount: 100,
+      method: 'UPI',
+      reason: 'Cold',
+    };
+    expect((await post('refunds', ref).expect(201)).body.status).toBe(
+      'created',
+    );
+    expect((await post('refunds', ref).expect(201)).body.status).toBe(
+      'duplicate',
+    );
+    const order = await prisma.order.findFirstOrThrow({
+      where: { branchId, clientRequestId: saleId },
+      include: { refunds: true },
+    });
+    expect(order.refunds).toHaveLength(1);
+    await post('refunds', {
+      ...ref,
+      idempotencyKey: `ref-${tag}-2`,
+      saleId: 'not-a-real-sale-id',
+    }).expect(409);
+
+    const exp = {
+      idempotencyKey: `exp-${tag}-1`,
+      spentOn: '2026-11-15',
+      note: 'Vegetables',
+      category: 'Groceries',
+      amount: 250,
+      paidFromCash: true,
+    };
+    expect((await post('expenses', exp).expect(201)).body.status).toBe(
+      'created',
+    );
+    expect((await post('expenses', exp).expect(201)).body.status).toBe(
+      'duplicate',
+    );
+    expect(
+      await prisma.expense.count({
+        where: { clientRequestId: exp.idempotencyKey },
+      }),
+    ).toBe(1);
+
+    const till = {
+      idempotencyKey: `till-${tag}-1`,
+      deviceId: `phone-${tag}`,
+      deviceName: 'Counter phone',
+      businessDate: '2026-11-15',
+      openingFloat: 500,
+      cashSales: 1200,
+      cashRefunds: 0,
+      cashExpenses: 250,
+      expectedCash: 1450,
+      countedCash: 1440,
+      netSales: 1900,
+      closedByName: 'Asha',
+      closedAt: new Date().toISOString(),
+    };
+    await post('till-closings', till).expect(201);
+    await post('till-closings', {
+      ...till,
+      idempotencyKey: `till-${tag}-2`,
+      countedCash: 1450,
+    }).expect(201);
+    const rows = await prisma.phoneTillClosing.findMany({
+      where: { branchId, deviceId: till.deviceId },
+    });
+    expect(rows).toHaveLength(1); // counted twice the same day: replaced, not added
+    expect(Number(rows[0].variance)).toBe(0);
+    const list = (
+      await owner
+        .get(`/api/v1/mobile/standalone/till-closings?branchId=${branchId}`)
+        .expect(200)
+    ).body;
+    expect(list.some((x: { id: string }) => x.id === rows[0].id)).toBe(true);
+  });
+
+  it('a pay-later bill with nothing paid keeps its discount and service charge when collected', async () => {
+    const sale = {
+      ...saleBase(24),
+      items: [{ menuItemId: itemId, quantity: 2, unitPrice: 100 }],
+      payments: [],
+      payLater: true,
+      discountPercent: 10,
+      discountReason: 'Regular',
+      tipAmount: 9,
+      customer: { phone: `91111${tag.slice(-5)}` },
+    };
+    expect(
+      (await post('sales', { sales: [sale] }).expect(201)).body.results[0]
+        .status,
+    ).toBe('created');
+    const o = await prisma.order.findFirstOrThrow({
+      where: { branchId, clientRequestId: sale.id },
+    });
+    expect(o.status).toBe('OPEN');
+    expect(Number(o.totalAmount)).toBe(189); // 200 - 20 + 9
+    const c = (
+      await post('collections', {
+        idempotencyKey: `col-${tag}-24`,
+        saleId: sale.id,
+        payments: [{ method: 'CASH', amount: 189 }],
+      }).expect(201)
+    ).body;
+    expect(c.orderStatus).toBe('PAID');
+    const paid = await prisma.order.findUniqueOrThrow({ where: { id: o.id } });
+    expect(Number(paid.totalAmount)).toBe(189);
+    expect(Number(paid.discountAmount)).toBe(20);
+    expect(Number(paid.tipAmount)).toBe(9);
   });
 });

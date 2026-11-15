@@ -190,6 +190,77 @@ public class NativePrinterPlugin extends Plugin {
         }
     }
 
+    /**
+     * Automatic backup: writes the file to Download/OrderRestro on the phone, where it survives the app being cleared
+     * or uninstalled and can be copied off with any file manager. One file per day (the same name is replaced), and
+     * only the newest `keep` automatic backups this app made are kept. Android 10+ uses MediaStore (no permission);
+     * older phones keep it in the app's own Documents folder (removed with the app), and the reply says which.
+     */
+    @PluginMethod
+    public void saveBackup(final PluginCall call) {
+        final String text = call.getString("text");
+        if (text == null) {
+            call.reject("There is nothing to save.");
+            return;
+        }
+        final String name = call.getString("name", "orderrestro-auto-backup.json").replaceAll("[^A-Za-z0-9._-]", "_");
+        final String prefix = call.getString("prefix", "orderrestro-auto-").replaceAll("[^A-Za-z0-9._-]", "_");
+        final int keep = Math.max(1, call.getInt("keep", 7));
+        final byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        try {
+            JSObject ret = new JSObject();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                android.content.ContentResolver cr = getContext().getContentResolver();
+                android.net.Uri coll = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+                String folder = android.os.Environment.DIRECTORY_DOWNLOADS + "/OrderRestro/";
+                String[] cols = { android.provider.MediaStore.MediaColumns._ID, android.provider.MediaStore.MediaColumns.DISPLAY_NAME };
+                String where = android.provider.MediaStore.MediaColumns.RELATIVE_PATH + "=? AND " + android.provider.MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ?";
+                // Same day again: replace that file instead of making "name (1).json".
+                try (android.database.Cursor c = cr.query(coll, cols, where, new String[] { folder, name }, null)) {
+                    while (c != null && c.moveToNext()) cr.delete(android.content.ContentUris.withAppendedId(coll, c.getLong(0)), null, null);
+                }
+                android.content.ContentValues v = new android.content.ContentValues();
+                v.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name);
+                v.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/json");
+                v.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, folder);
+                v.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1);
+                android.net.Uri uri = cr.insert(coll, v);
+                if (uri == null) throw new java.io.IOException("the Downloads folder is not available");
+                try (OutputStream out = cr.openOutputStream(uri, "w")) {
+                    if (out == null) throw new java.io.IOException("could not open the file");
+                    out.write(bytes);
+                }
+                v.clear();
+                v.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0);
+                cr.update(uri, v, null, null);
+                // Keep only the newest `keep` automatic backups this app made (names sort by date).
+                java.util.List<Long> mine = new java.util.ArrayList<>();
+                try (android.database.Cursor c = cr.query(coll, cols, where, new String[] { folder, prefix + "%" }, android.provider.MediaStore.MediaColumns.DISPLAY_NAME + " DESC")) {
+                    while (c != null && c.moveToNext()) mine.add(c.getLong(0));
+                }
+                for (int i = keep; i < mine.size(); i++) cr.delete(android.content.ContentUris.withAppendedId(coll, mine.get(i)), null, null);
+                ret.put("location", "Download/OrderRestro/" + name);
+                ret.put("survivesUninstall", true);
+            } else {
+                java.io.File dir = new java.io.File(getContext().getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "backups");
+                if (!dir.exists() && !dir.mkdirs()) throw new java.io.IOException("could not make the backup folder");
+                try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(dir, name))) {
+                    out.write(bytes);
+                }
+                java.io.File[] all = dir.listFiles((d, n) -> n.startsWith(prefix));
+                if (all != null && all.length > keep) {
+                    java.util.Arrays.sort(all, (a, b) -> b.getName().compareTo(a.getName()));
+                    for (int i = keep; i < all.length; i++) all[i].delete();
+                }
+                ret.put("location", "Android/data/" + getContext().getPackageName() + "/files/Documents/backups/" + name);
+                ret.put("survivesUninstall", false);
+            }
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Could not save the backup: " + e.getMessage());
+        }
+    }
+
     @PluginMethod
     public void printHtml(final PluginCall call) {
         final String html = call.getString("html");

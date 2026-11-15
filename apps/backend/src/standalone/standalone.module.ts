@@ -3,6 +3,7 @@ import { BranchAccessService } from '../common/services/branch-access.service';
 import { OrdersModule } from '../modules/orders/orders.module';
 import { StandaloneController } from './standalone.controller';
 import { StandaloneReservationsService } from './standalone-reservations.service';
+import { StandaloneBooksService } from './standalone-books.service';
 import { StandaloneService } from './standalone.service';
 
 @Module({
@@ -10,6 +11,7 @@ import { StandaloneService } from './standalone.service';
   controllers: [StandaloneController],
   providers: [
     StandaloneService,
+    StandaloneBooksService,
     StandaloneReservationsService,
     BranchAccessService,
   ],

@@ -17,16 +17,24 @@ export function priceLine({ price, quantity, taxRate, taxMode }) {
   return { lineTotal, tax };
 }
 
-/** cart: [{ price, quantity, taxRate }] */
-export function computeBill(cart, { taxMode = 'INCLUSIVE', discountPercent = 0, discountFlat = 0 } = {}) {
+/**
+ * cart: [{ price, quantity, taxRate }]
+ * serviceChargePct: a VOLUNTARY service charge the guest agreed to, worked out on the bill after discount. It is never
+ * added by default (India's CCPA guidelines, 2022, forbid a compulsory one), is not taxed here, and reaches the server
+ * as a tip. 0 = none.
+ */
+export function computeBill(cart, { taxMode = 'INCLUSIVE', discountPercent = 0, discountFlat = 0, serviceChargePct = 0 } = {}) {
   const lines = cart.map((c) => priceLine({ ...c, taxMode }));
   const subtotal = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
   const rawTax = round2(lines.reduce((s, l) => s + l.tax, 0));
   const percentDiscount = round2((subtotal * discountPercent) / 100);
   const discountAmount = round2(Math.min(percentDiscount + discountFlat, subtotal));
-  const total = round2(subtotal - discountAmount);
-  const tax = subtotal > 0 ? round2((rawTax * (subtotal - discountAmount)) / subtotal) : 0;
-  return { lines, subtotal, discountAmount, tax, total };
+  const afterDiscount = round2(subtotal - discountAmount);
+  const pct = Math.min(Math.max(Number(serviceChargePct) || 0, 0), 25);
+  const serviceCharge = round2((afterDiscount * pct) / 100);
+  const total = round2(afterDiscount + serviceCharge);
+  const tax = subtotal > 0 ? round2((rawTax * afterDiscount) / subtotal) : 0;
+  return { lines, subtotal, discountAmount, serviceCharge, tax, total };
 }
 
 /**

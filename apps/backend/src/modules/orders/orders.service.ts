@@ -420,6 +420,8 @@ export class OrdersService {
               quantity: line.cartItem.quantity,
               lineTotal: line.priced.lineTotal,
               kitchenNote: line.cartItem.kitchenNote,
+              // Half / Full / Custom as ordered (the name also says it); kept so a line can be told apart later.
+              portion: line.cartItem.portion ?? null,
               modifiers: {
                 create: line.selectedModifiers.map((m) => ({
                   modifier: { connect: { id: m.id } },
@@ -582,6 +584,8 @@ export class OrdersService {
               quantity: line.cartItem.quantity,
               lineTotal: line.priced.lineTotal,
               kitchenNote: line.cartItem.kitchenNote,
+              // Half / Full / Custom as ordered (the name also says it); kept so a line can be told apart later.
+              portion: line.cartItem.portion ?? null,
               modifiers: {
                 create: line.selectedModifiers.map((m) => ({
                   modifier: { connect: { id: m.id } },
@@ -1978,6 +1982,8 @@ export class OrdersService {
     orderId: string,
     userId: string,
     dto: RefundDto,
+    /** A phone's event id: stored on the refund, so the same refund sent twice is refused by the unique index. */
+    clientRequestId?: string,
   ) {
     // The REST route validates this with a schema, but other callers (the MCP tools) reach this method directly:
     // a zero or negative "refund" would be stored as a ledger entry and raise what can still be refunded.
@@ -2023,6 +2029,7 @@ export class OrdersService {
           reason: dto.reason,
           method: dto.method,
           createdById: userId,
+          ...(clientRequestId ? { clientRequestId } : {}),
         },
       });
       await this.verifactu.recordRefund(tx, orderId, created.id, dto.amount);

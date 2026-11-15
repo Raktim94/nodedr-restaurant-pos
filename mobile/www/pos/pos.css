@@ -106,3 +106,13 @@ h1,h2{margin:0}
 .dishes .empty{grid-column:1/-1}
 .empty{text-align:center;padding:1.5rem 1rem}.empty p{margin:.3rem 0 1rem}
 .chips[hidden]{display:none}
+/* 1.38: search + scan, options sheet, staff PINs, money owed */
+.searchrow{display:flex;gap:.5rem;align-items:stretch}.searchrow>input{flex:1;min-width:0}.searchrow>.btn{min-height:44px;padding:.4rem .9rem}
+fieldset.opt{border:0;margin:.8rem 0 0;padding:0}fieldset.opt legend{font-weight:700;margin-bottom:.3rem}
+.optrow{display:flex;align-items:center;gap:.6rem;padding:.55rem 0;border-bottom:1px solid var(--line);min-height:44px}
+.top .who{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:.2rem .7rem;font-weight:600;font-size:.8rem;min-height:36px;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pinlayer{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:1rem}
+.pinlayer .panel{border-radius:20px;max-width:24rem}
+#later[aria-disabled=true]{opacity:.55}
+button.owed{border:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 8%,var(--card))}
+details>summary{cursor:pointer;font-weight:700;min-height:44px;display:flex;align-items:center;gap:.4rem}

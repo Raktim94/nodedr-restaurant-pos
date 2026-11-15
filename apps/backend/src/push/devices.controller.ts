@@ -60,6 +60,10 @@ export class DevicesController {
         // says per sale: created, duplicate or refused with a code, plus price-change flags.
         standaloneSalesSync: true,
         saleConflictCodes: true,
+        // Sales may carry add-ons, half portions, a customer, pay later, a voluntary service charge and the staff
+        // member who took them; refunds, expenses, collections and the phone's cash count sync too.
+        offlineOptions: true,
+        phoneBooksSync: true,
         push: this.push.enabled,
       },
     };

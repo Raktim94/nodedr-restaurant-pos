@@ -2,42 +2,66 @@ import { z } from 'zod';
 
 const money = z.coerce.number().min(0).max(10_000_000);
 
-export const offlineSaleSchema = z.object({
-  /** The phone's own id for this sale: the key that makes a re-send harmless. */
-  id: z.string().min(8).max(64),
-  /** Number printed on the phone's receipt, kept in the order notes. */
-  localNumber: z.string().max(40),
-  soldAt: z.string().datetime(),
-  type: z.enum(['DINE_IN', 'TAKEAWAY']).default('TAKEAWAY'),
-  tableLabel: z.string().max(40).optional(),
-  note: z.string().max(300).optional(),
-  items: z
-    .array(
-      z.object({
-        menuItemId: z.string().min(1),
-        quantity: z.number().int().min(1).max(999),
-        /** Price the customer was charged, in the menu's own terms. */
-        unitPrice: money,
-      }),
-    )
-    .min(1)
-    .max(100),
-  discountPercent: z.coerce.number().min(0).max(100).optional(),
-  discountFlat: money.optional(),
-  // Why the discount was given (the phone asks for it when the restaurant requires one).
-  discountReason: z.string().trim().max(200).optional(),
-  payments: z
-    .array(
-      z.object({
-        method: z.enum(['CASH', 'CARD', 'UPI', 'OTHER']),
-        amount: z.coerce.number().positive(),
-        tendered: z.coerce.number().positive().optional(),
-        reference: z.string().max(100).optional(),
-      }),
-    )
-    .min(1)
-    .max(6),
-});
+export const offlineSaleSchema = z
+  .object({
+    /** The phone's own id for this sale: the key that makes a re-send harmless. */
+    id: z.string().min(8).max(64),
+    /** Number printed on the phone's receipt, kept in the order notes. */
+    localNumber: z.string().max(40),
+    soldAt: z.string().datetime(),
+    type: z.enum(['DINE_IN', 'TAKEAWAY']).default('TAKEAWAY'),
+    tableLabel: z.string().max(40).optional(),
+    note: z.string().max(300).optional(),
+    items: z
+      .array(
+        z.object({
+          menuItemId: z.string().min(1),
+          quantity: z.number().int().min(1).max(999),
+          /** Price the customer was charged for one, add-ons included, in the menu's own terms. */
+          unitPrice: money,
+          /** Add-ons chosen on the phone (the server's modifier ids). */
+          modifierIds: z.array(z.string().min(1).max(64)).max(30).default([]),
+          portion: z.enum(['HALF', 'FULL']).optional(),
+          /** What the kitchen was told for this dish ("no onion"). */
+          note: z.string().trim().max(200).optional(),
+        }),
+      )
+      .min(1)
+      .max(100),
+    /** Voluntary service charge the guest agreed to; booked as a tip (never taxed, never added by default). */
+    tipAmount: money.optional(),
+    /** Who the bill is for. Needed for a sale left (partly) unpaid. */
+    customer: z
+      .object({
+        name: z.string().trim().max(100).optional(),
+        phone: z.string().trim().min(6).max(20),
+      })
+      .optional(),
+    /** The staff member who took the sale on a shared phone (switched in with their PIN). */
+    takenByUserId: z.string().min(1).max(64).optional(),
+    discountPercent: z.coerce.number().min(0).max(100).optional(),
+    discountFlat: money.optional(),
+    // Why the discount was given (the phone asks for it when the restaurant requires one).
+    discountReason: z.string().trim().max(200).optional(),
+    payments: z
+      .array(
+        z.object({
+          method: z.enum(['CASH', 'CARD', 'UPI', 'OTHER']),
+          amount: z.coerce.number().positive(),
+          tendered: z.coerce.number().positive().optional(),
+          reference: z.string().max(100).optional(),
+        }),
+      )
+      .max(6),
+    /** The guest pays the rest later (credit): the order stays open with a balance due. Needs a customer. */
+    payLater: z.boolean().optional(),
+  })
+  .refine((s) => s.payments.length > 0 || s.payLater, {
+    message: 'A sale needs a payment, or to be marked pay later',
+  })
+  .refine((s) => !s.payLater || !!s.customer?.phone, {
+    message: 'A sale paid later needs the customer phone number',
+  });
 
 export const offlineSalesSchema = z.object({
   /** Which phone sent these (for the audit trail). */
@@ -150,3 +174,74 @@ export type PhoneReservationView = {
   status: z.infer<typeof reservationStatus>;
   updatedAt: string;
 };
+
+// ------------------------------------------------------------ phone books ---
+// Refunds, expenses, money collected on a due bill and the phone's own day-end
+// cash count. Each carries the phone's event id (idempotencyKey): sending it
+// again returns the first result instead of doing it twice.
+
+const phoneKey = z.string().min(8).max(100);
+const paymentMethod = z.enum(['CASH', 'CARD', 'UPI', 'OTHER']);
+
+export const phoneRefundSchema = z
+  .object({
+    idempotencyKey: phoneKey,
+    /** The phone's id of the sale (the offline sale id the server keeps on the order). */
+    saleId: z.string().min(8).max(64),
+    amount: z.coerce.number().positive().max(10_000_000),
+    method: paymentMethod,
+    reason: z.string().trim().max(200).optional(),
+  })
+  .strict();
+
+export const phoneExpenseSchema = z
+  .object({
+    idempotencyKey: phoneKey,
+    spentOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    category: z.string().trim().max(60).optional(),
+    note: z.string().trim().min(1).max(300),
+    amount: z.coerce.number().positive().max(10_000_000),
+    paidFromCash: z.boolean(),
+  })
+  .strict();
+
+export const phoneCollectionSchema = z
+  .object({
+    idempotencyKey: phoneKey,
+    saleId: z.string().min(8).max(64),
+    payments: z
+      .array(
+        z.object({
+          method: paymentMethod,
+          amount: z.coerce.number().positive().max(10_000_000),
+          tendered: z.coerce.number().positive().optional(),
+          reference: z.string().max(100).optional(),
+        }),
+      )
+      .min(1)
+      .max(6),
+  })
+  .strict();
+
+export const phoneTillClosingSchema = z
+  .object({
+    idempotencyKey: phoneKey,
+    deviceId: z.string().min(4).max(100),
+    deviceName: z.string().trim().max(60).optional(),
+    businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    openingFloat: z.coerce.number().min(0).max(10_000_000),
+    cashSales: z.coerce.number().min(0).max(100_000_000),
+    cashRefunds: z.coerce.number().min(0).max(100_000_000),
+    cashExpenses: z.coerce.number().min(0).max(100_000_000),
+    expectedCash: z.coerce.number().min(-100_000_000).max(100_000_000),
+    countedCash: z.coerce.number().min(0).max(100_000_000),
+    netSales: z.coerce.number().min(-100_000_000).max(100_000_000),
+    closedByName: z.string().trim().max(100).optional(),
+    closedAt: z.string().datetime(),
+  })
+  .strict();
+
+export type PhoneRefundDto = z.infer<typeof phoneRefundSchema>;
+export type PhoneExpenseDto = z.infer<typeof phoneExpenseSchema>;
+export type PhoneCollectionDto = z.infer<typeof phoneCollectionSchema>;
+export type PhoneTillClosingDto = z.infer<typeof phoneTillClosingSchema>;

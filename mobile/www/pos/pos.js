@@ -4,15 +4,17 @@
 import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
 import { events, reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
-import { backupJson, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
+import { backupJson, buildCollection, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, dueOf, dueSales, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
+import { buildChoice, defaultPicks, findByCode, lineKey, needsChoice } from './lib/options.js';
+import { afterRight, afterWrong, hashPin, lockState, needsManager, pinTaken, validPin, weakPin, whoHasPin } from './lib/staff.js';
 import { KOT_NEXT, dayReport, kotDelta, markSent, minutesSince, newOrder, openOrders, saleNote, tableMap, tableTakenBy } from './lib/orders.js';
 import { escposKot, htmlKot } from './lib/kot.js';
 import { STATUS_LABEL, clashes, grouped, heldSoon, newBooking, setStatus } from './lib/reservations.js';
 import { native, pickServer, reachable, savedServers, setDeviceId } from './lib/net.js';
-import { counts as eventCounts, dismissEvent, queueEvent, retryEvent, shiftState } from './lib/journal.js';
+import { dismissEvent, queueEvent, retryEvent, shiftState } from './lib/journal.js';
 import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
-import { addSection, addTable, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
+import { addOnsText, addSection, addTable, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -44,6 +46,11 @@ const S = {
   editTables: false,
   tablesTab: 'floor', // 'floor' | 'bookings'
   showDone: false,
+  staff: [], // people who switch in with a PIN on this phone (kv 'staff'); empty = no PINs asked
+  who: null, // the person switched in right now
+  scPct: 0, // voluntary service charge offered, in % (0 = off)
+  serviceCharge: false, // the guest agreed to it on this order
+  customer: { name: '', phone: '' }, // who the bill is for (needed to leave it unpaid)
 };
 
 const ICON = {
@@ -107,11 +114,15 @@ function closeSheet(fromBack = false) {
 }
 
 // ------------------------------------------------------------------- state ---
+// The cart: line key (dish + portion + add-ons, see lib/options.js) -> { key, item, qty, sent, note, portion, mods, baseName }.
+// `item` is the line as sold: its name carries the portion and add-ons and its price includes them.
 const cartLines = () => [...S.cart.values()].filter((l) => l.qty > 0);
+const keyOf = (l) => l.key || lineKey(l.menuItemId, l.portion, (l.mods || []).map((m) => m.id));
+const qtyOf = (itemId) => [...S.cart.values()].filter((l) => l.item.id === itemId).reduce((n, l) => n + l.qty, 0);
 const billOf = (extra = {}) =>
   computeBill(
     cartLines().map((l) => ({ price: l.item.price, quantity: l.qty, taxRate: l.item.taxRate })),
-    { taxMode: S.snap.branch.taxMode, discountPercent: S.discountPercent, ...extra },
+    { taxMode: S.snap.branch.taxMode, discountPercent: S.discountPercent, serviceChargePct: S.serviceCharge ? S.scPct : 0, ...extra },
   );
 const cartCount = () => cartLines().reduce((n, l) => n + l.qty, 0);
 
@@ -122,12 +133,24 @@ function saleFrom(localNumber, bill, payments, change) {
     soldAt: new Date().toISOString(),
     type: S.type,
     tableLabel: S.type === 'DINE_IN' ? S.table || '' : '',
-    items: cartLines().map((l) => ({ menuItemId: l.item.id, name: l.item.name, price: l.item.price, taxRate: l.item.taxRate, quantity: l.qty, ...(l.note ? { note: l.note } : {}) })),
+    items: cartLines().map((l) => ({
+      menuItemId: l.item.id,
+      name: l.item.name,
+      baseName: l.baseName || l.item.name,
+      price: l.item.price,
+      taxRate: l.item.taxRate,
+      quantity: l.qty,
+      ...(l.note ? { note: l.note } : {}),
+      ...(l.portion ? { portion: l.portion } : {}),
+      ...(l.mods && l.mods.length ? { modifierIds: l.mods.map((m) => m.id), mods: l.mods } : {}),
+    })),
     orderId: S.orderId || undefined,
+    ...(S.customer.phone || S.customer.name ? { customer: { name: S.customer.name.trim(), phone: S.customer.phone.trim() } } : {}),
+    ...(S.who ? { staffId: S.who.id, staffName: S.who.name, ...(S.who.serverId ? { staffServerId: S.who.serverId } : {}) } : {}),
     discountPercent: S.discountPercent || 0,
     discountReason: S.discountPercent > 0 ? S.discountReason.trim() : '',
     taxMode: S.snap.branch.taxMode || 'INCLUSIVE',
-    bill: { subtotal: bill.subtotal, discountAmount: bill.discountAmount, tax: bill.tax, total: bill.total },
+    bill: { subtotal: bill.subtotal, discountAmount: bill.discountAmount, serviceCharge: bill.serviceCharge || 0, tax: bill.tax, total: bill.total },
     payments,
     change,
     status: 'pending',
@@ -166,8 +189,10 @@ async function persistOrder() {
   o.tableLabel = S.type === 'DINE_IN' ? S.table || '' : '';
   o.discountPercent = S.discountPercent || 0;
   o.discountReason = S.discountReason || '';
+  o.serviceCharge = !!S.serviceCharge;
+  o.customer = S.customer.name || S.customer.phone ? { ...S.customer } : undefined;
   o.updatedAt = new Date().toISOString();
-  o.items = lines.map((l) => ({ menuItemId: l.item.id, name: l.item.name, price: l.item.price, taxRate: l.item.taxRate, qty: l.qty, sent: l.sent || 0, note: l.note || '' }));
+  o.items = lines.map((l) => ({ key: keyOf({ ...l, menuItemId: l.item.id }), menuItemId: l.item.id, name: l.item.name, baseName: l.baseName || l.item.name, price: l.item.price, taxRate: l.item.taxRate, qty: l.qty, sent: l.sent || 0, note: l.note || '', ...(l.portion ? { portion: l.portion } : {}), ...(l.mods && l.mods.length ? { mods: l.mods } : {}) }));
   await orders.put(o);
   await kv.set('currentOrderId', o.id);
 }
@@ -179,11 +204,20 @@ function resetCart() {
   S.table = '';
   S.type = 'TAKEAWAY';
   S.noteOpen = null;
+  S.serviceCharge = false;
+  S.customer = { name: '', phone: '' };
   kv.del('currentOrderId');
 }
 function loadOrder(o) {
-  S.cart = new Map(o.items.map((l) => [l.menuItemId, { item: { id: l.menuItemId, name: l.name, price: l.price, taxRate: l.taxRate, sellOffline: true }, qty: l.qty, sent: l.sent || 0, note: l.note || '' }]));
+  S.cart = new Map(
+    o.items.map((l) => {
+      const key = keyOf(l);
+      return [key, { key, item: { id: l.menuItemId, name: l.name, price: l.price, taxRate: l.taxRate, sellOffline: true }, baseName: l.baseName || l.name, qty: l.qty, sent: l.sent || 0, note: l.note || '', portion: l.portion, mods: l.mods || [] }];
+    }),
+  );
   S.orderId = o.id;
+  S.serviceCharge = !!o.serviceCharge;
+  S.customer = o.customer ? { name: o.customer.name || '', phone: o.customer.phone || '' } : { name: '', phone: '' };
   S.type = o.type;
   S.table = o.tableLabel || '';
   S.discountPercent = o.discountPercent || 0;
@@ -200,7 +234,7 @@ async function restoreCurrent() {
 const orderBill = (o) =>
   computeBill(
     o.items.filter((l) => l.qty > 0).map((l) => ({ price: l.price, quantity: l.qty, taxRate: l.taxRate })),
-    { taxMode: S.snap.branch.taxMode, discountPercent: o.discountPercent || 0 },
+    { taxMode: S.snap.branch.taxMode, discountPercent: o.discountPercent || 0, serviceChargePct: o.serviceCharge ? S.scPct : 0 },
   );
 
 /** Move to another order (or a fresh one), keeping the current one saved. */
@@ -292,6 +326,7 @@ function cancelOrderSheet() {
       const sentTo = o && (o.kotNumbers || []).length;
       p.querySelector('#kw').textContent = sentTo ? `KOT ${o.kotNumbers.join(', ')} was already printed. Tell the kitchen to stop.` : 'No KOT was printed. The order is kept as a record, not deleted.';
       p.querySelector('#yes').onclick = async () => {
+        if (sentTo && !(await managerOK(`Cancel order ${o.number}: the kitchen already has KOT ${o.kotNumbers.join(', ')}.`))) return;
         if (o) {
           o.status = 'VOID';
           o.voidReason = p.querySelector('#cr').value;
@@ -533,6 +568,8 @@ function renderUnlock(message) {
     ev.preventDefault();
     if (!(await checkLocalPassword($('p').value))) return renderUnlock('That password is not right.');
     S.unlocked = true;
+    // The owner password opens the phone as the owner: a manager for approvals.
+    if (staffOn()) S.who = { id: 'owner', name: (S.snap && S.snap.user && S.snap.user.name) || 'Owner', manager: true };
     S.snap = await kv.get('snapshot');
     if (!S.snap) return renderLogin();
     render();
@@ -572,12 +609,30 @@ function dishSheet(item, message) {
        <label for="dst">Stock <span class="mute">(optional)</span></label><input id="dst" type="number" inputmode="numeric" min="0" step="1" value="${item && item.stock != null ? esc(item.stock) : ''}" placeholder="Leave empty to not count">
        <small class="mute">With a number, each sale takes one off and the dish switches itself off at 0.</small>
        <label class="chk"><input id="dso" type="checkbox" ${item && item.soldOut ? 'checked' : ''}> Sold out for now</label>
+       <label for="dh">Half portion price (₹) <span class="mute">(optional)</span></label><input id="dh" type="number" inputmode="decimal" min="0" step="0.01" value="${item && item.halfPrice != null ? esc(item.halfPrice) : ''}" placeholder="Leave empty if there is no half">
+       <label for="dad">Add-ons <span class="mute">(optional, one per line: Extra cheese = 30)</span></label><textarea id="dad" rows="3" placeholder="Extra cheese = 30&#10;No onion">${esc(addOnsText(item))}</textarea>
+       <label for="dbc">Barcode <span class="mute">(optional, for scanning)</span></label><div class="searchrow"><input id="dbc" inputmode="numeric" value="${esc((item && item.barcode) || '')}" autocomplete="off">${plugins().BarcodeScanner ? '<button class="btn ghost" id="dbcs" type="button">Scan</button>' : ''}</div>
      </div>
      <footer>${item ? '<button class="btn line" id="dd">Delete</button>' : ''}<button class="btn" id="ds">Save</button></footer>`,
     (p) => {
+      const dbcs = p.querySelector('#dbcs');
+      if (dbcs)
+        dbcs.onclick = async () => {
+          try {
+            const sc = plugins().BarcodeScanner;
+            const perm = await sc.requestPermissions();
+            if (perm.camera !== 'granted' && perm.camera !== 'limited') return toast('The camera is needed to scan. Type the code instead.');
+            const r = await sc.scan({});
+            const code = r.barcodes && r.barcodes[0] && r.barcodes[0].rawValue;
+            if (code) $('dbc').value = code;
+          } catch {
+            /* cancelled */
+          }
+        };
       p.querySelector('#ds').onclick = async () => {
         try {
-          S.snap = await upsertDish(S.snap, { id: item && item.id, name: $('dn').value, price: $('dpr').value, taxRate: $('dt').value, isVeg: $('dv').checked, categoryName: $('dc').value, stock: $('dst').value, soldOut: $('dso').checked && !(item && item.stock === 0 && Number($('dst').value) > 0) });
+          if (!(await managerOK(item ? `Change ${item.name} on the menu.` : 'Add a dish to the menu.'))) return;
+          S.snap = await upsertDish(S.snap, { id: item && item.id, name: $('dn').value, price: $('dpr').value, taxRate: $('dt').value, isVeg: $('dv').checked, categoryName: $('dc').value, stock: $('dst').value, soldOut: $('dso').checked && !(item && item.stock === 0 && Number($('dst').value) > 0), halfPrice: $('dh').value, barcode: $('dbc').value, addOns: $('dad').value });
           closeSheet();
           S.note = null;
           render();
@@ -589,8 +644,9 @@ function dishSheet(item, message) {
       if (del)
         del.onclick = async () => {
           if (!confirm(`Delete ${item.name} from the menu? Past sales keep it.`)) return;
+          if (!(await managerOK(`Delete ${item.name} from the menu.`))) return;
           S.snap = await removeDish(S.snap, item.id);
-          S.cart.delete(item.id);
+          for (const [k, l] of S.cart) if (l.item.id === item.id) S.cart.delete(k);
           closeSheet();
           render();
         };
@@ -680,14 +736,16 @@ function shell() {
   $('app').innerHTML = `
   <header class="top">
     <h1>${esc(S.snap.branch.name)}</h1>
+    ${S.who ? `<button class="who" id="who" type="button" aria-label="${esc(S.who.name)} is using this phone. Switch user">${esc(S.who.name)}</button>` : ''}
     <span class="pill ${S.snap.local || S.online ? 'on' : 'off'}" id="pill"><i></i>${S.snap.local ? 'On this phone' : S.online ? 'Online' : 'Offline'}</span>
   </header>
   <main class="view" id="view"></main>
   <div id="barwrap"></div>
   <nav class="nav" aria-label="Sections">
-    ${tabs.map(([k, label, icon]) => `<button data-tab="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${icon}<span>${label}${k === 'sales' && S.pending ? ` <span class="badge">${S.pending}</span>` : ''}${k === 'kitchen' && S.pendingEvents + S.failedEvents ? ` <span class="badge">${S.pendingEvents + S.failedEvents}</span>` : ''}</span></button>`).join('')}
+    ${tabs.map(([k, label, icon]) => `<button data-tab="${k}" ${S.view === k ? 'aria-current="page"' : ''}>${icon}<span>${label}${k === 'sales' && S.pending ? ` <span class="badge">${S.pending}</span>` : ''}${k === 'kitchen' && S.pendingEvents + S.failedEvents ? ` <span class="badge">${S.pendingEvents + S.failedEvents}</span>` : ''}${k === 'sync' && S.failedBooks ? ` <span class="badge">${S.failedBooks}</span>` : ''}</span></button>`).join('')}
   </nav>`;
   document.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => go(b.dataset.tab)));
+  if ($('who')) $('who').onclick = switchUser;
 }
 // Back button, like any phone app: close the open sheet first, then go back to Sell, then leave the app.
 // History: [guard] [root = Sell] [one entry while another tab is open] (+ one while a sheet is open).
@@ -731,20 +789,228 @@ async function refreshBadges() {
 async function refreshPending() {
   S.pending = (await sales.pending()).length;
   // Kitchen records (and attendance) and table bookings also wait for the server; the phone must say so.
-  const ev = await eventCounts();
-  S.pendingEvents = ev.pending;
-  S.failedEvents = ev.failed;
+  const all = await events.all();
+  const kitchenEv = all.filter((e) => !BOOK_KIND[e.kind]);
+  S.pendingEvents = kitchenEv.filter((e) => e.status === 'pending').length;
+  S.failedEvents = kitchenEv.filter((e) => e.status === 'failed').length;
+  S.pendingBooks = all.filter((e) => BOOK_KIND[e.kind] && e.status === 'pending').length;
+  S.failedBooks = all.filter((e) => BOOK_KIND[e.kind] && e.status === 'failed').length;
   S.pendingBookings = (await reservations.all()).filter((b) => b.dirty).length;
 }
-const waitingText = () => [S.pending && `${S.pending} sale${S.pending === 1 ? '' : 's'}`, S.pendingEvents && `${S.pendingEvents} kitchen/shift record${S.pendingEvents === 1 ? '' : 's'}`, S.pendingBookings && `${S.pendingBookings} booking${S.pendingBookings === 1 ? '' : 's'}`].filter(Boolean).join(', ') || 'Nothing';
+const waitingText = () => [S.pending && `${S.pending} sale${S.pending === 1 ? '' : 's'}`, S.pendingEvents && `${S.pendingEvents} kitchen/shift record${S.pendingEvents === 1 ? '' : 's'}`, S.pendingBookings && `${S.pendingBookings} booking${S.pendingBookings === 1 ? '' : 's'}`, S.pendingBooks && `${S.pendingBooks} refund/expense/cash record${S.pendingBooks === 1 ? '' : 's'}`].filter(Boolean).join(', ') || 'Nothing';
 async function render() {
   if (!S.snap) return renderLogin();
+  // With staff set up, a PIN switches someone in (and opens a phone account); the owner password still works.
+  if (staffOn() && !S.who && !(S.snap.local && S.unlocked && S.ownerUnlock)) return renderPinLock();
   if (S.snap.local && !S.unlocked) return renderUnlock();
   if (!S.restored) await restoreCurrent();
   await refreshPending();
   await refreshBadges();
   shell();
   ({ sell: viewSell, tables: viewTables, menu: viewMenu, sales: viewSales, sync: viewSync, kitchen: viewKitchen, shift: viewShift })[S.view]();
+}
+
+// ------------------------------------------------------------------- staff ---
+// A shared phone: each person switches in with their own PIN (kept as a salted hash, never sent anywhere). With
+// nobody set up, nothing here is asked: the phone behaves as before.
+const staffOn = () => S.staff.some((p) => p.active !== false);
+async function loadStaff() {
+  S.staff = (await kv.get('staff')) || [];
+  S.scPct = Number(await kv.get('serviceChargePct')) || 0;
+  S.autoLockMin = Number(await kv.get('autoLockMin')) || 0;
+  if (S.who && !S.staff.some((p) => p.id === S.who.id && p.active !== false)) S.who = null;
+}
+async function saveStaff() {
+  await kv.set('staff', S.staff);
+}
+
+/** A PIN pad in its own layer, on top of any open sheet. Resolves with the person whose PIN it is, or null. */
+function pinPrompt({ title, hint = '', managerOnly = false }) {
+  return new Promise((resolve) => {
+    const box = document.createElement('div');
+    box.className = 'pinlayer';
+    box.innerHTML = `<form class="panel" role="dialog" aria-modal="true" aria-labelledby="pin-t" novalidate>
+      <header><h2 id="pin-t">${esc(title)}</h2><button type="button" class="x" data-x aria-label="Cancel">&times;</button></header>
+      <div class="body">${hint ? `<p class="mute">${esc(hint)}</p>` : ''}
+        <label for="pin-in">PIN</label><input id="pin-in" type="password" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]*">
+        <p class="note bad" id="pin-err" role="alert" hidden></p></div>
+      <footer><button class="btn block" type="submit">OK</button></footer></form>`;
+    document.body.appendChild(box);
+    const input = box.querySelector('#pin-in');
+    const err = box.querySelector('#pin-err');
+    const done = (who) => (box.remove(), resolve(who));
+    box.querySelector('[data-x]').onclick = () => done(null);
+    box.onclick = (e) => {
+      if (e.target === box) done(null);
+    };
+    setTimeout(() => input.focus(), 30);
+    box.querySelector('form').onsubmit = async (ev) => {
+      ev.preventDefault();
+      const lock = lockState(await kv.get('pinTries'));
+      const say = (t) => ((err.textContent = t), (err.hidden = false), (input.value = ''), input.focus());
+      if (lock.locked) return say(`Too many wrong PINs. Try again in ${lock.waitSeconds} s.`);
+      const who = await whoHasPin(S.staff, input.value);
+      if (!who || (managerOnly && !who.manager)) {
+        await kv.set('pinTries', afterWrong(await kv.get('pinTries')));
+        return say(who ? `${who.name} is not a manager. A manager has to enter their PIN.` : 'That PIN is not right.');
+      }
+      await kv.set('pinTries', afterRight());
+      done(who);
+    };
+  });
+}
+
+/** For things a cashier may not do alone: true straight away for a manager (or with no staff set up), else asks one. */
+async function managerOK(why) {
+  if (!needsManager(S.staff, S.who)) return true;
+  if (document.querySelector('.pinlayer')) return false; // one approval at a time
+  const m = await pinPrompt({ title: 'Manager approval', hint: why, managerOnly: true });
+  if (m) toast(`Approved by ${m.name}`);
+  return !!m;
+}
+
+/** Full-screen lock: someone has to switch in before the phone can be used. */
+function renderPinLock(message) {
+  $('app').innerHTML = `
+  <form class="login" id="pl" novalidate>
+    <img src="../assets/logo.png" alt="">
+    <h1 class="center">Who is using this phone?</h1>
+    <p class="mute center">Enter your PIN.</p>
+    ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+    <label for="pin">PIN</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]*" autofocus>
+    <button class="btn block mt" type="submit">Switch in</button>
+    ${S.snap && S.snap.local ? '<p class="center mt"><a href="#" id="owner" class="mute">Use the owner password instead</a></p>' : ''}
+  </form>`;
+  setTimeout(() => $('pin') && $('pin').focus(), 30);
+  if ($('owner')) $('owner').onclick = (e) => (e.preventDefault(), (S.ownerUnlock = true), renderUnlock());
+  $('pl').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const lock = lockState(await kv.get('pinTries'));
+    if (lock.locked) return renderPinLock(`Too many wrong PINs. Try again in ${lock.waitSeconds} s.`);
+    const who = await whoHasPin(S.staff, $('pin').value);
+    if (!who) {
+      await kv.set('pinTries', afterWrong(await kv.get('pinTries')));
+      return renderPinLock('That PIN is not right.');
+    }
+    await kv.set('pinTries', afterRight());
+    S.who = { id: who.id, name: who.name, manager: !!who.manager, serverId: who.serverId };
+    S.unlocked = true;
+    S.lastTouch = Date.now();
+    S.note = { text: `Hello ${who.name}.` };
+    render();
+  };
+}
+
+async function switchUser() {
+  await flushPersist();
+  S.who = null;
+  S.cart = new Map();
+  S.orderId = null;
+  S.restored = false;
+  closeSheet();
+  render();
+}
+
+// Idle lock: with staff set up and an auto-lock time chosen, the phone asks for a PIN again after that long untouched.
+S.lastTouch = Date.now();
+['pointerdown', 'keydown'].forEach((t) => document.addEventListener(t, () => (S.lastTouch = Date.now()), { capture: true, passive: true }));
+setInterval(() => {
+  if (S.who && staffOn() && S.autoLockMin > 0 && Date.now() - S.lastTouch > S.autoLockMin * 60000 && !document.querySelector('.pinlayer')) switchUser();
+}, 20000);
+
+/** Staff and their PINs. Server-linked phones list the server's staff; a phone account adds its own people. */
+async function staffSheet(message) {
+  if (staffOn() && !(await managerOK('Only a manager can change staff and PINs.'))) return;
+  const server = !S.snap.local ? S.snap.staff || [] : [];
+  // Server staff without a PIN yet are listed so a manager can give them one.
+  const rows = [...S.staff, ...server.filter((u) => !S.staff.some((p) => p.serverId === u.id)).map((u) => ({ id: `srv-${u.id}`, serverId: u.id, name: u.name, manager: !!u.manager, role: u.role, nopin: true }))];
+  openSheet(
+    `${head('Staff & PINs')}
+     <div class="body">
+       ${message ? `<div class="note ${message.kind || ''}" role="status">${esc(message.text)}</div>` : ''}
+       <p class="mute">Each person switches in with their own PIN, so every bill shows who took it. Discounts, refunds, cancelling sent dishes, cash and menu changes then need a manager's PIN.${S.snap.local ? '' : ' Names and roles come from the server; PINs stay on this phone.'}</p>
+       ${rows.length ? rows.map((p) => `<div class="row"><div class="grow"><b>${esc(p.name)}</b><br><small>${p.manager ? 'Manager' : 'Staff'}${p.role ? ` &middot; ${esc(p.role)}` : ''}${p.nopin ? ' &middot; no PIN yet' : p.active === false ? ' &middot; switched off' : ''}</small></div><button class="btn line" data-p="${esc(p.id)}" style="min-height:40px">${p.nopin ? 'Set PIN' : 'Change'}</button></div>`).join('') : '<p class="mute center">Nobody yet.</p>'}
+       ${S.snap.local ? '<button class="btn block mt" id="addp">Add a person</button>' : ''}
+       ${staffOn() ? '<label for="al" class="mt">Lock when not used for</label><select id="al"><option value="0">Never</option><option value="2">2 minutes</option><option value="5">5 minutes</option><option value="15">15 minutes</option></select>' : ''}
+     </div>`,
+    (p) => {
+      if (p.querySelector('#al')) {
+        p.querySelector('#al').value = String(S.autoLockMin || 0);
+        p.querySelector('#al').onchange = async (e) => ((S.autoLockMin = Number(e.target.value)), await kv.set('autoLockMin', S.autoLockMin));
+      }
+      if (p.querySelector('#addp')) p.querySelector('#addp').onclick = () => personSheet(null);
+      p.querySelectorAll('[data-p]').forEach((b) => (b.onclick = () => personSheet(rows.find((r) => r.id === b.dataset.p))));
+    },
+  );
+}
+
+function personSheet(person, message) {
+  const isNew = !person || person.nopin;
+  const firstOne = !staffOn();
+  const fromServer = person && person.serverId;
+  openSheet(
+    `${head(person && !person.nopin ? `Edit ${person.name}` : person ? `PIN for ${person.name}` : 'Add a person')}
+     <form class="body" id="pf" novalidate>
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       ${fromServer ? `<p><b>${esc(person.name)}</b> &middot; ${person.manager ? 'Manager' : 'Staff'} <small class="mute">(from the server)</small></p>` : `<label for="pn">Name</label><input id="pn" value="${esc(person ? person.name : '')}" maxlength="40" autocomplete="off">
+       <label>Role</label><div class="seg" role="group" aria-label="Role"><button type="button" data-r="staff" aria-pressed="${!(person ? person.manager : firstOne)}" ${firstOne && isNew ? 'disabled' : ''}>Staff</button><button type="button" data-r="manager" aria-pressed="${!!(person ? person.manager : firstOne)}">Manager</button></div>
+       ${firstOne && isNew ? '<small class="mute">The first person is a manager, so someone can always approve.</small>' : ''}`}
+       <label for="pp">${isNew ? 'PIN' : 'New PIN'} <span class="mute">(4 to 8 digits${isNew ? '' : ', leave empty to keep'})</span></label><input id="pp" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
+       <label for="pp2">Same PIN again</label><input id="pp2" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
+       <button class="btn block mt" type="submit">Save</button>
+       ${person && !person.nopin ? `<button class="btn line block mt" type="button" id="toggle">${person.active === false ? 'Switch on again' : 'Switch off (keeps their past sales)'}</button>` : ''}
+     </form>`,
+    (p) => {
+      let manager = person ? !!person.manager : firstOne;
+      p.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => ((manager = b.dataset.r === 'manager'), p.querySelectorAll('[data-r]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))))));
+      const tg = p.querySelector('#toggle');
+      if (tg)
+        tg.onclick = async () => {
+          const mgrsLeft = S.staff.filter((x) => x.id !== person.id && x.manager && x.active !== false).length;
+          if (person.active !== false && person.manager && !mgrsLeft && S.staff.some((x) => x.id !== person.id && x.active !== false)) return personSheet(person, 'Keep at least one manager switched on.');
+          S.staff = S.staff.map((x) => (x.id === person.id ? { ...x, active: x.active === false } : x));
+          await saveStaff();
+          booksDirty = true;
+          staffSheet({ text: `${person.name} switched ${person.active === false ? 'on' : 'off'}.` });
+        };
+      p.querySelector('#pf').onsubmit = async (ev) => {
+        ev.preventDefault();
+        const name = fromServer ? person.name : ($('pn').value || '').trim();
+        const pin = $('pp').value;
+        if (!name) return personSheet(person, 'Enter the name.');
+        if (isNew || pin) {
+          if (!validPin(pin)) return personSheet(person, 'The PIN must be 4 to 8 digits.');
+          if (weakPin(pin)) return personSheet(person, 'That PIN is too easy to guess (like 1111 or 1234). Choose another.');
+          if (pin !== $('pp2').value) return personSheet(person, 'The two PINs are not the same.');
+          if (await pinTaken(S.staff, pin, person && person.id)) return personSheet(person, 'Someone else already uses that PIN. Choose another.');
+        }
+        if (!fromServer && person && person.manager && !manager && !S.staff.some((x) => x.id !== person.id && x.manager && x.active !== false)) return personSheet(person, 'Keep at least one manager.');
+        const pinRec = pin ? await hashPin(pin) : person && person.pin;
+        const id = person && !person.nopin ? person.id : `st-${newId()}`;
+        const rec = { id, name, manager: fromServer ? !!person.manager : manager, pin: pinRec, active: person && person.active === false ? false : true, ...(fromServer ? { serverId: person.serverId } : {}) };
+        S.staff = [...S.staff.filter((x) => x.id !== id), rec];
+        await saveStaff();
+        booksDirty = true; // redraw the header (who is on the phone) when the sheet closes
+        if (firstOne) S.who = { id: rec.id, name: rec.name, manager: rec.manager, serverId: rec.serverId };
+        staffSheet({ text: `${name} saved.${firstOne ? ' From now on this phone asks for a PIN.' : ''}` });
+      };
+    },
+  );
+}
+
+/** Server-linked phones: keep names and manager flags in step with the server's staff list. */
+async function syncStaffFromServer() {
+  if (!S.snap || S.snap.local || !Array.isArray(S.snap.staff)) return;
+  let changed = false;
+  S.staff = S.staff.map((p) => {
+    const u = p.serverId && S.snap.staff.find((x) => x.id === p.serverId);
+    if (!p.serverId) return p;
+    if (!u) return p.active === false ? p : ((changed = true), { ...p, active: false }); // left the restaurant
+    if (u.name !== p.name || !!u.manager !== !!p.manager) return ((changed = true), { ...p, name: u.name, manager: !!u.manager });
+    return p;
+  });
+  if (changed) await saveStaff();
 }
 
 // -------------------------------------------------------------------- sell ---
@@ -780,7 +1046,7 @@ function viewSell() {
   $('view').innerHTML = `
     ${setupCard()}
     ${S.orderId || S.table ? `<div class="note" role="status">${S.type === 'DINE_IN' ? `Dine in${S.table ? ` &middot; <b>${esc(S.table)}</b>` : ''}` : 'Takeaway'}${cartCount() ? ' &middot; saved automatically' : ''}</div>` : ''}
-    ${items.length ? `<input class="search" id="q" type="search" placeholder="Search the menu" value="${esc(S.q)}" aria-label="Search the menu">` : ''}
+    ${items.length ? `<div class="searchrow"><input class="search" id="q" type="search" enterkeyhint="go" placeholder="Search, or type / scan a barcode" value="${esc(S.q)}" aria-label="Search the menu or enter a barcode">${plugins().BarcodeScanner ? '<button class="btn ghost" id="scan" type="button" aria-label="Scan a barcode with the camera">Scan</button>' : ''}</div>` : ''}
     <div class="chips" role="group" aria-label="Categories" ${items.length ? '' : 'hidden'}>
       <button class="chip" data-cat="all" aria-pressed="${S.category === 'all'}">All</button>
       ${categories.map((c) => `<button class="chip" data-cat="${esc(c.id)}" aria-pressed="${S.category === c.id}">${esc(c.name)}</button>`).join('')}
@@ -788,32 +1054,114 @@ function viewSell() {
     <div class="grid dishes">
       ${shown.map((i) => `<button class="dish" data-add="${esc(i.id)}" ${i.sellOffline && !i.soldOut ? '' : 'disabled'}>
           <b><span class="veg ${i.isVeg ? '' : 'nv'}"></span>${esc(i.name)}</b>
-          <span>${inr(i.price)}${S.cart.get(i.id)?.qty ? ` &middot; <strong style="color:var(--brand)">&times;${S.cart.get(i.id).qty}</strong>` : ''}</span>
-          ${i.soldOut ? '<small>Sold out</small>' : i.sellOffline ? (i.stock != null && i.stock <= 5 ? `<small>${i.stock} left</small>` : '') : '<small>Needs options: use the full app</small>'}
+          <span>${inr(i.price)}${i.halfPrice != null ? ` <small>/ half ${inr(i.halfPrice)}</small>` : ''}${qtyOf(i.id) ? ` &middot; <strong style="color:var(--brand)">&times;${qtyOf(i.id)}</strong>` : ''}</span>
+          ${i.soldOut ? '<small>Sold out</small>' : i.sellOffline ? (i.stock != null && i.stock <= 5 ? `<small>${i.stock} left</small>` : needsChoice(i) ? '<small>Choose options</small>' : '') : '<small>Combo: use the full app</small>'}
         </button>`).join('') || (S.snap.local && !S.snap.items.length ? '<div class="empty"><b>Your menu is empty</b><p class="mute">Add your first dish to start selling.</p><button class="btn" data-setup="menu">Add a dish</button></div>' : '<p class="mute center mt empty">Nothing matches.</p>')}
     </div>`;
   bindSetup();
-  if ($('q')) $('q').oninput = (e) => {
-    S.q = e.target.value;
-    viewSell();
-    $('q').focus();
-    $('q').setSelectionRange(S.q.length, S.q.length);
-  };
+  if ($('q')) {
+    $('q').oninput = (e) => {
+      S.q = e.target.value;
+      viewSell();
+      $('q').focus();
+      $('q').setSelectionRange(S.q.length, S.q.length);
+    };
+    // Enter: an exact barcode/SKU (what a USB or Bluetooth scanner types), else the only dish that matches.
+    $('q').onkeydown = (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const hit = findByCode(S.snap.items, S.q) || (shown.length === 1 ? shown[0] : null);
+      if (!hit) return toast(S.q.trim() ? `Nothing on the menu has the code or name "${S.q.trim()}".` : 'Type a dish name or a barcode.');
+      S.q = '';
+      tapDish(hit);
+    };
+  }
+  if ($('scan')) $('scan').onclick = scanBarcode;
   document.querySelectorAll('[data-cat]').forEach((b) => (b.onclick = () => ((S.category = b.dataset.cat), viewSell())));
-  document.querySelectorAll('[data-add]').forEach(
-    (b) =>
-      (b.onclick = () => {
-        const item = S.snap.items.find((i) => i.id === b.dataset.add);
-        const line = S.cart.get(item.id) || { item, qty: 0 };
-        if (item.stock != null && line.qty >= item.stock) return toast(`Only ${item.stock} left in stock`);
-        line.qty++;
-        S.cart.set(item.id, line);
-        viewSell();
-        renderBar();
-        navigator.vibrate && navigator.vibrate(10);
-      }),
-  );
+  document.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => tapDish(S.snap.items.find((i) => i.id === b.dataset.add))));
   renderBar();
+}
+
+/** A dish was tapped (or scanned): straight into the cart, or the options sheet first. */
+function tapDish(item) {
+  if (!item) return;
+  if (!item.sellOffline) return toast(`${item.name} is a combo: sell it from the full app.`);
+  if (item.soldOut) return toast(`${item.name} is sold out.`);
+  if (needsChoice(item)) return optionsSheet(item);
+  addLine(item, buildChoice(item, {}).line);
+}
+
+function addLine(item, line, qty = 1) {
+  if (item.stock != null && qtyOf(item.id) + qty > item.stock) return toast(`Only ${item.stock} left in stock`);
+  const cur = S.cart.get(line.key) || { ...line, baseName: item.name, qty: 0 };
+  cur.qty += qty;
+  S.cart.set(line.key, cur);
+  if (S.view === 'sell' && $('sheet').hidden) viewSell();
+  renderBar();
+  navigator.vibrate && navigator.vibrate(10);
+}
+
+/** Half or full, and the add-ons, for one dish. */
+function optionsSheet(item, picks = defaultPicks(item), errors = {}, qty = 1) {
+  const choice = buildChoice(item, picks);
+  const price = choice.ok ? choice.line.item.price : null;
+  openSheet(
+    `<header><h2>${esc(item.name)}</h2><button class="x" data-close aria-label="Close">&times;</button></header>
+     <div class="body">
+       ${item.halfPrice != null ? `<fieldset class="opt"><legend>Portion</legend><div class="seg" role="group" aria-label="Portion">
+         <button type="button" data-portion="FULL" aria-pressed="${picks.portion !== 'HALF'}">Full &middot; ${inr(item.price)}</button>
+         <button type="button" data-portion="HALF" aria-pressed="${picks.portion === 'HALF'}">Half &middot; ${inr(item.halfPrice)}</button></div></fieldset>` : ''}
+       ${(item.options || [])
+         .map((g) => {
+           const single = g.max === 1;
+           const hint = g.min > 0 ? (single ? 'Choose one' : `Choose ${g.min}${g.max > g.min ? ` to ${g.max}` : ''}`) : `Optional${g.max < g.choices.length ? `, up to ${g.max}` : ''}`;
+           return `<fieldset class="opt" aria-describedby="h-${esc(g.id)}"><legend>${esc(g.name)} <small id="h-${esc(g.id)}" class="mute">${hint}</small></legend>
+             ${errors[g.id] ? `<p class="note bad" role="alert">${esc(errors[g.id])}</p>` : ''}
+             ${g.choices
+               .map((c) => `<label class="chk optrow"><input type="${single ? 'radio' : 'checkbox'}" name="g-${esc(g.id)}" data-g="${esc(g.id)}" value="${esc(c.id)}" ${(picks.chosen[g.id] || []).includes(c.id) ? 'checked' : ''}> <span class="grow">${esc(c.name)}</span>${c.price ? `<small>+${inr(c.price)}</small>` : ''}</label>`)
+               .join('')}</fieldset>`;
+         })
+         .join('')}
+       <div class="row mt"><span class="grow">Quantity</span><div class="qty"><button type="button" id="oqdown" aria-label="One less">&minus;</button><b>${qty}</b><button type="button" id="oqup" aria-label="One more">+</button></div></div>
+     </div>
+     <footer><button class="btn block" id="oadd">${price != null ? `Add ${qty > 1 ? `${qty} &middot; ` : ''}${inr(price * qty)}` : 'Add'}</button></footer>`,
+    (p) => {
+      const read = () => {
+        const chosen = {};
+        for (const g of item.options || []) chosen[g.id] = [...p.querySelectorAll(`[data-g="${CSS.escape(g.id)}"]:checked`)].map((x) => x.value);
+        return { ...picks, chosen };
+      };
+      p.querySelectorAll('[data-portion]').forEach((b) => (b.onclick = () => optionsSheet(item, { ...read(), portion: b.dataset.portion }, {}, qty)));
+      p.querySelectorAll('[data-g]').forEach((x) => (x.onchange = () => optionsSheet(item, read(), {}, qty)));
+      p.querySelector('#oqdown').onclick = () => optionsSheet(item, read(), {}, Math.max(1, qty - 1));
+      p.querySelector('#oqup').onclick = () => optionsSheet(item, read(), {}, Math.min(99, qty + 1));
+      p.querySelector('#oadd').onclick = () => {
+        const r = buildChoice(item, read());
+        if (!r.ok) return optionsSheet(item, read(), r.errors, qty);
+        closeSheet();
+        addLine(item, r.line, qty);
+        if (S.view === 'sell') viewSell();
+      };
+    },
+  );
+}
+
+/** Camera barcode scan (the app's ML Kit scanner): the dish with that barcode or SKU goes into the cart. */
+async function scanBarcode() {
+  const sc = plugins().BarcodeScanner;
+  if (!sc) return;
+  try {
+    const perm = await sc.requestPermissions();
+    if (perm.camera !== 'granted' && perm.camera !== 'limited') return toast('The camera is needed to scan. You can type the code in the search box instead.', 4000);
+    const r = await sc.scan({});
+    const code = r.barcodes && r.barcodes[0] && r.barcodes[0].rawValue;
+    if (!code) return;
+    const hit = findByCode(S.snap.items, code);
+    if (!hit) return toast(`No dish has the barcode ${code}. Add it to the dish first.`, 4000);
+    tapDish(hit);
+  } catch (e) {
+    if (!/cancel/i.test(String(e && e.message))) toast('Could not scan. Type the code in the search box instead.');
+  }
 }
 function renderBar() {
   persistSoon();
@@ -842,16 +1190,18 @@ function openCart() {
         <div style="margin-top:.6rem">${lines
           .map(
             (l) => `<div class="row"><div class="grow"><b>${esc(l.item.name)}</b><br><small>${inr(l.item.price)} each</small></div>
-            <div class="qty"><button data-dec="${esc(l.item.id)}" aria-label="One less">&minus;</button><b>${l.qty}</b><button data-inc="${esc(l.item.id)}" aria-label="One more">+</button></div>
+            <div class="qty"><button data-dec="${esc(l.key)}" aria-label="One less ${esc(l.item.name)}">&minus;</button><b>${l.qty}</b><button data-inc="${esc(l.key)}" aria-label="One more ${esc(l.item.name)}">+</button></div>
             <b style="min-width:5.5rem;text-align:right">${inr(l.item.price * l.qty)}</b></div>
-            <div style="padding:.2rem 0 .5rem;border-bottom:1px solid var(--line)">${S.noteOpen === l.item.id ? `<input data-note="${esc(l.item.id)}" maxlength="80" value="${esc(l.note || '')}" placeholder="e.g. no onion, less spicy" aria-label="Note for ${esc(l.item.name)}">` : `<button class="chip" data-opennote="${esc(l.item.id)}">${l.note ? `Note: ${esc(l.note)}` : '+ Note'}</button>`}${l.sent ? ` <small class="mute">${l.sent} on a KOT</small>` : ''}</div>`,
+            <div style="padding:.2rem 0 .5rem;border-bottom:1px solid var(--line)">${S.noteOpen === l.key ? `<input data-note="${esc(l.key)}" maxlength="80" value="${esc(l.note || '')}" placeholder="e.g. no onion, less spicy" aria-label="Note for ${esc(l.item.name)}">` : `<button class="chip" data-opennote="${esc(l.key)}">${l.note ? `Note: ${esc(l.note)}` : '+ Note'}</button>`}${l.sent ? ` <small class="mute">${l.sent} on a KOT</small>` : ''}</div>`,
           )
           .join('')}</div>
         <label for="dp">Discount %</label><input id="dp" type="number" inputmode="decimal" min="0" max="${esc(S.snap.restaurant.maxManualDiscountPercent)}" value="${S.discountPercent || ''}" placeholder="0">
         ${S.discountPercent > 0 ? `<label for="dr">Reason for the discount${S.snap.restaurant.requireDiscountReason ? '' : ' (optional)'}</label><input id="dr" maxlength="200" value="${esc(S.discountReason)}" ${S.snap.restaurant.requireDiscountReason ? 'required' : ''} autocomplete="off" enterkeyhint="done">` : ''}
+        ${S.scPct > 0 ? `<label class="chk mt"><input type="checkbox" id="sc" ${S.serviceCharge ? 'checked' : ''}> Service charge ${esc(S.scPct)}% <small class="mute">(only if the guest agrees)</small></label>` : ''}
         <div class="mt">
           <div class="tot"><span>Subtotal</span><span>${inr(bill.subtotal)}</span></div>
           ${bill.discountAmount > 0 ? `<div class="tot"><span>Discount</span><span>-${inr(bill.discountAmount)}</span></div>` : ''}
+          ${bill.serviceCharge > 0 ? `<div class="tot"><span>Service charge (optional)</span><span>${inr(bill.serviceCharge)}</span></div>` : ''}
           ${bill.tax > 0 ? `<div class="tot mute"><span>${esc(S.snap.branch.taxLabel || 'Tax')} (included)</span><span>${inr(bill.tax)}</span></div>` : ''}
           <div class="tot big"><span>Total</span><span>${inr(bill.total)}</span></div>
         </div>
@@ -896,11 +1246,36 @@ function openCart() {
       render();
     };
     root.querySelector('#void').onclick = cancelOrderSheet;
-    root.querySelectorAll('[data-inc]').forEach((b) => (b.onclick = () => (S.cart.get(b.dataset.inc).qty++, draw())));
-    root.querySelectorAll('[data-dec]').forEach((b) => (b.onclick = () => (S.cart.get(b.dataset.dec).qty--, draw())));
-    root.querySelector('#dp').onchange = (e) => {
+    root.querySelectorAll('[data-inc]').forEach(
+      (b) =>
+        (b.onclick = () => {
+          const l = S.cart.get(b.dataset.inc);
+          const item = S.snap.items.find((i) => i.id === l.item.id);
+          if (item && item.stock != null && qtyOf(item.id) >= item.stock) return toast(`Only ${item.stock} left in stock`);
+          l.qty++;
+          draw();
+        }),
+    );
+    root.querySelectorAll('[data-dec]').forEach(
+      (b) =>
+        (b.onclick = async () => {
+          const l = S.cart.get(b.dataset.dec);
+          // Taking off a dish the kitchen already has is a cancellation: a manager says yes on a shared phone.
+          if (l.sent && l.qty <= l.sent && !(await managerOK(`Cancel 1 × ${l.item.name}: the kitchen already has it.`))) return;
+          l.qty--;
+          draw();
+        }),
+    );
+    const sc = root.querySelector('#sc');
+    if (sc) sc.onchange = () => ((S.serviceCharge = sc.checked), draw());
+    root.querySelector('#dp').onchange = async (e) => {
       const max = Number(S.snap.restaurant.maxManualDiscountPercent) || 100;
-      S.discountPercent = Math.min(Math.max(Number(e.target.value) || 0, 0), max);
+      const want = Math.min(Math.max(Number(e.target.value) || 0, 0), max);
+      if (want > (S.discountPercent || 0) && !(await managerOK(`Give a ${want}% discount.`))) {
+        e.target.value = S.discountPercent || '';
+        return;
+      }
+      S.discountPercent = want;
       draw();
     };
     const dr = root.querySelector('#dr');
@@ -917,7 +1292,10 @@ function openCart() {
   };
   openSheet('', draw);
   draw();
-  $('sheet').onclick = (e) => e.target === $('sheet') && (closeSheet(), renderBar(), viewSell());
+  $('sheet').onclick = (e) => {
+    // Block body on purpose: an onclick that returns false cancels the click (it stopped checkboxes in the cart working).
+    if (e.target === $('sheet')) (closeSheet(), renderBar(), viewSell());
+  };
 }
 
 // ------------------------------------------------------------------ payment ---
@@ -951,12 +1329,18 @@ function openPay() {
           .join('')}
         ${qr}
         <button class="btn line block mt" id="split">+ Add another payment</button>
+        <details class="mt" ${S.customer.phone || S.customer.name || !st.fullyPaid ? 'open' : ''}><summary>Customer ${S.customer.name || S.customer.phone ? `&middot; ${esc(S.customer.name || S.customer.phone)}` : '<span class="mute">(optional)</span>'}</summary>
+          <label for="cn">Name</label><input id="cn" autocomplete="off" maxlength="100" value="${esc(S.customer.name)}" list="custs">
+          <label for="cph">Phone</label><input id="cph" type="tel" inputmode="tel" autocomplete="off" maxlength="20" value="${esc(S.customer.phone)}" list="custph">
+          <datalist id="custs">${knownCustomers.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
+          <datalist id="custph">${knownCustomers.map((c) => `<option value="${esc(c.phone)}">${esc(c.name)}</option>`).join('')}</datalist>
+        </details>
         <div class="mt">
           ${st.change > 0 ? `<div class="tot big" style="color:var(--ok)"><span>Change to give</span><span>${inr(st.change)}</span></div>` : ''}
           ${!st.fullyPaid ? `<div class="tot big" style="color:var(--bad)"><span>Still to pay</span><span>${inr(st.balance)}</span></div>` : ''}
         </div>
       </div>
-      <footer><button class="btn block" id="done" ${st.fullyPaid ? '' : 'disabled'}>Complete sale</button></footer>`;
+      <footer>${!st.fullyPaid ? `<button class="btn line" id="later" ${phoneOk(S.customer.phone) ? '' : 'aria-disabled="true"'}>Pay later (${inr(st.balance)} due)</button>` : ''}<button class="btn ${st.fullyPaid ? 'block' : ''}" id="done" ${st.fullyPaid ? '' : 'disabled'}>Complete sale</button></footer>`;
     root.querySelector('[data-close]').onclick = openCart;
     root.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((rows[Number(b.dataset.m.split(':')[0])].method = b.dataset.m.split(':')[1]), draw())));
     root.querySelectorAll('[data-am]').forEach((el) => (el.oninput = () => ((rows[Number(el.dataset.am)].amount = el.value), softRedraw())));
@@ -968,7 +1352,37 @@ function openPay() {
       draw();
     };
     root.querySelector('#done').onclick = () => complete(st, tenders);
+    const keepCust = () => {
+      S.customer = { name: root.querySelector('#cn').value, phone: root.querySelector('#cph').value };
+      persistSoon();
+    };
+    root.querySelector('#cn').oninput = keepCust;
+    root.querySelector('#cph').oninput = () => {
+      keepCust();
+      const known = knownCustomers.find((c) => c.phone === S.customer.phone.trim());
+      if (known && !S.customer.name.trim()) root.querySelector('#cn').value = S.customer.name = known.name;
+      const later = root.querySelector('#later');
+      if (later) later.setAttribute('aria-disabled', String(!phoneOk(S.customer.phone)));
+    };
+    const later = root.querySelector('#later');
+    if (later)
+      later.onclick = async () => {
+        keepCust();
+        if (!phoneOk(S.customer.phone)) {
+          toast('Enter the customer\'s phone number to let them pay later.', 3500);
+          return root.querySelector('#cph').focus();
+        }
+        if (!(await managerOK(`Let ${S.customer.name || S.customer.phone} pay ${inr(st.balance)} later.`))) return;
+        complete(st, tenders, { payLater: true });
+      };
   };
+  const phoneOk = (v) => String(v || '').replace(/\D/g, '').length >= 10;
+  let knownCustomers = [];
+  sales.all().then((all) => {
+    const m = new Map();
+    for (const x of all) if (x.customer && x.customer.phone && !m.has(x.customer.phone)) m.set(x.customer.phone, { name: x.customer.name || '', phone: x.customer.phone });
+    knownCustomers = [...m.values()].slice(0, 200);
+  });
   // typing re-renders the sheet; keep the caret in the field being edited
   let t;
   const softRedraw = () => {
@@ -990,18 +1404,20 @@ function openPay() {
       });
     }, 250);
   };
-  async function complete(st, tenders) {
-    if (!st.fullyPaid) return;
+  async function complete(st, tenders, { payLater = false } = {}) {
+    if (!st.fullyPaid && !payLater) return;
+    if (payLater && !phoneOk(S.customer.phone)) return;
     await flushPersist();
     const number = await nextLocalNumber();
     const sale = saleFrom(number, bill, st.rows.map((r) => ({ ...r })), st.change);
+    if (payLater) sale.payLater = true;
     sale.note = saleNote(sale.items);
     await sales.put(sale);
     if (S.snap.local) S.snap = await useStock(S.snap, sale.items);
     const o = S.orderId ? await orders.get(S.orderId) : null;
     if (o) await orders.put({ ...o, status: 'PAID', saleId: sale.id, paidAt: new Date().toISOString() }); // frees the table
     resetCart();
-    toast('Sale saved');
+    toast(payLater ? `Saved. ${inr(dueOf(sale))} to collect later.` : 'Sale saved');
     openDone(sale);
     syncNow({ refreshMenu: false }).then(afterSync);
   }
@@ -1016,6 +1432,7 @@ function openDone(sale) {
        <div style="font-size:3rem;color:var(--ok)" aria-hidden="true">&#10003;</div>
        <h2>${inr(sale.bill.total)}</h2>
        <p class="mute">Bill ${esc(sale.localNumber)}${sale.change > 0 ? ` &middot; give change ${inr(sale.change)}` : ''}</p>
+       ${dueOf(sale) > 0 ? `<div class="note warn"><b>${inr(dueOf(sale))} to collect later</b> from ${esc(sale.customer.name || sale.customer.phone)}. Find it under Sales &rsaquo; Money owed.</div>` : ''}
        <p class="note">${S.snap.local ? 'Saved on this phone. Connect a server later (Sync tab) and it is sent then.' : 'Saved on this phone. It goes to the server by itself when you are online.'}</p>
        <div class="mt">${printActions()}</div>
      </div>
@@ -1249,8 +1666,11 @@ async function viewSales() {
       ${rep.voids ? `<dt>Cancelled orders</dt><dd>${rep.voids} (${inr(rep.voidValue)})</dd>` : ''}</dl>
     ${rep.top.length ? `<p class="mute" style="margin:.5rem 0 0">Top: ${rep.top.map((t) => `${esc(t.name)} &times;${t.qty}`).join(', ')}</p>` : ''}
     <p class="mute" style="margin:.5rem 0 0">Only sales taken on this phone, for today by the phone's clock.${S.snap.local ? '' : ' It is not the server total.'}${rep.notSynced ? ` ${rep.notSynced} not on the server yet.` : ''}</p></div>`;
+  const owed = dueSales(all);
+  const owedTotal = owed.reduce((n, x) => n + dueOf(x), 0);
   $('view').innerHTML = `
     ${reportCard}
+    ${owed.length ? `<button class="card mt owed" id="owed" style="width:100%;text-align:left"><b>Money owed</b> <span class="badge">${owed.length}</span><div class="tot big"><span>${owed.length} bill${owed.length === 1 ? '' : 's'} to collect</span><span>${inr(owedTotal)}</span></div></button>` : ''}
     <button class="btn line block mt" id="books">Books &amp; backup: expenses, close the day, reports</button>
     ${S.pending ? `<div class="note warn" role="status">${S.pending} sale${S.pending > 1 ? 's' : ''} saved on this phone, not on the server yet.</div>` : ''}
     ${nAttention ? `<div class="note bad" role="status">${nAttention} sale${nAttention > 1 ? 's were' : ' was'} refused by the server and still need${nAttention > 1 ? '' : 's'} a decision. Open ${nAttention > 1 ? 'each' : 'it'} to retry or set aside.</div>` : ''}
@@ -1259,12 +1679,13 @@ async function viewSales() {
       all
         .map(
           (s) => `<button class="row" style="width:100%;background:none;border:0;border-bottom:1px solid var(--line);text-align:left" data-sale="${esc(s.id)}">
-            <div class="grow"><b>${esc(s.localNumber)}</b>${s.serverOrderNumber ? ` <small>#${esc(s.serverOrderNumber)}</small>` : ''}${refundedTotal(s, rfs) ? ' <small style="color:var(--bad)">Refunded</small>' : ''}<br><small>${esc(new Date(s.soldAt).toLocaleString())} &middot; ${s.items.reduce((n, i) => n + i.quantity, 0)} items</small></div>
+            <div class="grow"><b>${esc(s.localNumber)}</b>${s.serverOrderNumber ? ` <small>#${esc(s.serverOrderNumber)}</small>` : ''}${refundedTotal(s, rfs) ? ' <small style="color:var(--bad)">Refunded</small>' : ''}${dueOf(s) > 0 ? ` <small style="color:var(--warn)">Owes ${inr(dueOf(s))}</small>` : ''}<br><small>${esc(new Date(s.soldAt).toLocaleString())} &middot; ${s.items.reduce((n, i) => n + i.quantity, 0)} items${s.customer ? ` &middot; ${esc(s.customer.name || s.customer.phone)}` : ''}${s.staffName ? ` &middot; ${esc(s.staffName)}` : ''}</small></div>
             <div style="text-align:right"><b>${inr(s.bill.total)}</b><br><span class="status ${s.status}">${label[s.status]}</span></div></button>`,
         )
         .join('') || '<p class="mute center mt">No sales on this phone yet.</p>'
     }</div>`;
   $('books').onclick = booksMenu;
+  if ($('owed')) $('owed').onclick = duesSheet;
   document.querySelectorAll('[data-sale]').forEach(
     (b) =>
       (b.onclick = async () => {
@@ -1278,15 +1699,20 @@ async function viewSales() {
                <button class="btn line block mt" id="aside">Set aside (keep a copy here)</button>` : ''}
              ${s.status === 'dismissed' ? `<div class="note">Set aside on ${esc(new Date(s.dismissedAt).toLocaleString())}. The server does not have this sale. It is kept here as a record.</div><button class="btn line block mt" id="retry">Try sending again</button>` : ''}
              ${s.review && s.review.length ? `<div class="note warn"><b>Recorded at the price shown on this phone</b><br>${s.review.map((r) => `${esc(r.name)}: charged ${inr(r.phonePrice)}, server menu now ${inr(r.serverPrice)}`).join('<br>')}<br><small>The customer paid what the phone showed, so the receipt was not changed. The server order carries a review note.</small></div>` : ''}
+             ${s.customer ? `<p class="mute">For ${esc([s.customer.name, s.customer.phone].filter(Boolean).join(' · '))}</p>` : ''}${s.staffName ? `<p class="mute">Taken by ${esc(s.staffName)}</p>` : ''}
              ${s.items.map((i) => `<div class="tot"><span>${i.quantity} &times; ${esc(i.name)}</span><span>${inr(i.price * i.quantity)}</span></div>`).join('')}
+             ${s.bill.serviceCharge ? `<div class="tot"><span>Service charge (optional)</span><span>${inr(s.bill.serviceCharge)}</span></div>` : ''}
              <div class="tot big mt"><span>Total</span><span>${inr(s.bill.total)}</span></div>
+             ${(s.collections || []).map((c) => `<div class="tot mute"><span>Collected ${esc(new Date(c.at).toLocaleDateString())} (${esc(METHOD_LABEL[c.method] || c.method)})</span><span>${inr(c.amount)}</span></div>`).join('')}
+             ${dueOf(s) > 0 ? `<div class="tot big" style="color:var(--warn)"><span>Still owed</span><span>${inr(dueOf(s))}</span></div><button class="btn block mt" id="collect">Collect payment</button>` : ''}
              ${refundedTotal(s, rfs) ? `<div class="tot" style="color:var(--bad)"><span>Refunded</span><span>&minus;${inr(refundedTotal(s, rfs))}</span></div>${rfs.filter((r) => r.saleId === s.id).map((r) => `<small class="mute">${esc(new Date(r.at).toLocaleString())} &middot; ${esc(METHOD_LABEL[r.method] || r.method)} &middot; ${r.lines.map((l) => `${l.qty} &times; ${esc(l.name)}`).join(', ')}${r.reason ? ` &middot; ${esc(r.reason)}` : ''}</small>`).join('<br>')}` : ''}
-             ${S.snap.local && refundableLines(s, rfs).some((l) => l.left > 0) ? '<button class="btn line block mt" id="refund">Refund…</button>' : ''}
+             ${dueOf(s) === 0 && s.status !== 'refused' && s.status !== 'dismissed' && refundableLines(s, rfs).some((l) => l.left > 0) ? '<button class="btn line block mt" id="refund">Refund…</button>' : ''}
              <div class="mt">${printActions()}</div>
            </div>`,
           (p) => {
             bindPrint(p, s, false);
             if (p.querySelector('#refund')) p.querySelector('#refund').onclick = () => refundSheet(s.id);
+            if (p.querySelector('#collect')) p.querySelector('#collect').onclick = () => collectSheet(s.id);
             const back = async () => (await refreshPending(), closeSheet(), render());
             if (p.querySelector('#retry')) p.querySelector('#retry').onclick = async () => ((await retrySale(s.id)), await back(), doSync());
             if (p.querySelector('#aside'))
@@ -1303,10 +1729,80 @@ async function viewSales() {
   );
 }
 
+// -------------------------------------------------------------- money owed ---
+async function duesSheet() {
+  const owed = dueSales(await sales.all());
+  // One customer, one line: the same phone number may owe on several bills.
+  const byCust = new Map();
+  for (const x of owed) {
+    const k = (x.customer && x.customer.phone) || x.id;
+    const g = byCust.get(k) || { name: (x.customer && x.customer.name) || '', phone: (x.customer && x.customer.phone) || '', bills: [] };
+    g.bills.push(x);
+    byCust.set(k, g);
+  }
+  openSheet(
+    `${head('Money owed')}
+     <div class="body">
+       ${[...byCust.values()]
+         .map(
+           (g) => `<h3 style="margin:1rem 0 .2rem">${esc(g.name || g.phone)} <small class="mute">${esc(g.name ? g.phone : '')}</small> <span style="float:right">${inr(g.bills.reduce((n, b) => n + dueOf(b), 0))}</span></h3>
+           ${g.bills.map((b) => `<button class="row" style="width:100%;background:none;border:0;border-bottom:1px solid var(--line);text-align:left" data-c="${esc(b.id)}"><div class="grow"><b>${esc(b.localNumber)}</b><br><small>${esc(new Date(b.soldAt).toLocaleDateString())} &middot; bill ${inr(b.bill.total)}</small></div><b>${inr(dueOf(b))}</b></button>`).join('')}`,
+         )
+         .join('') || '<p class="mute center">Nobody owes anything.</p>'}
+     </div>`,
+    (p) => p.querySelectorAll('[data-c]').forEach((b) => (b.onclick = () => collectSheet(b.dataset.c))),
+  );
+}
+
+async function collectSheet(saleId, message, draft = {}) {
+  const sale = await sales.get(saleId);
+  const due = dueOf(sale);
+  const method = draft.method || 'CASH';
+  openSheet(
+    `${head(`Collect on ${sale.localNumber}`)}
+     <div class="body">
+       ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       <p>${esc([sale.customer && sale.customer.name, sale.customer && sale.customer.phone].filter(Boolean).join(' · '))}</p>
+       <div class="tot big"><span>Owed</span><span>${inr(due)}</span></div>
+       <label>Paid by</label><div class="seg" role="group" aria-label="Paid by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button type="button" data-m="${m}" aria-pressed="${method === m}">${l}</button>`).join('')}</div>
+       <label for="ca">Amount received (₹)</label><input id="ca" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(draft.amount ?? due)}">
+       <label for="cr">Reference <span class="mute">(optional)</span></label><input id="cr" value="${esc(draft.reference || '')}" placeholder="UPI or card transaction id">
+     </div>
+     <footer><button class="btn block" id="go">Record payment</button></footer>`,
+    (p) => {
+      let m = method;
+      p.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((m = b.dataset.m), p.querySelectorAll('[data-m]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))))));
+      p.querySelector('#go').onclick = async () => {
+        const keep = { method: m, amount: $('ca').value, reference: $('cr').value };
+        try {
+          const fresh = await sales.get(saleId); // never collect twice on a stale copy
+          const c = buildCollection({ id: newId(), sale: fresh, method: m, amount: $('ca').value, reference: $('cr').value });
+          if (!S.snap.local && fresh.status === 'synced') {
+            // The server already has the bill: this payment is sent on its own (safe to resend).
+            const ev = await queueEvent('collect', { saleId: fresh.id, payments: [{ method: c.method, amount: c.amount, ...(c.tendered ? { tendered: c.tendered } : {}), ...(c.reference ? { reference: c.reference } : {}) }] }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
+            c.eventId = ev.id;
+          }
+          if (S.who) c.by = S.who.name;
+          fresh.collections = [...(fresh.collections || []), c];
+          await sales.put(fresh);
+          booksDirty = true;
+          toast(`${inr(c.amount)} received${c.change ? `, give change ${inr(c.change)}` : ''}.${dueOf(fresh) > 0 ? ` Still owed ${inr(dueOf(fresh))}.` : ' Bill fully paid.'}`, 4500);
+          closeSheet();
+          render();
+          if (!S.snap.local) syncNow({ refreshMenu: false }).then(afterSync);
+        } catch (e) {
+          collectSheet(saleId, e.message, keep);
+        }
+      };
+    },
+  );
+}
+
 // ------------------------------------------------------------------- books ---
-// Refunds, expenses, closing the day, reports, export and backup. All of it is
-// kept on this phone; none of it is sent to a server (the server has no
-// endpoint for it), and the screens say so.
+// Refunds, expenses, closing the day, reports, export and backup. On a phone
+// account it all stays on the phone; on a server-linked phone refunds,
+// expenses, money collected later and the day's cash count are also sent to
+// the server (lib/journal.js, each safe to resend).
 const fmtDay = (key) => new Date(`${key}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 const stamp = () => new Date().toISOString().slice(0, 10);
 const slug = () => String(S.snap.branch.name || 'orderrestro').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'orderrestro';
@@ -1351,7 +1847,7 @@ function booksMenu() {
        <button class="btn line block mt" data-b="csv">Share sales as a spreadsheet</button>
        ${S.snap.local ? `<button class="btn line block mt" data-b="backup">Back up everything</button>
        <button class="btn line block mt" data-b="restore">Restore from a backup</button>` : ''}
-       <p class="mute mt">Refunds, expenses and cash counts are kept on this phone. ${S.snap.local ? 'Back up often: if the phone is lost or its data cleared, a backup is the only copy.' : 'They are not sent to the server.'}</p>
+       <p class="mute mt">${S.snap.local ? 'Refunds, expenses and cash counts are kept on this phone. It saves a backup by itself once a day (see Sync); copy those files off the phone now and then.' : 'Refunds, expenses, money collected later and the day\'s cash count are sent to the server as well.'}</p>
      </div>`,
     (p) => {
       const go = { expenses: expensesSheet, close: closeDaySheet, report: reportSheet, csv: shareCsv, backup: shareBackup, restore: restoreSheet };
@@ -1388,6 +1884,7 @@ function restoreSheet(message) {
         try {
           const b = parseBackup(await f.text());
           if (!confirm(`Replace everything on this phone with the backup from ${new Date(b.savedAt).toLocaleString()}? It has ${b.sales.length} sale${b.sales.length === 1 ? '' : 's'}.`)) return;
+          if (!(await managerOK('Restore a backup (replaces everything on this phone).'))) return;
           b.snapshot.local = true; // a backup restores a phone account, never a server menu
           await replaceEverything(b);
           booksDirty = true;
@@ -1431,7 +1928,13 @@ async function expensesSheet(message, draft = {}) {
       p.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((method = b.dataset.m), p.querySelectorAll('[data-m]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))))));
       p.querySelector('#add').onclick = async () => {
         try {
-          await expenses.put(buildExpense({ id: newId(), ...grab() }));
+          const e = buildExpense({ id: newId(), ...grab() });
+          if (S.who) e.by = S.who.name;
+          if (!S.snap.local) {
+            const ev = await queueEvent('expense', { spentOn: today(), note: e.note, category: e.category || undefined, amount: e.amount, paidFromCash: e.method === 'CASH' }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
+            e.eventId = ev.id;
+          }
+          await expenses.put(e);
           booksDirty = true;
           toast('Expense added');
           expensesSheet();
@@ -1442,7 +1945,12 @@ async function expensesSheet(message, draft = {}) {
       p.querySelectorAll('[data-del]').forEach(
         (b) =>
           (b.onclick = async () => {
+            const e = list.find((x) => x.id === b.dataset.del);
+            const ev = e && e.eventId ? await events.get(e.eventId) : null;
+            if (ev && ev.status === 'synced') return toast('This expense is already on the server. Ask the owner to delete it there (Accounting).', 5000);
             if (!confirm('Delete this expense? It leaves the books.')) return;
+            if (!(await managerOK('Delete an expense.'))) return;
+            if (ev) await events.del(ev.id); // never sent: drop it from the queue too
             await expenses.del(b.dataset.del);
             booksDirty = true;
             expensesSheet();
@@ -1473,11 +1981,14 @@ async function closeDaySheet(message, draft = {}) {
          ${books.refundTotal ? line('Refunds', `&minus;${inr(books.refundTotal)}`) : ''}
          ${line('Net sales', `<b>${inr(books.net)}</b>`)}
          ${Object.entries(books.byMethod).filter(([, v]) => v).map(([m, v]) => line(METHOD_LABEL[m], inr(v))).join('')}
+         ${books.collected ? line('Collected on earlier bills', inr(books.collected)) : ''}
+         ${books.dueToday ? line('Still owed on today\'s bills', inr(books.dueToday)) : ''}
+         ${books.serviceCharge ? line('Service charge (optional)', inr(books.serviceCharge)) : ''}
          ${books.expenseTotal ? line('Expenses', `&minus;${inr(books.expenseTotal)}`) : ''}
          ${line('Left after expenses', `<b>${inr(books.profit)}</b>`)}
        </dl>
        <div class="tot big mt"><span>Cash that should be there</span><span>${inr(books.expectedCash)}</span></div>
-       <p class="mute" style="margin:.2rem 0 0">Opening cash + cash sales &minus; cash refunds &minus; cash expenses.</p>
+       <p class="mute" style="margin:.2rem 0 0">Opening cash + cash taken (sales and money collected) &minus; cash refunds &minus; cash expenses.</p>
        <label for="cc">Cash you counted (₹)</label><input id="cc" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(draft.counted ?? (done ? done.countedCash : ''))}">
        ${done ? `<div class="note warn">This day was closed at ${esc(new Date(done.closedAt).toLocaleTimeString())}. Closing again replaces that count.</div>` : ''}
        <button class="btn block mt" id="close">${done ? 'Close again' : 'Close the day'}</button>
@@ -1491,11 +2002,20 @@ async function closeDaySheet(message, draft = {}) {
       p.querySelector('#close').onclick = async () => {
         try {
           await kv.set(`float:${day}`, $('fl').value);
-          const rec = closeDay({ books: dayBooks({ ...b, float: Number($('fl').value) || 0, day }), counted: $('cc').value });
+          const bk = dayBooks({ ...b, float: Number($('fl').value) || 0, day });
+          const rec = closeDay({ books: bk, counted: $('cc').value });
+          if (!(await managerOK('Close the day (count the cash).'))) return;
+          rec.by = S.who ? S.who.name : S.snap.user.name;
+          if (!S.snap.local) {
+            // This phone's own drawer, kept on the server per phone and day (a later count replaces it).
+            await queueEvent('tillclose', { deviceId: await kv.get('deviceId'), deviceName: (await kv.get('deviceName')) || 'Phone', businessDate: day, openingFloat: Number($('fl').value) || 0, cashSales: bk.cashIn, cashRefunds: bk.refundCash, cashExpenses: bk.expenseCash, expectedCash: bk.expectedCash, countedCash: rec.countedCash, netSales: bk.net, closedByName: rec.by, closedAt: rec.closedAt }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
+          }
           await shifts.put(rec);
           booksDirty = true;
           const word = rec.difference === 0 ? 'The cash matches.' : rec.difference < 0 ? `Cash is short by ${inr(-rec.difference)}.` : `Cash is over by ${inr(rec.difference)}.`;
           toast(`Day closed. ${word}`, 5000);
+          autoBackup(true);
+          if (!S.snap.local) syncNow({ refreshMenu: false }).then(afterSync);
           closeDaySheet();
         } catch (e) {
           closeDaySheet(e.message, { float: $('fl').value, counted: $('cc').value });
@@ -1545,7 +2065,7 @@ async function refundSheet(saleId, message, draft = {}) {
        <label>Paid back by</label><div class="seg" role="group" aria-label="Paid back by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button data-m="${m}" aria-pressed="${method === m}">${l}</button>`).join('')}</div>
        <label for="rr">Reason <span class="mute">(optional)</span></label><input id="rr" value="${esc(draft.reason || '')}" placeholder="Wrong dish, cold food…">
        <div class="tot big mt"><span>Pay back</span><span id="amt">${inr(0)}</span></div>
-       <p class="mute">Recorded in this phone's books and taken off the day's sales. ${S.snap.local ? 'Dishes are not put back into stock.' : ''}</p>
+       <p class="mute">Recorded in this phone's books and taken off the day's sales.${S.snap.local ? ' Dishes are not put back into stock.' : ' It goes to the server too (money only; stock is not put back).'}</p>
      </div>
      <footer><button class="btn block" id="go" ${lines.length ? '' : 'disabled'}>Refund</button></footer>`,
     (p) => {
@@ -1565,6 +2085,13 @@ async function refundSheet(saleId, message, draft = {}) {
         try {
           const r = buildRefund({ id: newId(), sale, refunds: rs, picks: picks(), method: m, reason: $('rr').value });
           if (!confirm(`Pay back ${inr(r.amount)} by ${METHOD_LABEL[m]}?`)) return;
+          if (!(await managerOK(`Refund ${inr(r.amount)} on ${sale.localNumber}.`))) return;
+          if (S.who) r.by = S.who.name;
+          if (!S.snap.local) {
+            // Sent to the server as a money-only refund once the server has the sale (see sync.js).
+            const ev = await queueEvent('refund', { saleId: sale.id, amount: r.amount, method: r.method, reason: r.reason || undefined }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
+            r.eventId = ev.id;
+          }
           await refunds.put(r);
           booksDirty = true;
           toast(`Refunded ${inr(r.amount)}`);
@@ -1613,6 +2140,76 @@ async function serverCards() {
     <p class="mute">The local address needs this phone on the restaurant WiFi. The online address works from anywhere.</p></div>`;
 }
 
+// ------------------------------------------------------------ shop settings ---
+const BOOK_KIND = { refund: 'Refund', expense: 'Expense', collect: 'Money collected', tillclose: 'Day cash count' };
+
+/** The Settings card on the Sync tab: staff and PINs, the voluntary service charge, and the automatic backup. */
+async function settingsCard() {
+  const info = await kv.get('autoBackupInfo');
+  const np = plugins().NativePrinter;
+  const auto = np && np.saveBackup;
+  const refused = (await events.all()).filter((e) => BOOK_KIND[e.kind] && e.status === 'failed');
+  return `${refused.length ? `<div class="card mt"><h2 style="font-size:1.05rem">Refused by the server</h2>${refused
+      .map((e) => `<div class="row"><div class="grow"><b>${BOOK_KIND[e.kind]}</b>${e.payload.amount ? ` ${inr(e.payload.amount || e.payload.countedCash || 0)}` : ''}<br><small class="mute">${esc(new Date(e.createdAt).toLocaleString())}</small><div class="note bad">${esc(e.error || 'Refused')}</div></div><div><button class="btn ghost" data-evretry="${esc(e.id)}">Try again</button><button class="btn line mt" data-evaside="${esc(e.id)}">Set aside</button></div></div>`)
+      .join('')}</div>` : ''}
+    <div class="card mt">
+      <h2 style="font-size:1.05rem">Shop settings</h2>
+      <button class="btn line block" id="st-staff">Staff &amp; PINs${S.staff.length ? ` (${S.staff.filter((p) => p.active !== false).length})` : ''}</button>
+      <label for="st-sc" class="mt">Service charge offered (%)</label>
+      <input id="st-sc" type="number" inputmode="decimal" min="0" max="25" step="0.5" value="${S.scPct || ''}" placeholder="0 = off">
+      <small class="mute">Never added by itself: the cashier ticks it only when the guest agrees (it cannot be compulsory). It reaches the server as a tip.</small>
+      <h3 style="margin:1rem 0 .2rem;font-size:.95rem">Automatic backup</h3>
+      <p class="mute" style="margin:0">${auto ? (info ? `Last saved ${esc(new Date(info.at).toLocaleString())} to <b>${esc(info.location)}</b>${info.survivesUninstall ? '' : ' (removed if the app is uninstalled: copy it off the phone)'}.` : 'Saves everything once a day to Download/OrderRestro on this phone (the last 7 days are kept).') : 'Works in the OrderRestro app.'}</p>
+      ${auto ? '<button class="btn ghost block mt" id="st-bk">Back up now</button>' : ''}
+    </div>`;
+}
+function bindSettings(redraw) {
+  if ($('st-staff')) $('st-staff').onclick = () => staffSheet();
+  const sc = $('st-sc');
+  if (sc)
+    sc.onchange = async () => {
+      const v = Math.min(Math.max(Number(sc.value) || 0, 0), 25);
+      if (v !== S.scPct && !(await managerOK('Change the service charge.'))) return (sc.value = S.scPct || '');
+      S.scPct = v;
+      await kv.set('serviceChargePct', v);
+      toast(v ? `Service charge ${v}% will be offered at the till.` : 'Service charge switched off.');
+    };
+  if ($('st-bk')) $('st-bk').onclick = async () => ((await autoBackup(true)) ? toast('Backup saved') : null, redraw());
+  document.querySelectorAll('[data-evretry]').forEach((b) => (b.onclick = async () => (await retryEvent(b.dataset.evretry), syncNow({ refreshMenu: false }).then(afterSync), redraw())));
+  document.querySelectorAll('[data-evaside]').forEach(
+    (b) =>
+      (b.onclick = async () => {
+        if (!confirm('Set this record aside? It stays on this phone but is not sent to the server.')) return;
+        await dismissEvent(b.dataset.evaside);
+        redraw();
+      }),
+  );
+}
+
+/**
+ * Once a day (and after closing the day) the whole phone is saved as a JSON file to Download/OrderRestro, so a lost
+ * or cleared phone is not the only copy. Never contains the password or the staff PINs.
+ */
+async function autoBackup(force = false) {
+  const np = plugins().NativePrinter;
+  if (!np || !np.saveBackup || !S.snap) return false;
+  const day = today();
+  if (!force && (await kv.get('autoBackupDay')) === day) return false;
+  try {
+    const data = await readEverything();
+    if (!force && !data.sales.length && !data.orders.length) return false; // nothing worth saving yet
+    const r = await np.saveBackup({ name: `orderrestro-auto-${slug()}-${day}.json`, prefix: 'orderrestro-auto-', text: backupJson(data), keep: 7 });
+    await kv.set('autoBackupDay', day);
+    await kv.set('autoBackupInfo', { at: Date.now(), location: r.location, survivesUninstall: !!r.survivesUninstall });
+    await kv.set('lastBackupAt', Date.now());
+    return true;
+  } catch (e) {
+    if (force) toast(e.message || 'Could not save the backup', 5000);
+    return false;
+  }
+}
+setInterval(() => autoBackup(), 60 * 60000);
+
 // -------------------------------------------------------------------- sync ---
 async function viewSyncLocal() {
   const printer = savedPrinter();
@@ -1633,11 +2230,13 @@ async function viewSyncLocal() {
       <p class="mute">${printer ? `Printing on <b>${esc(printer.name)}</b>` : 'No printer chosen yet.'}</p>
       <button class="btn ghost block" id="pick">${printer ? 'Change printer' : 'Choose printer'}</button>
     </div>
+    ${await settingsCard()}
     <div class="card mt"><button class="btn line block" id="lock">Lock</button><button class="btn line block mt" id="chpw">Change password</button></div>`;
+  bindSettings(viewSync);
   $('chpw').onclick = () => passwordSheet();
   $('conn').onclick = () => connectSheet();
   $('pick').onclick = async () => (await choosePrinter(), viewSync());
-  $('lock').onclick = async () => (await flushPersist(), (S.unlocked = false), (S.cart = new Map()), (S.orderId = null), (S.restored = false), render());
+  $('lock').onclick = async () => (await flushPersist(), (S.unlocked = false), (S.ownerUnlock = false), (S.who = null), (S.cart = new Map()), (S.orderId = null), (S.restored = false), render());
 }
 
 async function viewSync() {
@@ -1663,6 +2262,7 @@ async function viewSync() {
       <p class="mute center">Sync sends your sales, kitchen records and bookings, and refreshes the menu and prices.</p>
     </div>
     ${servers}
+    ${await settingsCard()}
     <div class="card mt">
       <h2 style="font-size:1.05rem">Bluetooth printer</h2>
       <p class="mute">${printer ? `Printing on <b>${esc(printer.name)}</b>` : 'No printer chosen yet.'}</p>
@@ -1673,6 +2273,7 @@ async function viewSync() {
       <button class="btn line block mt" id="out">${S.hasPhoneAccount ? 'Disconnect and go back to my phone account' : 'Sign out of standalone mode'}</button>
     </div>`;
   $('syncnow').onclick = doSync;
+  bindSettings(viewSync);
   $('pick').onclick = async () => (await choosePrinter(), viewSync());
   $('full').onclick = async () => {
     const link = plugins().ServerLink;
@@ -1681,7 +2282,7 @@ async function viewSync() {
   };
   $('out').onclick = async () => {
     await refreshPending();
-    const waiting = S.pending + S.pendingEvents + S.failedEvents + S.pendingBookings;
+    const waiting = S.pending + S.pendingEvents + S.failedEvents + S.pendingBookings + (S.pendingBooks || 0) + (S.failedBooks || 0);
     if (waiting && !confirm(`Not on the server yet: ${waitingText()}${S.failedEvents ? `, and ${S.failedEvents} refused kitchen record${S.failedEvents === 1 ? '' : 's'}` : ''}. Signing out keeps them on this phone, but they cannot be sent until you sign in again. Sign out anyway?`)) return;
     const back = S.hasPhoneAccount && (await kv.get('localMenuBackup'));
     if (back) {
@@ -1713,10 +2314,15 @@ function afterSync(r) {
   else if (r.online) {
     S.note = r.done ? { text: `${r.done} sale${r.done > 1 ? 's' : ''} sent to the server.` } : null;
     if (r.reviewed) S.note = { kind: 'warn', text: `${r.reviewed} sale${r.reviewed > 1 ? 's were' : ' was'} recorded at a price that differs from the server menu. Open Sales to check.` };
-    if (r.eventsFailed) S.note = { kind: 'bad', text: `${r.eventsFailed} kitchen record${r.eventsFailed > 1 ? 's were' : ' was'} refused by the server. Open Kitchen to read why and try again.` };
+    if (r.eventsFailed) S.note = { kind: 'bad', text: `${r.eventsFailed} record${r.eventsFailed > 1 ? 's were' : ' was'} refused by the server (kitchen, refunds, expenses or cash). Open Sync to read why and try again.` };
     if (r.refused) S.note = { kind: 'bad', text: `${r.refused} sale${r.refused > 1 ? 's were' : ' was'} refused by the server. Open Sales to retry or set aside.` };
   } else S.note = null;
-  kv.get('snapshot').then((s) => s && (S.snap = s));
+  kv.get('snapshot').then(async (snap) => {
+    if (snap) {
+      S.snap = snap;
+      await syncStaffFromServer();
+    }
+  });
   if ($('sheet').hidden) render();
 }
 async function doSync() {
@@ -1742,7 +2348,7 @@ const unitOpts = (it, sel) => (it ? it.units : []).map((u) => `<option ${u === s
 const itemOpts = (list) => `<option value="">Choose…</option>${list.map((i) => `<option value="${esc(i.id)}">${esc(i.name)}</option>`).join('')}`;
 
 async function viewKitchen() {
-  const evs = (await events.all()).filter((e) => e.kind !== 'attendance').slice(0, 40);
+  const evs = (await events.all()).filter((e) => e.kind !== 'attendance' && !BOOK_KIND[e.kind]).slice(0, 40);
   const nameOf = (id) => (S.snap.stockItems.find((i) => i.id === id) || {}).name || 'Item';
   const placeOf = (id) => ((S.snap.stockPlaces || []).find((p) => p.id === id) || {}).name || 'another place';
   const describe = (e) =>
@@ -1983,13 +2589,19 @@ async function start() {
   let did = await kv.get('deviceId');
   if (!did) { did = `phone-${newId()}`; await kv.set('deviceId', did); }
   setDeviceId(did);
+  await loadStaff();
   S.snap = await kv.get('snapshot');
   S.setupDismissed = !!(await kv.get('setupDismissed'));
   if (!S.snap) return renderLogin();
-  if (S.snap.local) return render();
+  if (S.snap.local) {
+    setTimeout(() => autoBackup(), 5000);
+    return render();
+  }
   S.online = !!(await pickServer(await kv.get('serverBase')));
+  await syncStaffFromServer();
   render();
   if (S.online) syncNow().then(afterSync);
+  setTimeout(() => autoBackup(), 5000);
 }
 
 // Ask the phone not to clear this app's saved sales and records when it runs low on space. Unsent sales are real money;

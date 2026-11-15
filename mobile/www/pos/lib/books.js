@@ -60,6 +60,42 @@ export function buildRefund({ id, sale, refunds, picks, method = 'CASH', reason 
   return { id, saleId: sale.id, localNumber: sale.localNumber, at: now.toISOString(), lines, amount, tax, method, reason: String(reason || '').trim().slice(0, 200) };
 }
 
+// --------------------------------------------------------- pay later (dues) ---
+// A sale can be left (partly) unpaid for a known customer. Money taken later is a collection on that sale.
+
+export const paidOf = (sale) => round2(sale.payments.reduce((n, p) => n + p.amount, 0) + (sale.collections || []).reduce((n, c) => n + c.amount, 0));
+
+/** What the customer still owes on this sale. */
+export const dueOf = (sale) => (sale.payLater ? round2(Math.max(sale.bill.total - paidOf(sale), 0)) : 0);
+
+/** Sales with money still owed, oldest first. */
+export const dueSales = (sales) => sales.filter((s) => dueOf(s) > 0 && s.status !== 'dismissed').sort((a, b) => (a.soldAt < b.soldAt ? -1 : 1));
+
+/** Money taken later on a due sale. Cash above what is owed is change, like at the till. */
+export function buildCollection({ id, sale, method = 'CASH', amount, reference = '', now = new Date() }) {
+  const due = dueOf(sale);
+  if (!(due > 0)) throw new Error('Nothing is owed on this bill.');
+  const given = round2(Number(amount));
+  if (!Number.isFinite(given) || given <= 0) throw new Error('Enter the amount received, for example 200.');
+  if (given > due && method !== 'CASH') throw new Error(`Only ${due.toFixed(2)} is owed. Only cash can be more (the rest is change).`);
+  const applied = round2(Math.min(given, due));
+  return {
+    id,
+    at: now.toISOString(),
+    method,
+    amount: applied,
+    ...(method === 'CASH' && given > applied ? { tendered: given, change: round2(given - applied) } : {}),
+    ...(reference ? { reference: String(reference).slice(0, 100) } : {}),
+  };
+}
+
+/** Collections taken on a given day, from any sale. */
+function collectionsOn(sales, key) {
+  const out = [];
+  for (const s of sales) for (const c of s.collections || []) if (dayOf(c.at) === key) out.push(c);
+  return out;
+}
+
 // ----------------------------------------------------------------- expenses ---
 
 export function buildExpense({ id, amount, note, category, method = 'CASH', now = new Date() }) {
@@ -79,6 +115,7 @@ export function dayBooks({ sales, refunds, expenses, float = 0, day = today() })
   const s = sales.filter((x) => inDay(x.soldAt, day));
   const r = refunds.filter((x) => inDay(x.at, day));
   const e = expenses.filter((x) => inDay(x.at, day));
+  const col = collectionsOn(sales, day);
   const byMethod = { CASH: 0, UPI: 0, CARD: 0, OTHER: 0 };
   let gross = 0;
   let tax = 0;
@@ -89,6 +126,10 @@ export function dayBooks({ sales, refunds, expenses, float = 0, day = today() })
     discount += x.bill.discountAmount;
     for (const p of x.payments) byMethod[p.method] = round2((byMethod[p.method] || 0) + p.amount);
   }
+  // Money owed on today's bills, and money collected today on any earlier bill (it is in the drawer today).
+  const dueToday = round2(s.reduce((n, x) => n + dueOf(x), 0));
+  const collected = round2(col.reduce((n, c) => n + c.amount, 0));
+  for (const c of col) byMethod[c.method] = round2((byMethod[c.method] || 0) + c.amount);
   const refundTotal = round2(r.reduce((n, x) => n + x.amount, 0));
   const refundCash = round2(r.filter((x) => x.method === 'CASH').reduce((n, x) => n + x.amount, 0));
   const refundTax = round2(r.reduce((n, x) => n + x.tax, 0));
@@ -103,11 +144,16 @@ export function dayBooks({ sales, refunds, expenses, float = 0, day = today() })
     tax: round2(tax - refundTax),
     discount: round2(discount),
     byMethod,
+    dueToday,
+    collected,
+    serviceCharge: round2(s.reduce((n, x) => n + (x.bill.serviceCharge || 0), 0)),
     expenseTotal,
     expenseCash,
     profit: round2(gross - refundTotal - expenseTotal),
-    // Cash that should be in the drawer: float + cash taken - cash paid out.
+    // Cash that should be in the drawer: float + cash taken (sales and collections) - cash paid out.
     expectedCash: round2(Number(float || 0) + byMethod.CASH - refundCash - expenseCash),
+    cashIn: byMethod.CASH,
+    refundCash,
   };
 }
 
@@ -171,7 +217,7 @@ export function cell(v) {
 const row = (a) => a.map(cell).join(',');
 
 export function salesCsv(sales, refunds = []) {
-  const head = ['Bill', 'Server order', 'Date', 'Time', 'Type', 'Table', 'Items', 'Subtotal', 'Discount', 'Tax', 'Total', 'Refunded', 'Payments', 'Status'];
+  const head = ['Bill', 'Server order', 'Date', 'Time', 'Type', 'Table', 'Customer', 'Taken by', 'Items', 'Subtotal', 'Discount', 'Service charge', 'Tax', 'Total', 'Refunded', 'Payments', 'Due', 'Status'];
   const out = [row(head)];
   for (const s of [...sales].sort((a, b) => (a.soldAt < b.soldAt ? -1 : 1))) {
     const d = new Date(s.soldAt);
@@ -183,13 +229,17 @@ export function salesCsv(sales, refunds = []) {
         `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
         s.type,
         s.tableLabel || '',
+        s.customer ? [s.customer.name, s.customer.phone].filter(Boolean).join(' ') : '',
+        s.staffName || '',
         s.items.map((i) => `${i.quantity} x ${i.name}`).join('; '),
         s.bill.subtotal,
         s.bill.discountAmount,
+        s.bill.serviceCharge || 0,
         s.bill.tax,
         s.bill.total,
         refundedTotal(s, refunds),
-        s.payments.map((p) => `${p.method} ${p.amount}`).join('; '),
+        [...s.payments, ...(s.collections || [])].map((p) => `${p.method} ${p.amount}`).join('; '),
+        dueOf(s),
         s.status,
       ]),
     );

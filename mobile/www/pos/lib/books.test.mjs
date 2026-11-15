@@ -92,3 +92,38 @@ test('backup round trip and refusal of foreign files', () => {
   assert.throws(() => parseBackup(JSON.stringify({ format: 'orderrestro-standalone-backup', version: 2, snapshot: snap })), /newer version/);
   assert.equal(today(NOW), '2026-11-08');
 });
+
+// ------------------------------------------------------------ pay later ---
+import { buildCollection, dueOf, dueSales, paidOf } from './books.js';
+
+const due = (extra = {}) => sale({ id: 'd1', payLater: true, customer: { name: 'Mohan', phone: '9876543210' }, payments: [{ method: 'CASH', amount: 100 }], ...extra });
+
+test('a pay-later bill owes what was not paid, a normal bill owes nothing', () => {
+  assert.equal(dueOf(due()), 200);
+  assert.equal(dueOf(sale()), 0);
+  assert.deepEqual(dueSales([sale(), due()]).map((s) => s.id), ['d1']);
+});
+
+test('collecting: part, then the rest with cash change; never more than owed by card', () => {
+  const s = due();
+  const c1 = buildCollection({ id: 'c1', sale: s, method: 'UPI', amount: 50, now: NOW });
+  assert.equal(c1.amount, 50);
+  s.collections = [c1];
+  assert.equal(dueOf(s), 150);
+  assert.throws(() => buildCollection({ id: 'x', sale: s, method: 'CARD', amount: 200 }), /Only 150.00 is owed/);
+  const c2 = buildCollection({ id: 'c2', sale: s, method: 'CASH', amount: 200, now: NOW });
+  assert.equal(c2.amount, 150);
+  assert.equal(c2.change, 50);
+  s.collections.push(c2);
+  assert.equal(dueOf(s), 0);
+  assert.equal(paidOf(s), 300);
+  assert.throws(() => buildCollection({ id: 'y', sale: s, amount: 1 }), /Nothing is owed/);
+});
+
+test('cash collected today on an older bill is in today\'s drawer; today\'s dues are shown', () => {
+  const old = due({ id: 'd0', soldAt: '2026-11-07T10:00:00', collections: [{ id: 'c', at: '2026-11-08T09:00:00', method: 'CASH', amount: 120 }] });
+  const b = dayBooks({ sales: [old, due()], refunds: [], expenses: [], float: 0, day: '2026-11-08' });
+  assert.equal(b.collected, 120);
+  assert.equal(b.dueToday, 200);
+  assert.equal(b.expectedCash, 220); // 100 paid on today's bill + 120 collected
+});

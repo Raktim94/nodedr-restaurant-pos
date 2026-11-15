@@ -85,6 +85,8 @@ export function dayReport(sales, orders, now = new Date()) {
     for (const p of s.payments) byMethod[p.method] = round2((byMethod[p.method] || 0) + p.amount);
     for (const i of s.items) items.set(i.name, (items.get(i.name) || 0) + i.quantity);
   }
+  // Money collected today on bills left due (on any day) is today's money too.
+  for (const s of sales) for (const c of s.collections || []) if (sameDay(c.at, now)) byMethod[c.method] = round2((byMethod[c.method] || 0) + c.amount);
   const voids = orders.filter((o) => o.status === 'VOID' && o.voidedAt && sameDay(o.voidedAt, now));
   return {
     count: todays.length,

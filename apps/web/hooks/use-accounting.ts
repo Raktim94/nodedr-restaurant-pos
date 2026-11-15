@@ -77,6 +77,25 @@ export function useClosings(branchId: string | null) {
     enabled: !!branchId,
   });
 }
+export interface PhoneTillRow {
+  id: string;
+  deviceName: string;
+  businessDate: string;
+  expectedCash: number;
+  countedCash: number;
+  variance: number;
+  netSales: number;
+  closedByName: string | null;
+  closedAt: string;
+}
+/** Each phone's own day-end cash count (phone app, standalone mode). */
+export function usePhoneTills(branchId: string | null) {
+  return useQuery({
+    queryKey: ["acct", "phone-tills", branchId],
+    queryFn: () => api.get<PhoneTillRow[]>(`/mobile/standalone/till-closings?${q(branchId)}`),
+    enabled: !!branchId,
+  });
+}
 export function useProfitLoss(branchId: string | null, from: string, to: string) {
   return useQuery({
     queryKey: ["acct", "pnl", branchId, from, to],

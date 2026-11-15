@@ -22,7 +22,7 @@ test('sends oldest first with the key and device id, and marks them synced', asy
   const a = await mk(s, 'waste', '2026-11-13T10:00:00Z');
   const sent = [];
   const r = await pushEvents('http://x', 'br1', async (_b, _m, path, body) => (sent.push({ path, body }), { status: 201, data: {} }), s);
-  assert.deepEqual(r, { done: 2, failed: 0 });
+  assert.deepEqual(r, { done: 2, failed: 0, held: 0 });
   assert.match(sent[0].path, /waste\/entries\?branchId=br1/);
   assert.equal(sent[0].body.idempotencyKey, a.id);
   assert.equal(sent[0].body.deviceId, 'phone-1234');
@@ -33,7 +33,7 @@ test('sends oldest first with the key and device id, and marks them synced', asy
 test('offline or a server error keeps the event for the next sync', async () => {
   const s = memory();
   const e = await mk(s);
-  assert.deepEqual(await pushEvents('b', 'x', async () => { throw new Error('offline'); }, s), { done: 0, failed: 0 });
+  assert.deepEqual(await pushEvents('b', 'x', async () => { throw new Error('offline'); }, s), { done: 0, failed: 0, held: 0 });
   assert.equal((await s.get(e.id)).status, 'pending');
   await pushEvents('b', 'x', async () => ({ status: 503, data: null }), s);
   assert.equal((await s.get(e.id)).status, 'pending');
@@ -44,7 +44,7 @@ test('a refusal is kept with the server words, can be retried, and never blocks 
   const bad = await mk(s, 'production', '2026-11-13T09:00:00Z');
   const good = await mk(s, 'waste', '2026-11-13T10:00:00Z');
   const r = await pushEvents('b', 'x', async (_b, _m, path) => (path.includes('production') ? { status: 400, data: { message: 'Cannot use 6 KG of Rice, only 2 in stock' } } : { status: 201, data: {} }), s);
-  assert.deepEqual(r, { done: 1, failed: 1 });
+  assert.deepEqual(r, { done: 1, failed: 1, held: 0 });
   assert.equal((await s.get(bad.id)).error, 'Cannot use 6 KG of Rice, only 2 in stock');
   assert.equal((await s.get(good.id)).status, 'synced');
   assert.deepEqual(await counts(s), { pending: 0, failed: 1 });
@@ -110,7 +110,7 @@ test('a transfer and a correction go to the stock journal as posted entries with
   const c = await queueEvent('correction', { reason: 'Count', lines: [{ ingredientId: 'i1', quantity: '1', unit: 'KG', direction: 'OUT' }] }, { userId: 'u', deviceId: 'phone-1234', now: new Date('2026-11-15T11:00:00Z'), store: s });
   const sent = [];
   const r = await pushEvents('http://x', 'br1', async (_b, _m, path, body) => (sent.push({ path, body }), { status: 201, data: {} }), s);
-  assert.deepEqual(r, { done: 2, failed: 0 });
+  assert.deepEqual(r, { done: 2, failed: 0, held: 0 });
   assert.match(sent[0].path, /journal\/entries\?branchId=br1/);
   assert.equal(sent[0].body.type, 'TRANSFER');
   assert.equal(sent[0].body.post, true);
@@ -154,4 +154,30 @@ test('old sent records are pruned but waiting, refused and recent ones never are
   assert.equal(await s.get(old.id), undefined);
   assert.ok(await s.get(recent.id));
   assert.ok(await s.get(waiting.id)); // still pending: never dropped
+});
+
+test('the phone books go to their routes with only the fields the server takes', async () => {
+  const s = memory();
+  const at = { userId: 'u', deviceId: 'phone-1234', store: s };
+  await queueEvent('expense', { spentOn: '2026-11-15', note: 'Gas', category: '', amount: 900, paidFromCash: true, localId: 'x' }, at);
+  await queueEvent('tillclose', { deviceId: 'phone-1234', businessDate: '2026-11-15', openingFloat: 0, cashSales: 10, cashRefunds: 0, cashExpenses: 0, expectedCash: 10, countedCash: 10, netSales: 10, closedAt: '2026-11-15T20:00:00Z', extra: 1 }, at);
+  const sent = [];
+  await pushEvents('http://x', 'br1', async (_b, _m, path, body) => (sent.push({ path, body }), { status: 201, data: {} }), s);
+  const exp = sent.find((x) => /expenses/.test(x.path));
+  assert.match(exp.path, /\/mobile\/standalone\/expenses\?branchId=br1$/);
+  assert.deepEqual(Object.keys(exp.body).sort(), ['amount', 'idempotencyKey', 'note', 'paidFromCash', 'spentOn']);
+  const till = sent.find((x) => /till-closings/.test(x.path));
+  assert.equal(till.body.extra, undefined);
+  assert.equal(till.body.countedCash, 10);
+});
+
+test('a refund waits (still pending) while its sale is not on the server, then goes', async () => {
+  const s = memory();
+  const ev = await queueEvent('refund', { saleId: 'sale-0001', amount: 50, method: 'CASH' }, { userId: 'u', deviceId: 'phone-1234', store: s });
+  const send = async () => ({ status: 201, data: {} });
+  let r = await pushEvents('http://x', 'br1', send, s, { hold: async (e) => e.payload.saleId === 'sale-0001' });
+  assert.deepEqual(r, { done: 0, failed: 0, held: 1 });
+  assert.equal((await s.get(ev.id)).status, 'pending');
+  r = await pushEvents('http://x', 'br1', send, s, { hold: async () => false });
+  assert.equal(r.done, 1);
 });

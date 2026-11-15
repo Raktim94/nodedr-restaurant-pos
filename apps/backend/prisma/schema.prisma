@@ -221,6 +221,7 @@ model Branch {
   preparations        Preparation[]
   productionRuns      ProductionRun[]
   productRecipes      ProductRecipe[]
+  phoneTillClosings   PhoneTillClosing[]
 
   @@index([restaurantId])
   @@map("branches")
@@ -1975,12 +1976,14 @@ model Refund {
   orderId String
   order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
-  amount      Decimal       @db.Decimal(12, 2)
-  reason      String?
-  method      PaymentMethod // how the refund was issued back to the guest
-  createdById String
-  createdBy   User          @relation(fields: [createdById], references: [id])
-  createdAt   DateTime      @default(now())
+  amount          Decimal       @db.Decimal(12, 2)
+  reason          String?
+  method          PaymentMethod // how the refund was issued back to the guest
+  createdById     String
+  createdBy       User          @relation(fields: [createdById], references: [id])
+  createdAt       DateTime      @default(now())
+  // Set when the refund was made on a phone offline: its event id, so a re-send never refunds twice.
+  clientRequestId String?       @unique
 
   stockReturns OrderItemStockReturn[]
 
@@ -2248,9 +2251,11 @@ model Expense {
   // Paid out of the till: counted against expected cash at day close.
   paidFromCash Boolean  @default(false)
 
-  createdById String
-  createdBy   User     @relation(fields: [createdById], references: [id])
-  createdAt   DateTime @default(now())
+  createdById     String
+  createdBy       User     @relation(fields: [createdById], references: [id])
+  createdAt       DateTime @default(now())
+  // Set when the expense was entered on a phone offline: its event id, so a re-send never adds it twice.
+  clientRequestId String?  @unique
 
   @@index([branchId, spentOn])
   @@map("expenses")
@@ -3211,6 +3216,34 @@ model PosDevice {
   @@index([userId])
   @@index([deviceId])
   @@map("pos_devices")
+}
+
+// A phone's own cash drawer counted at the end of its day (standalone POS). Separate from CashClosing, which is
+// the whole branch: a phone only knows the cash it took itself. One per phone per day; a later count replaces it.
+model PhoneTillClosing {
+  id           String   @id @default(cuid())
+  branchId     String
+  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  deviceId     String
+  deviceName   String
+  businessDate DateTime @db.Date
+  openingFloat Decimal  @default(0) @db.Decimal(12, 2)
+  cashSales    Decimal  @db.Decimal(12, 2)
+  cashRefunds  Decimal  @default(0) @db.Decimal(12, 2)
+  cashExpenses Decimal  @default(0) @db.Decimal(12, 2)
+  expectedCash Decimal  @db.Decimal(12, 2)
+  countedCash  Decimal  @db.Decimal(12, 2)
+  variance     Decimal  @db.Decimal(12, 2)
+  netSales     Decimal  @default(0) @db.Decimal(12, 2)
+  closedByName String?
+  closedAt     DateTime
+  syncedById   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([branchId, deviceId, businessDate])
+  @@index([branchId, businessDate])
+  @@map("phone_till_closings")
 }
 
 // One physical count of the shelves (daily close, weekly, month end). The lines show what the system

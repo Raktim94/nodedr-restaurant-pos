@@ -9,7 +9,7 @@ export const newId = () => (globalThis.crypto && crypto.randomUUID ? crypto.rand
 export async function queueEvent(kind, payload, { userId, deviceId, now = new Date(), store = events } = {}) {
   const ev = {
     id: `${deviceId || 'dev'}-${newId()}`, // >= 8 chars, unique per event
-    kind, // 'production' | 'waste' | 'receipt' | 'transfer' | 'correction' | 'attendance'
+    kind, // 'production' | 'waste' | 'receipt' | 'transfer' | 'correction' | 'attendance' | 'refund' | 'expense' | 'collect' | 'tillclose'
     payload,
     userId,
     deviceId,
@@ -29,7 +29,15 @@ const PATH = {
   transfer: '/api/v1/inventory/journal/entries',
   correction: '/api/v1/inventory/journal/entries',
   attendance: '/api/v1/attendance/events',
+  // The phone's books (standalone POS): each takes the event id as its idempotency key.
+  refund: '/api/v1/mobile/standalone/refunds',
+  expense: '/api/v1/mobile/standalone/expenses',
+  collect: '/api/v1/mobile/standalone/collections',
+  tillclose: '/api/v1/mobile/standalone/till-closings',
 };
+
+/** Events about one sale (a refund, money collected later) need that sale on the server first. */
+export const SALE_EVENTS = new Set(['refund', 'collect']);
 
 /** What the server wants for each kind. Production is posted straight away; attendance names its branch in the body. */
 export function bodyFor(ev, branchId) {
@@ -43,6 +51,10 @@ export function bodyFor(ev, branchId) {
     body.post = true;
     delete body.deviceId;
   }
+  if (ev.kind in BOOKS) {
+    // The books routes are strict: only the fields they know.
+    return { idempotencyKey: ev.id, ...BOOKS[ev.kind](ev.payload) };
+  }
   if (ev.kind === 'attendance') {
     body.branchId = branchId;
     body.at = ev.payload.at || ev.createdAt;
@@ -50,6 +62,14 @@ export function bodyFor(ev, branchId) {
   }
   return body;
 }
+
+const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined && o[k] !== '').map((k) => [k, o[k]]));
+const BOOKS = {
+  refund: (p) => pick(p, ['saleId', 'amount', 'method', 'reason']),
+  expense: (p) => pick(p, ['spentOn', 'category', 'note', 'amount', 'paidFromCash']),
+  collect: (p) => ({ saleId: p.saleId, payments: p.payments.map((x) => pick(x, ['method', 'amount', 'tendered', 'reference'])) }),
+  tillclose: (p) => pick(p, ['deviceId', 'deviceName', 'businessDate', 'openingFloat', 'cashSales', 'cashRefunds', 'cashExpenses', 'expectedCash', 'countedCash', 'netSales', 'closedByName', 'closedAt']),
+};
 
 /** The person's own shift as the phone knows it: on shift since..., or off. */
 export function shiftState(all) {
@@ -69,11 +89,17 @@ export class DeviceRevoked extends Error {}
  *  401 revoked  -> DeviceRevoked;  401 -> AuthExpired;  403 -> failed (this user may not do it)
  *  5xx/network  -> stays pending, tried again next sync
  */
-export async function pushEvents(base, branchId, send, store = events) {
+export async function pushEvents(base, branchId, send, store = events, { hold } = {}) {
   let done = 0;
   let failed = 0;
+  let held = 0;
   const waiting = (await store.all()).filter((e) => e.status === 'pending').sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
   for (const ev of waiting) {
+    // Not yet: e.g. a refund on a sale the server does not have yet. Left pending, tried at the next sync.
+    if (hold && (await hold(ev))) {
+      held++;
+      continue;
+    }
     const body = bodyFor(ev, branchId);
     let r;
     try {
@@ -100,7 +126,7 @@ export async function pushEvents(base, branchId, send, store = events) {
     }
     await store.put(ev);
   }
-  return { done, failed };
+  return { done, failed, held };
 }
 
 export async function retryEvent(id, store = events) {
