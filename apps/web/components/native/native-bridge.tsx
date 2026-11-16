@@ -223,7 +223,8 @@ export function NativeBridge({ userId }: { userId?: string }) {
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 flex flex-col gap-px" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+    // Sits just above the phone bottom bar (h-16 + safe area) so it never hides navigation; at lg the bar is gone.
+    <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-40 flex flex-col gap-px lg:bottom-[env(safe-area-inset-bottom)]">
       {refused.length > 0 && (
         <div role="alert" className="flex items-start gap-3 bg-destructive px-4 py-3 text-sm text-white">
           <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />

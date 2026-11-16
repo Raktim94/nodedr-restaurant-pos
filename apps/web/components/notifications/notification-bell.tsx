@@ -1,6 +1,7 @@
 "use client";
 
 import { Bell, CheckCheck, Volume2, VolumeX } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -47,6 +48,7 @@ function timeAgo(iso: string): string {
 // this component never needs to filter events client-side; anything it
 // receives is genuinely meant for the logged-in user.
 export function NotificationBell() {
+  const router = useRouter();
   const { branchId } = useBranch();
   const queryClient = useQueryClient();
   const { data } = useNotifications();
@@ -115,6 +117,8 @@ export function NotificationBell() {
       notification.entityId
     ) {
       openEntity(notification.entity, notification.entityId);
+    } else if (notification.type.startsWith("stock.")) {
+      router.push("/inventory");
     }
   };
 

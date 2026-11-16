@@ -1,5 +1,6 @@
 "use client";
 
+import { useRealtimeState } from "@/lib/realtime-status";
 import { BranchNotice } from "@/components/layout/branch-notice";
 import { AlertTriangle, ChefHat, SlidersHorizontal, ClipboardList, Flame, Globe, HandCoins, ReceiptText, Store, Timer, TrendingUp, Trash2, UserRound, Users, Wallet } from "lucide-react";
 import Link from "next/link";
@@ -124,6 +125,7 @@ function TableStatusRow({
 }
 
 export default function DashboardPage() {
+  const realtime = useRealtimeState();
   const { branchId } = useBranch();
   const { data, isLoading } = useDashboardSummary(branchId);
   const { data: prefsData } = useDashboardPrefs();
@@ -164,10 +166,12 @@ export default function DashboardPage() {
           </h1>
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="relative flex h-2 w-2" aria-hidden>
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/60 motion-reduce:animate-none" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+              {realtime === "live" && (
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/60 motion-reduce:animate-none" />
+              )}
+              <span className={`relative inline-flex h-2 w-2 rounded-full ${realtime === "live" ? "bg-success" : realtime === "offline" ? "bg-destructive" : "bg-muted-foreground"}`} />
             </span>
-            Live · {today}
+            {realtime === "live" ? "Live" : realtime === "offline" ? "Not updating (server unreachable)" : "Connecting…"} · {today}
           </p>
         </div>
         <Button

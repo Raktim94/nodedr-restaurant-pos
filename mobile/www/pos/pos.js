@@ -19,7 +19,7 @@ import { addOnsText, addSection, addTable, removeSection, removeTable, changeLoc
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const plugins = () => (window.Capacitor && window.Capacitor.Plugins) || {};
-const inr = (n) => `₹${Number(n).toFixed(2)}`;
+const inr = (n) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // ₹1,050.00 / ₹1,25,000.00
 
 const S = {
   view: 'sell',
@@ -1062,9 +1062,9 @@ function viewSell() {
       ${categories.map((c) => `<button class="chip" data-cat="${esc(c.id)}" aria-pressed="${S.category === c.id}">${esc(c.name)}</button>`).join('')}
     </div>
     <div class="grid dishes">
-      ${shown.map((i) => `<button class="dish" data-add="${esc(i.id)}" ${i.sellOffline && !i.soldOut ? '' : 'disabled'}>
+      ${shown.map((i) => `<button class="dish${qtyOf(i.id) ? ' in' : ''}" data-add="${esc(i.id)}" ${i.sellOffline && !i.soldOut ? '' : 'disabled'}>
           <b><span class="veg ${i.isVeg ? '' : 'nv'}"></span>${esc(i.name)}</b>
-          <span>${inr(i.price)}${i.halfPrice != null ? ` <small>/ half ${inr(i.halfPrice)}</small>` : ''}${qtyOf(i.id) ? ` &middot; <strong style="color:var(--brand)">&times;${qtyOf(i.id)}</strong>` : ''}</span>
+          <span>${inr(i.price)}${i.halfPrice != null ? ` <small>/ half ${inr(i.halfPrice)}</small>` : ''}</span>${qtyOf(i.id) ? `<strong class="cnt"><span class="sr">In cart: </span>&times;${qtyOf(i.id)}</strong>` : ''}
           ${i.soldOut ? '<small>Sold out</small>' : i.sellOffline ? (i.stock != null && i.stock <= 5 ? `<small>${i.stock} left</small>` : needsChoice(i) ? '<small>Choose options</small>' : '') : '<small>Combo: use the full app</small>'}
         </button>`).join('') || (S.snap.local && !S.snap.items.length ? '<div class="empty"><b>Your menu is empty</b><p class="mute">Add your first dish to start selling.</p><button class="btn" data-setup="menu">Add a dish</button></div>' : '<p class="mute center mt empty">Nothing matches.</p>')}
     </div>`;
@@ -1202,7 +1202,7 @@ function openCart() {
             (l) => `<div class="row"><div class="grow"><b>${esc(l.item.name)}</b><br><small>${inr(l.item.price)} each</small></div>
             <div class="qty"><button data-dec="${esc(l.key)}" aria-label="One less ${esc(l.item.name)}">&minus;</button><b>${l.qty}</b><button data-inc="${esc(l.key)}" aria-label="One more ${esc(l.item.name)}">+</button></div>
             <b style="min-width:5.5rem;text-align:right">${inr(l.item.price * l.qty)}</b></div>
-            <div style="padding:.2rem 0 .5rem;border-bottom:1px solid var(--line)">${S.noteOpen === l.key ? `<input data-note="${esc(l.key)}" maxlength="80" value="${esc(l.note || '')}" placeholder="e.g. no onion, less spicy" aria-label="Note for ${esc(l.item.name)}">` : `<button class="chip" data-opennote="${esc(l.key)}">${l.note ? `Note: ${esc(l.note)}` : '+ Note'}</button>`}${l.sent ? ` <small class="mute">${l.sent} on a KOT</small>` : ''}</div>`,
+            <div style="padding:.2rem 0 .5rem;border-bottom:1px solid var(--line)">${S.noteOpen === l.key ? `<input data-note="${esc(l.key)}" maxlength="80" value="${esc(l.note || '')}" placeholder="e.g. no onion, less spicy" aria-label="Note for ${esc(l.item.name)}">` : `<button class="chip sm" data-opennote="${esc(l.key)}">${l.note ? `Note: ${esc(l.note)}` : '+ Note'}</button>`}${l.sent ? ` <small class="mute">${l.sent} on a KOT</small>` : ''}</div>`,
           )
           .join('')}</div>
         <label for="dp">Discount %</label><input id="dp" type="number" inputmode="decimal" min="0" max="${esc(S.snap.restaurant.maxManualDiscountPercent)}" value="${S.discountPercent || ''}" placeholder="0">
