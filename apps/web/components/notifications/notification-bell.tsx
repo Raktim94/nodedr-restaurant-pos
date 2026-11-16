@@ -70,7 +70,7 @@ export function NotificationBell() {
   useEffect(() => {
     if (!branchId) return;
 
-    const socket = io(resolveWsUrl(), { query: { branchId }, withCredentials: true });
+    const socket = io(resolveWsUrl(), { query: { branchId }, withCredentials: true, reconnectionDelayMax: 30_000 });
 
     socket.on("notification.created", () => {
       // The refresh below will list this one; remember its id (via the poll

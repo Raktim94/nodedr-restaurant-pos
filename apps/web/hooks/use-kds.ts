@@ -91,17 +91,18 @@ export function useUpdateKotStatus(branchId: string | null) {
     mutationFn: async ({ id, status }: { id: string; status: KotStatusDto }) => {
       const path = `/kds/tickets/${id}/status?branchId=${branchId}`;
       try {
-        return await api.patch(path, { status });
+        return await api.patch(path, { status }, { signal: AbortSignal.timeout(15_000) });
       } catch (e) {
         // No connection: keep the step on the phone and send it, in order, when the server is back.
         if (!isNativeApp() || !isNetworkError(e)) throw e;
-        outbox.add({
+        const saved = outbox.add({
           method: "PATCH",
           path,
           body: { status },
           label: `Ticket ${status.toLowerCase()}`,
           meta: { kind: "kot-status", id, status },
         });
+        if (!saved) throw new Error("This phone could not save the update (storage full). Free some space and try again.");
         return null;
       }
     },
@@ -210,10 +211,10 @@ export function useSetKotPriority(branchId: string | null) {
     mutationFn: async ({ id, isPriority }: { id: string; isPriority: boolean }) => {
       const path = `/kds/tickets/${id}/priority?branchId=${branchId}`;
       try {
-        return await api.patch(path, { isPriority });
+        return await api.patch(path, { isPriority }, { signal: AbortSignal.timeout(15_000) });
       } catch (e) {
         if (!isNativeApp() || !isNetworkError(e)) throw e;
-        outbox.add({
+        const saved = outbox.add({
           method: "PATCH",
           path,
           body: { isPriority },
@@ -221,6 +222,7 @@ export function useSetKotPriority(branchId: string | null) {
           group: `kot-priority:${id}`,
           meta: { kind: "kot-priority", id, isPriority },
         });
+        if (!saved) throw new Error("This phone could not save the update (storage full). Free some space and try again.");
         return null;
       }
     },

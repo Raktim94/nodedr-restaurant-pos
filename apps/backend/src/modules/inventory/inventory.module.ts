@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { NotificationsModule } from '../../notifications/notifications.module';
 import { AuditModule } from '../../audit/audit.module';
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import { GoodsReceiptsService } from './goods-receipts.service';
@@ -24,7 +25,7 @@ import { WasteEntriesService } from './waste-entries.service';
 import { WasteService } from './waste.service';
 
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, NotificationsModule],
   controllers: [
     InventoryController,
     TransfersController,

@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { getRealtimeState } from "@/lib/realtime-status";
 
 export interface NotificationEntry {
   id: string;
@@ -35,7 +36,9 @@ export function useNotifications() {
   return useQuery({
     queryKey: QUERY_KEY,
     queryFn: () => api.get<NotificationPage>("/notifications?pageSize=20"),
-    refetchInterval: 10_000,
+    // The live socket refreshes this the moment a notification is created; the poll is only the fallback
+    // for when it is down, so it no longer runs every 10s on a phone that is already live.
+    refetchInterval: () => (getRealtimeState() === "live" ? 120_000 : 20_000),
   });
 }
 

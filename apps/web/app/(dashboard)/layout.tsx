@@ -64,7 +64,7 @@ export default function DashboardGroupLayout({ children }: { children: React.Rea
   return (
     <BranchProvider>
       <RealtimeBridge />
-      <NativeBridge />
+      <NativeBridge userId={data.user.id} />
       <BtPrinterDialog />
       <AppShell user={data.user}>{children}</AppShell>
     </BranchProvider>

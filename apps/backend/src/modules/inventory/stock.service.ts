@@ -1,12 +1,15 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, type StockMovementType } from '@prisma/client';
 import type { StockAdjustmentDto } from '@nodedr-restaurant/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { round3 } from '../../common/money';
+import { NotificationsService } from '../../notifications/notifications.service';
 
 type Tx = Prisma.TransactionClient;
 const Dec = (v: Prisma.Decimal.Value) => new Prisma.Decimal(v);
@@ -27,7 +30,44 @@ export interface StockConsumptionPortion {
 
 @Injectable()
 export class StockService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly log = new Logger(StockService.name);
+  /** Ingredient id -> when we last alerted, so a dip that wobbles around the level does not ring twice. */
+  private readonly lowStockAlerted = new Map<string, number>();
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly notifications?: NotificationsService,
+  ) {}
+
+  /**
+   * Low-stock alert, sent when a use of stock takes an ingredient from above its reorder level to at or below it.
+   * Only the crossing rings (not every later sale), at most once per ingredient per 6 hours. It runs after the
+   * caller's transaction: it re-reads the committed stock, so a sale that rolled back never alerts.
+   */
+  private scheduleLowStockAlert(branchId: string, ingredientId: string) {
+    if (!this.notifications) return;
+    const last = this.lowStockAlerted.get(ingredientId) ?? 0;
+    if (Date.now() - last < 6 * 3600_000) return;
+    setTimeout(() => {
+      void (async () => {
+        const ing = await this.prisma.ingredient.findFirst({
+          where: { id: ingredientId, branchId },
+          select: { name: true, unit: true, currentStock: true, reorderLevel: true },
+        });
+        if (!ing || Dec(ing.reorderLevel).lte(0) || Dec(ing.currentStock).gt(ing.reorderLevel)) return;
+        if (Date.now() - (this.lowStockAlerted.get(ingredientId) ?? 0) < 6 * 3600_000) return;
+        this.lowStockAlerted.set(ingredientId, Date.now());
+        const unit = String(ing.unit).toLowerCase();
+        await this.notifications!.notifyByPermission(branchId, 'inventory.manage', {
+          type: 'stock.low',
+          title: `Low stock: ${ing.name}`,
+          body: `${Dec(ing.currentStock).toDecimalPlaces(3).toString()} ${unit} left (reorder level ${Dec(ing.reorderLevel).toString()} ${unit}).`,
+          entity: 'Ingredient',
+          entityId: ingredientId,
+        });
+      })().catch((e: Error) => this.log.warn(`Low-stock alert failed: ${e.message}`));
+    }, 2_000).unref?.();
+  }
 
   listMovements(branchId: string, ingredientId: string) {
     return this.prisma.stockMovement.findMany({
@@ -171,10 +211,15 @@ export class StockService {
       });
     }
 
+    const after = Dec(ingredient.currentStock).minus(wanted);
     await tx.ingredient.update({
       where: { id: ingredientId },
-      data: { currentStock: Dec(ingredient.currentStock).minus(wanted) },
+      data: { currentStock: after },
     });
+    const level = Dec(ingredient.reorderLevel);
+    if (level.gt(0) && Dec(ingredient.currentStock).gt(level) && after.lte(level)) {
+      this.scheduleLowStockAlert(branchId, ingredientId);
+    }
 
     return portions;
   }

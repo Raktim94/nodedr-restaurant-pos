@@ -48,10 +48,19 @@ export class NotificationsService {
     private readonly push: PushService,
   ) {}
 
+  /** Lets the app open the exact order or reservation, not only its list. */
+  private pushData(p: NotifyPayload): Record<string, string> {
+    return {
+      type: p.type,
+      ...(p.entity && p.entityId ? { entity: p.entity, entityId: p.entityId } : {}),
+    };
+  }
+
   /** Where the mobile app opens when a notification is tapped. */
   private pathFor(p: NotifyPayload) {
     if (p.type.startsWith('order.')) return '/orders';
     if (p.type.startsWith('reservation')) return '/reservations';
+    if (p.type.startsWith('stock.')) return '/inventory';
     return '/dashboard';
   }
 
@@ -100,7 +109,7 @@ export class NotificationsService {
         title: payload.title,
         body: payload.body,
         path: this.pathFor(payload),
-        data: { type: payload.type },
+        data: this.pushData(payload),
       },
     );
   }
@@ -123,7 +132,7 @@ export class NotificationsService {
       title: payload.title,
       body: payload.body,
       path: this.pathFor(payload),
-      data: { type: payload.type },
+      data: this.pushData(payload),
     });
   }
 

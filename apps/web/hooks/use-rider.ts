@@ -64,11 +64,11 @@ export function useRiderActions() {
         const path = `/rider/deliveries/${v.id}/status`;
         const body = { status: v.status, reason: v.reason };
         try {
-          return await api.patch<RiderCard>(path, body);
+          return await api.patch<RiderCard>(path, body, { signal: AbortSignal.timeout(15_000) });
         } catch (e) {
           // No connection: keep the update on the phone and send it when the server is back.
           if (!isNetworkError(e)) throw e;
-          outbox.add({ method: "PATCH", path, body, label: `Delivery ${v.status.toLowerCase().replace("_", " ")}` });
+          if (!outbox.add({ method: "PATCH", path, body, label: `Delivery ${v.status.toLowerCase().replace("_", " ")}` })) throw new Error("This phone could not save the update (storage full). Free some space and try again.");
           return null;
         }
       },
