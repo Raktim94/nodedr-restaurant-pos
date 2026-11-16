@@ -9,9 +9,9 @@ A small, throwaway OrderRestro for App Store and Play reviewers: sample data, a 
 - `reset.sh`: restores `demo-seed.sql` (nightly cron).
 - `demo-seed.sql` is NOT in the repo. Build it from a clean database (`prisma migrate deploy`, `prisma/seed.ts`, then add the reviewer users and a few sample deliveries) and keep it with the credentials outside git.
 
-## Where it runs now
+## Where it runs
 
-On `rakbotrapo-vps2` in `~/orderrestro-demo` (containers `orderrestro-demo-db`, `-backend`, `-web`, 1.1 GB memory cap, web on 127.0.0.1:19951). The nightly reset is NOT scheduled yet: run `./reset.sh` by hand, or add the cron line shown in the script header. It is also not reachable from the internet yet: it needs a Cloudflare Tunnel public hostname pointing `orderrestro-demo.nodedr.com` at `http://localhost:19951`. The reviewer credentials are in `~/orderrestro-signing/demo/credentials.txt` on the maintainer's machine.
+The host, hostname and reviewer credentials are kept outside the repo (maintainer notes and the store review forms). It must not be linked from the website or this repository.
 
 ## Deploy
 
@@ -21,7 +21,7 @@ mkdir -p ~/orderrestro-demo && cd ~/orderrestro-demo
 cat > .env <<ENV            # chmod 600
 DEMO_DB_PASSWORD=$(openssl rand -hex 16)
 DEMO_JWT_SECRET=$(openssl rand -hex 32)
-DEMO_ORIGIN=https://orderrestro-demo.nodedr.com
+DEMO_ORIGIN=https://<demo-hostname>
 APP_VERSION=1.15.1
 ENV
 chmod 600 .env
@@ -29,7 +29,7 @@ chmod 600 .env
 ./reset.sh                           # loads the sample data
 ```
 
-Point a public hostname (for example `orderrestro-demo.nodedr.com`) at `http://127.0.0.1:19951` through a Cloudflare Tunnel public hostname. Keep it https so the app can reach it from anywhere.
+Point a public hostname (the private demo hostname) at `http://127.0.0.1:19951` through a Cloudflare Tunnel public hostname. Keep it https so the app can reach it from anywhere.
 
 ## Reviewer login
 
