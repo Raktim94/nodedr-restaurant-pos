@@ -62,13 +62,13 @@ export function GuestCodesPanel({ branchId, floors }: { branchId: string | null;
       <h2 className="text-sm font-semibold">Guest ordering codes</h2>
       <Card className="flex flex-col gap-3 p-4">
         <p className="text-sm text-muted-foreground">Guests can look at the menu from the table QR or NFC card, but they can only order after you open the table. Open it once, then guests scan the rotating QR on your screen: nothing to read out. Paying the bill closes it.</p>
-        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-2">
           {tables.map((t) => {
             const s = sessions.find((x) => x.tableId === t.id);
             return (
-              <li key={t.id} className="flex items-center justify-between gap-2 rounded-xl border border-border px-3 py-2">
-                <span className="text-sm"><b>Table {t.number}</b><span className="block text-xs text-muted-foreground">{s ? (s.locked ? "Locked after wrong codes" : `Open until ${new Date(s.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`) : "Closed"}</span></span>
-                <span className="flex gap-1.5">
+              <li key={t.id} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-border px-3 py-2">
+                <span className="min-w-0 text-sm"><b>Table {t.number}</b><span className="block text-xs text-muted-foreground">{s ? (s.locked ? "Locked after wrong codes" : `Open until ${new Date(s.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`) : "Closed"}</span></span>
+                <span className="flex flex-wrap gap-1.5">
                   <Button size="sm" className="h-10" disabled={act.open.isPending} onClick={() => open(t.id, t.number)}>{s ? "Restart" : "Open table"}</Button>
                   {s && <Button size="sm" variant="outline" className="h-10" onClick={() => setShown({ tableId: t.id, table: t.number, code: null, expiresAt: s.expiresAt })}>Show QR</Button>}
                   {s && <Button size="sm" variant="outline" className="h-10" disabled={act.close.isPending} onClick={() => window.confirm(`Close Table ${t.number}? Guests there can no longer order until you open it again.`) && act.close.mutate(t.id)}>Close</Button>}
