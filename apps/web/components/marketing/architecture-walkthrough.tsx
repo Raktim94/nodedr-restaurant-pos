@@ -16,7 +16,7 @@ import {
   Tablet,
   Wifi,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const scenarios = [
   {
@@ -103,7 +103,17 @@ const scenarios = [
 
 export function ArchitectureWalkthrough() {
   const [activeId, setActiveId] = useState<(typeof scenarios)[number]["id"]>("waiter");
+  const [currentStep, setCurrentStep] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
   const active = scenarios.find((scenario) => scenario.id === activeId)!;
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const timer = window.setInterval(() => {
+      setCurrentStep((step) => (step + 1) % active.steps.length);
+    }, 1100);
+    return () => window.clearInterval(timer);
+  }, [active.steps.length, isPlaying]);
 
   return (
     <section id="how-it-works" className="border-y border-[#d6d0c1] bg-[#f7f3e9] px-4 py-16 sm:px-6 sm:py-24">
@@ -130,8 +140,14 @@ export function ArchitectureWalkthrough() {
                 key={scenario.id}
                 type="button"
                 role="tab"
+                id={`scenario-${scenario.id}`}
+                aria-controls="walkthrough-panel"
                 aria-selected={selected}
-                onClick={() => setActiveId(scenario.id)}
+                onClick={() => {
+                  setActiveId(scenario.id);
+                  setCurrentStep(0);
+                  setIsPlaying(true);
+                }}
                 className={`flex min-h-12 items-center justify-start gap-2 rounded-xl border px-3 py-2.5 text-left text-xs font-semibold leading-tight transition-colors sm:min-h-14 sm:text-sm ${
                   selected
                     ? "border-[#075056] bg-[#075056] text-[#fff9ed] shadow-sm"
@@ -145,7 +161,7 @@ export function ArchitectureWalkthrough() {
           })}
         </div>
 
-        <div className="mt-5 grid items-stretch gap-4 lg:grid-cols-[0.92fr_1.08fr] lg:gap-5">
+        <div id="walkthrough-panel" role="tabpanel" aria-labelledby={`scenario-${active.id}`} tabIndex={0} className="mt-5 grid items-stretch gap-4 outline-none focus-visible:ring-2 focus-visible:ring-[#c62646] lg:grid-cols-[0.92fr_1.08fr] lg:gap-5">
           <div className="rounded-3xl border border-[#164a4d] bg-[#073a3e] p-4 text-[#fff9ed] shadow-[0_24px_60px_-32px_rgba(3,39,42,0.65)] sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -202,13 +218,36 @@ export function ArchitectureWalkthrough() {
               {active.steps.map((step, index) => (
                 <li key={step} className="relative flex gap-3 pb-4 last:pb-0 sm:gap-4">
                   {index < active.steps.length - 1 && <span aria-hidden="true" className="absolute left-[15px] top-8 h-[calc(100%-1.25rem)] w-px bg-[#e0e7e1]" />}
-                  <span className={`relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${index === 0 ? "bg-[#c62646] text-white" : "bg-[#edf3ef] text-[#075056]"}`}>
+                  <span className={`relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${index === currentStep ? "bg-[#c62646] text-white" : "bg-[#edf3ef] text-[#075056]"}`}>
                     {String(index + 1).padStart(2, "0")}
                   </span>
-                  <p className="pt-1 text-sm leading-relaxed text-[#536466]">{step}</p>
+                  <p className={`pt-1 text-sm leading-relaxed transition-colors ${index === currentStep ? "font-medium text-[#173c3e]" : "text-[#536466]"}`}>{step}</p>
                 </li>
               ))}
             </ol>
+            <div className="mt-4 flex items-center gap-2 border-t border-[#ece8df] pt-4">
+              <span className="mr-auto text-xs font-medium text-[#657272]">Step {currentStep + 1} of {active.steps.length}</span>
+              <button
+                type="button"
+                onClick={() => setIsPlaying((playing) => !playing)}
+                aria-label={isPlaying ? "Pause walkthrough" : "Play walkthrough"}
+                className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#d6d0c1] px-3 text-xs font-semibold text-[#173c3e] transition-colors hover:bg-[#f7f3e9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c62646]"
+              >
+                {isPlaying ? <Pause className="size-3.5" aria-hidden="true" /> : <Play className="size-3.5" aria-hidden="true" />}
+                {isPlaying ? "Pause" : "Play"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentStep(0);
+                  setIsPlaying(true);
+                }}
+                aria-label="Replay walkthrough"
+                className="inline-flex size-10 items-center justify-center rounded-lg border border-[#d6d0c1] text-[#173c3e] transition-colors hover:bg-[#f7f3e9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c62646]"
+              >
+                <RotateCcw className="size-3.5" aria-hidden="true" />
+              </button>
+            </div>
             <div className="mt-6 rounded-2xl border border-[#e4dcc9] bg-[#faf7ef] p-4 sm:p-5">
               <div className="flex items-start gap-3">
                 <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#f4e6d7] text-[#9d273e]">
