@@ -220,7 +220,10 @@ export function useCreateIngredient(branchId: string | null) {
   return useMutation({
     mutationFn: (dto: IngredientInput) =>
       api.post<Ingredient>(`/inventory/ingredients?branchId=${branchId}`, dto),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["inventory", "ingredients", branchId] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["inventory", "ingredients", branchId] });
+      void qc.invalidateQueries({ queryKey: ["stock-items", branchId] });
+    },
   });
 }
 

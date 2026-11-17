@@ -1,7 +1,7 @@
 // Pure accounting maths, separate from the database code so it can be tested.
 
-export const round2 = (n: number) =>
-  Math.round((n + Number.EPSILON) * 100) / 100;
+import { round2 } from '../../common/money';
+export { round2 } from '../../common/money';
 
 export interface GstLine {
   /** Tax-inclusive line total as stored on the order item. */

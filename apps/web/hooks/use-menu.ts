@@ -39,6 +39,7 @@ export interface ModifierGroup {
 
 export interface MenuItem {
   id: string;
+  stockIngredientId: string | null;
   categoryId: string;
   stationId: string | null;
   name: string;

@@ -1,13 +1,20 @@
 const API_BASE = "/api/v1";
 
 export class ApiError extends Error {
+  status: number;
+  issues?: unknown;
+  code?: string;
+
   constructor(
     message: string,
-    public status: number,
-    public issues?: unknown,
-    public code?: string,
+    status: number,
+    issues?: unknown,
+    code?: string,
   ) {
     super(message);
+    this.status = status;
+    this.issues = issues;
+    this.code = code;
   }
 }
 

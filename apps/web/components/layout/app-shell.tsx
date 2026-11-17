@@ -63,14 +63,16 @@ export function AppShell({
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   // Desktop sidebar can collapse to icons. Remembered per browser; works with mouse, touch and keyboard (a real button).
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(false);
   useEffect(() => {
-    let v = false;
-    try { v = localStorage.getItem("orderrestro.sidebar.collapsed") === "1"; } catch { /* storage blocked */ }
+    let v = true;
+    try { const saved = localStorage.getItem("orderrestro.sidebar.collapsed"); v = saved === null ? true : saved === "1"; } catch { /* storage blocked */ }
     const t = setTimeout(() => setCollapsed(v), 0);
     return () => clearTimeout(t);
   }, []);
   const toggle = () => setCollapsed((c) => { const n = !c; try { localStorage.setItem("orderrestro.sidebar.collapsed", n ? "1" : "0"); } catch { /* storage blocked */ } return n; });
+  const sidebarCollapsed = collapsed && !previewOpen;
   const { branchId: shellBranch } = useBranch();
   const { data: shellDisplay } = useDisplaySettings(shellBranch);
 
@@ -79,20 +81,22 @@ export function AppShell({
       <DemoBanner />
       <div className="flex min-h-0 flex-1">
       {/* Desktop sidebar */}
-      <aside id="app-sidebar" aria-label="Main navigation" className={`hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none lg:flex ${collapsed ? "w-[4.5rem]" : "w-64"}`}>
-        <div className={`flex h-16 items-center gap-2 ${collapsed ? "justify-center px-2" : "px-5"}`}>
-          {collapsed ? <Logo /> : <RestaurantBrand />}
+      <div className={`relative hidden shrink-0 lg:block ${collapsed ? "w-[4.5rem]" : "w-64"}`}>
+      <aside id="app-sidebar" aria-label="Main navigation" onMouseEnter={() => setPreviewOpen(true)} onMouseLeave={() => setPreviewOpen(false)} onFocus={() => setPreviewOpen(true)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPreviewOpen(false); }} className={`absolute inset-y-0 left-0 z-40 flex flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? "w-[4.5rem]" : "w-64 shadow-lg"}`}>
+        <div className={`flex h-16 items-center gap-2 ${sidebarCollapsed ? "justify-center px-2" : "px-5"}`}>
+          {sidebarCollapsed ? <Logo /> : <RestaurantBrand />}
         </div>
-        {!collapsed && (
+        {!sidebarCollapsed && (
           <div className="px-3 pb-3">
             <BranchSwitcher />
           </div>
         )}
         <div className="flex-1 overflow-y-auto py-2">
-          <SidebarNav user={user} collapsed={collapsed} />
+          <SidebarNav user={user} collapsed={sidebarCollapsed} />
         </div>
-        <BrandFooter collapsed={collapsed} />
+        <BrandFooter collapsed={sidebarCollapsed} />
       </aside>
+      </div>
 
       {/* Mobile drawer */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -126,8 +130,8 @@ export function AppShell({
               type="button"
               onClick={toggle}
               aria-controls="app-sidebar"
-              aria-expanded={!collapsed}
-              aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+              aria-expanded={!sidebarCollapsed}
+              aria-label={collapsed ? "Keep navigation open" : "Use compact navigation"}
               className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring"
             >
               {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
@@ -141,7 +145,7 @@ export function AppShell({
             <UserMenu user={user} />
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">{children}</main>
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 pb-24 sm:p-6 sm:pb-24 lg:p-6">{children}</main>
         <EntityDialogHost />
       </div>
       <MobileBottomNav user={user} onMore={() => setMobileOpen(true)} />

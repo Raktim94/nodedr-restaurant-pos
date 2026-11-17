@@ -1,7 +1,7 @@
 // Pure discount rules for coupons and happy-hour promotions.
 
-export const round2 = (n: number) =>
-  Math.round((n + Number.EPSILON) * 100) / 100;
+import { round2 } from '../../common/money';
+export { round2 } from '../../common/money';
 
 export interface CouponRule {
   kind: 'PERCENT' | 'FLAT';

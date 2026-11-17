@@ -1,8 +1,8 @@
 // Pure payroll maths, kept separate from the database code so it can be
 // unit-tested. All money is in major units (e.g. rupees), rounded to 2 dp.
 
-export const round2 = (n: number) =>
-  Math.round((n + Number.EPSILON) * 100) / 100;
+import { round2 } from '../../common/money';
+export { round2 } from '../../common/money';
 
 export interface PayInput {
   userId: string;

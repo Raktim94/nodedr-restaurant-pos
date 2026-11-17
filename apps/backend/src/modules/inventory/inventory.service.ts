@@ -283,7 +283,9 @@ export class InventoryService {
     if (already > 0) return { skipped: [] };
 
     const plan = await this.planFor(tx, lines);
-    for (const [ingredientId, quantity] of plan.needs) {
+    for (const [ingredientId, quantity] of [...plan.needs].sort(([a], [b]) =>
+      a.localeCompare(b),
+    )) {
       if (quantity <= 0) continue;
       await this.stockService.consumeStock(
         tx,
@@ -314,7 +316,9 @@ export class InventoryService {
   ): Promise<{ restored: number }> {
     const plan = await this.planFor(tx, lines);
     let restored = 0;
-    for (const [ingredientId, quantity] of plan.needs) {
+    for (const [ingredientId, quantity] of [...plan.needs].sort(([a], [b]) =>
+      a.localeCompare(b),
+    )) {
       restored += await this.stockService.restoreStock(
         tx,
         branchId,

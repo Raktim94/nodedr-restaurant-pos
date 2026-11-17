@@ -5,8 +5,8 @@
 // Every queued update is a "set to this state" PATCH, so sending one twice is
 // harmless; if another device already moved the record on, the server refuses
 // it and the refusal is shown, never hidden.
-import { ApiError, api } from "@/lib/api";
-import { retryDelay, shouldRetry } from "@/lib/backoff";
+import { ApiError, api } from "./api.ts";
+import { retryDelay, shouldRetry } from "./backoff.ts";
 
 export interface OutboxItem {
   key: string;
@@ -28,9 +28,17 @@ const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((l) => l());
 
 let currentUser: string | null = null;
+let identityGeneration = 0;
 /** Set by the signed-in shell; only this person's waiting updates are sent. */
 export function setOutboxUser(id: string | null) {
+  if (currentUser === id) return;
   currentUser = id;
+  identityGeneration++;
+  lastRefused = [];
+  if (timer) clearTimeout(timer);
+  timer = null;
+  nextAt = 0;
+  attempt = 0;
   notify();
 }
 
@@ -53,10 +61,12 @@ function write(items: OutboxItem[]): boolean {
   }
 }
 
-const mine = (x: OutboxItem) => !x.userId || !currentUser || x.userId === currentUser;
+const mine = (x: OutboxItem) => currentUser !== null && x.userId === currentUser;
 
 export const outbox = {
   all: read,
+  /** Only this operator's changes may be overlaid on live screens. */
+  owned: () => read().filter(mine),
   /** Waiting updates that belong to the person signed in now. */
   count: () => read().filter(mine).length,
   /** Waiting updates from a different account that signed in on this phone earlier. */
@@ -67,7 +77,8 @@ export const outbox = {
   },
   /** Returns false when the phone could not save it (storage full): the caller must tell the user. */
   add(item: Omit<OutboxItem, "key" | "at" | "userId">): boolean {
-    const kept = item.group ? read().filter((x) => x.group !== item.group) : read();
+    if (!currentUser) return false;
+    const kept = item.group ? read().filter((x) => !mine(x) || x.group !== item.group) : read();
     const ok = write([...kept, { ...item, userId: currentUser ?? undefined, key: crypto.randomUUID(), at: Date.now() }]);
     if (ok) scheduleRetry(0);
     return ok;
@@ -96,20 +107,23 @@ const SEND_TIMEOUT_MS = 15_000;
 let flushing = false;
 /** Send what is waiting, oldest first. Stops at the first retryable failure; drops items the server refuses. */
 export async function flushOutbox(): Promise<{ sent: number; refused: string[]; stalled: boolean }> {
-  if (flushing) return { sent: 0, refused: [], stalled: false };
+  if (!currentUser || flushing) return { sent: 0, refused: [], stalled: false };
   flushing = true;
+  const generation = identityGeneration;
   let sent = 0;
   let stalled = false;
   let signedOut = false;
   const refused: string[] = [];
   try {
     for (const item of read().filter(mine)) {
+      if (generation !== identityGeneration) break;
       try {
         const init = { signal: AbortSignal.timeout(SEND_TIMEOUT_MS) };
         if (item.method === "PATCH") await api.patch(item.path, item.body, init);
         else await api.post(item.path, item.body, init);
         sent++;
       } catch (e) {
+        if (generation !== identityGeneration) break;
         if (retryable(e)) {
           stalled = true;
           signedOut = e instanceof ApiError && e.status === 401;
@@ -122,12 +136,13 @@ export async function flushOutbox(): Promise<{ sent: number; refused: string[]; 
   } finally {
     flushing = false;
   }
-  if (refused.length > 0) {
+  if (generation === identityGeneration && refused.length > 0) {
     lastRefused = [...lastRefused, ...refused].slice(-10);
     notify();
   }
   // Signed out: no point retrying until someone signs in (the shell flushes again then).
-  if (stalled && !signedOut) scheduleRetry();
+  if (generation !== identityGeneration && currentUser) scheduleRetry(0);
+  else if (stalled && !signedOut) scheduleRetry();
   else attempt = 0;
   return { sent, refused, stalled };
 }

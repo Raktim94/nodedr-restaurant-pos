@@ -3,6 +3,10 @@
 import type { IngredientUnit } from "@nodedr-restaurant/types";
 import { useMemo, useRef, useState } from "react";
 import { ItemCombobox } from "@/components/inventory/item-combobox";
+import { AddIngredientDialog } from "@/components/inventory/add-ingredient-dialog";
+import { AddProductToMenu } from "@/components/inventory/add-product-to-menu";
+import type { Ingredient } from "@/hooks/use-inventory";
+import { useMenuItems } from "@/hooks/use-menu";
 import { SearchSelect } from "@/components/ui/search-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -60,6 +64,8 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const [qNotes, setQNotes] = useState("");
   const [review, setReview] = useState<VoucherPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [menuProduct, setMenuProduct] = useState<Pick<Ingredient, "id" | "name" | "unit"> | null>(null);
+  const { data: menuItems } = useMenuItems(branchId);
   const key = useRef("");
 
   const byId = useMemo(() => new Map((items ?? []).map((i) => [i.id, i])), [items]);
@@ -256,7 +262,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                       </tbody>
                     </table>
                     {yieldInfo && <p className="px-1 pt-1 text-xs text-muted-foreground">Against the recipe: <b className={Math.abs(yieldInfo.pct) > 5 ? "text-destructive" : "text-foreground"}>{yieldInfo.pct > 0 ? "+" : ""}{yieldInfo.pct.toFixed(1)}%</b> ingredient use ({yieldInfo.used} of {yieldInfo.expected} expected, same-unit rows). Less is not automatically better; check the quality note.</p>}
-                    <div className="flex items-center justify-between px-1 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add ingredient</Button><span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span></div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-1"><div className="flex flex-wrap gap-2"><Button type="button" variant="ghost" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add ingredient row</Button><AddIngredientDialog branchId={branchId} triggerLabel="Create stock item" onCreated={(created) => { if (created.kind === "PURCHASED") setIns((rows) => rows.some((r) => !r.ingredientId && !r.quantity) ? rows.map((r, i) => i === rows.findIndex((row) => !row.ingredientId && !row.quantity) ? { ...r, ingredientId: created.id, unit: created.unit } : r) : [...rows, blankIn({ ingredientId: created.id, unit: created.unit })]); }} /></div><span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span></div>
                   </div>
                 </section>
 
@@ -272,6 +278,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                             <tr key={r.key} className="align-top [&>td]:border-b [&>td]:border-border/60">
                               <td className="p-1">
                                 <ItemCombobox label="Finished product" placeholder="Search products…" items={products} value={r.ingredientId} onChange={(id) => pickOut(r.key, id)} />
+                                {it && menuItems && (menuItems.some((m) => m.stockIngredientId === it.id) ? <p className="mt-1 text-xs text-muted-foreground">Linked to a menu item</p> : <Button type="button" size="sm" variant="ghost" className="mt-1" onClick={() => setMenuProduct(it)}>Add to menu</Button>)}
                                 <div className="mt-1 grid grid-cols-[minmax(7rem,1fr)_5rem] gap-1">
                                   {placeSelect(r.locationId, (v) => patchOut(r.key, { locationId: v }), "Put into place")}
                                   <Input aria-label="Lot or batch no." className="h-9" placeholder="Lot" value={r.lot} onChange={(e) => patchOut(r.key, { lot: e.target.value })} />
@@ -287,8 +294,8 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                         })}
                       </tbody>
                     </table>
-                    <div className="px-1 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Another product (co-product or by-product)</Button></div>
-                    {products.length === 0 && <p className="px-1 text-xs text-muted-foreground">No finished products yet. Add one under Stock items with type &ldquo;Finished product&rdquo;.</p>}
+                    <div className="flex flex-wrap items-center gap-2 px-1 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Add another product</Button><AddIngredientDialog branchId={branchId} defaultKind="PREPARED" triggerLabel="Create finished product" onCreated={(created) => { if (created.kind === "PREPARED") { setOuts((rows) => rows.some((r) => !r.ingredientId && !r.quantity) ? rows.map((r, i) => i === rows.findIndex((row) => !row.ingredientId && !row.quantity) ? { ...r, ingredientId: created.id, unit: created.unit } : r) : [...rows, blankOut({ ingredientId: created.id, unit: created.unit })]); setMenuProduct(created); } }} /></div>
+                    {products.length === 0 && <p className="px-1 text-xs text-muted-foreground">No finished products yet. Create one here to add it to this voucher.</p>}
                     <p className="px-1 pt-1 text-xs text-muted-foreground">Good quantity goes into stock. Rejected pieces are only recorded; their cost stays in the batch and is carried by the good pieces.</p>
                     {multi && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-muted/40 p-2 text-xs">
@@ -338,6 +345,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
             <><Button type="button" variant="outline" onClick={() => { setReview(null); setError(null); }}>Back</Button><div className="flex gap-2"><Button type="button" variant="outline" onClick={saveDraft} disabled={busy}>Save draft</Button><Button type="button" onClick={submit} disabled={busy || !review.canPost}>{busy ? "Posting…" : "Post voucher"}</Button></div></>
           )}
         </div>
+        {menuProduct && <AddProductToMenu branchId={branchId} product={menuProduct} onClose={() => setMenuProduct(null)} />}
     </>
   );
 
@@ -413,7 +421,7 @@ function ReviewBody({ review, recipe }: { review: VoucherPreview; recipe: string
         </section>
       </div>
       {review.costed && (
-        <>
+    <>
           <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border p-3 text-sm sm:grid-cols-4">
             <div><dt className="text-xs text-muted-foreground">Material cost</dt><dd className="tabular-nums">{money(review.ingredientCost)}</dd></div>
             <div><dt className="text-xs text-muted-foreground">Additional costs{Number(review.recovery) > 0 ? " (net of recovery)" : ""}</dt><dd className="tabular-nums">{money(review.additionalCost)}</dd></div>

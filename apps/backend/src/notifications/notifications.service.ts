@@ -52,7 +52,9 @@ export class NotificationsService {
   private pushData(p: NotifyPayload): Record<string, string> {
     return {
       type: p.type,
-      ...(p.entity && p.entityId ? { entity: p.entity, entityId: p.entityId } : {}),
+      ...(p.entity && p.entityId
+        ? { entity: p.entity, entityId: p.entityId }
+        : {}),
     };
   }
 

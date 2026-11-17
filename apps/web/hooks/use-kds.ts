@@ -69,10 +69,10 @@ const noPending: never[] = [];
  * and keeps showing it if a refresh lands before the changes are sent.
  */
 export function useKdsTicketsWithPending(tickets: KotTicket[] | undefined) {
-  const version = useSyncExternalStore(outbox.subscribe, () => outbox.all().length + ":" + outbox.all().map((i) => i.key).join(), () => "");
+  const version = useSyncExternalStore(outbox.subscribe, () => outbox.owned().length + ":" + outbox.owned().map((i) => i.key).join(), () => "");
   return useMemo(() => {
     const pending = new Map<string, { status?: KotStatusDto; isPriority?: boolean }>();
-    for (const i of version ? outbox.all() : noPending) {
+    for (const i of version ? outbox.owned() : noPending) {
       if (i.meta?.kind === "kot-status") pending.set(i.meta.id, { ...pending.get(i.meta.id), status: i.meta.status as KotStatusDto });
       if (i.meta?.kind === "kot-priority") pending.set(i.meta.id, { ...pending.get(i.meta.id), isPriority: i.meta.isPriority });
     }

@@ -64,11 +64,15 @@ export function CheckoutPanel({
   branchId,
   initialCustomer = null,
   onDone,
+  onBackToTable,
+  onBackToMenu,
 }: {
   order: CreatedOrder;
   branchId: string | null;
   initialCustomer?: Customer | null;
   onDone: () => void;
+  onBackToTable?: () => void;
+  onBackToMenu?: () => void;
 }) {
   // The order passed in is a snapshot from when it was sent; the live copy
   // carries edits (removed lines, new totals), payments already taken, the
@@ -378,11 +382,16 @@ export function CheckoutPanel({
           variant="ghost"
           size="sm"
           className="-ml-2 shrink-0 text-muted-foreground"
-          onClick={onDone}
+          onClick={onBackToMenu ?? onDone}
         >
           <ArrowLeft className="h-4 w-4" />
-          Back
+          {onBackToMenu ? "Back to POS menu" : "Back"}
         </Button>
+        {onBackToTable && !locked && (
+          <Button type="button" variant="outline" size="sm" onClick={onBackToTable}>
+            Add more to this table
+          </Button>
+        )}
         <div className="flex flex-wrap justify-end gap-2">
           {canEditRole && !locked && (
             <Button type="button" variant="outline" size="sm" onClick={() => setEditOpen(true)}>
@@ -449,8 +458,7 @@ export function CheckoutPanel({
         </div>
         {!locked && (
           <p className="mt-2 rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-            No need to pay right now — tap <span className="font-medium text-foreground">Back</span> to
-            help another table and come bill this one later from here or the Tables page.
+            You can add more items to this table or return to the POS menu and settle the bill later.
           </p>
         )}
       </div>

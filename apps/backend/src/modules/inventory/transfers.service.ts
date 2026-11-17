@@ -64,6 +64,12 @@ export class TransfersService {
       throw new BadRequestException('Ingredient not found in this branch');
 
     return this.prisma.$transaction(async (tx) => {
+      // Serialize transfers for both branches in a shared order. This prevents
+      // opposing transfers from locking their ingredients in reverse order and
+      // makes first-time destination ingredient creation safe against races.
+      for (const branchId of [fromBranchId, to.id].sort()) {
+        await tx.$queryRaw`SELECT id FROM branches WHERE id = ${branchId} FOR NO KEY UPDATE`;
+      }
       const portions = await this.stock.consumeStock(
         tx,
         fromBranchId,

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { readBranchPreference, saveBranchPreference } from "@/lib/branch-preference";
 import { branchViewState, type BranchViewState } from "@/lib/branch-state";
 
 interface Branch {
@@ -24,8 +25,6 @@ interface BranchContextValue {
 
 const BranchContext = createContext<BranchContextValue | null>(null);
 
-const STORAGE_KEY = "nodedr_branch_id";
-
 export function BranchProvider({ children }: { children: React.ReactNode }) {
   const { data: branches, isLoading, isPending, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["branches"],
@@ -37,7 +36,7 @@ export function BranchProvider({ children }: { children: React.ReactNode }) {
   // then a pure derivation from this plus the fetched branches, so no
   // effect/setState is needed to keep them in sync.
   const [manualBranchId, setManualBranchId] = useState<string | null>(() =>
-    typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null,
+    readBranchPreference(),
   );
 
   const branchId = useMemo(() => {
@@ -48,7 +47,7 @@ export function BranchProvider({ children }: { children: React.ReactNode }) {
 
   const setBranchId = (id: string) => {
     setManualBranchId(id);
-    if (typeof window !== "undefined") localStorage.setItem(STORAGE_KEY, id);
+    saveBranchPreference(id);
   };
 
   const state = branchViewState({ isPending, isError, count: branches?.length ?? 0 });

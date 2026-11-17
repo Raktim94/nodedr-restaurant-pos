@@ -24,6 +24,9 @@
 // downstream consumer (OrderItem.lineTotal, receipts, refunds, KOTs) keeps
 // working exactly as it did before this file existed.
 
+import { round2 } from '../../common/money';
+export { round2 } from '../../common/money';
+
 import type { TaxMode } from '@nodedr-restaurant/types';
 
 export function toEffectiveInclusiveUnitPrice(
@@ -46,10 +49,6 @@ export interface PricedLineInput {
 export interface PricedLine {
   lineTotal: number; // inclusive
   taxAmount: number; // informational breakup only, already inside lineTotal
-}
-
-export function round2(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 export function priceLine(input: PricedLineInput): PricedLine {

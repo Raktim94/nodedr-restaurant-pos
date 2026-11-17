@@ -4,7 +4,7 @@
 //    server for the screen chosen in Settings > Customer screen; that screen reads it with its own token.
 // The server leg never blocks or fails the staff screen: if it cannot be reached the sale carries on and the
 // customer screen simply keeps its last picture until the connection is back.
-import { api } from "@/lib/api";
+import { api } from "./api.ts";
 import type { DisplayStateDto } from "@nodedr-restaurant/types";
 
 export interface DisplayLine {
@@ -28,6 +28,9 @@ export function getDisplayTerminal(): { id: string; branchId: string; name?: str
 }
 
 export function setDisplayTerminal(v: { id: string; branchId: string; name?: string } | null) {
+  if (timer) clearTimeout(timer);
+  timer = null;
+  latest = null;
   try {
     if (v) localStorage.setItem(KEY, JSON.stringify(v));
     else localStorage.removeItem(KEY);
@@ -36,7 +39,7 @@ export function setDisplayTerminal(v: { id: string; branchId: string; name?: str
   }
 }
 
-let latest: DisplayState | null = null;
+let latest: { state: DisplayState; terminal: { id: string; branchId: string } } | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let lastError: string | null = null;
 export const displaySyncError = () => lastError;
@@ -44,14 +47,14 @@ export const displaySyncError = () => lastError;
 function pushToServer(state: DisplayState) {
   const t = getDisplayTerminal();
   if (!t) return;
-  latest = state;
+  latest = { state, terminal: t };
   if (timer) return; // coalesce a burst of taps into one request
   timer = setTimeout(async () => {
     timer = null;
     const s = latest;
     if (!s) return;
     try {
-      await api.put(`/display/terminals/${t.id}/state?branchId=${t.branchId}`, s);
+      await api.put(`/display/terminals/${s.terminal.id}/state?branchId=${s.terminal.branchId}`, s.state);
       lastError = null;
     } catch (e) {
       lastError = e instanceof Error ? e.message : "offline";

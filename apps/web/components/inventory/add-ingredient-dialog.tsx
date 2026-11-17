@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { selectClass } from "@/components/inventory/production-entry-dialog";
-import { useCreateIngredient } from "@/hooks/use-inventory";
+import { useCreateIngredient, type Ingredient } from "@/hooks/use-inventory";
 import { ApiError } from "@/lib/api";
 import { STOCK_CATEGORIES, STORAGE_AREAS } from "@/lib/restaurant-stock";
 
@@ -16,10 +16,10 @@ const UNITS: IngredientUnit[] = ["KG", "G", "L", "ML", "PIECE", "DOZEN", "PACK",
 
 interface Conv { unit: IngredientUnit; per: string }
 
-export function AddIngredientDialog({ branchId }: { branchId: string | null }) {
+export function AddIngredientDialog({ branchId, defaultKind = "PURCHASED", triggerLabel = "New stock item", onCreated }: { branchId: string | null; defaultKind?: "PURCHASED" | "PREPARED"; triggerLabel?: string; onCreated?: (item: Ingredient) => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [kind, setKind] = useState<"PURCHASED" | "PREPARED">("PURCHASED");
+  const [kind, setKind] = useState<"PURCHASED" | "PREPARED">(defaultKind);
   const [unit, setUnit] = useState<IngredientUnit>("KG");
   const [category, setCategory] = useState("");
   const [sku, setSku] = useState("");
@@ -32,7 +32,7 @@ export function AddIngredientDialog({ branchId }: { branchId: string | null }) {
   const createIngredient = useCreateIngredient(branchId);
 
   const reset = () => {
-    setName(""); setKind("PURCHASED"); setUnit("KG"); setCategory(""); setSku(""); setLocation("");
+    setName(""); setKind(defaultKind); setUnit("KG"); setCategory(""); setSku(""); setLocation("");
     setReorderLevel("0"); setApprovalQty(""); setPar(""); setConvs([]); setError(null);
   };
 
@@ -55,7 +55,7 @@ export function AddIngredientDialog({ branchId }: { branchId: string | null }) {
         isActive: true,
       },
       {
-        onSuccess: () => { toast.success(`${name} added`); setOpen(false); reset(); },
+        onSuccess: (item) => { toast.success(`${name} added`); onCreated?.(item); setOpen(false); reset(); },
         onError: (err) => setError(err instanceof ApiError ? err.message : "Could not add the item"),
       },
     );
@@ -63,7 +63,7 @@ export function AddIngredientDialog({ branchId }: { branchId: string | null }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm">New stock item</Button>} />
+      <DialogTrigger render={<Button type="button" variant={triggerLabel === "New stock item" ? "default" : "outline"} size="sm" disabled={!branchId}>{triggerLabel}</Button>} />
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-md">
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <DialogHeader><DialogTitle>New stock item</DialogTitle></DialogHeader>

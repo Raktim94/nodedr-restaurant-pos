@@ -25,7 +25,6 @@ import {
   type OpenOrder,
 } from "@/hooks/use-orders";
 import { useFloors, type RestaurantTable } from "@/hooks/use-tables";
-import { ManufacturingCard } from "@/components/pos/manufacturing-card";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -243,6 +242,15 @@ function PosPageInner() {
     setScheduledFor("");
   };
 
+  const returnToSameTable = () => {
+    if (!activeOrder || !tableId) return;
+    setSelectedBillId(activeOrder.id);
+    setActiveOrder(null);
+    setActiveCustomer(null);
+    setLines([]);
+    setCartOpen(false);
+  };
+
   const handleTablePick = (table: RestaurantTable) => setTableId(table.id);
 
   // Counter-first: new tickets default to Takeaway so the menu shows at once;
@@ -289,12 +297,11 @@ function PosPageInner() {
           />
         </Card>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden lg:grid-cols-[1fr_360px]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(320px,360px)]">
           <div className="flex min-h-0 flex-col gap-3">
             <Card className="min-h-0 flex-1 overflow-hidden p-3 sm:p-5">
               <ProductGrid branchId={branchId} onSelect={handleSelect} />
             </Card>
-            <ManufacturingCard branchId={branchId} />
           </div>
 
           <Card
@@ -319,6 +326,8 @@ function PosPageInner() {
                 branchId={branchId}
                 initialCustomer={activeCustomer}
                 onDone={resetForNewOrder}
+                onBackToTable={orderType === "DINE_IN" && tableId ? returnToSameTable : undefined}
+                onBackToMenu={() => { resetForNewOrder(); setOrderType("TAKEAWAY"); }}
               />
             ) : (
               <CartPanel

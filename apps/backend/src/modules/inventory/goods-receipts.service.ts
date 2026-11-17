@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import type { GoodsReceiptDto } from '@nodedr-restaurant/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { round3, round4 } from '../../common/money';
@@ -59,54 +59,60 @@ export class GoodsReceiptsService {
     if (!supplier)
       throw new BadRequestException('Supplier not found in this branch');
 
-    let purchaseOrder: PurchaseOrderWithItems | null = null;
-    if (dto.purchaseOrderId) {
-      purchaseOrder = await this.prisma.purchaseOrder.findFirst({
-        where: { id: dto.purchaseOrderId, branchId },
-        include: { items: true },
-      });
-      if (!purchaseOrder)
-        throw new BadRequestException(
-          'Purchase order not found in this branch',
-        );
-      if (
-        purchaseOrder.status === 'CANCELLED' ||
-        purchaseOrder.status === 'RECEIVED'
-      ) {
-        throw new BadRequestException(
-          `Cannot receive against a purchase order that is already ${purchaseOrder.status}`,
-        );
-      }
-    }
+    return this.prisma.$transaction(async (tx) => {
+      // Serializes GRN numbering without blocking foreign-key key-share locks.
+      await tx.$queryRaw`SELECT id FROM branches WHERE id = ${branchId} FOR NO KEY UPDATE`;
 
-    const ingredientIds = dto.items.map((i) => i.ingredientId);
-    const ingredients = await this.prisma.ingredient.findMany({
-      where: { id: { in: ingredientIds }, branchId },
-    });
-    if (ingredients.length !== new Set(ingredientIds).size) {
-      throw new BadRequestException(
-        'One or more ingredients not found in this branch',
-      );
-    }
-
-    // purchaseOrderItemId, if provided, must belong to this PO and this ingredient.
-    if (purchaseOrder) {
-      for (const item of dto.items) {
-        if (!item.purchaseOrderItemId) continue;
-        const poItem = purchaseOrder.items.find(
-          (pi) => pi.id === item.purchaseOrderItemId,
-        );
-        if (!poItem || poItem.ingredientId !== item.ingredientId) {
+      let purchaseOrder: PurchaseOrderWithItems | null = null;
+      if (dto.purchaseOrderId) {
+        await tx.$queryRaw`SELECT id FROM purchase_orders WHERE id = ${dto.purchaseOrderId} AND "branchId" = ${branchId} FOR UPDATE`;
+        purchaseOrder = await tx.purchaseOrder.findFirst({
+          where: { id: dto.purchaseOrderId, branchId },
+          include: { items: true },
+        });
+        if (!purchaseOrder)
           throw new BadRequestException(
-            'purchaseOrderItemId does not match this purchase order / ingredient',
+            'Purchase order not found in this branch',
+          );
+        if (
+          purchaseOrder.status === 'CANCELLED' ||
+          purchaseOrder.status === 'RECEIVED'
+        ) {
+          throw new BadRequestException(
+            `Cannot receive against a purchase order that is already ${purchaseOrder.status}`,
           );
         }
       }
-    }
 
-    const grnNumber = await this.nextGrnNumber(branchId);
+      const ingredientIds = dto.items.map((i) => i.ingredientId);
+      for (const ingredientId of [...new Set(ingredientIds)].sort()) {
+        await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${ingredientId} AND "branchId" = ${branchId} FOR UPDATE`;
+      }
+      const ingredients = await tx.ingredient.findMany({
+        where: { id: { in: ingredientIds }, branchId },
+      });
+      if (ingredients.length !== new Set(ingredientIds).size) {
+        throw new BadRequestException(
+          'One or more ingredients not found in this branch',
+        );
+      }
 
-    return this.prisma.$transaction(async (tx) => {
+      // purchaseOrderItemId, if provided, must belong to this PO and this ingredient.
+      if (purchaseOrder) {
+        for (const item of dto.items) {
+          if (!item.purchaseOrderItemId) continue;
+          const poItem = purchaseOrder.items.find(
+            (pi) => pi.id === item.purchaseOrderItemId,
+          );
+          if (!poItem || poItem.ingredientId !== item.ingredientId) {
+            throw new BadRequestException(
+              'purchaseOrderItemId does not match this purchase order / ingredient',
+            );
+          }
+        }
+      }
+
+      const grnNumber = await this.nextGrnNumber(tx, branchId);
       const grn = await tx.goodsReceipt.create({
         data: {
           branchId,
@@ -165,11 +171,7 @@ export class GoodsReceiptsService {
           },
         });
 
-        // Weighted-average cost, computed against the ingredient's stock as
-        // of the START of this transaction — safe because Postgres holds a
-        // row lock on this Ingredient for the rest of the transaction once
-        // read via a transactional client, preventing a concurrent GRN on
-        // the same ingredient from reading the same stale oldStock.
+        // These balances were read after locking the ingredient rows above.
         const oldStock = Math.max(0, Number(ingredient.currentStock));
         const oldCost = Number(ingredient.costPerUnit);
         const newStock = round3(oldStock + item.quantity);
@@ -186,10 +188,8 @@ export class GoodsReceiptsService {
         });
         // Keep the in-memory ingredient snapshot current for subsequent
         // lines in this same GRN referencing the same ingredient twice.
-        ingredient.currentStock =
-          newStock as unknown as typeof ingredient.currentStock;
-        ingredient.costPerUnit =
-          newCost as unknown as typeof ingredient.costPerUnit;
+        ingredient.currentStock = new Prisma.Decimal(newStock);
+        ingredient.costPerUnit = new Prisma.Decimal(newCost);
 
         if (item.purchaseOrderItemId) {
           receivedByPoItem.set(
@@ -239,8 +239,11 @@ export class GoodsReceiptsService {
     });
   }
 
-  private async nextGrnNumber(branchId: string): Promise<string> {
-    const count = await this.prisma.goodsReceipt.count({ where: { branchId } });
+  private async nextGrnNumber(
+    tx: Prisma.TransactionClient,
+    branchId: string,
+  ): Promise<string> {
+    const count = await tx.goodsReceipt.count({ where: { branchId } });
     return `GRN-${String(count + 1).padStart(4, '0')}`;
   }
 }

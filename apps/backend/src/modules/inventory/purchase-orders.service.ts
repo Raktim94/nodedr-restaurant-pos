@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type {
   PurchaseOrderDto,
   PurchaseOrderStatus,
@@ -77,26 +78,28 @@ export class PurchaseOrdersService {
     const totalAmount = round2(
       dto.items.reduce((sum, i) => sum + i.quantityOrdered * i.unitCost, 0),
     );
-    const poNumber = await this.nextPoNumber(branchId);
-
-    return this.prisma.purchaseOrder.create({
-      data: {
-        branchId,
-        supplierId: dto.supplierId,
-        poNumber,
-        expectedDate: dto.expectedDate,
-        notes: dto.notes,
-        totalAmount,
-        createdById: userId,
-        items: {
-          create: dto.items.map((i) => ({
-            ingredientId: i.ingredientId,
-            quantityOrdered: i.quantityOrdered,
-            unitCost: i.unitCost,
-          })),
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM branches WHERE id = ${branchId} FOR NO KEY UPDATE`;
+      const poNumber = await this.nextPoNumber(tx, branchId);
+      return tx.purchaseOrder.create({
+        data: {
+          branchId,
+          supplierId: dto.supplierId,
+          poNumber,
+          expectedDate: dto.expectedDate,
+          notes: dto.notes,
+          totalAmount,
+          createdById: userId,
+          items: {
+            create: dto.items.map((i) => ({
+              ingredientId: i.ingredientId,
+              quantityOrdered: i.quantityOrdered,
+              unitCost: i.unitCost,
+            })),
+          },
         },
-      },
-      include: { items: true },
+        include: { items: true },
+      });
     });
   }
 
@@ -105,21 +108,25 @@ export class PurchaseOrdersService {
     id: string,
     status: PurchaseOrderStatus,
   ) {
-    const po = await this.getPurchaseOrder(branchId, id);
-    const allowed = NEXT_STATUS[po.status];
-    if (!allowed.includes(status)) {
-      throw new BadRequestException(
-        `Cannot move purchase order from ${po.status} to ${status}`,
-      );
-    }
-    return this.prisma.purchaseOrder.update({
-      where: { id },
-      data: { status },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM purchase_orders WHERE id = ${id} AND "branchId" = ${branchId} FOR UPDATE`;
+      const po = await tx.purchaseOrder.findFirst({ where: { id, branchId } });
+      if (!po) throw new NotFoundException('Purchase order not found');
+      const allowed = NEXT_STATUS[po.status];
+      if (!allowed.includes(status)) {
+        throw new BadRequestException(
+          `Cannot move purchase order from ${po.status} to ${status}`,
+        );
+      }
+      return tx.purchaseOrder.update({ where: { id }, data: { status } });
     });
   }
 
-  private async nextPoNumber(branchId: string): Promise<string> {
-    const count = await this.prisma.purchaseOrder.count({
+  private async nextPoNumber(
+    tx: Prisma.TransactionClient,
+    branchId: string,
+  ): Promise<string> {
+    const count = await tx.purchaseOrder.count({
       where: { branchId },
     });
     return `PO-${String(count + 1).padStart(4, '0')}`;

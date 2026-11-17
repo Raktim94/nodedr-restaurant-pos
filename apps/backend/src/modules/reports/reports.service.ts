@@ -1,3 +1,4 @@
+import { round2 } from '../../common/money';
 import {
   BadRequestException,
   ForbiddenException,
@@ -80,7 +81,6 @@ export function assertCanViewReport(
   }
 }
 
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 @Injectable()

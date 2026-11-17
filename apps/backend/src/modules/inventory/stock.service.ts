@@ -52,21 +52,51 @@ export class StockService {
       void (async () => {
         const ing = await this.prisma.ingredient.findFirst({
           where: { id: ingredientId, branchId },
-          select: { name: true, unit: true, currentStock: true, reorderLevel: true },
+          select: {
+            name: true,
+            unit: true,
+            currentStock: true,
+            reorderLevel: true,
+          },
         });
-        if (!ing || Dec(ing.reorderLevel).lte(0) || Dec(ing.currentStock).gt(ing.reorderLevel)) return;
-        if (Date.now() - (this.lowStockAlerted.get(ingredientId) ?? 0) < 6 * 3600_000) return;
+        if (
+          !ing ||
+          Dec(ing.reorderLevel).lte(0) ||
+          Dec(ing.currentStock).gt(ing.reorderLevel)
+        )
+          return;
+        if (
+          Date.now() - (this.lowStockAlerted.get(ingredientId) ?? 0) <
+          6 * 3600_000
+        )
+          return;
         this.lowStockAlerted.set(ingredientId, Date.now());
         const unit = String(ing.unit).toLowerCase();
-        await this.notifications!.notifyByPermission(branchId, 'inventory.manage', {
-          type: 'stock.low',
-          title: `Low stock: ${ing.name}`,
-          body: `${Dec(ing.currentStock).toDecimalPlaces(3).toString()} ${unit} left (reorder level ${Dec(ing.reorderLevel).toString()} ${unit}).`,
-          entity: 'Ingredient',
-          entityId: ingredientId,
-        });
-      })().catch((e: Error) => this.log.warn(`Low-stock alert failed: ${e.message}`));
+        await this.notifications!.notifyByPermission(
+          branchId,
+          'inventory.manage',
+          {
+            type: 'stock.low',
+            title: `Low stock: ${ing.name}`,
+            body: `${Dec(ing.currentStock).toDecimalPlaces(3).toString()} ${unit} left (reorder level ${Dec(ing.reorderLevel).toString()} ${unit}).`,
+            entity: 'Ingredient',
+            entityId: ingredientId,
+          },
+        );
+      })().catch((e: Error) =>
+        this.log.warn(`Low-stock alert failed: ${e.message}`),
+      );
     }, 2_000).unref?.();
+  }
+
+  private async lockIngredient(tx: Tx, branchId: string, ingredientId: string) {
+    // Read balances only after a waiting transaction has acquired the lock.
+    await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${ingredientId} AND "branchId" = ${branchId} FOR UPDATE`;
+    const ingredient = await tx.ingredient.findFirst({
+      where: { id: ingredientId, branchId },
+    });
+    if (!ingredient) throw new NotFoundException('Ingredient not found');
+    return ingredient;
   }
 
   listMovements(branchId: string, ingredientId: string) {
@@ -115,23 +145,7 @@ export class StockService {
       refs?: MovementRefs;
     },
   ): Promise<StockConsumptionPortion[]> {
-    const ingredient = await tx.ingredient.findFirst({
-      where: { id: ingredientId, branchId },
-    });
-    if (!ingredient) throw new NotFoundException('Ingredient not found');
-
-    // Row lock: FIFO batch consumption reads multiple StockBatch rows plus
-    // the Ingredient's own currentStock, then writes all of them based on
-    // what it read — unlike a single balance column, this can't be made
-    // safe with a guarded atomic decrement alone. Locking the ingredient
-    // row for the rest of this transaction serializes concurrent
-    // consumeStock calls for the SAME ingredient (e.g. two checkouts
-    // selling the same low-stock item at once), so the second call's reads
-    // above would otherwise be safe only by luck — without this lock they
-    // can both see the same pre-consumption batch quantities and each
-    // independently subtract from them, silently over-consuming stock
-    // beyond what was actually on hand.
-    await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${ingredientId} FOR UPDATE`;
+    const ingredient = await this.lockIngredient(tx, branchId, ingredientId);
 
     const batches = await tx.stockBatch.findMany({
       where: { branchId, ingredientId, quantityRemaining: { gt: 0 } },
@@ -217,7 +231,11 @@ export class StockService {
       data: { currentStock: after },
     });
     const level = Dec(ingredient.reorderLevel);
-    if (level.gt(0) && Dec(ingredient.currentStock).gt(level) && after.lte(level)) {
+    if (
+      level.gt(0) &&
+      Dec(ingredient.currentStock).gt(level) &&
+      after.lte(level)
+    ) {
       this.scheduleLowStockAlert(branchId, ingredientId);
     }
 
@@ -235,11 +253,7 @@ export class StockService {
     quantity: number,
     opts: { userId: string; orderId: string; note?: string },
   ): Promise<number> {
-    await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${ingredientId} FOR UPDATE`;
-    const ingredient = await tx.ingredient.findFirst({
-      where: { id: ingredientId, branchId },
-    });
-    if (!ingredient) throw new NotFoundException('Ingredient not found');
+    const ingredient = await this.lockIngredient(tx, branchId, ingredientId);
 
     const moves = await tx.stockMovement.findMany({
       where: { orderId: opts.orderId, ingredientId },
@@ -318,10 +332,7 @@ export class StockService {
     dto: StockAdjustmentDto,
   ) {
     return this.prisma.$transaction(async (tx) => {
-      const ingredient = await tx.ingredient.findFirst({
-        where: { id: ingredientId, branchId },
-      });
-      if (!ingredient) throw new NotFoundException('Ingredient not found');
+      const ingredient = await this.lockIngredient(tx, branchId, ingredientId);
 
       const newStock = round3(Number(ingredient.currentStock) + dto.quantity);
       if (newStock < 0) {
