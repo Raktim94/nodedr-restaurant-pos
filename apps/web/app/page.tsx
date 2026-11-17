@@ -2,6 +2,7 @@
 
 import { MotionConfig } from "motion/react";
 import { AuthRedirectGate } from "@/components/marketing/auth-redirect-gate";
+import { ArchitectureWalkthrough } from "@/components/marketing/architecture-walkthrough";
 import { ClaimedLanding } from "@/components/marketing/claimed-landing";
 import { Features } from "@/components/marketing/features";
 import { Hero } from "@/components/marketing/hero";
@@ -45,6 +46,7 @@ export default function MarketingHomePage() {
         <main id="main-content">
           <Hero />
           <ProductShowcase />
+          <ArchitectureWalkthrough />
           <Features />
           <SecuritySection />
           <InstallSection />
