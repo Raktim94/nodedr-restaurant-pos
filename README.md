@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="apps/web/public/brand-lockup.png" alt="Nodedr OrderRestro" width="520">
+<img src="apps/web/public/logo.png" alt="OrderRestro logo" width="120">
 
 <img src="docs/orderrestro-cover.jpg" alt="Illustrative evening scene in an independent restaurant" width="100%">
 
@@ -50,6 +50,12 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 ## Integrate with AI Coding Agents
 
 Building a restaurant website or app on OrderRestro? Point your coding agent at [`prompts/AI_INTEGRATION_PROMPT.md`](prompts/AI_INTEGRATION_PROMPT.md) (verified endpoints, scopes, server-side Next.js pattern, MCP setup, test checklist). See also [`AGENTS.md`](AGENTS.md) and [`llms.txt`](llms.txt).
+
+## Watch OrderRestro on YouTube
+
+[![Watch the 17-minute OrderRestro walkthrough](https://img.youtube.com/vi/L7nXdduvExc/hqdefault.jpg)](https://youtu.be/L7nXdduvExc)
+
+See the full walkthrough, from setup and menu pricing to orders, kitchen service, and reports.
 
 ## What this is
 
