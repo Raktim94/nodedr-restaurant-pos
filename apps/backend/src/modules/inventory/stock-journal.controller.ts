@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Body,
   Controller,
@@ -21,6 +22,8 @@ import {
 } from '../../common/upload/image-upload.config';
 import { ApiTags } from '@nestjs/swagger';
 import {
+  ingredientUnitSchema,
+  type IngredientUnit,
   productionQualitySchema,
   correctProductionSchema,
   decisionSchema,
@@ -652,6 +655,98 @@ export class StockJournalController {
       units: allowedUnits(r.unit, r.conversions),
       ...(showCost ? { costPerUnit: costPerUnit.toString() } : {}),
     }));
+  }
+
+  // Menu items (Fried Rice, Momo...) a cook can produce in a Stock Journal voucher but that have no stock item yet.
+  @Auth('production.record')
+  @Get('production/menu-items')
+  async producibleMenuItems(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    await this.access(u, branchId);
+    const rows = await this.prisma.menuItem.findMany({
+      where: {
+        branchId,
+        isActive: true,
+        isCombo: false,
+        NOT: { inventoryTracking: 'DIRECT', stockIngredientId: { not: null } },
+      },
+      orderBy: [{ name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        inventoryTracking: true,
+        category: { select: { name: true } },
+      },
+    });
+    return rows.map((m) => ({
+      id: m.id,
+      name: m.name,
+      category: m.category.name,
+      inventoryTracking: m.inventoryTracking,
+    }));
+  }
+
+  // Makes a menu item producible: creates (or reuses) a finished-product stock item with the menu item's name and
+  // links the menu item to it (DIRECT, one per sale), in one transaction. The menu price and tax are not touched.
+  @Auth('inventory.manage')
+  @Post('production/menu-items/:id/stock-item')
+  @UsePipes(new ZodValidationPipe(z.object({ unit: ingredientUnitSchema })))
+  async makeMenuItemProducible(
+    @CurrentUser() u: SessionUser,
+    @Query('branchId') branchId: string,
+    @Param('id') id: string,
+    @Body() body: { unit: IngredientUnit },
+  ) {
+    await this.access(u, branchId);
+    return this.prisma.$transaction(async (tx) => {
+      const item = await tx.menuItem.findFirst({
+        where: { id, branchId },
+        select: {
+          id: true,
+          name: true,
+          isCombo: true,
+          inventoryTracking: true,
+          stockIngredientId: true,
+        },
+      });
+      if (!item) throw new BadRequestException('Menu item not found');
+      if (item.isCombo)
+        throw new BadRequestException('A combo cannot be produced as one item');
+      if (item.inventoryTracking === 'DIRECT' && item.stockIngredientId)
+        return { id: item.stockIngredientId };
+      const same = await tx.ingredient.findFirst({
+        where: { branchId, name: { equals: item.name, mode: 'insensitive' } },
+        select: { id: true, kind: true },
+      });
+      if (same && same.kind !== 'PREPARED') {
+        throw new ConflictException(
+          `A raw material called ${item.name} already exists. Rename one of them first.`,
+        );
+      }
+      const ing =
+        same ??
+        (await tx.ingredient.create({
+          data: {
+            branchId,
+            name: item.name,
+            unit: body.unit,
+            kind: 'PREPARED',
+            reorderLevel: 0,
+          },
+          select: { id: true },
+        }));
+      await tx.menuItem.update({
+        where: { id: item.id },
+        data: {
+          inventoryTracking: 'DIRECT',
+          stockIngredientId: ing.id,
+          stockQuantityPerSale: 1,
+        },
+      });
+      return { id: ing.id };
+    });
   }
 
   // ---- production -----------------------------------------------------------------------------

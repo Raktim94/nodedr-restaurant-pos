@@ -3,14 +3,15 @@
 import type { IngredientUnit } from "@nodedr-restaurant/types";
 import { useMemo, useRef, useState } from "react";
 import { VoucherAddItemDialog } from "@/components/inventory/voucher-add-item-dialog";
-import { ItemCombobox } from "@/components/inventory/item-combobox";
+import { ItemCombobox, MENU_PREFIX } from "@/components/inventory/item-combobox";
+import { MakeProducibleDialog } from "@/components/inventory/make-producible-dialog";
 import { SearchSelect } from "@/components/ui/search-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type QualityResult, type VoucherPreview, useMfgSettings, useRecipeFill, useRecipes, useRecordQuality, useVoucherPreview } from "@/hooks/use-manufacturing";
-import { usePlaces, useSaveProduction, useStockItems } from "@/hooks/use-stock-journal";
+import { type StockItem, usePlaces, useProducibleMenuItems, useSaveProduction, useStockItems } from "@/hooks/use-stock-journal";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
@@ -79,6 +80,14 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const byId = useMemo(() => new Map((items ?? []).map((i) => [i.id, i])), [items]);
   const raw = (items ?? []).filter((i) => i.kind === "PURCHASED");
   const products = (items ?? []).filter((i) => i.kind === "PREPARED");
+  // Menu items with no stock item yet are offered too: picking one links it (after a confirmation) and uses it.
+  const { data: menuOnly } = useProducibleMenuItems(branchId);
+  const productChoices = useMemo<StockItem[]>(
+    () => [...products, ...(menuOnly ?? []).map((m) => ({ id: `${MENU_PREFIX}${m.id}`, name: m.name, unit: "PIECE" as const, kind: "PREPARED" as const, category: m.category, currentStock: "0", units: [] }))],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, menuOnly],
+  );
+  const [linking, setLinking] = useState<{ rowKey: number; menuId: string } | null>(null);
   const activePlaces = (places ?? []).filter((p) => p.isActive);
   // Rows started from a purchase order have an item but no unit yet; use the item's own unit until one is chosen.
   const ins = useMemo(() => insRaw.map((x) => (x.ingredientId && !x.unit ? { ...x, unit: (byId.get(x.ingredientId)?.unit ?? "") as IngredientUnit | "" } : x)), [insRaw, byId]);
@@ -93,7 +102,11 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const patchIn = (id: number, p: Partial<In>) => setIns((r) => r.map((x) => (x.key === id ? { ...x, ...p } : x)));
   const patchOut = (id: number, p: Partial<Out>) => setOuts((r) => r.map((x) => (x.key === id ? { ...x, ...p } : x)));
   const pickIn = (id: number, ing: string) => patchIn(id, { ingredientId: ing, unit: byId.get(ing)?.unit ?? "", expected: undefined });
-  const pickOut = (id: number, ing: string) => { patchOut(id, { ingredientId: ing, unit: byId.get(ing)?.unit ?? "" }); setRecipeKey(""); };
+  const pickOut = (id: number, ing: string) => {
+    if (ing.startsWith(MENU_PREFIX)) return setLinking({ rowKey: id, menuId: ing.slice(MENU_PREFIX.length) });
+    patchOut(id, { ingredientId: ing, unit: byId.get(ing)?.unit ?? "" });
+    setRecipeKey("");
+  };
   const enterAdds = (isLast: boolean, add: () => void) => (e: React.KeyboardEvent) => { if (e.key === "Enter" && isLast) { e.preventDefault(); add(); } };
 
   const usedIns = ins.filter((r) => r.ingredientId || r.quantity);
@@ -206,6 +219,13 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const cancelText = inline ? "Clear" : "Cancel";
   const inner = (
     <>
+        {linking && (() => {
+          const m = (menuOnly ?? []).find((x) => x.id === linking.menuId);
+          return m ? (
+            <MakeProducibleDialog branchId={branchId} item={m} onCancel={() => setLinking(null)}
+              onDone={(stockId, unit) => { patchOut(linking.rowKey, { ingredientId: stockId, unit }); setRecipeKey(""); setLinking(null); }} />
+          ) : null;
+        })()}
         {adding && (
           <VoucherAddItemDialog branchId={branchId} kind={adding.kind} open onOpenChange={(o) => !o && closeAdding()}
             existing={adding.existingId ? (() => { const e = byId.get(adding.existingId!); return e ? { id: e.id, name: e.name, unit: e.unit } : undefined; })() : undefined}
@@ -303,7 +323,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                           return (
                             <tr key={r.key} className="align-top [&>td]:border-b [&>td]:border-border/60">
                               <td className="p-1">
-                                <ItemCombobox label="Finished product" placeholder="Search products…" items={products} value={r.ingredientId} onChange={(id) => pickOut(r.key, id)} />
+                                <ItemCombobox label="Finished product" placeholder="Search products…" items={productChoices} value={r.ingredientId} onChange={(id) => pickOut(r.key, id)} />
                                 {it && it.onMenu === false && (
                                   <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => openAdding({ kind: "PREPARED", rowKey: null, existingId: it.id })}>Not on the POS menu yet: put it on the menu…</Button>
                                 )}
@@ -326,7 +346,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                       <Button type="button" variant="outline" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Add co-product</Button>
                       <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: null })}>New finished product…</Button>
                     </div>
-                    {products.length === 0 && (
+                    {products.length === 0 && (menuOnly ?? []).length === 0 && (
                       <div className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
                         <span>No finished products yet.</span>
                         <Button type="button" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: outs[0]?.key ?? null })}>Add Item</Button>

@@ -121,6 +121,32 @@ export const useStockItems = (branchId: string | null) =>
     enabled: !!branchId,
   });
 
+export interface ProducibleMenuItem {
+  id: string;
+  name: string;
+  category: string;
+  inventoryTracking: "NONE" | "RECIPE" | "DIRECT";
+}
+
+/** Menu items (Fried Rice, Momo...) that can be produced in a voucher but have no stock item yet. */
+export const useProducibleMenuItems = (branchId: string | null) =>
+  useQuery({
+    queryKey: ["producible-menu-items", branchId],
+    queryFn: () => api.get<ProducibleMenuItem[]>(`/inventory/production/menu-items?${qs(branchId)}`),
+    enabled: !!branchId,
+  });
+
+export function useMakeProducible(branchId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { menuItemId: string; unit: IngredientUnit }) =>
+      api.post<{ id: string }>(`/inventory/production/menu-items/${v.menuItemId}/stock-item?${qs(branchId)}`, { unit: v.unit }),
+    onSuccess: () => {
+      for (const k of ["stock-items", "producible-menu-items", "menu", "inventory"]) void qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+}
+
 export const useProductionEntries = (branchId: string | null, filters: Record<string, string | undefined>) =>
   useQuery({
     queryKey: ["production", branchId, filters],
