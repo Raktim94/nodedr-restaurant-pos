@@ -1977,6 +1977,117 @@ export class OrdersService {
     };
   }
 
+  /**
+   * Points earned and redeemed on an order follow the money. A full refund
+   * returns every point; a partial refund returns the proportion that was
+   * refunded. Reversals are prorated against the *cumulative* refunded amount
+   * so several partial refunds cannot each round up to more than the original
+   * earn, and are keyed by refund id so a replayed request is a no-op.
+   */
+  private async reverseRefundPoints(
+    tx: Prisma.TransactionClient,
+    a: {
+      branchId: string;
+      orderId: string;
+      customerId: string | null;
+      refundId: string;
+      refundAmount: number;
+      totalAmount: number;
+      alreadyRefunded: number;
+      pointsRedeemed: number;
+    },
+  ) {
+    if (!a.customerId) return;
+    const customer = await tx.customer.findUnique({
+      where: { id: a.customerId },
+      select: { id: true },
+    });
+    if (!customer) return;
+
+    const [earn, redeem, prior] = await Promise.all([
+      tx.pointsLedger.findUnique({
+        where: { idempotencyKey: `earn:${a.orderId}` },
+      }),
+      tx.pointsLedger.findUnique({
+        where: { idempotencyKey: `redeem:${a.orderId}` },
+      }),
+      tx.pointsLedger.findMany({
+        where: {
+          orderId: a.orderId,
+          reason: {
+            in: ['REFUND_EARN_REVERSAL', 'REFUND_REDEEM_RESTORATION'],
+          },
+        },
+        select: { reason: true, delta: true },
+      }),
+    ]);
+    const earned = Math.max(earn?.delta ?? 0, 0);
+    const redeemed = Math.max(a.pointsRedeemed, -(redeem?.delta ?? 0));
+    if (!earned && !redeemed) return;
+
+    const priorReversedEarn = prior
+      .filter((r) => r.reason === 'REFUND_EARN_REVERSAL')
+      .reduce((n, r) => n - r.delta, 0);
+    const priorRestoredRedeem = prior
+      .filter((r) => r.reason === 'REFUND_REDEEM_RESTORATION')
+      .reduce((n, r) => n + r.delta, 0);
+    const refundedShare = Math.min(
+      1,
+      (a.alreadyRefunded + a.refundAmount) / Math.max(a.totalAmount, 0.01),
+    );
+    const reverseEarn = Math.max(
+      0,
+      Math.floor(earned * refundedShare) - priorReversedEarn,
+    );
+    const restoreRedeem = Math.max(
+      0,
+      Math.floor(redeemed * refundedShare) - priorRestoredRedeem,
+    );
+    if (!reverseEarn && !restoreRedeem) return;
+
+    if (reverseEarn > 0) {
+      const changed = await tx.customer.updateMany({
+        where: { id: a.customerId, loyaltyPoints: { gte: reverseEarn } },
+        data: { loyaltyPoints: { decrement: reverseEarn } },
+      });
+      if (changed.count === 0) {
+        throw new ConflictException(
+          'The customer loyalty balance changed while the refund was being recorded',
+        );
+      }
+    }
+    if (restoreRedeem > 0) {
+      await tx.customer.update({
+        where: { id: a.customerId },
+        data: { loyaltyPoints: { increment: restoreRedeem } },
+      });
+    }
+    const rows: Prisma.PointsLedgerCreateManyInput[] = [];
+    if (reverseEarn > 0) {
+      rows.push({
+        branchId: a.branchId,
+        customerId: a.customerId,
+        delta: -reverseEarn,
+        reason: 'REFUND_EARN_REVERSAL',
+        orderId: a.orderId,
+        idempotencyKey: `refund:${a.refundId}:earn`,
+      });
+    }
+    if (restoreRedeem > 0) {
+      rows.push({
+        branchId: a.branchId,
+        customerId: a.customerId,
+        delta: restoreRedeem,
+        reason: 'REFUND_REDEEM_RESTORATION',
+        orderId: a.orderId,
+        idempotencyKey: `refund:${a.refundId}:redeem`,
+      });
+    }
+    if (rows.length) {
+      await tx.pointsLedger.createMany({ data: rows, skipDuplicates: true });
+    }
+  }
+
   async refund(
     branchId: string,
     orderId: string,
@@ -2033,6 +2144,16 @@ export class OrdersService {
         },
       });
       await this.verifactu.recordRefund(tx, orderId, created.id, dto.amount);
+      await this.reverseRefundPoints(tx, {
+        branchId,
+        orderId,
+        customerId: order.customerId,
+        refundId: created.id,
+        refundAmount: dto.amount,
+        totalAmount: Number(order.totalAmount),
+        alreadyRefunded,
+        pointsRedeemed: order.loyaltyPointsRedeemed,
+      });
 
       // Money-only refunds never touch stock. Stock comes back only for the
       // units the staff member says were physically returned, capped at what

@@ -16,6 +16,7 @@ function setup(
   held = 0,
   priorRefunded = 0,
   orderTotal = 123.45,
+  heldForOrderMinor = 0,
 ) {
   const pay: Row = {
     id: 'gp1',
@@ -34,8 +35,23 @@ function setup(
   };
   const refunds: Row[] = [];
   const tx: any = {
+    order: {
+      updateMany: jest.fn(async () => ({ count: 1 })),
+      findFirst: jest.fn(async () => ({
+        totalAmount: orderTotal,
+        status: 'PAID',
+      })),
+    },
     gatewayPayment: { update: jest.fn(async () => pay) },
+    refund: {
+      aggregate: jest.fn(async () => ({ _sum: { amount: priorRefunded } })),
+    },
     gatewayRefund: {
+      findMany: jest.fn(async () =>
+        heldForOrderMinor
+          ? [{ amountMinor: heldForOrderMinor, currency: 'INR' }]
+          : [],
+      ),
       aggregate: jest.fn(async () => ({ _sum: { amountMinor: held } })),
       create: jest.fn(async ({ data }: Row) => {
         const r = { id: 'gr1', ...data };
@@ -169,6 +185,14 @@ describe('refunding through the gateway', () => {
 
   it('cannot refund more than the order still allows, before touching the provider', async () => {
     const s = setup({}, 0, 100); // only 23.45 left on the order
+    await expect(go(s, 50)).rejects.toThrow(/remains refundable/);
+    expect(fake.refund).not.toHaveBeenCalled();
+  });
+
+  it('counts an in-flight refund on another payment of the same order', async () => {
+    // 100 already recorded locally + 50 held at a provider on another payment:
+    // there is no local room left, even though this payment has its full amount.
+    const s = setup({}, 0, 100, 123.45, 5000);
     await expect(go(s, 50)).rejects.toThrow(/remains refundable/);
     expect(fake.refund).not.toHaveBeenCalled();
   });

@@ -459,33 +459,61 @@ export class GatewayPaymentsService {
     if (amountMinor <= 0)
       throw new BadRequestException('Enter an amount to refund');
 
-    // Local limits first, so we never refund at the provider what the books would reject.
-    const order = await this.prisma.order.findFirst({
-      where: { id: p.orderId, branchId },
-      select: { totalAmount: true, status: true },
-    });
-    if (!order || order.status !== 'PAID') {
-      throw new BadRequestException('Only a paid order can be refunded');
-    }
-    const prior = await this.prisma.refund.aggregate({
-      where: { orderId: p.orderId },
-      _sum: { amount: true },
-    });
-    const localLeft = round2(
-      Number(order.totalAmount) - Number(prior._sum.amount ?? 0),
-    );
-    if (input.amount > localLeft) {
-      throw new BadRequestException(
-        `Only ${localLeft} remains refundable on this order`,
-      );
-    }
-
-    // Reserve the amount: pending and needs-review refunds count against the payment.
+    // Reserve the amount in one transaction. Both the order row and the
+    // payment row are locked here: checking the local refundable balance
+    // before the transaction let two concurrent gateway refunds on the same
+    // order both pass, reach the provider, and pay the customer twice before
+    // the local `orders.refund()` row lock rejected the second one.
     const row = await this.prisma.$transaction(async (tx) => {
+      const lockedOrder = await tx.order.updateMany({
+        where: { id: p.orderId, branchId },
+        data: { updatedAt: new Date() },
+      }); // per-order row lock
+      if (lockedOrder.count === 0) {
+        throw new BadRequestException('Only a paid order can be refunded');
+      }
       await tx.gatewayPayment.update({
         where: { id: p.id },
         data: { updatedAt: new Date() },
       }); // row lock
+      const order = await tx.order.findFirst({
+        where: { id: p.orderId, branchId },
+        select: { totalAmount: true, status: true },
+      });
+      if (!order || order.status !== 'PAID') {
+        throw new BadRequestException('Only a paid order can be refunded');
+      }
+      const prior = await tx.refund.aggregate({
+        where: { orderId: p.orderId },
+        _sum: { amount: true },
+      });
+      // Refunds already sent to a provider but not yet recorded locally also
+      // count against the order, otherwise a second payment on the same order
+      // could exceed the book's refundable amount while the first is in flight.
+      const heldForOrder = await tx.gatewayRefund.findMany({
+        where: {
+          orderId: p.orderId,
+          status: { in: ['PENDING', 'SUCCEEDED', 'NEEDS_REVIEW'] },
+          currency: p.currency,
+        },
+        select: { amountMinor: true },
+      });
+      const heldLocal = round2(
+        heldForOrder.reduce(
+          (sum, r) => sum + fromMinor(r.amountMinor, p.currency),
+          0,
+        ),
+      );
+      const localLeft = round2(
+        Number(order.totalAmount) -
+          Number(prior._sum.amount ?? 0) -
+          heldLocal,
+      );
+      if (input.amount > localLeft) {
+        throw new BadRequestException(
+          `Only ${localLeft} remains refundable on this order`,
+        );
+      }
       const held = await tx.gatewayRefund.aggregate({
         where: {
           gatewayPaymentId: p.id,
