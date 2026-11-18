@@ -120,6 +120,7 @@ describe('Razorpay webhook verification', () => {
     );
     expect(r).toEqual({
       eventId: createHash('sha256').update(body).digest('hex'),
+      legacyEventId: 'ev_9',
       providerRef: 'plink_1',
     });
   });

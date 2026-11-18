@@ -189,6 +189,7 @@ export const razorpayAdapter: PaymentGatewayAdapter = {
       // the raw body), so an attacker replaying a captured delivery could
       // choose a fresh id and defeat dedup. Derive it from signed bytes.
       eventId: createHash('sha256').update(rawBody).digest('hex'),
+      legacyEventId: headers['x-razorpay-event-id'] ?? null,
       providerRef: ev.event?.startsWith('payment_link.')
         ? (ev.payload?.payment_link?.entity?.id ?? null)
         : null,

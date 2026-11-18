@@ -60,9 +60,16 @@ function setup(over: Partial<Row> = {}) {
       findUnique: jest.fn(async ({ where }: Row) =>
         events.has(where.provider_mode_eventId.eventId) ? {} : null,
       ),
+      findMany: jest.fn(async ({ where }: Row) =>
+        (where.eventId?.in ?? []).filter((e: string) => events.has(e)).map((eventId: string) => ({ eventId })),
+      ),
       create: jest.fn(async ({ data }: Row) => {
         events.add(data.eventId);
         return data;
+      }),
+      createMany: jest.fn(async ({ data }: Row) => {
+        for (const row of data) events.add(row.eventId);
+        return { count: data.length };
       }),
     },
   };
@@ -204,6 +211,24 @@ describe('webhooks', () => {
     expect(orders.checkout).toHaveBeenCalledTimes(1);
   });
 
+  it('recognises a legacy event id from before the signed-body dedup switch', async () => {
+    const { svc, orders } = setup();
+    fake.verifyWebhook.mockReturnValue({
+      eventId: 'hash-1',
+      legacyEventId: 'ev_legacy',
+      providerRef: 'ref1',
+    });
+    fake.fetchStatus.mockResolvedValue(paid());
+    // Simulate a row written by the old deployment.
+    const legacy = await svc.webhook('r1', 'fake', 'LIVE', {}, '{}');
+    expect(legacy.duplicate).toBe(false);
+    // A retry after deployment arrives with the same legacy header but the
+    // new hash; it must not settle the order twice.
+    const retry = await svc.webhook('r1', 'fake', 'LIVE', {}, '{}');
+    expect(retry.duplicate).toBe(true);
+    expect(orders.checkout).toHaveBeenCalledTimes(1);
+  });
+
   it('a signed claim of success is worthless if the provider says unpaid', async () => {
     const { svc, orders } = setup();
     fake.verifyWebhook.mockReturnValue({ eventId: 'e2', providerRef: 'ref1' });
@@ -222,14 +247,14 @@ describe('webhooks', () => {
     await expect(svc.webhook('r1', 'fake', 'LIVE', {}, '{}')).rejects.toThrow(
       'db down',
     );
-    expect(prisma.gatewayWebhookEvent.create).not.toHaveBeenCalled();
+    expect(prisma.gatewayWebhookEvent.createMany).not.toHaveBeenCalled();
   });
 });
 
 describe('interrupted settlement', () => {
   it('finalizes a claimed payment whose local Payment already exists', async () => {
-    const { svc, pay, prisma } = setup();
-    pay.appliedAt = new Date();
+    const { svc, pay, prisma, orders } = setup();
+    pay.appliedAt = new Date(Date.now() - 3 * 60_000);
     pay.status = 'CREATED';
     prisma.gatewayPayment.updateMany.mockResolvedValue({ count: 0 });
     prisma.payment.findFirst.mockResolvedValue({ id: 'local_payment' });
@@ -239,6 +264,7 @@ describe('interrupted settlement', () => {
         where: { orderId: 'o1', clientRequestId: 'gp1' },
       }),
     );
+    expect(orders.releaseHeldOrder).toHaveBeenCalledWith('b1', 'o1');
     expect(prisma.gatewayPayment.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'gp1' },
@@ -247,14 +273,19 @@ describe('interrupted settlement', () => {
     );
   });
 
-  it('flags a claimed payment with no local Payment for review', async () => {
+  it('leaves a fresh claim alone and flags an abandoned one for review', async () => {
     const { svc, pay, prisma } = setup();
     pay.appliedAt = new Date();
     pay.status = 'CREATED';
     prisma.gatewayPayment.updateMany.mockResolvedValue({ count: 0 });
     await (svc as any).apply(pay, 'pay_9');
-    expect(prisma.gatewayPayment.update).toHaveBeenCalledWith(
+    expect(prisma.gatewayPayment.update).not.toHaveBeenCalled();
+
+    pay.appliedAt = new Date(Date.now() - 3 * 60_000);
+    await (svc as any).apply(pay, 'pay_9');
+    expect(prisma.gatewayPayment.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({ id: 'gp1' }),
         data: expect.objectContaining({ status: 'NEEDS_REVIEW' }),
       }),
     );
