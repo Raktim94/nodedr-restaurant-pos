@@ -156,5 +156,5 @@ export const useAnalysis = (branchId: string | null, filters: Record<string, str
   useQuery({ queryKey: ["mfg-analysis", branchId, filters], queryFn: () => api.get<Analysis>(`/inventory/manufacturing/analysis?${q(branchId, filters)}`), enabled: !!branchId, retry: false });
 
 export interface MenuCost { menuItemId: string; name: string; price: string; costPerPortion: string; costDate: string; isToday: boolean; batches: number; indicativeDifference: string }
-export const useMenuCosts = (branchId: string | null) =>
-  useQuery({ queryKey: ["menu-costs", branchId], queryFn: () => api.get<{ today: string; items: MenuCost[] }>(`/inventory/manufacturing/menu-costs?${q(branchId)}`), enabled: !!branchId, retry: false, staleTime: 60_000 });
+export const useMenuCosts = (branchId: string | null, on = true) =>
+  useQuery({ queryKey: ["menu-costs", branchId], queryFn: () => api.get<{ today: string; items: MenuCost[] }>(`/inventory/manufacturing/menu-costs?${q(branchId)}`), enabled: !!branchId && on, retry: false, staleTime: 60_000 });

@@ -33,7 +33,8 @@ export function VoucherAddItemDialog({ branchId, kind, existing, open, onOpenCha
   const finished = kind === "PREPARED";
   const [name, setName] = useState(existing?.name ?? "");
   const [unit, setUnit] = useState<IngredientUnit>(existing?.unit ?? (finished ? "PIECE" : "KG"));
-  const [onMenu, setOnMenu] = useState(!!existing);
+  // A finished product is made to be sold, so it goes onto the POS menu unless the operator unticks this.
+  const [onMenu, setOnMenu] = useState(!!existing || finished);
   const [categoryId, setCategoryId] = useState("");
   const [price, setPrice] = useState("");
   const [tax, setTax] = useState("");

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { QueryError } from "@/components/ui/query-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useMenuCosts } from "@/hooks/use-manufacturing";
+import { useMenuCosts, useMfgSettings } from "@/hooks/use-manufacturing";
 import { useCategories, useMenuItems, type MenuItem } from "@/hooks/use-menu";
 import { formatCurrency } from "@/lib/format";
 
@@ -21,8 +21,19 @@ export function ProductGrid({
   const [search, setSearch] = useState("");
   const { data: items, isLoading, isError, error, refetch, isFetching } = useMenuItems(branchId, activeCategoryId);
 
-  // Posted production cost per item. Only people allowed to see reports get an answer; for everyone else this stays empty.
-  const { data: costs } = useMenuCosts(branchId);
+  // Optional line under each price: the posted production cost (today's when there was a batch today). Off until someone
+  // switches it on here, remembered on this device. Only shown to people allowed to see cost reports, and only when costing is on.
+  const { data: mfg } = useMfgSettings(branchId);
+  const canSeeCost = !!mfg?.enabled && mfg.canReport;
+  const [showCost, setShowCost] = useState(() => {
+    try { return typeof window !== "undefined" && localStorage.getItem("pos.showProductionCost") === "1"; } catch { return false; }
+  });
+  const toggleCost = () => {
+    const next = !showCost;
+    setShowCost(next);
+    try { localStorage.setItem("pos.showProductionCost", next ? "1" : "0"); } catch { /* not remembered */ }
+  };
+  const { data: costs } = useMenuCosts(branchId, canSeeCost && showCost);
   const costOf = new Map((costs?.items ?? []).map((c) => [c.menuItemId, c]));
 
   const filtered = items?.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()));
@@ -60,6 +71,20 @@ export function ProductGrid({
             </SelectContent>
           </Select>
         )}
+        {canSeeCost && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showCost}
+            onClick={toggleCost}
+            className="flex h-11 shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <span aria-hidden className={`relative inline-block h-5 w-9 rounded-full transition-colors ${showCost ? "bg-primary" : "bg-muted-foreground/40"}`}>
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${showCost ? "left-[1.125rem]" : "left-0.5"}`} />
+            </span>
+            Show cost today
+          </button>
+        )}
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -93,7 +118,7 @@ export function ProductGrid({
                 </span>
               )}
             </span>
-            {costOf.get(item.id) && (() => {
+            {showCost && costOf.get(item.id) && (() => {
               const c = costOf.get(item.id)!;
               return (
                 <span className="w-full border-t border-border/70 pt-1 text-[11px] leading-snug text-muted-foreground" data-testid="pos-production-cost">
