@@ -1,4 +1,31 @@
-import { parseStatement } from './ledger.service';
+import { LedgerService, parseStatement } from './ledger.service';
+
+describe('LedgerService balance sheet', () => {
+  it('includes paid payroll at net pay and excludes tips', async () => {
+    const prisma: any = {
+      payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 1000 } }) },
+      refund: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }) },
+      expense: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }) },
+      supplierPayment: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
+      },
+      payrollRun: {
+        findMany: jest.fn().mockResolvedValue([
+          { lines: [{ netPay: 100, tipShare: 10, basePay: 80, unpaidLeaveDeduction: 0 }] },
+        ]),
+      },
+      ingredient: { findMany: jest.fn().mockResolvedValue([]) },
+      supplierInvoice: { findMany: jest.fn().mockResolvedValue([]) },
+      giftCard: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const svc = new LedgerService(prisma as never);
+    const r = await svc.balanceSheet('b1', '2026-10-31');
+    expect(prisma.payrollRun.findMany.mock.calls[0][0].where.status).toEqual({
+      in: ['FINALIZED', 'PAID'],
+    });
+    expect(r.assets[0].amount).toBe(910);
+  });
+});
 
 describe('parseStatement', () => {
   it('reads a signed amount column', () => {

@@ -514,7 +514,9 @@ export class HrService {
     runId: string,
     userId: string,
     dto: PayrollLineAdjustDto,
+    actor: { id: string; permissions: readonly string[] },
   ) {
+    this.assertNotOwnPayroll(await this.getRun(branchId, runId), actor);
     return this.prisma.$transaction(async (tx) => {
       const run = await tx.payrollRun.findFirst({
         where: { id: runId, branchId },
@@ -672,7 +674,12 @@ export class HrService {
   }
 
   /** FINALIZED -> DRAFT so a mistake can be corrected before payment. Never after payment. */
-  async reopenRun(branchId: string, id: string) {
+  async reopenRun(
+    branchId: string,
+    id: string,
+    actor: { id: string; permissions: readonly string[] },
+  ) {
+    this.assertNotOwnPayroll(await this.getRun(branchId, id), actor);
     const res = await this.prisma.payrollRun.updateMany({
       where: { id, branchId, status: 'FINALIZED' },
       data: { status: 'DRAFT', finalizedAt: null },

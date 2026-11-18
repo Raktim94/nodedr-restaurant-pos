@@ -226,7 +226,7 @@ export class HrController {
     body: PayrollLineAdjustDto,
   ) {
     await this.access(u, branchId);
-    return this.hr.adjustLine(branchId, id, userId, body);
+    return this.hr.adjustLine(branchId, id, userId, body, u);
   }
 
   @Auth('staff.manage')
@@ -251,7 +251,7 @@ export class HrController {
     @Param('id') id: string,
   ) {
     await this.access(u, branchId);
-    return this.hr.reopenRun(branchId, id);
+    return this.hr.reopenRun(branchId, id, u);
   }
 
   @Auth('staff.manage')
