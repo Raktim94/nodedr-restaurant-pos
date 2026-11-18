@@ -1439,6 +1439,11 @@ model MenuItemModifierGroup {
 // Customers (minimal Phase 1 shape — full CRM lands Phase 3)
 // ---------------------------------------------------------------------------
 
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model Customer {
   id       String @id @default(cuid())
   branchId String
@@ -1448,6 +1453,9 @@ model Customer {
   phone       String?
   email       String?
   address     String?
+  pincode     String?
+  // Label only: it does not block orders or change loyalty.
+  status      CustomerStatus @default(ACTIVE)
   birthday    DateTime?
   anniversary DateTime?
   allergies   String?

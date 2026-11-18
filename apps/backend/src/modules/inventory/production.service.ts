@@ -1401,7 +1401,8 @@ export class ProductionService {
   async get(branchId: string, id: string) {
     const e = await this.prisma.productionEntry.findFirst({
       where: { id, branchId },
-      include: ENTRY_INCLUDE,
+      // The additional costs are included so a draft can be reopened and edited with them.
+      include: { ...ENTRY_INCLUDE, costs: true },
     });
     if (!e) throw new NotFoundException('Production entry not found');
     return e;

@@ -118,7 +118,7 @@ session immediately.
   POS screen). Tally-style: header (date, batch/run no., location, shift, made on, use by), **Source / Consumption**
   on the left (item, available stock, quantity, unit, rate, amount; "Fill from recipe" shows expected quantity beside
   what you type), **Destination / Production** on the right (several finished products allowed), optional additional
-  costs, quality result and grade, narration. Side by side from the lg breakpoint; stacked, source first, below it.
+  costs, quality result and grade, narration. Side by side from the 2xl breakpoint (1536px) so the item tables are never clipped; stacked, source first, below it.
   The voucher number is assigned on posting. Posting is the existing single transaction; the review step shows
   server-calculated rates, amounts, total production cost and cost per unit, and blocks posting on a shortage.
   Costs are worked out only when exactly one product is made and costing is on; with several products the voucher
@@ -228,3 +228,26 @@ The form for transfer, waste and correction has three parts: details (date and t
 **Export**: `GET journal/entries.csv` (same filters, one row per item line; values only with `production.report`).
 
 **Not built**: offline queueing of these three kinds on the phone app (the web form needs the server; the idempotency key protects retries).
+
+
+## Recipes, drafts and add-item from the voucher (1.40.0 work)
+
+* **"No saved recipes yet"** means the restaurant has no recipe (bill of materials) at all. For a product that has none it reads
+  "No saved recipes for this product yet". A recipe is a reusable list of ingredients and quantities for one finished product.
+  Saving a recipe never changes stock; only posting a voucher does. Existing recipes are listed from `GET inventory/recipes`
+  (all active recipes until a product is chosen, then that product's), so the message appears only when that list is empty.
+* **Save as recipe** (needs `inventory.manage`) in the voucher saves the current rows as a recipe for the single finished product,
+  base output = the good quantity typed, and selects it. **Create recipe** opens Inventory > Recipes in a new tab so the voucher keeps its data.
+  Picking a recipe while Destination is empty also picks its product. "Fill from recipe" still lets you edit every quantity.
+* **Three different actions**: *Save as recipe* (a template, no voucher), *Save draft* (a voucher, no stock change), *Post voucher* (stock moves, once).
+* **+ Add inventory item** (raw material, not put on the menu) and **+ Add menu item** (finished product, put on the POS menu by default) open
+  the existing add dialog; the new item is selected in the row last worked in, or the first empty row.
+* **Production drafts can be reopened**: Journal > open a draft > *Edit draft* or *Delete draft* (`production.record`). Saving edits the same
+  entry (`PATCH production/:id`); *Post* from the edited draft saves, then posts (the server posts a draft once; a second post is refused with 409).
+  `GET production/:id` now also returns the entry's additional costs.
+
+## Customers: PIN code and status
+
+`customers.pincode` (optional) and `customers.status` (`ACTIVE` default, `INACTIVE`) — migration `20261122000000_customer_pincode_status`,
+additive; existing customers become ACTIVE with no PIN code. PIN code follows the same rule as saved delivery addresses (3-10 letters, digits,
+space or dash), so every country the app supports works; an empty value clears it. Status is a label: it does not block orders or change loyalty.

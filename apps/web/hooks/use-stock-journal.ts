@@ -197,6 +197,24 @@ export function useSaveProduction(branchId: string | null) {
   });
 }
 
+/** Save changes to a production draft. A posted entry is never edited; the server refuses it. */
+export function useUpdateProductionDraft(branchId: string | null) {
+  const refresh = useRefresh();
+  return useMutation({
+    mutationFn: (v: { id: string; body: Omit<ProductionEntryDto, "post"> }) =>
+      api.patch<ProductionEntry>(`/inventory/production/${v.id}?${qs(branchId)}`, v.body),
+    onSuccess: refresh,
+  });
+}
+
+export function useDeleteProductionDraft(branchId: string | null) {
+  const refresh = useRefresh();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/inventory/production/${id}?${qs(branchId)}`),
+    onSuccess: refresh,
+  });
+}
+
 export function useProductionAction(branchId: string | null) {
   const refresh = useRefresh();
   return useMutation({
@@ -401,7 +419,17 @@ export interface ProductionEntryFull extends ProductionEntry {
   postedAt: string | null;
   voidedAt: string | null;
   totalCost: string | null;
-  lines: (ProductionLine & { locationName: string | null; rejectedQuantity: string; lineCost: string | null })[];
+  lines: (ProductionLine & {
+    locationName: string | null; rejectedQuantity: string; lineCost: string | null;
+    locationId?: string | null; lotNumber?: string | null; expectedQuantity?: string | null; directToIngredientId?: string | null; allocationPercent?: string | null;
+  })[];
+  manufacturedOn?: string | null;
+  expiryDate?: string | null;
+  allocationMethod?: string | null;
+  recipeKind?: string | null;
+  recipeId?: string | null;
+  sourcePoId?: string | null;
+  costs?: { id: string; category: string; amount: string; included: boolean }[];
 }
 
 export function useJournalEntryActions(branchId: string | null) {

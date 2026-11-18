@@ -10,6 +10,8 @@ export interface Customer {
   phone: string | null;
   email: string | null;
   address: string | null;
+  pincode?: string | null;
+  status?: "ACTIVE" | "INACTIVE";
   birthday: string | null;
   anniversary: string | null;
   allergies: string | null;

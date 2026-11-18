@@ -54,9 +54,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           </Link>
           <h1 className="mt-2 text-[32px] font-semibold tracking-tight text-foreground">
             {customer.name ?? "Unnamed customer"}
+            {customer.status === "INACTIVE" && <Badge variant="outline" className="ml-3 align-middle text-xs font-normal">Inactive</Badge>}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {[customer.phone, customer.email, customer.address].filter(Boolean).join(" · ") ||
+            {[customer.phone, customer.email, [customer.address, customer.pincode].filter(Boolean).join(" – ")].filter(Boolean).join(" · ") ||
               "No contact info on file"}
           </p>
         </div>

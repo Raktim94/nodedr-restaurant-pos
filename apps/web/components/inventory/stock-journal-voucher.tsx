@@ -7,11 +7,13 @@ import { ItemCombobox, MENU_PREFIX } from "@/components/inventory/item-combobox"
 import { MakeProducibleDialog } from "@/components/inventory/make-producible-dialog";
 import { SearchSelect } from "@/components/ui/search-select";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { type QualityResult, type VoucherPreview, useMfgSettings, useRecipeFill, useRecipes, useRecordQuality, useVoucherPreview } from "@/hooks/use-manufacturing";
-import { type StockItem, usePlaces, useProducibleMenuItems, useSaveProduction, useStockItems } from "@/hooks/use-stock-journal";
+import { type QualityResult, type VoucherPreview, useMfgSettings, useRecipeFill, useRecipes, useRecipeMutations, useRecordQuality, useVoucherPreview } from "@/hooks/use-manufacturing";
+import { type ProductionEntryFull, type StockItem, usePlaces, useProducibleMenuItems, useSaveProduction, useStockItems, useUpdateProductionDraft } from "@/hooks/use-stock-journal";
+import Link from "next/link";
+import { useProductionAction } from "@/hooks/use-stock-journal";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
@@ -28,6 +30,16 @@ const COST_CATEGORIES = ["Labour", "Packaging", "Fuel & utilities", "Other overh
 const money = (v: number | string | null | undefined) => (v == null || v === "" || Number.isNaN(Number(v)) ? "–" : Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const q3 = (v: number) => String(Math.round(v * 1000) / 1000);
 const local = () => { const d = new Date(); const p = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+const toLocal = (iso: string) => { const d = new Date(iso); const p = (n: number) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+/** Rows of a saved draft, as the form holds them. Outputs use the stock unit so good and rejected stay in one unit. */
+const draftIns = (d: ProductionEntryFull): In[] => {
+  const rows = d.lines.filter((l) => l.role === "INPUT").map((l) => blankIn({ ingredientId: l.ingredientId, quantity: String(l.enteredQuantity), unit: l.enteredUnit, locationId: l.locationId ?? "", lot: l.lotNumber ?? "", directTo: l.directToIngredientId ?? "", expected: l.expectedQuantity ? String(l.expectedQuantity) : undefined }));
+  return rows.length ? rows : [blankIn()];
+};
+const draftOuts = (d: ProductionEntryFull): Out[] => {
+  const rows = d.lines.filter((l) => l.role === "OUTPUT").map((l) => blankOut({ ingredientId: l.ingredientId, quantity: String(l.quantity), unit: l.ingredient.unit, rejected: Number(l.rejectedQuantity) > 0 ? String(l.rejectedQuantity) : "", locationId: l.locationId ?? "", lot: l.lotNumber ?? "", percent: l.allocationPercent ? String(l.allocationPercent) : "", expected: l.expectedQuantity ? String(l.expectedQuantity) : undefined }));
+  return rows.length ? rows : [blankOut()];
+};
 const head = "px-2 py-1.5 text-left text-xs font-medium text-muted-foreground";
 
 export interface VoucherContext { productId?: string; batchRef?: string; narration?: string; sourceIds?: string[]; poId?: string; poNumber?: string; supplier?: string }
@@ -37,7 +49,7 @@ export interface VoucherContext { productId?: string; batchRef?: string; narrati
  * Destination / Production on the right, side by side from lg and stacked (source first) below it. Every number in the
  * review step is worked out by the server and frozen when posted; the menu selling price is never touched here.
  */
-export function StockJournalVoucher({ branchId, open, onOpenChange, productId, context, inline, onSaved }: { branchId: string | null; open: boolean; onOpenChange: (o: boolean) => void; productId?: string; context?: VoucherContext; inline?: boolean; /** Told what was saved, so the page can confirm it (success toasts are off app-wide). */ onSaved?: (r: { id: string; entryNo: string; posted: boolean }) => void }) {
+export function StockJournalVoucher({ branchId, open, onOpenChange, productId, context, inline, onSaved, draft }: { branchId: string | null; /** A saved draft to reopen and keep editing. Saving changes the same entry; it never creates a second one. */ draft?: ProductionEntryFull; open: boolean; onOpenChange: (o: boolean) => void; productId?: string; context?: VoucherContext; inline?: boolean; /** Told what was saved, so the page can confirm it (success toasts are off app-wide). */ onSaved?: (r: { id: string; entryNo: string; posted: boolean }) => void }) {
   productId = productId ?? context?.productId;
   const { data: items } = useStockItems(branchId);
   const { data: places } = usePlaces(branchId);
@@ -45,19 +57,23 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const fill = useRecipeFill(branchId);
   const preview = useVoucherPreview(branchId);
   const save = useSaveProduction(branchId);
+  const updateDraft = useUpdateProductionDraft(branchId);
+  const postAction = useProductionAction(branchId);
+  const recipeMut = useRecipeMutations(branchId);
+  const [savingRecipe, setSavingRecipe] = useState<{ name: string; error: string | null } | null>(null);
   const quality = useRecordQuality(branchId);
-  const [when, setWhen] = useState(local);
-  const [batchRef, setBatchRef] = useState(context?.batchRef ?? "");
-  const [place, setPlace] = useState(""); // voucher-level place name (printed on the voucher)
-  const [shift, setShift] = useState("");
-  const [madeOn, setMadeOn] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [notes, setNotes] = useState(context?.narration ?? "");
-  const [insRaw, setIns] = useState<In[]>(() => (context?.sourceIds?.length ? context.sourceIds.map((id) => blankIn({ ingredientId: id })) : [blankIn()]));
-  const [outsRaw, setOuts] = useState<Out[]>([blankOut(productId ? { ingredientId: productId } : {})]);
-  const [costs, setCosts] = useState<Cost[]>([]);
-  const [method, setMethod] = useState<"QUANTITY" | "MANUAL">("QUANTITY");
-  const [recipeKey, setRecipeKey] = useState(""); // "RECIPE:id" | "MENU:id" | ""
+  const [when, setWhen] = useState(() => (draft ? toLocal(draft.producedAt) : local()));
+  const [batchRef, setBatchRef] = useState(draft?.batchRef ?? context?.batchRef ?? "");
+  const [place, setPlace] = useState(draft?.location ?? ""); // voucher-level place name (printed on the voucher)
+  const [shift, setShift] = useState(draft?.shift ?? "");
+  const [madeOn, setMadeOn] = useState(draft?.manufacturedOn?.slice(0, 10) ?? "");
+  const [expiry, setExpiry] = useState(draft?.expiryDate?.slice(0, 10) ?? "");
+  const [notes, setNotes] = useState(draft?.notes ?? context?.narration ?? "");
+  const [insRaw, setIns] = useState<In[]>(() => draft ? draftIns(draft) : (context?.sourceIds?.length ? context.sourceIds.map((id) => blankIn({ ingredientId: id })) : [blankIn()]));
+  const [outsRaw, setOuts] = useState<Out[]>(() => (draft ? draftOuts(draft) : [blankOut(productId ? { ingredientId: productId } : {})]));
+  const [costs, setCosts] = useState<Cost[]>(() => (draft?.costs ?? []).map((c) => ({ key: k++, category: c.category, amount: String(c.amount) })));
+  const [method, setMethod] = useState<"QUANTITY" | "MANUAL">(draft?.allocationMethod === "MANUAL" ? "MANUAL" : "QUANTITY");
+  const [recipeKey, setRecipeKey] = useState(draft?.recipeKind && draft.recipeId ? `${draft.recipeKind}:${draft.recipeId}` : ""); // "RECIPE:id" | "MENU:id" | ""
   const [qResult, setQResult] = useState<QualityResult | "">("");
   const [qGrade, setQGrade] = useState("");
   const [qNotes, setQNotes] = useState("");
@@ -66,6 +82,9 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   // Which "Add item" dialog is open, and which voucher row should receive the new item.
   const [adding, setAdding] = useState<{ kind: "PURCHASED" | "PREPARED"; rowKey: number | null; existingId?: string } | null>(null);
   const key = useRef("");
+  // The row the user last worked in, so a newly added item lands there (when it is still empty) and not somewhere else.
+  const activeIn = useRef<number | null>(null);
+  const activeOut = useRef<number | null>(null);
   // The control that opened the Add Item dialog, so keyboard focus goes back to it when the dialog closes.
   const opener = useRef<HTMLElement | null>(null);
   const openAdding = (next: { kind: "PURCHASED" | "PREPARED"; rowKey: number | null; existingId?: string }) => {
@@ -99,7 +118,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const ins = useMemo(() => insRaw.map((x) => (x.ingredientId && !x.unit ? { ...x, unit: (byId.get(x.ingredientId)?.unit ?? "") as IngredientUnit | "" } : x)), [insRaw, byId]);
   const outs = useMemo(() => outsRaw.map((x) => (x.ingredientId && !x.unit ? { ...x, unit: (byId.get(x.ingredientId)?.unit ?? "") as IngredientUnit | "" } : x)), [outsRaw, byId]);
   const costed = !!settings?.enabled;
-  const busy = preview.isPending || save.isPending || fill.isPending;
+  const busy = preview.isPending || save.isPending || fill.isPending || updateDraft.isPending || postAction.isPending;
   const firstProduct = outs[0]?.ingredientId ?? "";
   const { data: recipes } = useRecipes(branchId, firstProduct || undefined);
   const recipe = (recipes ?? []).find((r) => `${r.kind}:${r.id}` === recipeKey);
@@ -112,6 +131,35 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
     if (ing.startsWith(MENU_PREFIX)) return setLinking({ rowKey: id, menuId: ing.slice(MENU_PREFIX.length) });
     patchOut(id, { ingredientId: ing, unit: byId.get(ing)?.unit ?? "" });
     setRecipeKey("");
+  };
+  const pickRecipe = (v: string) => {
+    setRecipeKey(v);
+    const r = (recipes ?? []).find((x) => `${x.kind}:${x.id}` === v);
+    // A recipe belongs to one product: pick it too when the Destination is still empty.
+    if (r && r.outputIngredientId && !outsRaw.some((o) => o.ingredientId)) {
+      const first = outsRaw[0];
+      if (first) patchOut(first.key, { ingredientId: r.outputIngredientId, unit: byId.get(r.outputIngredientId)?.unit ?? "" });
+    }
+  };
+  const startSaveRecipe = () => {
+    const o = usedOuts[0];
+    if (usedOuts.length !== 1 || !o?.ingredientId) return setError("To save a recipe, choose exactly one finished product in Destination.");
+    if (!(Number(o.quantity) > 0)) return setError("Type the good quantity first: the recipe is saved for that quantity.");
+    if (!usedIns.length || usedIns.some((r) => !r.ingredientId || !(Number(r.quantity) > 0))) return setError("Choose every ingredient and give each a quantity above zero before saving a recipe.");
+    setError(null);
+    setSavingRecipe({ name: `${byId.get(o.ingredientId)?.name ?? "Recipe"}`, error: null });
+  };
+  const confirmSaveRecipe = () => {
+    const o = usedOuts[0];
+    if (!savingRecipe || !o) return;
+    if (!savingRecipe.name.trim()) return setSavingRecipe({ ...savingRecipe, error: "Give the recipe a name." });
+    recipeMut.create.mutate(
+      { outputIngredientId: o.ingredientId, name: savingRecipe.name.trim(), baseOutputQty: o.quantity.trim(), lines: usedIns.map((r) => ({ ingredientId: r.ingredientId, quantity: r.quantity.trim(), unit: r.unit as IngredientUnit })) },
+      {
+        onSuccess: (rec) => { setRecipeKey(`${rec.kind ?? "RECIPE"}:${rec.id}`); setSavingRecipe(null); toast.success("Recipe saved. Stock was not changed."); },
+        onError: (e) => setSavingRecipe({ ...savingRecipe, error: e instanceof ApiError ? e.message : "Could not save the recipe. Nothing was changed." }),
+      },
+    );
   };
   const enterAdds = (isLast: boolean, add: () => void) => (e: React.KeyboardEvent) => { if (e.key === "Enter" && isLast) { e.preventDefault(); add(); } };
 
@@ -173,7 +221,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const fillRecipe = () => {
     const o = usedOuts[0];
     if (!o?.ingredientId) return setError("Choose the finished product first.");
-    if (!recipe) return setError(recipes?.length ? "Choose which recipe to fill from." : "This product has no saved recipe. Add one under Inventory > Recipes, or enter the ingredients by hand.");
+    if (!recipe) return setError(recipes?.length ? "Choose which recipe to fill from." : "This product has no saved recipes yet. Enter the ingredients by hand and press \"Save as recipe\", or add one under Inventory > Recipes.");
     if (!(Number(o.quantity) > 0)) return setError("Type the planned good quantity first; the recipe is scaled to it.");
     fill.mutate({ kind: recipe.kind, id: recipe.id, quantity: o.quantity }, {
       onSuccess: (r) => {
@@ -200,6 +248,14 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   };
   const submit = () => {
     setError(null);
+    if (draft) {
+      // Save the edits to the same draft, then post it. A second click cannot post twice: the server only posts a draft once.
+      updateDraft.mutate({ id: draft.id, body: { ...details(), ...lines(), ...extras(), ...(costed ? { costing } : {}) } as never }, {
+        onSuccess: () => postAction.mutate({ id: draft.id, action: "post" }, { onSuccess: () => finish(draft.id, draft.entryNo), onError: (e) => setError(`Your changes were saved to draft ${draft.entryNo}, but it was not posted: ${e instanceof ApiError ? e.message : "try again"}. Stock has not changed.`) }),
+        onError: fail,
+      });
+      return;
+    }
     if (!key.current) key.current = `sjv-${crypto.randomUUID()}`;
     save.mutate({ ...details(), ...lines(), ...extras(), ...(costed ? { costing } : {}), idempotencyKey: key.current, post: true } as never, { onSuccess: (r) => finish(r.id, r.entryNo), onError: fail });
   };
@@ -209,6 +265,13 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
     const p = problem();
     if (p) return setError(p);
     setError(null);
+    if (draft) {
+      updateDraft.mutate({ id: draft.id, body: { ...details(), ...lines(), ...extras(), ...(costed ? { costing } : {}) } as never }, {
+        onSuccess: () => { onSaved?.({ id: draft.id, entryNo: draft.entryNo, posted: false }); onOpenChange(false); },
+        onError: fail,
+      });
+      return;
+    }
     if (!draftKey.current) draftKey.current = `sjd-${crypto.randomUUID()}`;
     save.mutate({ ...details(), ...lines(), ...extras(), ...(costed ? { costing } : {}), idempotencyKey: draftKey.current, post: false } as never, {
       onSuccess: (r) => { onSaved?.({ id: r.id, entryNo: r.entryNo, posted: false }); onOpenChange(false); },
@@ -232,6 +295,22 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
               onDone={(stockId, unit) => { patchOut(linking.rowKey, { ingredientId: stockId, unit }); setRecipeKey(""); setLinking(null); }} />
           ) : null;
         })()}
+        {savingRecipe && (
+          <Dialog open onOpenChange={(o) => !o && !recipeMut.create.isPending && setSavingRecipe(null)}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Save as recipe</DialogTitle>
+                <DialogDescription>Saves the ingredients and quantities in this voucher as a reusable recipe for {byId.get(usedOuts[0]?.ingredientId ?? "")?.name ?? "this product"}, making {usedOuts[0]?.quantity} {(usedOuts[0]?.unit || "").toLowerCase()}. This does not change stock and does not save or post the voucher.</DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col gap-1.5"><Label htmlFor="sr-name">Recipe name</Label><Input id="sr-name" autoFocus value={savingRecipe.name} onChange={(e) => setSavingRecipe({ ...savingRecipe, name: e.target.value, error: null })} /></div>
+              {savingRecipe.error && <p role="alert" className="text-sm text-destructive">{savingRecipe.error}</p>}
+              <DialogFooter>
+                <Button type="button" variant="outline" disabled={recipeMut.create.isPending} onClick={() => setSavingRecipe(null)}>Cancel</Button>
+                <Button type="button" disabled={recipeMut.create.isPending} onClick={confirmSaveRecipe}>{recipeMut.create.isPending ? "Saving…" : "Save recipe"}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
         {adding && (
           <VoucherAddItemDialog branchId={branchId} kind={adding.kind} open onOpenChange={(o) => !o && closeAdding()}
             existing={adding.existingId ? (() => { const e = byId.get(adding.existingId!); return e ? { id: e.id, name: e.name, unit: e.unit } : undefined; })() : undefined}
@@ -239,12 +318,12 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
               if (adding.existingId) return;
               // Put the new item straight into the first empty row, or a new one, so nothing is retyped.
               if (adding.kind === "PREPARED") {
-                const empty = outsRaw.find((r) => !r.ingredientId);
+                const empty = outsRaw.find((r) => r.key === activeOut.current && !r.ingredientId) ?? outsRaw.find((r) => !r.ingredientId);
                 if (empty) setOuts((r) => r.map((x) => (x.key === empty.key ? { ...x, ingredientId: id } : x)));
                 else setOuts((r) => [...r, blankOut({ ingredientId: id })]);
                 setRecipeKey("");
               } else {
-                const empty = insRaw.find((r) => !r.ingredientId);
+                const empty = insRaw.find((r) => r.key === activeIn.current && !r.ingredientId) ?? insRaw.find((r) => !r.ingredientId);
                 if (empty) setIns((r) => r.map((x) => (x.key === empty.key ? { ...x, ingredientId: id } : x)));
                 else setIns((r) => [...r, blankIn({ ingredientId: id })]);
               }
@@ -266,16 +345,22 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                 <div className="flex flex-col gap-1.5"><Label htmlFor="v-exp">Use by</Label><Input id="v-exp" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></div>
               </section>
 
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="grid gap-4 2xl:grid-cols-2">
                 <section aria-label="Source / Consumption" className="min-w-0 rounded-xl border border-border">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2">
                     <h3 className="text-sm font-semibold">Source / Consumption</h3>
-                    <div className="flex items-center gap-2">
-                      <SearchSelect aria-label="Recipe" className="w-56" value={recipeKey} onChange={setRecipeKey} placeholder="Search recipes…" emptyText="No recipe matches"
-                        options={[{ value: "", label: recipes?.length ? "No recipe (manual)" : "No saved recipe" }, ...(recipes ?? []).map((r) => ({ value: `${r.kind}:${r.id}`, label: r.name, hint: `base ${r.baseOutputQty} ${r.outputUnit.toLowerCase()} · v${r.version}` }))]} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SearchSelect aria-label="Recipe" className="w-56" value={recipeKey} onChange={pickRecipe} placeholder="Search recipes…" emptyText="No recipe matches"
+                        options={[{ value: "", label: recipes?.length ? "No recipe (manual)" : firstProduct ? "No saved recipes for this product yet" : "No saved recipes yet" }, ...(recipes ?? []).map((r) => ({ value: `${r.kind}:${r.id}`, label: r.name, hint: `base ${r.baseOutputQty} ${r.outputUnit.toLowerCase()} · v${r.version}` }))]} />
                       <Button type="button" variant="outline" size="sm" disabled={fill.isPending || !recipeKey} onClick={fillRecipe}>Fill from recipe</Button>
+                      {canAddItems && <Button type="button" variant="outline" size="sm" disabled={busy} onClick={startSaveRecipe} title="Keeps these ingredients as a reusable recipe. Stock is not changed.">Save as recipe</Button>}
                     </div>
                   </div>
+                  <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
+                    {recipes && recipes.length === 0 && <b className="text-foreground">No saved recipes yet. </b>}
+                    A recipe is a reusable list of ingredients and quantities for making one product. Choosing one fills the rows below; you can change every number before saving. Saving a recipe never changes stock; only posting this voucher does.
+                    {canAddItems && <> <Link href="/inventory/recipes" target="_blank" rel="noopener" className="underline underline-offset-2">Create recipe</Link> in a new tab, or fill the rows and press Save as recipe.</>}
+                  </p>
                   <div className="overflow-x-auto p-2">
                     <table className="w-full min-w-[36rem] text-sm">
                       <thead><tr><th className={head}>Name of item</th><th className={`${head} text-right`}>Available</th><th className={head}>Quantity</th><th className={head}>Unit</th><th className={`${head} text-right`}>Expected</th>{costed && <><th className={head}>Rate</th><th className={`${head} text-right`}>Amount</th></>}<th className="w-8" /></tr></thead>
@@ -286,7 +371,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                           const exp = r.expected && it && r.unit === it.unit ? Number(r.expected) : null;
                           const diff = exp != null && Number(r.quantity) > 0 ? Number(r.quantity) - exp : null;
                           return (
-                            <tr key={r.key} className="align-top [&>td]:border-b [&>td]:border-border/60">
+                            <tr key={r.key} onFocusCapture={() => { activeIn.current = r.key; }} className="align-top [&>td]:border-b [&>td]:border-border/60">
                               <td className="p-1">
                                 <ItemCombobox label="Ingredient" items={raw} value={r.ingredientId} onChange={(id) => pickIn(r.key, id)} />
                                 <div className="mt-1 grid grid-cols-[minmax(7rem,1fr)_5rem] gap-1">
@@ -314,7 +399,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                       </tbody>
                     </table>
                     {yieldInfo && <p className="px-1 pt-1 text-xs text-muted-foreground">Against the recipe: <b className={Math.abs(yieldInfo.pct) > 5 ? "text-destructive" : "text-foreground"}>{yieldInfo.pct > 0 ? "+" : ""}{yieldInfo.pct.toFixed(1)}%</b> ingredient use ({yieldInfo.used} of {yieldInfo.expected} expected, same-unit rows). Less is not automatically better; check the quality note.</p>}
-                    <div className="flex items-center justify-between px-1 pt-1"><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add source row</Button>{canAddItems && <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PURCHASED", rowKey: null })}>New source item…</Button>}</div>{costed && <span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span>}</div>
+                    <div className="flex items-center justify-between px-1 pt-1"><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add source row</Button>{canAddItems && <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PURCHASED", rowKey: null })}>+ Add inventory item</Button>}</div>{costed && <span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span>}</div>
                   </div>
                 </section>
 
@@ -327,7 +412,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                         {outs.map((r, idx) => {
                           const it = item(r);
                           return (
-                            <tr key={r.key} className="align-top [&>td]:border-b [&>td]:border-border/60">
+                            <tr key={r.key} onFocusCapture={() => { activeOut.current = r.key; }} className="align-top [&>td]:border-b [&>td]:border-border/60">
                               <td className="p-1">
                                 <ItemCombobox label="Finished product" placeholder="Search products…" items={productChoices} value={r.ingredientId} onChange={(id) => pickOut(r.key, id)} />
                                 {canPutOnMenu && it && it.onMenu === false && (
@@ -350,11 +435,11 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                     </table>
                     <div className="flex flex-wrap gap-1 px-1 pt-1">
                       <Button type="button" variant="outline" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Add co-product</Button>
-                      {canAddItems && <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: null })}>New finished product…</Button>}
+                      {canAddItems && <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: null })}>+ Add menu item</Button>}
                     </div>
                     {canAddItems && products.length === 0 && (menuOnly ?? []).length === 0 && (
                       <div className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-                        <span>No finished products yet.</span>
+                        <span>No finished products or menu items yet.</span>
                         <Button type="button" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: outs[0]?.key ?? null })}>Add Item</Button>
                       </div>
                     )}

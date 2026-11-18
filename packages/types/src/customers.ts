@@ -5,6 +5,14 @@ export const customerSchema = z.object({
   phone: z.string().optional(),
   email: z.string().email().optional(),
   address: z.string().optional(),
+  // Same rule as saved delivery addresses (3-10 letters, digits, space or dash), so every supported country works.
+  // An empty string clears it.
+  pincode: z
+    .string()
+    .trim()
+    .regex(/^([A-Za-z0-9 -]{3,10})?$/, "Enter a valid PIN / postal code")
+    .optional(),
+  status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
   birthday: z.coerce.date().optional(),
   anniversary: z.coerce.date().optional(),
   allergies: z.string().optional(),

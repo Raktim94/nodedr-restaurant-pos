@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { StatusNote, useStatusNote } from "@/components/ui/status-note";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useBranch } from "@/hooks/use-branch";
-import type { JournalEntry } from "@/hooks/use-stock-journal";
+import { Skeleton } from "@/components/ui/skeleton";
+import { type JournalEntry, useProductionEntry } from "@/hooks/use-stock-journal";
 import { cn } from "@/lib/utils";
 
 const VIEWS = [
@@ -45,6 +46,9 @@ function JournalShell() {
   const rawType = params.get("type") ?? (raw === "voucher" ? "PRODUCTION" : null);
   const newType = PICK.find((p) => p.type === rawType && (canManage || !p.needsManage))?.type ?? null;
   const [editing, setEditing] = useState<JournalEntry | null>(null);
+  // A production draft being reopened (production entries are a different record from the other journal kinds).
+  const [editingProd, setEditingProd] = useState<string | null>(null);
+  const { data: prodDraft, isLoading: prodLoading, isError: prodError } = useProductionEntry(branchId, editingProd);
   const [formKey, setFormKey] = useState(0);
   const { note, show, clear } = useStatusNote(15_000);
 
@@ -57,6 +61,7 @@ function JournalShell() {
   };
   const saved = (entryNo: string, posted: boolean) => {
     setEditing(null);
+    setEditingProd(null);
     setFormKey((n) => n + 1);
     show("success", posted ? `${entryNo} posted. Stock is updated.` : `${entryNo} saved as a draft. Stock has not changed; post it from the journal when ready.`);
     go("journal");
@@ -70,7 +75,7 @@ function JournalShell() {
           <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Inventory</h1>
           <p className="text-sm text-muted-foreground">Stock, daily production, purchasing, and food waste</p>
         </div>
-        {view !== "new" && <Button onClick={() => { setEditing(null); go("new"); }}>New stock journal</Button>}
+        {view !== "new" && <Button onClick={() => { setEditing(null); setEditingProd(null); go("new"); }}>New stock journal</Button>}
       </div>
       <InventoryTabs />
       <div role="tablist" aria-label="Stock journal views" className="flex w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1 sm:w-fit">
@@ -80,7 +85,7 @@ function JournalShell() {
             role="tab"
             type="button"
             aria-selected={view === v.id}
-            onClick={() => { if (v.id === "new") setEditing(null); go(v.id); }}
+            onClick={() => { if (v.id === "new") { setEditing(null); setEditingProd(null); } go(v.id); }}
             className={cn("whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50", view === v.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
           >
             {v.label}
@@ -92,7 +97,8 @@ function JournalShell() {
         <JournalList
           branchId={branchId}
           onNew={() => go("new")}
-          onEdit={(e) => { setEditing(e); go("new", e.type); }}
+          onEdit={(e) => { setEditing(e); setEditingProd(null); go("new", e.type); }}
+          onEditProduction={(id) => { setEditing(null); setEditingProd(id); go("new", "PRODUCTION"); }}
           notice={<StatusNote note={note} onClear={clear} />}
         />
       )}
@@ -119,12 +125,15 @@ function JournalShell() {
       {view === "new" && formType && (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold">{editing ? `Edit draft ${editing.entryNo}` : `New ${formType === "PRODUCTION" ? "production entry" : JOURNAL_TYPES[formType].label.toLowerCase()}`}</h2>
-            {!editing && <Button variant="ghost" size="sm" onClick={() => go("new")}>Change type</Button>}
+            <h2 className="text-lg font-semibold">{editing || prodDraft ? `Edit draft ${(editing ?? prodDraft)!.entryNo}` : `New ${formType === "PRODUCTION" ? "production entry" : JOURNAL_TYPES[formType].label.toLowerCase()}`}</h2>
+            {!editing && !editingProd && <Button variant="ghost" size="sm" onClick={() => go("new")}>Change type</Button>}
           </div>
-          {formType === "PRODUCTION" ? (
+          {formType === "PRODUCTION" && editingProd && (prodLoading || prodError || !prodDraft) ? (
+            prodError ? <p role="alert" className="text-sm text-destructive">Could not load that draft. Nothing was changed.</p> : <Skeleton className="h-64 rounded-xl" />
+          ) : formType === "PRODUCTION" ? (
             <StockJournalVoucher
-              key={`p-${formKey}`}
+              key={`p-${formKey}-${prodDraft?.id ?? "new"}`}
+              draft={prodDraft?.status === "DRAFT" ? prodDraft : undefined}
               inline
               branchId={branchId}
               open

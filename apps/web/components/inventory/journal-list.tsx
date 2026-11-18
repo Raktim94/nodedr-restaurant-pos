@@ -22,6 +22,7 @@ import {
   useJournalEntry,
   useJournalEntryActions,
   usePlaces,
+  useDeleteProductionDraft,
   useProductionAction,
   useProductionEntry,
   csvUrl,
@@ -81,7 +82,7 @@ function Lines({ lines, sign }: { lines: JournalRow["out"]; sign: "−" | "+" })
 }
 
 /** Every stock journal entry in one list: production, transfers, waste and corrections, drafts and posted. */
-export function JournalList({ branchId, onNew, onEdit, notice }: { branchId: string | null; onNew: () => void; onEdit: (e: JournalEntry) => void; notice?: React.ReactNode }) {
+export function JournalList({ branchId, onNew, onEdit, onEditProduction, notice }: { branchId: string | null; onNew: () => void; onEdit: (e: JournalEntry) => void; onEditProduction?: (id: string) => void; notice?: React.ReactNode }) {
   const { data: me } = useCurrentUser();
   const canManage = hasPermission(me?.user, "inventory.manage");
   const { data: places } = usePlaces(branchId);
@@ -218,7 +219,7 @@ export function JournalList({ branchId, onNew, onEdit, notice }: { branchId: str
       )}
 
       {open && open.kind !== "PRODUCTION" && <JournalDetails branchId={branchId} id={open.id} onClose={() => setOpen(null)} onEdit={(e) => { setOpen(null); onEdit(e); }} />}
-      {open && open.kind === "PRODUCTION" && <ProductionDetails branchId={branchId} id={open.id} onClose={() => setOpen(null)} />}
+      {open && open.kind === "PRODUCTION" && <ProductionDetails branchId={branchId} id={open.id} onClose={() => setOpen(null)} onEdit={onEditProduction ? (id) => { setOpen(null); onEditProduction(id); } : undefined} />}
     </div>
   );
 }
@@ -379,13 +380,15 @@ function JournalDetails({ branchId, id, onClose, onEdit }: { branchId: string | 
   );
 }
 
-function ProductionDetails({ branchId, id, onClose }: { branchId: string | null; id: string; onClose: () => void }) {
+function ProductionDetails({ branchId, id, onClose, onEdit }: { branchId: string | null; id: string; onClose: () => void; onEdit?: (id: string) => void }) {
   const { data: me } = useCurrentUser();
   const canReverse = hasPermission(me?.user, "production.void");
   const canPost = hasPermission(me?.user, "production.post");
   const { data: e, isLoading, isError } = useProductionEntry(branchId, id);
   const act = useProductionAction(branchId);
-  const [dialog, setDialog] = useState<"post" | "void" | null>(null);
+  const removeDraft = useDeleteProductionDraft(branchId);
+  const canRecord = hasPermission(me?.user, "production.record");
+  const [dialog, setDialog] = useState<"post" | "void" | "delete" | null>(null);
   const [correcting, setCorrecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -434,6 +437,8 @@ function ProductionDetails({ branchId, id, onClose }: { branchId: string | null;
             {error && !dialog && <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
             <div className="sticky bottom-0 -mx-4 mt-auto flex flex-wrap gap-2 border-t border-border bg-popover px-4 py-3">
               {e.status === "DRAFT" && canPost && <Button onClick={() => { setError(null); setDialog("post"); }}>Post journal</Button>}
+              {e.status === "DRAFT" && canRecord && onEdit && <Button variant="outline" onClick={() => onEdit(e.id)}>Edit draft</Button>}
+              {e.status === "DRAFT" && canRecord && <Button variant="ghost" className="text-destructive" onClick={() => { setError(null); setDialog("delete"); }}>Delete draft</Button>}
               {e.status === "DRAFT" && !canPost && <p className="text-xs text-muted-foreground">Posting a production draft needs the post permission.</p>}
               {e.status === "POSTED" && canReverse && (
                 <>
@@ -454,6 +459,16 @@ function ProductionDetails({ branchId, id, onClose }: { branchId: string | null;
               <DialogFooter>
                 <Button variant="outline" onClick={() => setDialog(null)} disabled={act.isPending}>Not yet</Button>
                 <Button autoFocus disabled={act.isPending} onClick={() => act.mutate({ id: e.id, action: "post" }, { onSuccess: () => { setDialog(null); setDone(`${e.entryNo} posted. Stock is updated.`); }, onError: fail })}>{act.isPending ? "Posting…" : "Post and update stock"}</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={dialog === "delete"} onOpenChange={(o) => !o && !removeDraft.isPending && setDialog(null)}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader><DialogTitle>Delete draft {e.entryNo}?</DialogTitle><DialogDescription>The draft never changed stock, so nothing else changes. This cannot be undone.</DialogDescription></DialogHeader>
+              {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDialog(null)} disabled={removeDraft.isPending}>Keep it</Button>
+                <Button variant="destructive" disabled={removeDraft.isPending} onClick={() => removeDraft.mutate(e.id, { onSuccess: onClose, onError: fail })}>{removeDraft.isPending ? "Deleting…" : "Delete draft"}</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

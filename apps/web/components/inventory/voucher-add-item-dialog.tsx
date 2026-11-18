@@ -87,8 +87,8 @@ export function VoucherAddItemDialog({ branchId, kind, existing, open, onOpenCha
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-md">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>{existing ? `Put ${existing.name} on the POS menu` : finished ? "Add finished product" : "Add source item"}</DialogTitle>
-            <DialogDescription>{existing ? "Adds a menu item that sells this stock item. Type the category, selling price and tax; nothing is filled in for you." : finished ? "Creates a stock item you can produce in this voucher. Stock starts at zero." : "Creates a raw material for this voucher. Stock starts at zero; receive it through a purchase first."}</DialogDescription>
+            <DialogTitle>{existing ? `Put ${existing.name} on the POS menu` : finished ? "Add menu item" : "Add inventory item"}</DialogTitle>
+            <DialogDescription>{existing ? "Adds a menu item that sells this stock item. Type the category, selling price and tax; nothing is filled in for you." : finished ? "Creates a finished product you can produce in this voucher, and by default puts it on the POS menu. Stock starts at zero." : "Creates a raw material (inventory item) for this voucher. It is not added to the menu. Stock starts at zero; receive it through a purchase first."}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1.5"><Label htmlFor="va-name">Name</Label><Input id="va-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus required readOnly={!!existing} /></div>
           <div className="flex flex-col gap-1.5"><Label htmlFor="va-unit">Stock unit</Label>
@@ -115,7 +115,7 @@ export function VoucherAddItemDialog({ branchId, kind, existing, open, onOpenCha
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Adding…" : existing ? "Put on POS menu" : finished ? "Add finished product" : "Add source item"}</Button>
+            <Button type="submit" disabled={busy}>{busy ? "Adding…" : existing ? "Put on POS menu" : finished ? "Add menu item" : "Add inventory item"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
