@@ -7,6 +7,7 @@ import {
 const fake = {
   key: 'fake',
   fetchStatus: jest.fn(),
+  fetchRefundStatus: jest.fn(),
   verifyWebhook: jest.fn(),
   fields: [],
 };
@@ -41,6 +42,7 @@ function setup(over: Partial<Row> = {}) {
   const prisma: any = {
     gatewayPayment: {
       findFirst: jest.fn(async () => pay),
+      findUnique: jest.fn(async () => pay),
       findUniqueOrThrow: jest.fn(async () => pay),
       update: jest.fn(async ({ data }: Row) => Object.assign(pay, data)),
       updateMany: jest.fn(async ({ where, data }: Row) => {
@@ -64,6 +66,10 @@ function setup(over: Partial<Row> = {}) {
         events.add(data.eventId);
         return data;
       }),
+    },
+    gatewayRefund: {
+      findMany: jest.fn(async () => []),
+      update: jest.fn(async ({ data }: Row) => data),
     },
   };
   const gateways: any = {
@@ -245,5 +251,40 @@ describe('releasing a held table order', () => {
     await svc.refresh('gp1');
     expect(orders.releaseHeldOrder).toHaveBeenCalledTimes(1);
     expect(pay.status).toBe('SUCCEEDED');
+  });
+});
+
+describe('stale pending refunds', () => {
+  it('verifies with the provider before releasing the hold', async () => {
+    const { svc, prisma } = setup();
+    const stale = {
+      id: 'grStale',
+      restaurantId: 'r1',
+      gatewayPaymentId: 'gp1',
+      provider: 'fake',
+      providerRefundId: 're_9',
+      refundId: null,
+      status: 'PENDING',
+      amountMinor: 500,
+      currency: 'INR',
+      note: null,
+      createdAt: new Date(Date.now() - 20 * 60_000),
+    };
+    prisma.gatewayRefund.findMany.mockResolvedValue([stale]);
+    fake.fetchRefundStatus.mockResolvedValue({
+      providerRefundId: 're_9',
+      state: 'FAILED',
+    });
+    await svc.refundsNeedingReview('r1');
+    expect(fake.fetchRefundStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'LIVE' }),
+      're_9',
+    );
+    expect(prisma.gatewayRefund.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'grStale' },
+        data: expect.objectContaining({ status: 'FAILED' }),
+      }),
+    );
   });
 });

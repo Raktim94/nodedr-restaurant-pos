@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { GatewayPayment } from '@prisma/client';
+import { Prisma, type GatewayPayment, type GatewayRefund } from '@prisma/client';
 import { round2 } from '../modules/orders/pricing';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../modules/orders/orders.service';
@@ -628,6 +628,73 @@ export class GatewayPaymentsService {
     }
   }
 
+  /**
+   * Ask the provider what happened to a refund whose result was never written.
+   * We only change our row; we never re-send money or invent a local Refund.
+   * A confirmed-but-unrecorded refund stays in the review list for an operator.
+   */
+  private async reconcileStaleRefund(r: GatewayRefund) {
+    if (!r.providerRefundId) return; // provider call never got far enough to identify it
+    const [payment, connection, entry] = await Promise.all([
+      this.prisma.gatewayPayment.findUnique({
+        where: { id: r.gatewayPaymentId },
+        select: { mode: true },
+      }),
+      this.prisma.paymentGatewayConnection.findUnique({
+        where: {
+          restaurantId_provider: {
+            restaurantId: r.restaurantId,
+            provider: r.provider,
+          },
+        },
+      }),
+      this.prisma.paymentGatewayCatalogEntry.findFirst({
+        where: {
+          key: r.provider,
+          OR: [{ restaurantId: r.restaurantId }, { restaurantId: null }],
+        },
+        orderBy: { restaurantId: 'desc' },
+      }),
+    ]);
+    if (!payment || !connection) return;
+    const adapter = getAdapter(entry?.adapter);
+    if (!adapter?.fetchRefundStatus) return;
+    try {
+      const remote = await adapter.fetchRefundStatus(
+        this.gateways.context(r.restaurantId, connection, payment.mode),
+        r.providerRefundId,
+      );
+      if (remote.state === 'DONE') {
+        await this.prisma.gatewayRefund.update({
+          where: { id: r.id },
+          data: r.refundId
+            ? {
+                status: 'SUCCEEDED',
+                providerRefundId: remote.providerRefundId,
+                note: null,
+              }
+            : {
+                status: 'NEEDS_REVIEW',
+                providerRefundId: remote.providerRefundId,
+                note: 'The provider confirms this refund succeeded, but no local Refund was recorded. Record it manually; do not retry here.',
+              },
+        });
+      } else if (remote.state === 'FAILED') {
+        // Releases the hold: FAILED rows are no longer counted as refundable.
+        await this.prisma.gatewayRefund.update({
+          where: { id: r.id },
+          data: {
+            status: 'FAILED',
+            note: 'The provider confirms this refund failed.',
+          },
+        });
+      }
+      // PENDING stays PENDING and is surfaced in the review list.
+    } catch {
+      // Provider unreachable or unknown refund: leave the row untouched.
+    }
+  }
+
   /** Refunds that need a person, newest first (shown on Settings > Payments). */
   async refundsNeedingReview(restaurantId: string) {
     // A PENDING row is committed before the provider call. If the process dies
@@ -635,14 +702,27 @@ export class GatewayPaymentsService {
     // hold on the whole order. Surface stale ones for an operator to check in
     // the provider dashboard; we never auto-release or finalise them here.
     const staleBefore = new Date(Date.now() - 10 * 60_000);
+    const where: Prisma.GatewayRefundWhereInput = {
+      restaurantId,
+      OR: [
+        { status: 'NEEDS_REVIEW' },
+        { status: 'PENDING', createdAt: { lt: staleBefore } },
+      ],
+    };
+    const stale = await this.prisma.gatewayRefund.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+    // Reconcile with the provider before showing the list, then re-read so the
+    // statuses and notes reflect what we just learned.
+    await Promise.all(
+      stale
+        .filter((r) => r.status === 'PENDING')
+        .map((r) => this.reconcileStaleRefund(r)),
+    );
     const rows = await this.prisma.gatewayRefund.findMany({
-      where: {
-        restaurantId,
-        OR: [
-          { status: 'NEEDS_REVIEW' },
-          { status: 'PENDING', createdAt: { lt: staleBefore } },
-        ],
-      },
+      where,
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
