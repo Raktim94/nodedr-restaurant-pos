@@ -182,23 +182,12 @@ export function CartPanel({
         </div>
       )}
       {existingOrderNumber && (
-        <div className="flex items-center justify-between gap-3 rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+        <div className="rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
           <span>
             This table already has open order{" "}
             <span className="font-medium text-foreground">#{existingOrderNumber}</span>
             {lines.length > 0 && " — these items will be added to it as a new round."}
           </span>
-          {onViewExistingOrder && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 shrink-0 px-2 text-xs"
-              onClick={onViewExistingOrder}
-            >
-              View & pay
-            </Button>
-          )}
         </div>
       )}
 
@@ -225,16 +214,18 @@ export function CartPanel({
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-7 w-7"
+                    className="h-9 w-9"
+                    aria-label={`Remove one ${line.name}`}
                     onClick={() => onDecrement(line.key)}
                   >
                     <Minus className="h-3 w-3" />
                   </Button>
-                  <span className="w-5 text-center text-sm tabular-nums">{line.quantity}</span>
+                  <span className="w-6 text-center text-sm tabular-nums" aria-label="Quantity">{line.quantity}</span>
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-7 w-7"
+                    className="h-9 w-9"
+                    aria-label={`Add one ${line.name}`}
                     onClick={() => onIncrement(line.key)}
                   >
                     <Plus className="h-3 w-3" />
@@ -242,7 +233,8 @@ export function CartPanel({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    className="h-9 w-9 text-muted-foreground hover:text-destructive"
+                    aria-label={`Delete ${line.name} from cart`}
                     onClick={() => onRemove(line.key)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -261,13 +253,18 @@ export function CartPanel({
             {formatCurrency(subtotal)}
           </span>
         </div>
-        <Button className="h-11" disabled={!canSubmit} onClick={onSubmit}>
+        <Button className="h-11 w-full" disabled={!canSubmit} onClick={onSubmit}>
           {isSubmitting
             ? "Sending to kitchen…"
             : existingOrderNumber
               ? "Add to order & send to kitchen"
               : "Send to kitchen"}
         </Button>
+        {onViewExistingOrder && existingOrderNumber && (
+          <Button type="button" variant="outline" className="h-11 w-full" onClick={onViewExistingOrder}>
+            View bill #{existingOrderNumber} &amp; take payment
+          </Button>
+        )}
       </div>
     </div>
   );

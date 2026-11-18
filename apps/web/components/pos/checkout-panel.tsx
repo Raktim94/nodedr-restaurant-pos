@@ -1,7 +1,7 @@
 "use client";
 
 import { kitchenProgress, type PaymentMethodDto } from "@nodedr-restaurant/types";
-import { ArrowLeft, CheckCircle2, ChefHat, Pencil, Printer } from "lucide-react";
+import { CheckCircle2, ChefHat, Pencil, Printer } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { StatusNote, useNoteToast } from "@/components/ui/status-note";
@@ -373,16 +373,6 @@ export function CheckoutPanel({
     <div className="flex h-full flex-col gap-5 overflow-y-auto">
       <StatusNote note={note} onClear={clearNote} />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="-ml-2 shrink-0 text-muted-foreground"
-          onClick={onDone}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
         <div className="flex flex-wrap justify-end gap-2">
           {canEditRole && !locked && (
             <Button type="button" variant="outline" size="sm" onClick={() => setEditOpen(true)}>
@@ -449,8 +439,7 @@ export function CheckoutPanel({
         </div>
         {!locked && (
           <p className="mt-2 rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-            No need to pay right now — tap <span className="font-medium text-foreground">Back</span> to
-            help another table and come bill this one later from here or the Tables page.
+            No need to pay right now — use the buttons at the top to go back, and bill this one later from here or the Tables page.
           </p>
         )}
       </div>

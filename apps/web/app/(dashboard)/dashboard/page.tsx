@@ -64,10 +64,10 @@ function StatCard({
       className={cn(
         "flex h-full flex-col transition group-hover:border-primary/40 group-hover:shadow-md",
         hero
-          ? "justify-between gap-6 border-success/25 bg-gradient-to-br from-success/10 via-card to-card p-6 sm:p-7"
+          ? "justify-between gap-3 border-success/25 bg-gradient-to-br from-success/10 via-card to-card p-5"
           : compact
             ? "gap-2 p-4"
-            : "gap-3 p-4 sm:p-6",
+            : "gap-3 p-4",
         accent === "warning" && !hero && "border-warning/40",
       )}
     >
@@ -88,7 +88,7 @@ function StatCard({
       <span
         className={cn(
           "font-semibold tabular-nums tracking-tight text-foreground",
-          hero ? "text-4xl sm:text-5xl" : compact ? "text-xl sm:text-2xl" : "text-2xl sm:text-3xl",
+          hero ? "text-3xl sm:text-4xl" : compact ? "text-xl sm:text-2xl" : "text-2xl sm:text-3xl",
         )}
       >
         {value}
@@ -157,10 +157,10 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 lg:gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[32px] font-semibold tracking-tight text-foreground">
+          <h1 className="text-2xl font-semibold lg:text-[28px] tracking-tight text-foreground">
             {greeting}
             {firstName ? `, ${firstName}` : ""}
           </h1>
@@ -294,7 +294,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div {...slot("top", "charts", "grid grid-cols-1 items-start gap-4 lg:grid-cols-2")}>
+      <div {...slot("top", "charts", "grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2")}>
         <TrendChart
           title={`Revenue — last ${prefs.trendDays} days`}
           icon={TrendingUp}
@@ -317,9 +317,9 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-4" style={{ order: 100 }}>
-        <Card {...slot("card", "tables", "flex flex-col gap-1 p-6 lg:col-span-1")}>
-          <h2 className="mb-3 text-[18px] font-medium text-foreground">Tables</h2>
+      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-4" style={{ order: 100 }}>
+        <Card {...slot("card", "tables", "flex flex-col gap-1 p-4 lg:col-span-1")}>
+          <h2 className="mb-3 text-base font-medium text-foreground">Tables</h2>
           {data && (
             <>
               <TableStatusRow label="Available" count={data.tables.available} dotClass="bg-success" href="/tables" />
@@ -330,8 +330,8 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        <Card {...slot("card", "kitchen", "flex flex-col gap-1 p-6 lg:col-span-1")}>
-          <h2 className="mb-3 flex items-center gap-2 text-[18px] font-medium text-foreground">
+        <Card {...slot("card", "kitchen", "flex flex-col gap-1 p-4 lg:col-span-1")}>
+          <h2 className="mb-3 flex items-center gap-2 text-base font-medium text-foreground">
             <ChefHat className="h-[18px] w-[18px] text-muted-foreground" />
             Kitchen queue
           </h2>
@@ -345,8 +345,8 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        <Card {...slot("card", "recent", "flex flex-col gap-3 p-6 lg:col-span-1")}>
-          <h2 className="flex items-center gap-2 text-[18px] font-medium text-foreground">
+        <Card {...slot("card", "recent", "flex flex-col gap-3 p-4 lg:col-span-1")}>
+          <h2 className="flex items-center gap-2 text-base font-medium text-foreground">
             <Timer className="h-[18px] w-[18px] text-muted-foreground" />
             Recent transactions
           </h2>
@@ -392,8 +392,8 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        <Card {...slot("card", "channels", "flex flex-col gap-3 p-6 lg:col-span-1")}>
-          <h2 className="flex items-center gap-2 text-[18px] font-medium text-foreground">
+        <Card {...slot("card", "channels", "flex flex-col gap-3 p-4 lg:col-span-1")}>
+          <h2 className="flex items-center gap-2 text-base font-medium text-foreground">
             <ReceiptText className="h-[18px] w-[18px] text-muted-foreground" />
             Order channels
           </h2>

@@ -62,14 +62,18 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  // Desktop sidebar can collapse to icons. Remembered per browser; works with mouse, touch and keyboard (a real button).
-  const [collapsed, setCollapsed] = useState(false);
+  // Desktop sidebar is compact (icons) by default so the page gets the room. The toggle button pins it open or
+  // compact (remembered per browser; mouse, touch and keyboard all work). On top of that, hovering with a mouse or
+  // tabbing into it shows it expanded as an overlay without moving the page. Only an explicit "0" means "pinned open".
+  const [collapsed, setCollapsed] = useState(true);
+  const [peek, setPeek] = useState(false);
   useEffect(() => {
-    let v = false;
-    try { v = localStorage.getItem("orderrestro.sidebar.collapsed") === "1"; } catch { /* storage blocked */ }
+    let v = true;
+    try { v = localStorage.getItem("orderrestro.sidebar.collapsed") !== "0"; } catch { /* storage blocked */ }
     const t = setTimeout(() => setCollapsed(v), 0);
     return () => clearTimeout(t);
   }, []);
+  const expanded = !collapsed || peek;
   const toggle = () => setCollapsed((c) => { const n = !c; try { localStorage.setItem("orderrestro.sidebar.collapsed", n ? "1" : "0"); } catch { /* storage blocked */ } return n; });
   const { branchId: shellBranch } = useBranch();
   const { data: shellDisplay } = useDisplaySettings(shellBranch);
@@ -79,19 +83,29 @@ export function AppShell({
       <DemoBanner />
       <div className="flex min-h-0 flex-1">
       {/* Desktop sidebar */}
-      <aside id="app-sidebar" aria-label="Main navigation" className={`hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none lg:flex ${collapsed ? "w-[4.5rem]" : "w-64"}`}>
-        <div className={`flex h-16 items-center gap-2 ${collapsed ? "justify-center px-2" : "px-5"}`}>
-          {collapsed ? <Logo /> : <RestaurantBrand />}
-        </div>
-        {!collapsed && (
-          <div className="px-3 pb-3">
-            <BranchSwitcher />
+      <aside
+        id="app-sidebar"
+        aria-label="Main navigation"
+        className={`relative hidden shrink-0 transition-[width] duration-200 motion-reduce:transition-none lg:block ${collapsed ? "w-[4.5rem]" : "w-64"}`}
+        onPointerEnter={(e) => { if (e.pointerType === "mouse") setPeek(true); }}
+        onPointerLeave={() => setPeek(false)}
+        onFocus={() => setPeek(true)}
+        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPeek(false); }}
+      >
+        <div className={`absolute inset-y-0 left-0 z-30 flex flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none ${expanded ? "w-64" : "w-[4.5rem]"} ${collapsed && peek ? "shadow-xl" : ""}`}>
+          <div className={`flex h-16 items-center gap-2 ${expanded ? "px-5" : "justify-center px-2"}`}>
+            {expanded ? <RestaurantBrand /> : <Logo />}
           </div>
-        )}
-        <div className="flex-1 overflow-y-auto py-2">
-          <SidebarNav user={user} collapsed={collapsed} />
+          {expanded && (
+            <div className="px-3 pb-3">
+              <BranchSwitcher />
+            </div>
+          )}
+          <div className="flex-1 overflow-y-auto py-2">
+            <SidebarNav user={user} collapsed={!expanded} />
+          </div>
+          <BrandFooter collapsed={!expanded} />
         </div>
-        <BrandFooter collapsed={collapsed} />
       </aside>
 
       {/* Mobile drawer */}
@@ -141,7 +155,7 @@ export function AppShell({
             <UserMenu user={user} />
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-4 pb-24 sm:p-6 sm:pb-24 lg:p-8">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 pb-24 sm:p-6 sm:pb-24 lg:p-6 lg:pb-6">{children}</main>
         <EntityDialogHost />
       </div>
       <MobileBottomNav user={user} onMore={() => setMobileOpen(true)} />

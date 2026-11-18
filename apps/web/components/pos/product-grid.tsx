@@ -4,11 +4,10 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { QueryError } from "@/components/ui/query-error";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ResponsiveTabs } from "@/components/ui/nav-picker";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMenuCosts } from "@/hooks/use-manufacturing";
 import { useCategories, useMenuItems, type MenuItem } from "@/hooks/use-menu";
 import { formatCurrency } from "@/lib/format";
-import { cn } from "@/lib/utils";
 
 export function ProductGrid({
   branchId,
@@ -30,59 +29,39 @@ export function ProductGrid({
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <Input
-        placeholder="Search menu…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="h-11"
-      />
-
-      {categories && categories.length > 0 && (
-        <ResponsiveTabs
-          mobileOnly
-          className="lg:hidden"
-          label="Category"
-          value={activeCategoryId ?? "all"}
-          onChange={(id) => setActiveCategoryId(id === "all" ? undefined : id)}
-          desktopListClassName="justify-start lg:h-auto lg:flex-wrap"
-          items={[{ id: "all", label: "All" }, ...categories.map((c) => ({ id: c.id, label: c.name, hint: `${c._count.items} items` }))]}
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          placeholder="Search menu…"
+          aria-label="Search menu"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-11 sm:flex-1"
         />
-      )}
+        {categories && categories.length > 0 && (
+          <Select
+            value={activeCategoryId ?? "all"}
+            onValueChange={(v) => setActiveCategoryId(!v || v === "all" ? undefined : v)}
+          >
+            <SelectTrigger aria-label="Category" className="h-11 w-full sm:w-56">
+              <SelectValue>
+                {(value: string | null) => {
+                  const c = categories.find((x) => x.id === value);
+                  return c ? `${c.name} (${c._count.items})` : "All categories";
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All categories</SelectItem>
+              {categories.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name} ({c._count.items})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
 
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row lg:gap-5">
-      {categories && categories.length > 0 && (
-        <nav
-          aria-label="Category"
-          className="hidden w-52 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border pr-3 lg:flex xl:w-60"
-        >
-          {[{ id: undefined as string | undefined, name: "All", count: undefined as number | undefined }, ...categories.map((c) => ({ id: c.id as string | undefined, name: c.name, count: c._count.items as number | undefined }))].map((c) => {
-            const active = c.id === activeCategoryId;
-            return (
-              <button
-                key={c.id ?? "all"}
-                type="button"
-                aria-current={active ? "true" : undefined}
-                onClick={() => setActiveCategoryId(c.id)}
-                className={cn(
-                  "flex min-h-10 items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                  active
-                    ? "bg-primary font-semibold text-primary-foreground shadow-sm"
-                    : "font-medium text-foreground hover:bg-secondary",
-                )}
-              >
-                <span className="min-w-0 [overflow-wrap:anywhere] leading-tight" title={c.name}>
-                  {c.name}
-                </span>
-                {c.count !== undefined && (
-                  <span className={cn("shrink-0 text-xs tabular-nums", active ? "opacity-80" : "text-muted-foreground")}>
-                    {c.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-      )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {isError && !items ? (
         <QueryError error={error} what="the menu" onRetry={() => void refetch()} retrying={isFetching} />
@@ -133,7 +112,6 @@ export function ProductGrid({
         )}
       </div>
       )}
-      </div>
       </div>
     </div>
   );

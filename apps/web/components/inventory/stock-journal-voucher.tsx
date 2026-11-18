@@ -2,6 +2,7 @@
 
 import type { IngredientUnit } from "@nodedr-restaurant/types";
 import { useMemo, useRef, useState } from "react";
+import { VoucherAddItemDialog } from "@/components/inventory/voucher-add-item-dialog";
 import { ItemCombobox } from "@/components/inventory/item-combobox";
 import { SearchSelect } from "@/components/ui/search-select";
 import { Button } from "@/components/ui/button";
@@ -60,6 +61,8 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const [qNotes, setQNotes] = useState("");
   const [review, setReview] = useState<VoucherPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which "Add item" dialog is open, and which voucher row should receive the new item.
+  const [adding, setAdding] = useState<{ kind: "PURCHASED" | "PREPARED"; rowKey: number | null } | null>(null);
   const key = useRef("");
 
   const byId = useMemo(() => new Map((items ?? []).map((i) => [i.id, i])), [items]);
@@ -101,7 +104,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
     if (!usedIns.length || usedIns.some((r) => !r.ingredientId)) return "Choose every ingredient in the Source panel.";
     if ([...usedIns, ...usedOuts].some((r) => !(Number(r.quantity) > 0))) return "Every row needs a quantity above zero (for a product, the good quantity).";
     if (usedOuts.some((r) => r.rejected !== "" && !(Number(r.rejected) >= 0))) return "Rejected quantity must be zero or more.";
-    if (usedIns.some((r) => r.rate !== "" && !(Number(r.rate) >= 0))) return "A rate must be zero or more.";
+    if (costed && usedIns.some((r) => r.rate !== "" && !(Number(r.rate) >= 0))) return "A rate must be zero or more.";
     if (costs.some((c) => c.amount !== "" && !(Number(c.amount) >= 0))) return "An additional cost must be zero or more.";
     if (new Set([...usedIns, ...usedOuts].map((r) => r.ingredientId)).size !== usedIns.length + usedOuts.length) return "An item can appear only once, and an ingredient cannot also be produced.";
     if (multi && method === "MANUAL") {
@@ -113,7 +116,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const lines = () => ({
     inputs: usedIns.map((r) => ({
       ingredientId: r.ingredientId, quantity: r.quantity.trim(), unit: r.unit as IngredientUnit,
-      ...(r.rate.trim() !== "" ? { rate: r.rate.trim() } : {}),
+      ...(costed && r.rate.trim() !== "" ? { rate: r.rate.trim() } : {}),
       ...(r.expected ? { expectedQuantity: r.expected } : {}),
       ...(r.locationId ? { locationId: r.locationId } : {}),
       ...(r.lot.trim() ? { lotNumber: r.lot.trim() } : {}),
@@ -192,6 +195,22 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const cancelText = inline ? "Clear" : "Cancel";
   const inner = (
     <>
+        {adding && (
+          <VoucherAddItemDialog branchId={branchId} kind={adding.kind} open onOpenChange={(o) => !o && setAdding(null)}
+            onCreated={(id) => {
+              // Put the new item straight into the first empty row, or a new one, so nothing is retyped.
+              if (adding.kind === "PREPARED") {
+                const empty = outsRaw.find((r) => !r.ingredientId);
+                if (empty) setOuts((r) => r.map((x) => (x.key === empty.key ? { ...x, ingredientId: id } : x)));
+                else setOuts((r) => [...r, blankOut({ ingredientId: id })]);
+                setRecipeKey("");
+              } else {
+                const empty = insRaw.find((r) => !r.ingredientId);
+                if (empty) setIns((r) => r.map((x) => (x.key === empty.key ? { ...x, ingredientId: id } : x)));
+                else setIns((r) => [...r, blankIn({ ingredientId: id })]);
+              }
+            }} />
+        )}
         <div className="flex-1 overflow-y-auto px-4 py-4">
           {!review ? (
             <div className="flex flex-col gap-4">
@@ -209,7 +228,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
               </section>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <section aria-label="Source / Consumption" className="rounded-xl border border-border">
+                <section aria-label="Source / Consumption" className="min-w-0 rounded-xl border border-border">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2">
                     <h3 className="text-sm font-semibold">Source / Consumption</h3>
                     <div className="flex items-center gap-2">
@@ -219,8 +238,8 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                     </div>
                   </div>
                   <div className="overflow-x-auto p-2">
-                    <table className="w-full min-w-[44rem] text-sm">
-                      <thead><tr><th className={head}>Name of item</th><th className={`${head} text-right`}>Available</th><th className={head}>Quantity</th><th className={head}>Unit</th><th className={`${head} text-right`}>Expected</th><th className={head}>Rate</th><th className={`${head} text-right`}>Amount</th><th className="w-8" /></tr></thead>
+                    <table className="w-full min-w-[36rem] text-sm">
+                      <thead><tr><th className={head}>Name of item</th><th className={`${head} text-right`}>Available</th><th className={head}>Quantity</th><th className={head}>Unit</th><th className={`${head} text-right`}>Expected</th>{costed && <><th className={head}>Rate</th><th className={`${head} text-right`}>Amount</th></>}<th className="w-8" /></tr></thead>
                       <tbody>
                         {ins.map((r, idx) => {
                           const it = item(r);
@@ -247,8 +266,8 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                                 {r.expected ?? "–"}
                                 {diff != null && diff !== 0 && <span className={`block ${Math.abs(diff / exp!) > 0.05 ? "text-destructive" : ""}`}>{diff > 0 ? "+" : ""}{q3(diff)} ({diff > 0 ? "+" : ""}{((diff / exp!) * 100).toFixed(1)}%)</span>}
                               </td>
-                              <td className="p-1"><Input aria-label="Rate per unit" inputMode="decimal" className="w-20" placeholder="avg" value={r.rate} onChange={(e) => patchIn(r.key, { rate: e.target.value })} /></td>
-                              <td className="p-1 pt-2.5 text-right tabular-nums">{money(amt)}</td>
+                              {costed && <><td className="p-1"><Input aria-label="Rate per unit" inputMode="decimal" className="w-20" placeholder="avg" value={r.rate} onChange={(e) => patchIn(r.key, { rate: e.target.value })} /></td>
+                              <td className="p-1 pt-2.5 text-right tabular-nums">{money(amt)}</td></>}
                               <td className="p-1"><Button type="button" variant="ghost" size="icon-sm" aria-label="Remove ingredient row" disabled={ins.length === 1} onClick={() => setIns((x) => x.filter((y) => y.key !== r.key))}>×</Button></td>
                             </tr>
                           );
@@ -256,11 +275,11 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                       </tbody>
                     </table>
                     {yieldInfo && <p className="px-1 pt-1 text-xs text-muted-foreground">Against the recipe: <b className={Math.abs(yieldInfo.pct) > 5 ? "text-destructive" : "text-foreground"}>{yieldInfo.pct > 0 ? "+" : ""}{yieldInfo.pct.toFixed(1)}%</b> ingredient use ({yieldInfo.used} of {yieldInfo.expected} expected, same-unit rows). Less is not automatically better; check the quality note.</p>}
-                    <div className="flex items-center justify-between px-1 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add ingredient</Button><span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span></div>
+                    <div className="flex items-center justify-between px-1 pt-1"><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add source row</Button><Button type="button" variant="ghost" size="sm" onClick={() => setAdding({ kind: "PURCHASED", rowKey: null })}>New source item…</Button></div>{costed && <span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span>}</div>
                   </div>
                 </section>
 
-                <section aria-label="Destination / Production" className="rounded-xl border border-border">
+                <section aria-label="Destination / Production" className="min-w-0 rounded-xl border border-border">
                   <div className="border-b border-border bg-muted/40 px-3 py-2"><h3 className="text-sm font-semibold">Destination / Production</h3></div>
                   <div className="overflow-x-auto p-2">
                     <table className="w-full min-w-[28rem] text-sm">
@@ -287,8 +306,16 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                         })}
                       </tbody>
                     </table>
-                    <div className="px-1 pt-1"><Button type="button" variant="ghost" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Another product (co-product or by-product)</Button></div>
-                    {products.length === 0 && <p className="px-1 text-xs text-muted-foreground">No finished products yet. Add one under Stock items with type &ldquo;Finished product&rdquo;.</p>}
+                    <div className="flex flex-wrap gap-1 px-1 pt-1">
+                      <Button type="button" variant="outline" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Add co-product</Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setAdding({ kind: "PREPARED", rowKey: null })}>New finished product…</Button>
+                    </div>
+                    {products.length === 0 && (
+                      <div className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+                        <span>No finished products yet.</span>
+                        <Button type="button" size="sm" onClick={() => setAdding({ kind: "PREPARED", rowKey: outs[0]?.key ?? null })}>Add Item</Button>
+                      </div>
+                    )}
                     <p className="px-1 pt-1 text-xs text-muted-foreground">Good quantity goes into stock. Rejected pieces are only recorded; their cost stays in the batch and is carried by the good pieces.</p>
                     {multi && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-muted/40 p-2 text-xs">
@@ -331,11 +358,11 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
           {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-background px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-background px-4 py-3">
           {!review ? (
-            <><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{cancelText}</Button><div className="flex gap-2"><Button type="button" variant="outline" onClick={saveDraft} disabled={busy}>Save draft</Button><Button type="button" onClick={goReview} disabled={busy}>{busy ? "Checking…" : "Review voucher"}</Button></div></>
+            <><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{cancelText}</Button><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={saveDraft} disabled={busy} title="Keeps the voucher for later. Stock is not changed.">{save.isPending ? "Saving…" : "Save draft (no stock change)"}</Button><Button type="button" onClick={goReview} disabled={busy} title="Shows what will change. Nothing is posted yet.">{busy ? "Checking…" : "Review before posting"}</Button></div></>
           ) : (
-            <><Button type="button" variant="outline" onClick={() => { setReview(null); setError(null); }}>Back</Button><div className="flex gap-2"><Button type="button" variant="outline" onClick={saveDraft} disabled={busy}>Save draft</Button><Button type="button" onClick={submit} disabled={busy || !review.canPost}>{busy ? "Posting…" : "Post voucher"}</Button></div></>
+            <><Button type="button" variant="outline" onClick={() => { setReview(null); setError(null); }}>Back to edit</Button><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={saveDraft} disabled={busy} title="Keeps the voucher for later. Stock is not changed.">Save draft (no stock change)</Button><Button type="button" onClick={submit} disabled={busy || !review.canPost} title="Applies the stock movements now. This happens once.">{busy ? "Posting…" : "Post voucher & update stock"}</Button></div></>
           )}
         </div>
     </>
@@ -379,39 +406,40 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
 function ReviewBody({ review, recipe }: { review: VoucherPreview; recipe: string | null }) {
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm font-medium">Check the voucher. Stock changes only when you press Post.</p>
+      <p className="text-sm font-medium">Check the voucher. Stock changes only when you press “Post voucher & update stock”.</p>
       <p className="text-xs text-muted-foreground">{recipe ? `Recipe baseline: ${recipe}.` : "No recipe baseline: quantities were entered by hand."}</p>
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-xl border border-border">
           <h3 className="border-b border-border bg-muted/40 px-3 py-2 text-sm font-semibold">Source / Consumption</h3>
           <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead><tr><th className={head}>Item</th><th className={`${head} text-right`}>Used</th><th className={`${head} text-right`}>Expected</th><th className={`${head} text-right`}>Rate</th><th className={`${head} text-right`}>Amount</th></tr></thead>
+            <thead><tr><th className={head}>Item</th><th className={`${head} text-right`}>Used</th><th className={`${head} text-right`}>Expected</th>{review.costed && <><th className={`${head} text-right`}>Rate</th><th className={`${head} text-right`}>Amount</th></>}</tr></thead>
             <tbody>{review.inputs.map((l) => (
               <tr key={l.ingredientId} className="border-t border-border">
                 <td className="px-2 py-1.5">{l.name}{l.location ? <span className="block text-xs text-muted-foreground">from {l.location}{l.atLocation ? ` (has ${l.atLocation})` : ""}</span> : null}</td>
                 <td className="px-2 text-right tabular-nums">−{l.quantity} {l.unit}</td>
                 <td className="px-2 text-right text-xs tabular-nums text-muted-foreground">{l.expected ?? "–"}{l.variance && Number(l.variance) !== 0 ? <span className="block">{Number(l.variance) > 0 ? "+" : ""}{l.variance} ({l.variancePercent}%)</span> : null}</td>
-                <td className="px-2 text-right tabular-nums">{money(l.rate)}<span className="block text-xs text-muted-foreground">{l.rateSource}</span></td>
-                <td className="px-2 text-right tabular-nums">{money(l.lineCost)}</td>
+                {review.costed && <><td className="px-2 text-right tabular-nums">{money(l.rate)}<span className="block text-xs text-muted-foreground">{l.rateSource}</span></td>
+                <td className="px-2 text-right tabular-nums">{money(l.lineCost)}</td></>}
               </tr>))}</tbody>
           </table></div>
         </section>
         <section className="rounded-xl border border-border">
           <h3 className="border-b border-border bg-muted/40 px-3 py-2 text-sm font-semibold">Destination / Production</h3>
           <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead><tr><th className={head}>Item</th><th className={`${head} text-right`}>Good</th><th className={`${head} text-right`}>Rejected</th><th className={`${head} text-right`}>Share</th><th className={`${head} text-right`}>Allocated</th><th className={`${head} text-right`}>Per good unit</th></tr></thead>
+            <thead><tr><th className={head}>Item</th><th className={`${head} text-right`}>Good</th><th className={`${head} text-right`}>Rejected</th>{review.costed && <><th className={`${head} text-right`}>Share</th><th className={`${head} text-right`}>Allocated</th><th className={`${head} text-right`}>Per good unit</th></>}</tr></thead>
             <tbody>{review.outputs.map((o) => (
               <tr key={o.ingredientId} className="border-t border-border">
                 <td className="px-2 py-1.5">{o.name}{o.location ? <span className="block text-xs text-muted-foreground">into {o.location}</span> : null}{o.yieldPercent ? <span className="block text-xs text-muted-foreground">yield {o.yieldPercent}% of plan {o.expected}</span> : null}</td>
                 <td className="px-2 text-right tabular-nums">+{o.good} {o.unit}</td>
                 <td className="px-2 text-right tabular-nums">{Number(o.rejected) > 0 ? `${o.rejected} (${o.rejectRate}%)` : "–"}</td>
-                <td className="px-2 text-right tabular-nums">{o.percent ? `${Number(o.percent).toFixed(1)}%` : "–"}</td>
+                {review.costed && <><td className="px-2 text-right tabular-nums">{o.percent ? `${Number(o.percent).toFixed(1)}%` : "–"}</td>
                 <td className="px-2 text-right tabular-nums">{money(o.allocatedCost)}</td>
-                <td className="px-2 text-right font-semibold tabular-nums">{money(o.unitCost)}</td>
+                <td className="px-2 text-right font-semibold tabular-nums">{money(o.unitCost)}</td></>}
               </tr>))}</tbody>
           </table></div>
         </section>
       </div>
+      {!review.costed && <p className="text-xs text-muted-foreground">Costing is switched off: this voucher records quantities only. No costs were applied.</p>}
       {review.costed && (
         <>
           <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border p-3 text-sm sm:grid-cols-4">
