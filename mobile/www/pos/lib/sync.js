@@ -4,7 +4,7 @@
 import { kv, reservations, sales } from './store.js';
 import { mergeFromServer, toPayload } from './reservations.js';
 import { pickServer, request, serverInfo } from './net.js';
-import { BOOK_EVENTS, SALE_EVENTS, counts, pruneSynced, pushEvents, DeviceRevoked, AuthExpired as EventAuthExpired } from './journal.js';
+import { BOOK_EVENTS, SALE_EVENTS, counts, pruneSynced, pushEvents, queueEvent, DeviceRevoked, AuthExpired as EventAuthExpired } from './journal.js';
 
 export class AuthExpired extends Error {}
 
@@ -139,7 +139,14 @@ function payload(sale) {
  */
 export function applySyncResult(sent, fresh, res) {
   const out = { ...fresh };
-  const sentCollections = new Set((sent.collections || []).filter((c) => !c.eventId).map((c) => c.id));
+  // A duplicate response means the server already has the ORIGINAL payload;
+  // it says nothing about collections added after that submission. Those stay
+  // unsent and are queued as separate events by pushSales.
+  const sentCollections = new Set(
+    res.status === 'duplicate'
+      ? (sent.syncPayloadCollections || [])
+      : (sent.collections || []).filter((c) => !c.eventId).map((c) => c.id),
+  );
   if (Array.isArray(out.collections)) {
     out.collections = out.collections.map((c) => (sentCollections.has(c.id) && !c.eventId ? { ...c, sentWithSale: true } : c));
   }
@@ -175,12 +182,24 @@ export async function retrySale(id) {
 export async function pushSales(base) {
   const branchId = await kv.get('branchId');
   const device = (await kv.get('deviceName')) || 'Phone';
+  const deviceId = await kv.get('deviceId');
+  const snap = await kv.get('snapshot');
+  const userId = snap?.user?.id || 'phone';
   let done = 0;
   let refused = 0;
   let reviewed = 0;
   const waiting = (await sales.pending()).reverse(); // oldest first
   for (let i = 0; i < waiting.length; i += 20) {
     const batch = waiting.slice(i, i + 20);
+    // Remember the exact collections in this submission. If the reply is lost
+    // and the sale is retried, a `duplicate` response cannot tell us which
+    // payments the server already has; this snapshot can.
+    for (const sale of batch) {
+      sale.syncPayloadCollections = (sale.collections || [])
+        .filter((c) => !c.eventId)
+        .map((c) => c.id);
+      await sales.put(sale);
+    }
     const r = await request(base, 'POST', `/api/v1/mobile/standalone/sales?branchId=${encodeURIComponent(branchId)}`, {
       deviceName: device,
       sales: batch.map(payload),
@@ -190,15 +209,42 @@ export async function pushSales(base) {
     for (const res of r.data.results) {
       const sent = batch.find((s) => s.id === res.id);
       if (!sent) continue;
-      // Re-read immediately before writing. Money may have been collected, or the
-      // sale set aside, while the request was in flight. Never write the stale copy.
-      const fresh = await sales.get(sent.id);
-      if (!fresh) continue; // deleted on the phone while syncing; don't resurrect it
-      const merged = applySyncResult(sent, fresh, res);
+      // Read/merge/write in one IndexedDB transaction: a collection saved
+      // while the request was in flight cannot be overwritten now.
+      const merged = await sales.merge(sent.id, (fresh) =>
+        applySyncResult(sent, fresh, res),
+      );
+      if (!merged) continue; // deleted on the phone while syncing
       if (res.status === 'refused') refused++;
       else {
         if (merged.review) reviewed++;
         done++;
+        // Collections added after this submission were NOT accepted with the
+        // sale. Queue them as separate idempotent events instead of losing them.
+        const accepted = new Set(
+          res.status === 'duplicate'
+            ? (sent.syncPayloadCollections || [])
+            : (sent.collections || []).filter((c) => !c.eventId).map((c) => c.id),
+        );
+        for (const c of merged.collections || []) {
+          if (c.eventId || c.sentWithSale || accepted.has(c.id)) continue;
+          const ev = await queueEvent(
+            'collect',
+            {
+              saleId: merged.id,
+              payments: [
+                {
+                  method: c.method,
+                  amount: c.amount,
+                  ...(c.tendered ? { tendered: c.tendered } : {}),
+                  ...(c.reference ? { reference: c.reference } : {}),
+                },
+              ],
+            },
+            { userId, deviceId },
+          );
+          c.eventId = ev.id;
+        }
       }
       await sales.put(merged);
     }

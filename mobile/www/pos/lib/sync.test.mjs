@@ -34,6 +34,29 @@ test('a sale set aside while syncing is not silently reopened', () => {
   assert.equal(merged.dismissedAt, '2026-11-18T10:00:00Z');
 });
 
+test('a duplicate response only acknowledges collections from the original payload', () => {
+  const sent = {
+    ...sale(),
+    syncPayloadCollections: ['c1'],
+    collections: [{ id: 'c1', amount: 100 }, { id: 'c2', amount: 50 }],
+  };
+  const fresh = {
+    ...sent,
+    collections: [{ id: 'c1', amount: 100 }, { id: 'c2', amount: 50 }],
+    status: 'pending',
+  };
+  const merged = applySyncResult(sent, fresh, {
+    status: 'duplicate',
+    orderId: 'o1',
+    orderNumber: 'A-1',
+  });
+  assert.equal(merged.status, 'synced');
+  assert.deepEqual(
+    merged.collections.map((c) => [c.id, !!c.sentWithSale]),
+    [['c1', true], ['c2', false]],
+  );
+});
+
 test('a refused sale keeps newer collections and records the reason', () => {
   const sent = sale();
   const fresh = sale({ collections: [{ id: 'c1', amount: 100 }, { id: 'c2', amount: 25 }] });
