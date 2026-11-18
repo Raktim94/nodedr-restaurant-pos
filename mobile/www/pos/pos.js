@@ -705,6 +705,12 @@ function connectSheet(message) {
         b.textContent = 'Connecting…';
         let base = $('cs').value.trim();
         if (base && !/^https?:\/\//i.test(base)) base = (/^[\d.]+(:\d+)?$/.test(base) ? 'http://' : 'https://') + base;
+        // login() and pullSnapshot() write several keys. If either fails, roll
+        // every one of them back: leaving serverBase set while the snapshot says
+        // "local" makes start() skip syncNow() forever and strands every sale.
+        const hadBase = await kv.get('serverBase');
+        const hadCaps = await kv.get('serverCaps');
+        const hadBranch = await kv.get('branchId');
         try {
           if (!base || !(await reachable(base))) throw new Error("Can't reach that server from here. Check the address and that you are online.");
           const keep = await kv.get('snapshot');
@@ -720,7 +726,11 @@ function connectSheet(message) {
           syncNow().then(afterSync);
         } catch (e) {
           await kv.set('snapshot', S.snap); // keep working on this phone
-          await kv.set('branchId', 'local');
+          await kv.set('branchId', hadBranch || 'local');
+          if (hadBase === undefined) await kv.del('serverBase');
+          else await kv.set('serverBase', hadBase);
+          if (hadCaps === undefined) await kv.del('serverCaps');
+          else await kv.set('serverCaps', hadCaps);
           connectSheet(e.message);
         }
       };
@@ -1417,22 +1427,32 @@ function openPay() {
       });
     }, 250);
   };
+  // A double tap must never create two sales from the same cart: nextLocalNumber()
+  // hands out a fresh bill number on each call, so the second sale would be a real
+  // duplicate charge, not an idempotent retry. The same guard covers "Pay later".
+  let completing = false;
   async function complete(st, tenders, { payLater = false } = {}) {
+    if (completing) return;
     if (!st.fullyPaid && !payLater) return;
     if (payLater && !phoneOk(S.customer.phone)) return;
-    await flushPersist();
-    const number = await nextLocalNumber();
-    const sale = saleFrom(number, bill, st.rows.map((r) => ({ ...r })), st.change);
-    if (payLater) sale.payLater = true;
-    sale.note = saleNote(sale.items);
-    await sales.put(sale);
-    if (S.snap.local) S.snap = await useStock(S.snap, sale.items);
-    const o = S.orderId ? await orders.get(S.orderId) : null;
-    if (o) await orders.put({ ...o, status: 'PAID', saleId: sale.id, paidAt: new Date().toISOString() }); // frees the table
-    resetCart();
-    toast(payLater ? `Saved. ${inr(dueOf(sale))} to collect later.` : 'Sale saved');
-    openDone(sale);
-    syncNow({ refreshMenu: false }).then(afterSync);
+    completing = true;
+    try {
+      await flushPersist();
+      const number = await nextLocalNumber();
+      const sale = saleFrom(number, bill, st.rows.map((r) => ({ ...r })), st.change);
+      if (payLater) sale.payLater = true;
+      sale.note = saleNote(sale.items);
+      await sales.put(sale);
+      if (S.snap.local) S.snap = await useStock(S.snap, sale.items);
+      const o = S.orderId ? await orders.get(S.orderId) : null;
+      if (o) await orders.put({ ...o, status: 'PAID', saleId: sale.id, paidAt: new Date().toISOString() }); // frees the table
+      resetCart();
+      toast(payLater ? `Saved. ${inr(dueOf(sale))} to collect later.` : 'Sale saved');
+      openDone(sale);
+      syncNow({ refreshMenu: false }).then(afterSync);
+    } finally {
+      completing = false;
+    }
   }
   openSheet('', () => draw());
   draw();
@@ -1784,8 +1804,12 @@ async function collectSheet(saleId, message, draft = {}) {
      <footer><button class="btn block" id="go">Record payment</button></footer>`,
     (p) => {
       let m = method;
+      let busy = false; // one collection per tap, even on a slow phone
       p.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((m = b.dataset.m), p.querySelectorAll('[data-m]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))))));
       p.querySelector('#go').onclick = async () => {
+        if (busy) return;
+        busy = true;
+        p.querySelector('#go').disabled = true;
         const keep = { method: m, amount: $('ca').value, reference: $('cr').value };
         try {
           const fresh = await sales.get(saleId); // never collect twice on a stale copy
@@ -1804,6 +1828,8 @@ async function collectSheet(saleId, message, draft = {}) {
           render();
           if (!S.snap.local) syncNow({ refreshMenu: false }).then(afterSync);
         } catch (e) {
+          busy = false;
+          p.querySelector('#go').disabled = false;
           collectSheet(saleId, e.message, keep);
         }
       };
@@ -2083,6 +2109,7 @@ async function refundSheet(saleId, message, draft = {}) {
      <footer><button class="btn block" id="go" ${lines.length ? '' : 'disabled'}>Refund</button></footer>`,
     (p) => {
       let m = method;
+      let busy = false; // one refund per tap: a duplicate would pay cash out twice
       const picks = () => [...p.querySelectorAll('[data-q]')].map((i) => ({ index: Number(i.dataset.q), qty: Number(i.value) || 0 }));
       const preview = () => {
         try {
@@ -2094,11 +2121,19 @@ async function refundSheet(saleId, message, draft = {}) {
       p.querySelectorAll('[data-q]').forEach((i) => (i.oninput = preview));
       p.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((m = b.dataset.m), p.querySelectorAll('[data-m]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))))));
       p.querySelector('#go').onclick = async () => {
+        if (busy) return;
+        busy = true;
+        p.querySelector('#go').disabled = true;
         const keep = () => ({ method: m, reason: $('rr').value, qty: Object.fromEntries(picks().map((x) => [x.index, x.qty || ''])) });
         try {
           const r = buildRefund({ id: newId(), sale, refunds: rs, picks: picks(), method: m, reason: $('rr').value });
-          if (!confirm(`Pay back ${inr(r.amount)} by ${METHOD_LABEL[m]}?`)) return;
-          if (!(await managerOK(`Refund ${inr(r.amount)} on ${sale.localNumber}.`))) return;
+          const cancel = () => {
+            busy = false;
+            const b = p.querySelector('#go');
+            if (b) b.disabled = false;
+          };
+          if (!confirm(`Pay back ${inr(r.amount)} by ${METHOD_LABEL[m]}?`)) return cancel();
+          if (!(await managerOK(`Refund ${inr(r.amount)} on ${sale.localNumber}.`))) return cancel();
           if (S.who) r.by = S.who.name;
           if (!S.snap.local) {
             // Sent to the server as a money-only refund once the server has the sale (see sync.js).
@@ -2111,6 +2146,9 @@ async function refundSheet(saleId, message, draft = {}) {
           closeSheet();
           render();
         } catch (e) {
+          busy = false;
+          const b = p.querySelector('#go');
+          if (b) b.disabled = false;
           refundSheet(saleId, e.message, keep());
         }
       };

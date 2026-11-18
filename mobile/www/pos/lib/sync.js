@@ -131,6 +131,37 @@ function payload(sale) {
   };
 }
 
+/**
+ * Merge a server result into the sale as it exists *now*, not the copy we sent.
+ * A collection or "set aside" can happen while a sync is in flight; writing the
+ * sent copy back would silently delete that money. Only sync-owned fields are
+ * changed here, and any collection added after the snapshot is left untouched.
+ */
+export function applySyncResult(sent, fresh, res) {
+  const out = { ...fresh };
+  const sentCollections = new Set((sent.collections || []).filter((c) => !c.eventId).map((c) => c.id));
+  if (Array.isArray(out.collections)) {
+    out.collections = out.collections.map((c) => (sentCollections.has(c.id) && !c.eventId ? { ...c, sentWithSale: true } : c));
+  }
+  if (res.status === 'refused') {
+    // "Set aside" is a deliberate local choice; don't silently undo it.
+    if (out.status !== 'dismissed') out.status = 'refused';
+    out.refusedReason = res.reason;
+    out.refusedCode = res.code || 'OTHER';
+  } else {
+    const review = Array.isArray(res.review) && res.review.length ? res.review : undefined;
+    if (review) out.review = review;
+    else delete out.review;
+    if (out.status !== 'dismissed') out.status = 'synced';
+    delete out.refusedReason;
+    delete out.refusedCode;
+    out.serverOrderNumber = res.orderNumber;
+    out.serverOrderId = res.orderId;
+    out.syncedAt = new Date().toISOString();
+  }
+  return out;
+}
+
 /** Put a refused sale back in the queue (e.g. after the owner restored the dish on the server). */
 export async function retrySale(id) {
   const sale = await sales.get(id);
@@ -157,28 +188,19 @@ export async function pushSales(base) {
     if (r.status === 401) throw new AuthExpired();
     if (r.status !== 201 && r.status !== 200) throw new Error('The server did not accept the sales yet. They stay on this phone.');
     for (const res of r.data.results) {
-      const sale = batch.find((s) => s.id === res.id);
-      if (!sale) continue;
-      if (res.status === 'refused') {
-        sale.status = 'refused';
-        sale.refusedReason = res.reason;
-        sale.refusedCode = res.code || 'OTHER';
-        refused++;
-      } else {
-        // Recorded, but the menu moved since the phone last looked: keep what the owner should check.
-        sale.review = Array.isArray(res.review) && res.review.length ? res.review : undefined;
-        if (sale.review) reviewed++;
-        sale.status = 'synced';
-        delete sale.refusedReason;
-        delete sale.refusedCode;
-        sale.serverOrderNumber = res.orderNumber;
-        sale.serverOrderId = res.orderId;
-        // Collections taken before this point went with the sale.
-        for (const c of sale.collections || []) if (!c.eventId) c.sentWithSale = true;
-        sale.syncedAt = new Date().toISOString();
+      const sent = batch.find((s) => s.id === res.id);
+      if (!sent) continue;
+      // Re-read immediately before writing. Money may have been collected, or the
+      // sale set aside, while the request was in flight. Never write the stale copy.
+      const fresh = await sales.get(sent.id);
+      if (!fresh) continue; // deleted on the phone while syncing; don't resurrect it
+      const merged = applySyncResult(sent, fresh, res);
+      if (res.status === 'refused') refused++;
+      else {
+        if (merged.review) reviewed++;
         done++;
       }
-      await sales.put(sale);
+      await sales.put(merged);
     }
   }
   return { done, refused, reviewed };
