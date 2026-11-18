@@ -251,3 +251,40 @@ The form for transfer, waste and correction has three parts: details (date and t
 `customers.pincode` (optional) and `customers.status` (`ACTIVE` default, `INACTIVE`) — migration `20261122000000_customer_pincode_status`,
 additive; existing customers become ACTIVE with no PIN code. PIN code follows the same rule as saved delivery addresses (3-10 letters, digits,
 space or dash), so every country the app supports works; an empty value clears it. Status is a label: it does not block orders or change loyalty.
+
+
+## Product-first recipes, permissions and costing (1.40.0 work)
+
+* **Recipes are per product.** Nothing is requested until the Destination product is chosen; then `GET inventory/recipes?productId=` decides what shows.
+  "No saved recipes for this product yet" appears only for a request that succeeded and returned an empty list for that product. No product chosen,
+  a request in flight, and a failed request each have their own message (a failed one offers *Try again*). Rule and wording live in
+  `apps/web/lib/voucher-rules.ts` (web) and `mobile/www/pos/lib/stockjournal.js` (phone), both unit tested.
+* **Who can do what** (the server enforces each; the screens only hide what would be refused): reading/filling recipes and saving drafts need
+  `production.record`; posting needs `production.post`; creating or editing recipes and adding inventory items need `inventory.manage`; adding a menu
+  item also needs `menu.manage`; correcting or reversing a posted voucher needs `production.void`. A record-only account sees *Save draft* and a note that
+  someone with post permission must post.
+* **A posted voucher is never edited or deleted.** `PATCH` and `DELETE` on a posted entry are refused (400, "Only a draft can be edited / deleted"). To change one,
+  *Correct* (reverse the old entry, post a replacement, link both, keep the reason) or *Reverse*. A failed correction changes nothing.
+* **Missing cost.** With costing on, an ingredient with no cost blocks posting (the review says so and Post stays disabled). Fix it by typing a **Rate**
+  for the ingredient on the voucher (this voucher only) or by receiving the ingredient with a unit cost on a purchase order; nothing is invented.
+* **Units.** The unit picker only offers units the item can convert; an incompatible unit (for example from a draft or recipe) gets a sentence naming the
+  item, its stock unit and the allowed ones, and the server refuses it too.
+
+## Stock journal on the phone (Android and iOS app, 1.40.0)
+
+`Kitchen > Stock journal: record production` replaces the old "Record production" sheet. Same routes, rules and permissions as the web voucher; the phone
+adds no stock logic. Signing in to the phone POS needs `orders.create`, which is existing policy.
+
+* **Flow**: choose the product made; its recipes load (states: choose product, loading, error + Try again, offline, **No saved recipes for this product yet**,
+  list); *Fill from recipe* asks the server to scale it to the good quantity typed; rows show **Available** stock (live, when online) and what the recipe
+  expects; every number stays editable. Batch/reference, shift and narration are supported; rejected quantity too.
+* **Add inventory item** (raw material only) and **Add menu item** (finished product + menu entry + stock link, same three calls as the web) are separate
+  buttons; the new item is selected in the row being worked on; duplicate names are refused by the server and shown.
+* **Review and post** uses the server's `voucher-preview` (shortages, missing cost, cost per unit). **Post** is written on the phone first and sent at once;
+  with no connection it waits and is sent later, once (its id is the idempotency key). A refusal is shown on the form with everything still typed in.
+  **Save draft** and **Save as recipe** need a connection (they live on the server) and never move stock. **Drafts and posted vouchers** lists server drafts
+  (open, edit, post, delete) and the latest posted vouchers (read only).
+* **Costing**: the phone asks `GET manufacturing/settings` and sends `costing` when it is on, like the web. Additional costs (labour, packaging) are typed in the web app.
+* **What the account may do** comes from `stockCaps` in the standalone snapshot (`record`, `post`, `recipes`, `inventoryItems`, `menuItems`, `report`). Older
+  servers lack it: the phone then offers record and post as before, and nothing that needs the newer routes.
+* **Not lost**: the form is kept on the phone as it is typed and restored after a restart or resume ("Clear" empties it).

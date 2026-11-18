@@ -195,6 +195,23 @@ export class StandaloneService {
       generatedAt: new Date().toISOString(),
       stockItems,
       stockPlaces,
+      // What this account may do in the Stock journal on the phone. Only decides which buttons the phone shows;
+      // the server checks the same permission again on every request.
+      stockCaps: canKitchen
+        ? {
+            record: true,
+            post: permissionSatisfied(user.permissions, 'production.post'),
+            recipes: permissionSatisfied(user.permissions, 'inventory.manage'),
+            inventoryItems: permissionSatisfied(
+              user.permissions,
+              'inventory.manage',
+            ),
+            menuItems:
+              permissionSatisfied(user.permissions, 'inventory.manage') &&
+              permissionSatisfied(user.permissions, 'menu.manage'),
+            report: permissionSatisfied(user.permissions, 'production.report'),
+          }
+        : undefined,
       canVoid: permissionSatisfied(user.permissions, 'production.void'),
       canReceive: permissionSatisfied(user.permissions, 'inventory.manage'),
       user: { id: user.id, name: user.name, permissions: user.permissions },

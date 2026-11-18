@@ -125,3 +125,16 @@ details>summary{cursor:pointer;font-weight:700;min-height:44px;display:flex;alig
 .dish.in b{padding-right:2.4rem}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .chip.sm{min-height:40px;padding:.25rem .8rem;font-size:.85rem}
+
+/* 1.40: Stock journal on the phone. Single column, 48px touch targets, nothing wider than the screen. */
+.panel>footer.sjfoot{display:flex;flex-direction:column;gap:.5rem}.panel>footer.sjfoot .btn{flex:none;margin-top:0}
+.sjfoot2{display:flex;gap:.5rem}.sjfoot2 .btn{flex:1;min-width:0}
+.sjrow{padding:.6rem 0;border-bottom:1px solid var(--line)}.sjrow>select{margin-bottom:.4rem}
+.sjq{display:grid;grid-template-columns:minmax(0,1fr) minmax(5.5rem,7rem) 48px;gap:.4rem;align-items:center}
+.sjq2{display:grid;grid-template-columns:minmax(0,1fr) minmax(5.5rem,7rem);gap:.4rem}
+.sjx{padding:0;width:48px;margin:0}
+.sjrow small{display:block;margin-top:.25rem}.sjrow small .bad,.bad{color:var(--bad)}.ok{color:var(--ok)}
+.sjrecipe{margin-top:.6rem}.sjexplain{font-size:.85rem;margin:.4rem 0 0}
+#sj-body .btn,#sjl-body .btn{margin-top:.5rem}
+#sj-body .note .btn{display:inline-flex;margin:.3rem 0 0}
+#sj-body select,#sj-body input{min-width:0}

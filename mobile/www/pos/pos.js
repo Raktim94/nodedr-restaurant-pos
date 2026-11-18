@@ -10,8 +10,9 @@ import { afterRight, afterWrong, hashPin, lockState, needsManager, pinTaken, val
 import { KOT_NEXT, dayReport, kotDelta, markSent, minutesSince, newOrder, openOrders, saleNote, tableMap, tableTakenBy } from './lib/orders.js';
 import { escposKot, htmlKot } from './lib/kot.js';
 import { STATUS_LABEL, clashes, grouped, heldSoon, newBooking, setStatus } from './lib/reservations.js';
-import { native, pickServer, reachable, savedServers, setDeviceId } from './lib/net.js';
+import { native, pickServer, reachable, request, savedServers, setDeviceId } from './lib/net.js';
 import { dismissEvent, queueEvent, retryEvent, shiftState } from './lib/journal.js';
+import { NO_RECIPES_FOR_PRODUCT, capsFrom, createInventoryItem, loadCosting, createMenuItem, deleteDraft, emptyForm, fillFromRecipe, formFromDraft, formProblem, friendlyError, loadRecipes, loadStockItems, postDraft, postNew, recipeProblem, saveDraft, saveRecipe, shortRows, voucherBody } from './lib/stockjournal.js';
 import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
 import { addOnsText, addSection, addTable, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
@@ -21,6 +22,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const plugins = () => (window.Capacitor && window.Capacitor.Plugins) || {};
 const inr = (n) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // ₹1,050.00 / ₹1,25,000.00
 
+let SJ = null; // the open Stock journal form (see "stock journal" below); null when its sheet is closed
 const S = {
   view: 'sell',
   snap: null,
@@ -110,6 +112,7 @@ function closeSheet(fromBack = false) {
   s.hidden = true;
   if (wasOpen && fromBack !== true) histBackIf((st) => st.sheet);
   s.innerHTML = '';
+  SJ = null;
   if (booksDirty) {
     booksDirty = false;
     if (S.snap) render();
@@ -2375,11 +2378,12 @@ async function viewKitchen() {
         : `Waste: ${e.payload.quantity} ${e.payload.unit} ${nameOf(e.payload.ingredientId)} (${(KIT_REASONS.find((r) => r[0] === e.payload.reason) || [, e.payload.reason])[1]})`;
   $('view').innerHTML = `
     ${S.note ? `<div class="note ${S.note.kind || ''}" role="status">${esc(S.note.text)}</div>` : ''}
-    <div class="card mt"><button class="btn block" id="k-prod">Record production</button><button class="btn line block mt" id="k-waste">Record food waste</button>${S.snap.canReceive ? '<button class="btn line block mt" id="k-recv">Receive stock</button>' : ''}${S.snap.canReceive && (S.snap.stockPlaces || []).length > 1 ? '<button class="btn line block mt" id="k-move">Move stock</button>' : ''}${S.snap.canReceive ? '<button class="btn line block mt" id="k-fix">Correct stock</button>' : ''}
+    <div class="card mt"><button class="btn block" id="k-prod">Stock journal: record production</button><button class="btn line block mt" id="k-drafts">Drafts and posted vouchers</button><button class="btn line block mt" id="k-waste">Record food waste</button>${S.snap.canReceive ? '<button class="btn line block mt" id="k-recv">Receive stock</button>' : ''}${S.snap.canReceive && (S.snap.stockPlaces || []).length > 1 ? '<button class="btn line block mt" id="k-move">Move stock</button>' : ''}${S.snap.canReceive ? '<button class="btn line block mt" id="k-fix">Correct stock</button>' : ''}
       <p class="mute center">Works without a connection. It is sent when the phone is online.</p></div>
     <h2 class="mt">Recent</h2>
     ${evs.length ? evs.map((e) => `<div class="card mt" data-ev="${esc(e.id)}"><b>${esc(describe(e))}</b><div class="mute">${esc(new Date(e.createdAt).toLocaleString())} &middot; ${EV_LABEL[e.status]}</div>${e.status === 'failed' ? `<div class="note bad mt">${esc(e.error || 'Refused')}</div><div class="row mt"><button class="btn ghost" data-retry="${esc(e.id)}">Try again</button><button class="btn line" data-dismiss="${esc(e.id)}">Set aside</button></div>` : ''}</div>`).join('') : '<p class="mute center mt">Nothing recorded on this phone yet.</p>'}`;
-  $('k-prod').onclick = openProduction;
+  $('k-prod').onclick = () => openStockJournal();
+  $('k-drafts').onclick = openSjList;
   $('k-waste').onclick = openWaste;
   if ($('k-recv')) $('k-recv').onclick = openReceive;
   if ($('k-move')) $('k-move').onclick = openMove;
@@ -2388,37 +2392,429 @@ async function viewKitchen() {
   document.querySelectorAll('[data-dismiss]').forEach((b) => (b.onclick = async () => { if (!confirm('Set this record aside? It stays on the phone for reference but will not be sent to the server.')) return; await dismissEvent(b.dataset.dismiss); await refreshPending(); viewKitchen(); }));
 }
 
-function openProduction() {
-  const raw = S.snap.stockItems;
-  const made = S.snap.stockItems.filter((i) => i.kind === 'PREPARED');
-  let used = 1;
+// ------------------------------------------------------------ stock journal ---
+// The production voucher on the phone. Same server routes, rules and permissions as the web voucher: the phone shows
+// what the account may do, checks that input is not empty or unreadable, and the server decides everything about stock
+// (lib/stockjournal.js). A new voucher is written on the phone before it is sent, so it is never lost and never posted
+// twice; drafts, recipes and new items need a connection because the server is where they live.
+const SJ_UNITS = ['KG', 'G', 'L', 'ML', 'PIECE', 'DOZEN', 'PACK', 'BOX'];
+const SJ_SHIFTS = ['Morning', 'Afternoon', 'Evening', 'Night'];
+let sjTimer = null;
+const sjBranch = () => (S.snap && S.snap.branch && S.snap.branch.id) || '';
+async function sjSend(method, path, body) {
+  if (!SJ) return { status: 0, data: null };
+  try {
+    if (!SJ.base) SJ.base = await pickServer(await kv.get('serverBase'));
+    if (!SJ.base) return { status: 0, data: null };
+    return await request(SJ.base, method, path, body);
+  } catch {
+    SJ.base = null;
+    return { status: 0, data: null };
+  }
+}
+// What was typed is kept on the phone as it is typed, so a closed sheet, a call, a dead battery or the app being
+// swiped away does not lose it. It is cleared when the voucher is saved or posted, or with "Clear".
+const sjPersist = () => {
+  clearTimeout(sjTimer);
+  sjTimer = setTimeout(() => SJ && !SJ.F.draftId && kv.set('sjForm', SJ.F).catch(() => {}), 250);
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && SJ && !SJ.F.draftId) kv.set('sjForm', SJ.F).catch(() => {});
+});
+const sjNum = (v) => (v === undefined || v === null || v === '' ? '' : String(Number(v)));
+const sjItemLabel = (i) => `${esc(i.name)}${i.currentStock !== undefined ? ` — ${sjNum(i.currentStock)} ${esc(i.unit)}` : ''}`;
+const sjErr = (text) => {
+  const b = $('sj-err');
+  if (!b) return;
+  b.textContent = text || '';
+  b.hidden = !text;
+  if (text) b.scrollIntoView({ block: 'nearest' });
+};
+const sjBusy = (on) => {
+  if (SJ) SJ.busy = on;
+  document.querySelectorAll('#sj-foot button, #sj-body [data-act]').forEach((b) => (b.disabled = on || b.dataset.off === '1'));
+};
+
+function sjKeepVisible(el) {
+  const box = $('sj-body');
+  if (!el.isConnected || !box) return;
+  const a = el.getBoundingClientRect();
+  const b = box.getBoundingClientRect();
+  if (a.top < b.top || a.bottom > b.bottom) el.scrollIntoView({ block: 'center' });
+}
+
+function openStockJournal(draftForm) {
+  const caps = capsFrom(S.snap);
+  if (!caps.record) return;
+  SJ = { F: draftForm || null, items: S.snap.stockItems.map((i) => ({ ...i })), recipes: { state: 'choose-product', recipes: [] }, sub: null, busy: false, base: null, restored: false, activeRow: 0, rtok: 0, caps, review: null, cats: null, costing: false };
   openSheet(
-    `<h2>Record production</h2><p class="mute">Type what was really used and really made.</p>
-     <label>Made<select id="pr-out">${itemOpts(made)}</select></label>
-     <div class="row"><input id="pr-oq" inputmode="decimal" placeholder="Quantity" aria-label="Quantity made"><select id="pr-ou" aria-label="Unit made"></select></div>
-     <h3>Used</h3><div id="pr-used"></div><button class="btn ghost" id="pr-add">+ Add ingredient</button>
-     <label>Shift<select id="pr-shift"><option value="">None</option><option>Morning</option><option>Afternoon</option><option>Evening</option><option>Night</option></select></label>
-     <div id="pr-err" class="note bad" hidden></div>
-     <button class="btn block mt" id="pr-save">Save</button><button class="btn line block mt" data-close>Cancel</button>`,
-    (p) => {
-      const addRow = () => { const d = document.createElement('div'); d.className = 'row'; d.innerHTML = `<select data-i aria-label="Ingredient used">${itemOpts(raw)}</select><input data-q inputmode="decimal" placeholder="Qty" aria-label="Quantity used"><select data-u aria-label="Unit used"></select>`; p.querySelector('#pr-used').appendChild(d); const sel = d.querySelector('[data-i]'); sel.onchange = () => { const it = raw.find((x) => x.id === sel.value); d.querySelector('[data-u]').innerHTML = unitOpts(it, it && it.unit); }; };
-      addRow();
-      p.querySelector('#pr-add').onclick = addRow;
-      const out = p.querySelector('#pr-out');
-      out.onchange = () => { const it = made.find((x) => x.id === out.value); p.querySelector('#pr-ou').innerHTML = unitOpts(it, it && it.unit); };
-      p.querySelector('#pr-save').onclick = async () => {
-        const err = p.querySelector('#pr-err');
-        const inputs = [...p.querySelectorAll('#pr-used .row')].map((r) => ({ ingredientId: r.querySelector('[data-i]').value, quantity: r.querySelector('[data-q]').value.trim(), unit: r.querySelector('[data-u]').value })).filter((l) => l.ingredientId || l.quantity);
-        const o = { ingredientId: out.value, quantity: p.querySelector('#pr-oq').value.trim(), unit: p.querySelector('#pr-ou').value };
-        if (!o.ingredientId || !(Number(o.quantity) > 0) || !inputs.length || inputs.some((l) => !l.ingredientId || !(Number(l.quantity) > 0))) { err.textContent = 'Choose the product, and type a quantity on every row.'; err.hidden = false; return; }
-        if (!(await saveKitchenEvent(p.querySelector('#pr-save'), p.querySelector('#pr-err'), 'production', { producedAt: new Date().toISOString(), shift: p.querySelector('#pr-shift').value || undefined, inputs, outputs: [o] }))) return;
-        closeSheet();
-        S.note = { text: 'Saved on this phone. It will be sent when there is a connection.' };
-        syncNow({ refreshMenu: false }).then(afterSync);
-        viewKitchen();
-      };
+    `<header><h2 id="sj-title">Stock journal</h2><button class="btn line" data-close aria-label="Close" style="min-height:44px;width:44px;padding:0">×</button></header>
+     <div class="body" id="sj-body"></div><footer class="sjfoot" id="sj-foot"></footer>`,
+    async () => {
+      if (!SJ.F) {
+        const saved = await kv.get('sjForm').catch(() => null);
+        SJ.F = saved && Array.isArray(saved.rows) ? { ...emptyForm(), ...saved } : emptyForm();
+        SJ.restored = !!(saved && (saved.productId || saved.rows.some((r) => r.ingredientId)));
+      }
+      sjRender();
+      // Is costed production on? Asked when online, remembered for when the phone is not.
+      kv.get('sjCosting').then((c) => { if (SJ && c !== undefined) SJ.costing = !!c; });
+      loadCosting(sjSend, sjBranch()).then((c) => { if (c !== null) { if (SJ) SJ.costing = c; kv.set('sjCosting', c).catch(() => {}); } });
+      loadStockItems(sjSend, sjBranch()).then((live) => {
+        if (live && SJ) {
+          SJ.items = live;
+          sjRender();
+        }
+      });
+      if (SJ.F.productId) sjLoadRecipes();
     },
   );
+  const body = $('sj-body');
+  body.addEventListener('input', sjOnInput);
+  body.addEventListener('change', sjOnChange);
+  body.addEventListener('click', sjOnClick);
+  $('sj-foot').addEventListener('click', sjOnClick);
+  body.addEventListener('focusin', (e) => {
+    const r = e.target.closest && e.target.closest('[data-row]');
+    if (r && SJ) SJ.activeRow = Number(r.dataset.row);
+    // Keep a field that is under the keyboard in view. Only when it really is hidden: moving the page under a finger
+    // that is about to tap something else would swallow that tap.
+    const f = e.target;
+    if (f.tagName === 'INPUT') setTimeout(() => sjKeepVisible(f), 350);
+  });
+}
+
+async function sjLoadRecipes() {
+  if (!SJ || !SJ.F.productId) return;
+  const tok = ++SJ.rtok;
+  SJ.recipes = { state: 'loading', recipes: [] };
+  sjRender();
+  const r = await loadRecipes(sjSend, sjBranch(), SJ.F.productId);
+  if (!SJ || tok !== SJ.rtok) return; // a newer product was chosen meanwhile
+  SJ.recipes = r;
+  sjRender();
+}
+
+function sjRender() {
+  const body = $('sj-body');
+  const foot = $('sj-foot');
+  if (!body || !SJ) return;
+  if (SJ.sub) return sjRenderSub(body, foot);
+  const { F, items, caps, recipes } = SJ;
+  const by = new Map(items.map((i) => [i.id, i]));
+  const made = items.filter((i) => i.kind === 'PREPARED');
+  const raw = items.filter((i) => i.kind === 'PURCHASED');
+  const opts = (list, sel) => `<option value="">Choose…</option>${list.map((i) => `<option value="${esc(i.id)}" ${i.id === sel ? 'selected' : ''}>${sjItemLabel(i)}</option>`).join('')}`;
+  const prod = by.get(F.productId);
+  $('sj-title').textContent = F.draftNo ? `Draft ${F.draftNo}` : 'Stock journal';
+  const rs = recipes.state;
+  const recipeHtml =
+    rs === 'choose-product' ? '<p class="mute">Choose the product first; its saved recipes will appear here.</p>'
+    : rs === 'loading' ? '<p class="mute" role="status">Loading recipes…</p>'
+    : rs === 'error' ? `<div class="note bad" role="alert">Could not load recipes for this product. ${esc(recipes.error || '')}<button class="btn ghost" data-act="retry-recipes">Try again</button></div>`
+    : rs === 'offline' ? '<p class="mute" role="status">Recipes need a connection. You can still type the ingredients.</p>'
+    : rs === 'empty' ? `<p role="status"><b>${esc(NO_RECIPES_FOR_PRODUCT)}</b></p>`
+    : `<label for="sj-recipe">Recipe</label><select id="sj-recipe" data-f="recipeKey"><option value="">No recipe (type it by hand)</option>${recipes.recipes.map((r) => `<option value="${esc(r.kind)}:${esc(r.id)}" ${F.recipeKey === `${r.kind}:${r.id}` ? 'selected' : ''}>${esc(r.name)} · base ${esc(sjNum(r.baseOutputQty))} ${esc(String(r.outputUnit).toLowerCase())}</option>`).join('')}</select>
+       <button class="btn ghost block" data-act="fill" ${F.recipeKey ? '' : 'disabled data-off="1"'}>Fill from recipe</button>`;
+  const rowsHtml = F.rows.map((r, i) => {
+    const it = by.get(r.ingredientId);
+    return `<div class="sjrow" data-row="${i}">
+      <select data-r="${i}" data-k="ingredientId" aria-label="Ingredient used, row ${i + 1}">${opts(raw, r.ingredientId)}</select>
+      <div class="sjq"><input data-r="${i}" data-k="quantity" inputmode="decimal" placeholder="Quantity" aria-label="Quantity used, row ${i + 1}" value="${esc(r.quantity)}">
+        <select data-r="${i}" data-k="unit" aria-label="Unit, row ${i + 1}" ${it ? '' : 'disabled'}>${it ? unitOpts(it, r.unit || it.unit) : '<option>Unit</option>'}</select>
+        <button class="btn line sjx" data-act="rm" data-i="${i}" aria-label="Remove ingredient row ${i + 1}" ${F.rows.length === 1 ? 'disabled data-off="1"' : ''}>×</button></div>
+      <small class="mute" data-hint="${i}">${sjHint(r, it)}</small></div>`;
+  }).join('');
+  body.innerHTML = `
+    <div id="sj-err" class="note bad" role="alert" hidden></div>
+    ${SJ.restored ? '<div class="note warn" role="status">Your unsaved entries were restored. <button class="btn ghost" data-act="clear">Clear</button></div>' : ''}
+    <p class="mute">Nothing changes in stock until you post. Saving a draft or a recipe never moves stock.</p>
+    <label for="sj-prod">Product made</label>
+    <select id="sj-prod" data-f="productId">${opts(made, F.productId)}</select>
+    ${caps.menuItems ? '<button class="btn line block" data-act="add-menu">+ Add menu item</button>' : ''}
+    <div class="sjrecipe">${recipeHtml}</div>
+    <p class="mute sjexplain">A recipe is a reusable list of ingredients and quantities for making one product.</p>
+    <label for="sj-mq">Good quantity made</label>
+    <div class="sjq2"><input id="sj-mq" data-f="madeQty" inputmode="decimal" placeholder="Quantity" value="${esc(F.madeQty)}"><select data-f="madeUnit" aria-label="Unit made" ${prod ? '' : 'disabled'}>${prod ? unitOpts(prod, F.madeUnit || prod.unit) : '<option>Unit</option>'}</select></div>
+    <label for="sj-rej">Rejected (optional, not stocked)</label>
+    <input id="sj-rej" data-f="rejected" inputmode="decimal" placeholder="0" value="${esc(F.rejected)}">
+    <h3 class="sec">Source / Consumption</h3>
+    ${rowsHtml}
+    <button class="btn ghost block" data-act="add-row">+ Add ingredient row</button>
+    ${caps.inventoryItems ? '<button class="btn line block" data-act="add-inv">+ Add inventory item</button>' : ''}
+    <label for="sj-shift">Shift</label>
+    <select id="sj-shift" data-f="shift"><option value="">None</option>${SJ_SHIFTS.map((s) => `<option ${F.shift === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+    <label for="sj-batch">Batch / reference no. (optional)</label>
+    <input id="sj-batch" data-f="batchRef" maxlength="80" value="${esc(F.batchRef)}">
+    <label for="sj-notes">Narration (optional)</label>
+    <input id="sj-notes" data-f="notes" maxlength="1000" value="${esc(F.notes)}">`;
+  foot.innerHTML = `
+    ${caps.post ? `<button class="btn block" data-act="review">${F.draftId ? 'Review and post draft' : 'Review and post'}</button>` : '<p class="mute center">Your account can save drafts. Someone with permission to post must post them.</p>'}
+    <div class="sjfoot2"><button class="btn line" data-act="draft" title="Saves the voucher on the server. Stock does not change.">Save draft</button>${caps.recipes ? '<button class="btn line" data-act="recipe">Save as recipe</button>' : ''}</div>`;
+}
+
+function sjHint(r, it) {
+  if (!it) return '';
+  const bits = [];
+  if (it.currentStock !== undefined) bits.push(`Available: ${sjNum(it.currentStock)} ${esc(it.unit)}`);
+  else bits.push('Stock shown when online');
+  if (r.expected) bits.push(`Recipe expects ${esc(sjNum(r.expected))} ${esc(r.unit || it.unit)}`);
+  const short = shortRows({ rows: [r] }, [it]).length;
+  return `${bits.join(' · ')}${short ? ' · <b class="bad">more than is in stock</b>' : ''}`;
+}
+
+function sjOnInput(e) {
+  const t = e.target;
+  if (!SJ) return;
+  if (t.dataset.r !== undefined && t.dataset.k === 'quantity') {
+    const i = Number(t.dataset.r);
+    SJ.F.rows[i].quantity = t.value;
+    const h = document.querySelector(`[data-hint="${i}"]`);
+    if (h) h.innerHTML = sjHint(SJ.F.rows[i], SJ.items.find((x) => x.id === SJ.F.rows[i].ingredientId));
+  } else if (t.dataset.f && t.tagName === 'INPUT') SJ.F[t.dataset.f] = t.value;
+  sjPersist();
+}
+function sjOnChange(e) {
+  const t = e.target;
+  // Typed fields are kept by sjOnInput. Re-drawing on their blur would replace the button the person is tapping
+  // and lose that tap, so only dropdowns come through here.
+  if (!SJ || t.tagName !== 'SELECT') return;
+  const it = (id) => SJ.items.find((x) => x.id === id);
+  if (t.dataset.r !== undefined) {
+    const row = SJ.F.rows[Number(t.dataset.r)];
+    row[t.dataset.k] = t.value;
+    if (t.dataset.k === 'ingredientId') {
+      row.unit = (it(t.value) || {}).unit || '';
+      row.expected = '';
+    }
+    sjRender();
+  } else if (t.dataset.f === 'productId') {
+    SJ.F.productId = t.value;
+    SJ.F.madeUnit = (it(t.value) || {}).unit || '';
+    SJ.F.recipeKey = '';
+    SJ.recipes = { state: t.value ? 'loading' : 'choose-product', recipes: [] };
+    if (t.value) sjLoadRecipes();
+    else sjRender();
+  } else if (t.dataset.f) {
+    SJ.F[t.dataset.f] = t.value;
+    if (t.dataset.f === 'recipeKey') sjRender();
+  }
+  sjPersist();
+}
+
+async function sjOnClick(e) {
+  const b = e.target.closest && e.target.closest('[data-act]');
+  if (!b || !SJ || SJ.busy || b.disabled) return;
+  const act = b.dataset.act;
+  const { F } = SJ;
+  const branch = sjBranch();
+  if (act === 'add-row') { F.rows.push({ ingredientId: '', quantity: '', unit: '', expected: '' }); SJ.activeRow = F.rows.length - 1; sjRender(); sjPersist(); }
+  else if (act === 'rm') { F.rows.splice(Number(b.dataset.i), 1); sjRender(); sjPersist(); }
+  else if (act === 'clear') { SJ.F = emptyForm(); SJ.restored = false; SJ.recipes = { state: 'choose-product', recipes: [] }; await kv.del('sjForm').catch(() => {}); sjRender(); }
+  else if (act === 'retry-recipes') sjLoadRecipes();
+  else if (act === 'fill') {
+    sjBusy(true);
+    const r = await fillFromRecipe(sjSend, branch, F);
+    sjBusy(false);
+    if (!r.ok) return sjErr(r.error);
+    F.rows = r.rows.length ? r.rows : F.rows;
+    sjErr('');
+    sjRender();
+    sjPersist();
+    const n = $('sj-err');
+    if (n) { n.className = 'note'; n.textContent = `Filled from ${r.name} v${r.version}. Type what was really used; you can change every quantity.`; n.hidden = false; }
+  }
+  else if (act === 'add-inv') { SJ.sub = { kind: 'inv', error: null }; sjRender(); }
+  else if (act === 'add-menu') { SJ.sub = { kind: 'menu', error: null }; sjRender(); if (!SJ.cats) sjLoadCats(); }
+  else if (act === 'recipe') {
+    const p = recipeProblem(F, SJ.items, 'x');
+    if (p) return sjErr(p);
+    SJ.sub = { kind: 'recipe', error: null };
+    sjRender();
+  }
+  else if (act === 'draft') {
+    const p = formProblem(F, SJ.items);
+    if (p) return sjErr(p);
+    sjBusy(true);
+    const r = await saveDraft(sjSend, branch, F, SJ.items, { costing: SJ.costing });
+    sjBusy(false);
+    if (!r.ok) return sjErr(r.error);
+    await kv.del('sjForm').catch(() => {});
+    closeSheet();
+    S.note = { text: `Draft ${r.entryNo} saved. Stock has not changed; post it from Drafts and posted.` };
+    viewKitchen();
+  }
+  else if (act === 'review') sjReview();
+  else if (act === 'post') sjPost();
+  else if (act === 'back') { SJ.sub = null; SJ.review = null; sjRender(); }
+}
+
+async function sjLoadCats() {
+  const r = await sjSend('GET', `/api/v1/menu/categories?branchId=${encodeURIComponent(sjBranch())}`);
+  if (SJ && r.status === 200 && Array.isArray(r.data)) {
+    SJ.cats = r.data;
+    if (SJ.sub && SJ.sub.kind === 'menu') sjRender();
+  } else if (SJ && SJ.sub) {
+    SJ.sub.error = friendlyError(r);
+    sjRender();
+  }
+}
+
+function sjRenderSub(body, foot) {
+  const sub = SJ.sub;
+  const err = `<div id="sj-err" class="note bad" role="alert" ${sub.error ? '' : 'hidden'}>${esc(sub.error || '')}</div>`;
+  const unitSel = (id, def) => `<select id="${id}">${SJ_UNITS.map((u) => `<option ${u === def ? 'selected' : ''}>${u}</option>`).join('')}</select>`;
+  if (sub.kind === 'inv') {
+    body.innerHTML = `${err}<h3 class="sec">Add inventory item</h3><p class="mute">Creates a raw material for this voucher. It is not added to the menu. Stock starts at zero.</p>
+      <label for="sx-name">Name</label><input id="sx-name" autocomplete="off" value="${esc(sub.name || '')}"><label for="sx-unit">Stock unit</label>${unitSel('sx-unit', sub.unit || 'KG')}`;
+    foot.innerHTML = '<button class="btn block" id="sx-go">Add inventory item</button><button class="btn line block" data-act="back">Cancel</button>';
+    $('sx-go').onclick = () => sjCreate('inv');
+  } else if (sub.kind === 'menu') {
+    body.innerHTML = `${err}<h3 class="sec">Add menu item</h3><p class="mute">Creates a finished product and puts it on the POS menu. Stock starts at zero. Type the price and tax: nothing is filled in for you.</p>
+      <label for="sx-name">Name</label><input id="sx-name" autocomplete="off" value="${esc(sub.name || '')}"><label for="sx-unit">Stock unit</label>${unitSel('sx-unit', sub.unit || 'PIECE')}
+      <label for="sx-cat">Menu category</label><select id="sx-cat"><option value="">${SJ.cats ? 'Choose a category' : 'Loading…'}</option>${(SJ.cats || []).map((c) => `<option value="${esc(c.id)}" ${c.id === sub.categoryId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+      <label for="sx-price">Selling price (tax included)</label><input id="sx-price" inputmode="decimal" value="${esc(sub.price || '')}"><label for="sx-tax">Tax rate %</label><input id="sx-tax" inputmode="decimal" placeholder="e.g. 5" value="${esc(sub.tax || '')}">`;
+    foot.innerHTML = '<button class="btn block" id="sx-go">Add menu item</button><button class="btn line block" data-act="back">Cancel</button>';
+    $('sx-go').onclick = () => sjCreate('menu');
+  } else if (sub.kind === 'recipe') {
+    const prod = SJ.items.find((i) => i.id === SJ.F.productId);
+    body.innerHTML = `${err}<h3 class="sec">Save as recipe</h3><p class="mute">Saves these ingredients and quantities as a reusable recipe for ${esc(prod ? prod.name : 'this product')}, making ${esc(SJ.F.madeQty)} ${esc((SJ.F.madeUnit || '').toLowerCase())}. This does not change stock and does not save or post the voucher. Your entries stay here.</p>
+      <label for="sx-name">Recipe name</label><input id="sx-name" autocomplete="off" value="${esc(sub.name ?? (prod ? prod.name : ''))}">`;
+    foot.innerHTML = '<button class="btn block" id="sx-go">Save recipe</button><button class="btn line block" data-act="back">Cancel</button>';
+    $('sx-go').onclick = () => sjCreate('recipe');
+  } else if (sub.kind === 'review') {
+    const v = sub.preview;
+    const by = new Map(SJ.items.map((i) => [i.id, i]));
+    const usedHtml = (v ? v.inputs.map((l) => `<div class="row"><span class="grow">${esc(l.name)}</span><b class="bad">−${esc(sjNum(l.quantity))} ${esc(l.unit)}</b></div>`)
+      : SJ.F.rows.filter((r) => r.ingredientId).map((r) => `<div class="row"><span class="grow">${esc((by.get(r.ingredientId) || {}).name || '')}</span><b class="bad">−${esc(r.quantity)} ${esc(r.unit)}</b></div>`)).join('');
+    const madeHtml = (v ? v.outputs.map((o) => `<div class="row"><span class="grow">${esc(o.name)}</span><b class="ok">+${esc(sjNum(o.good))} ${esc(o.unit)}</b></div>`)
+      : [`<div class="row"><span class="grow">${esc((by.get(SJ.F.productId) || {}).name || '')}</span><b class="ok">+${esc(SJ.F.madeQty)} ${esc(SJ.F.madeUnit)}</b></div>`]).join('');
+    const short = v && v.shortages && v.shortages.length ? `<div class="note bad" role="alert">Not enough stock: ${esc(v.shortages.join('; '))}. Stock is never allowed to go below zero. Change the quantity or fix the count first.</div>` : '';
+    const cost = v && v.costError ? `<div class="note bad" role="alert">${esc(friendlyError({ status: 400, data: { message: v.costError } }))}</div>` : '';
+    body.innerHTML = `${err}<h3 class="sec">Check the voucher</h3>
+      <p class="mute">${sub.offline ? 'No connection, so this is shown as you entered it. The server checks it when it is sent.' : 'Stock changes only when you press Post.'}</p>
+      ${short}${cost}<h4>Used (out of stock)</h4>${usedHtml}<h4>Made (into stock)</h4>${madeHtml}
+      ${v && v.costed && v.totalCost ? `<div class="row"><span class="grow">Total batch cost</span><b>${esc(inr(v.totalCost))}</b></div>${v.outputs.length === 1 && v.outputs[0].unitCost ? `<div class="row"><span class="grow">Cost per good unit</span><b>${esc(inr(v.outputs[0].unitCost))}</b></div>` : ''}` : ''}`;
+    const blocked = v && (v.canPost === false || (v.shortages && v.shortages.length));
+    foot.innerHTML = `<button class="btn block" data-act="post" ${blocked ? 'disabled data-off="1"' : ''}>${SJ.F.draftId ? 'Post draft' : 'Post'}</button><button class="btn line block" data-act="back">Back to edit</button>`;
+  }
+}
+
+async function sjReview() {
+  const p = formProblem(SJ.F, SJ.items);
+  if (p) return sjErr(p);
+  sjErr('');
+  sjBusy(true);
+  const b = voucherBody(SJ.F, SJ.items, {});
+  const r = await sjSend('POST', `/api/v1/inventory/production/voucher-preview?branchId=${encodeURIComponent(sjBranch())}`, { inputs: b.inputs, outputs: b.outputs, ...(SJ.costing ? { costing: { enabled: true, costs: [] } } : {}) });
+  sjBusy(false);
+  if (r.status === 0) SJ.sub = { kind: 'review', preview: null, offline: true };
+  else if (r.status === 200 || r.status === 201) SJ.sub = { kind: 'review', preview: r.data };
+  else return sjErr(friendlyError(r));
+  sjRender();
+}
+
+async function sjPost() {
+  const { F } = SJ;
+  sjBusy(true);
+  let r;
+  if (F.draftId) r = await postDraft(sjSend, sjBranch(), F, SJ.items, { costing: SJ.costing });
+  else r = await postNew({ queueEvent, syncNow, getEvent: (id) => events.get(id), dismissEvent }, F, SJ.items, { userId: S.snap.user.id, deviceId: await kv.get('deviceId'), costing: SJ.costing });
+  sjBusy(false);
+  if (!r.ok) {
+    SJ.sub = null; // back to the form with everything still typed in, and the reason on top
+    sjRender();
+    return sjErr(r.error);
+  }
+  await kv.del('sjForm').catch(() => {});
+  closeSheet();
+  S.note = { text: r.posted === false ? 'Saved on this phone. It will be posted when there is a connection.' : `${F.draftNo || 'Voucher'} posted. Stock is updated.` };
+  if (r.waiting) syncNow({ refreshMenu: false }).then(afterSync);
+  await refreshPending();
+  viewKitchen();
+}
+
+async function sjCreate(kind) {
+  const val = (id) => ($(id) ? $(id).value : '');
+  const sub = SJ.sub;
+  const branch = sjBranch();
+  sjBusy(true);
+  let r;
+  if (kind === 'inv') r = await createInventoryItem(sjSend, branch, { name: val('sx-name'), unit: val('sx-unit') });
+  else if (kind === 'menu') r = await createMenuItem(sjSend, branch, { name: val('sx-name'), unit: val('sx-unit'), categoryId: val('sx-cat'), price: val('sx-price'), tax: val('sx-tax') });
+  else r = await saveRecipe(sjSend, branch, SJ.F, SJ.items, val('sx-name'));
+  sjBusy(false);
+  if (!r.ok) {
+    Object.assign(sub, { error: r.error, name: val('sx-name'), unit: val('sx-unit'), categoryId: val('sx-cat'), price: val('sx-price'), tax: val('sx-tax') });
+    return sjRender();
+  }
+  SJ.sub = null;
+  if (kind === 'recipe') {
+    SJ.F.recipeKey = `${r.recipe.kind || 'RECIPE'}:${r.recipe.id}`;
+    await sjLoadRecipes();
+    sjPersist();
+    const n = $('sj-err');
+    if (n) { n.className = 'note'; n.textContent = 'Recipe saved. Stock was not changed.'; n.hidden = false; }
+    return;
+  }
+  // The new item is picked in the row being worked on (menu items: in Product made); the rest of the form is untouched.
+  const live = await loadStockItems(sjSend, branch);
+  if (live) SJ.items = live;
+  else SJ.items.push({ id: r.id, name: val('sx-name') || '', unit: val('sx-unit'), kind: kind === 'inv' ? 'PURCHASED' : 'PREPARED', units: [val('sx-unit')] });
+  const item = SJ.items.find((i) => i.id === r.id);
+  if (kind === 'inv') {
+    const idx = SJ.F.rows[SJ.activeRow] && !SJ.F.rows[SJ.activeRow].ingredientId ? SJ.activeRow : SJ.F.rows.findIndex((x) => !x.ingredientId);
+    const row = { ingredientId: r.id, quantity: '', unit: item ? item.unit : '', expected: '' };
+    if (idx >= 0) Object.assign(SJ.F.rows[idx], row);
+    else SJ.F.rows.push(row);
+  } else {
+    SJ.F.productId = r.id;
+    SJ.F.madeUnit = item ? item.unit : '';
+    SJ.F.recipeKey = '';
+    SJ.recipes = { state: 'loading', recipes: [] };
+    syncNow().then(afterSync); // the new dish reaches this phone's POS menu
+  }
+  sjRender();
+  sjPersist();
+  if (kind === 'menu') sjLoadRecipes();
+  if (r.menuMissing) sjErr(`${val('sx-name')} was added to stock, but not to the menu: ${r.menuMissing} Add it under Menu.`);
+}
+
+// Drafts waiting on the server and vouchers already posted (read-only), for anyone who may record production.
+async function openSjList() {
+  SJ = { F: emptyForm(), items: S.snap.stockItems, base: null, sub: null, busy: false, caps: capsFrom(S.snap), recipes: { state: 'choose-product', recipes: [] }, rtok: 0 };
+  openSheet(`<header><h2>Drafts and posted</h2><button class="btn line" data-close aria-label="Close" style="min-height:44px;width:44px;padding:0">×</button></header><div class="body" id="sjl-body"><p class="mute">Loading…</p></div>`, async () => {
+    const q = (s) => sjSend('GET', `/api/v1/inventory/production?branchId=${encodeURIComponent(sjBranch())}&status=${s}`);
+    const [d, p] = await Promise.all([q('DRAFT'), q('POSTED')]);
+    const body = $('sjl-body');
+    if (!body) return;
+    if (d.status === 0 && p.status === 0) { body.innerHTML = '<div class="note warn" role="status">Drafts and posted vouchers live on the server and need a connection. Vouchers waiting to be sent are under Recent.</div>'; return; }
+    if (d.status !== 200 || p.status !== 200) { body.innerHTML = `<div class="note bad" role="alert">${esc(friendlyError(d.status !== 200 ? d : p))}</div>`; return; }
+    const nameOf = (e, role) => e.lines.filter((l) => l.role === role).map((l) => `${esc(sjNum(role === 'OUTPUT' ? l.quantity : l.enteredQuantity))} ${esc(role === 'OUTPUT' ? l.ingredient.unit : l.enteredUnit)} ${esc(l.ingredient.name)}`).join(', ');
+    const card = (e, draft) => `<div class="card mt"><b>${esc(e.entryNo)}</b> <span class="status ${draft ? 'PREPARING' : 'READY'}">${draft ? 'Draft: stock not changed' : 'Posted'}</span>
+      <div class="mute">${esc(new Date(e.producedAt).toLocaleString())}${e.batchRef ? ` · ${esc(e.batchRef)}` : ''}</div>
+      <div>Made ${nameOf(e, 'OUTPUT') || '–'}</div><div class="mute">Used ${nameOf(e, 'INPUT') || '–'}</div>
+      ${draft ? `<div class="row"><button class="btn ghost" data-open="${esc(e.id)}">Open</button>${capsFrom(S.snap).record ? `<button class="btn line" data-del="${esc(e.id)}">Delete</button>` : ''}</div>` : ''}</div>`;
+    body.innerHTML = `<h3 class="sec">Drafts (${d.data.length})</h3>${d.data.map((e) => card(e, true)).join('') || '<p class="mute">No drafts.</p>'}
+      <h3 class="sec">Posted (latest ${p.data.length})</h3>${p.data.map((e) => card(e, false)).join('') || '<p class="mute">Nothing posted yet.</p>'}`;
+    body.onclick = async (ev) => {
+      const o = ev.target.closest('[data-open]');
+      const x = ev.target.closest('[data-del]');
+      if (o) {
+        o.disabled = true;
+        const r = await sjSend('GET', `/api/v1/inventory/production/${encodeURIComponent(o.dataset.open)}?branchId=${encodeURIComponent(sjBranch())}`);
+        if (r.status !== 200) { o.disabled = false; return void (body.insertAdjacentHTML('afterbegin', `<div class="note bad" role="alert">${esc(friendlyError(r))}</div>`)); }
+        closeSheet();
+        openStockJournal(formFromDraft(r.data));
+      } else if (x) {
+        if (!confirm('Delete this draft? It never changed stock.')) return;
+        x.disabled = true;
+        const r = await deleteDraft(sjSend, sjBranch(), x.dataset.del);
+        if (!r.ok) { x.disabled = false; return void (body.insertAdjacentHTML('afterbegin', `<div class="note bad" role="alert">${esc(r.error)}</div>`)); }
+        x.closest('.card').remove();
+      }
+    };
+  });
 }
 
 function openWaste() {

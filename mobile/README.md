@@ -115,3 +115,14 @@ Source images are in `resources/`. To regenerate every size (the tool is not a p
 ```bash
 npx @capacitor/assets generate --android --ios --iconBackgroundColor '#9f1239' --splashBackgroundColor '#9f1239' --splashBackgroundColorDark '#141110'
 ```
+
+
+## Stock journal on the phone (1.40)
+
+Kitchen tab > **Stock journal: record production**: product-first voucher with saved recipes (and "No saved recipes for this product yet"), fill from recipe,
+stock on hand per ingredient, separate **Add inventory item** / **Add menu item**, review, post (kept on the phone and sent once if offline), save draft,
+save as recipe, and **Drafts and posted vouchers**. All rules stay on the server; see `../docs/STOCK-JOURNAL.md`. Code: `www/pos/lib/stockjournal.js`
+(tested in `stockjournal.test.mjs`) and the "stock journal" section of `www/pos/pos.js`.
+
+Release prep: `versionName 1.40.0` / `versionCode 140000`. `npm run android:release` builds the bundle; signing uses `keystore.properties` or
+`ORDERRESTRO_KEYSTORE_PROPERTIES` as before. Nothing is submitted by the build.
