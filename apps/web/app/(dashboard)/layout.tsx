@@ -10,6 +10,8 @@ import { NativeBridge } from "@/components/native/native-bridge";
 import { BtPrinterDialog } from "@/components/native/bt-printer-dialog";
 import { NAV_ITEMS } from "@/components/layout/nav-items";
 import { canOpen, firstAllowedHref } from "@/lib/route-access";
+import { setUnauthorizedHandler } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
 
 // Subscribes every route in this layout group to realtime push (order/KOT/
 // table updates) instead of only the one page (KDS) that happened to call
@@ -28,6 +30,7 @@ function RealtimeBridge() {
 export default function DashboardGroupLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const queryClient = useQueryClient();
   const { data, isLoading, isError } = useCurrentUser();
   const permissions = data?.user.permissions;
   const allowed = !permissions || canOpen(pathname ?? "", permissions, NAV_ITEMS);
@@ -38,6 +41,16 @@ export default function DashboardGroupLayout({ children }: { children: React.Rea
       router.replace("/login");
     }
   }, [isLoading, isError, router]);
+
+  // Any authenticated query getting 401 means the session ended. Clear the
+  // cached identity too, or the shell would keep claiming we are signed in.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      queryClient.removeQueries();
+      router.replace("/login");
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [queryClient, router]);
 
   // Direct URL to a page the role may not use (e.g. a waiter opening /dashboard
   // after login): send them to their first permitted screen.
