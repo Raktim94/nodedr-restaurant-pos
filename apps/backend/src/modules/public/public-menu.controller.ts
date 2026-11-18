@@ -112,8 +112,11 @@ export class PublicMenuController {
   }
 
   @Get('menu/:qrToken/status')
-  getStatus(@Param('qrToken') qrToken: string) {
-    return this.publicMenuService.getStatus(qrToken);
+  getStatus(
+    @Param('qrToken') qrToken: string,
+    @Headers('x-table-session') sessionToken?: string,
+  ) {
+    return this.publicMenuService.getStatus(qrToken, sessionToken);
   }
 
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
