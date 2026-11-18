@@ -53,16 +53,23 @@ export class CustomersService {
 
   // An empty PIN code means "none", stored as null.
   private clean(dto: Partial<CustomerDto>) {
-    return dto.pincode === undefined ? dto : { ...dto, pincode: dto.pincode || null };
+    return dto.pincode === undefined
+      ? dto
+      : { ...dto, pincode: dto.pincode || null };
   }
 
   create(branchId: string, dto: CustomerDto) {
-    return this.prisma.customer.create({ data: { ...this.clean(dto), branchId } });
+    return this.prisma.customer.create({
+      data: { ...this.clean(dto), branchId },
+    });
   }
 
   async update(branchId: string, id: string, dto: Partial<CustomerDto>) {
     await this.assertInBranch(branchId, id);
-    return this.prisma.customer.update({ where: { id }, data: this.clean(dto) });
+    return this.prisma.customer.update({
+      where: { id },
+      data: this.clean(dto),
+    });
   }
 
   // Hard delete — Order.customerId and GiftCard.customerId are both
