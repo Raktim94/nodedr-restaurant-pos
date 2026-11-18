@@ -8,6 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { ChannelBadge, TypeBadge } from "@/components/orders/channel-badges";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { QueryError } from "@/components/ui/query-error";
 import { CancelOrderDialog, useCanCancelOrders } from "@/components/orders/cancel-order-dialog";
 import { DeliveryWhere } from "@/components/orders/delivery-where";
 import { EditBillDialog } from "@/components/orders/edit-bill-dialog";
@@ -35,7 +36,7 @@ export function OrderDetailDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { data: order, isLoading } = useOrder(branchId, open ? orderId : null);
+  const { data: order, isLoading, isError, error, refetch, isFetching } = useOrder(branchId, open ? orderId : null);
   const accept = useAcceptOrder(branchId);
   const reject = useRejectOrder(branchId);
   const { note, clear: clearNote, toast } = useNoteToast();
@@ -75,7 +76,9 @@ export function OrderDetailDialog({
         </DialogHeader>
         <StatusNote note={note} onClear={clearNote} />
 
-        {isLoading || !order ? (
+        {isError ? (
+          <QueryError error={error} what="this order" onRetry={() => void refetch()} retrying={isFetching} />
+        ) : isLoading || !order ? (
           <div className="flex flex-col gap-2">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-8 rounded-lg" />

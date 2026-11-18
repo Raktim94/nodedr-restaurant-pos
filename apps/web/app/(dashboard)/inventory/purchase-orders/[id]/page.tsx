@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { QueryError } from "@/components/ui/query-error";
 import {
   Table,
   TableBody,
@@ -30,10 +31,13 @@ import { formatCurrency } from "@/lib/format";
 export default function PurchaseOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { branchId } = useBranch();
-  const { data: po, isLoading } = usePurchaseOrder(branchId, id);
+  const { data: po, isLoading, isError, error, refetch, isFetching } = usePurchaseOrder(branchId, id);
   const updateStatus = useUpdatePurchaseOrderStatus(branchId);
   const [making, setMaking] = useState(false);
 
+  if (isError) {
+    return <QueryError error={error} what="this purchase order" onRetry={() => void refetch()} retrying={isFetching} />;
+  }
   if (isLoading || !po) {
     return <Skeleton className="h-96 rounded-2xl" />;
   }

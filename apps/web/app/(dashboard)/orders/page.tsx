@@ -253,12 +253,19 @@ function OrderRow({
           />
         </div>
       )}
-    <button
-      type="button"
-      onClick={() => openEntity("Order", order.id)}
-      className="flex flex-1 items-start justify-between gap-4 rounded-lg px-4 py-3 text-left transition hover:bg-secondary/50"
-    >
-      <div className="flex min-w-0 flex-col gap-1">
+    <div className="flex flex-1 items-start justify-between gap-4 rounded-lg px-4 py-3 transition hover:bg-secondary/50">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => openEntity("Order", order.id)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openEntity("Order", order.id);
+          }
+        }}
+        className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 text-left"
+      >
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold text-foreground">#{order.orderNumber}</span>
           <span className="text-sm text-foreground">{name}</span>
@@ -273,7 +280,6 @@ function OrderRow({
           {order.status === "OPEN" && order.heldForPayment && (
             <>
               <Badge variant="outline" className="border-warning font-normal text-warning">Waiting for online payment</Badge>
-              <Button size="xs" variant="outline" disabled={release.isPending} onClick={(e) => { e.stopPropagation(); release.mutate(order.id); }}>Send to kitchen anyway</Button>
             </>
           )}
           {rejected && <Badge variant="secondary" className="font-normal">Rejected</Badge>}
@@ -289,7 +295,18 @@ function OrderRow({
           </span>
         )}
       </div>
+      </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
+        {order.status === "OPEN" && order.heldForPayment && (
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={release.isPending}
+            onClick={() => release.mutate(order.id)}
+          >
+            Send to kitchen anyway
+          </Button>
+        )}
         <span className="text-sm font-medium tabular-nums text-foreground">
           {formatCurrency(order.totalAmount)}
         </span>
@@ -297,7 +314,6 @@ function OrderRow({
           <Clock className="h-3 w-3" /> {timeAgo(order.createdAt)}
         </span>
       </div>
-    </button>
     </div>
   );
 }
