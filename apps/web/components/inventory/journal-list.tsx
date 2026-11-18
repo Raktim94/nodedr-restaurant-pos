@@ -440,6 +440,7 @@ function ProductionDetails({ branchId, id, onClose, onEdit }: { branchId: string
               {e.status === "DRAFT" && canRecord && onEdit && <Button variant="outline" onClick={() => onEdit(e.id)}>Edit draft</Button>}
               {e.status === "DRAFT" && canRecord && <Button variant="ghost" className="text-destructive" onClick={() => { setError(null); setDialog("delete"); }}>Delete draft</Button>}
               {e.status === "DRAFT" && !canPost && <p className="text-xs text-muted-foreground">Posting a production draft needs the post permission.</p>}
+              {e.status === "POSTED" && <p className="w-full text-xs text-muted-foreground">A posted voucher is never edited: its stock movements stay on record. {canReverse ? "To change it, Correct it (the old entry is reversed and a replacement is posted) or Reverse it." : "Ask someone who may reverse production to correct it."}</p>}
               {e.status === "POSTED" && canReverse && (
                 <>
                   <Button variant="outline" onClick={() => setCorrecting(true)}>Correct</Button>

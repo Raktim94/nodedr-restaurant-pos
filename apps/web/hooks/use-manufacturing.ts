@@ -106,8 +106,8 @@ export interface Recipe {
   kind: "RECIPE" | "MENU"; id: string; name: string; version: number; isActive: boolean; notes: string | null;
   outputIngredientId: string; outputName: string; outputUnit: IngredientUnit; baseOutputQty: string; lines: RecipeLine[];
 }
-export const useRecipes = (branchId: string | null, productId?: string, all = false) =>
-  useQuery({ queryKey: ["recipes", branchId, productId ?? "", all], queryFn: () => api.get<Recipe[]>(`/inventory/recipes?${q(branchId, { productId, all: all ? "1" : undefined })}`), enabled: !!branchId });
+export const useRecipes = (branchId: string | null, productId?: string, all = false, enabled = true) =>
+  useQuery({ queryKey: ["recipes", branchId, productId ?? "", all], queryFn: () => api.get<Recipe[]>(`/inventory/recipes?${q(branchId, { productId, all: all ? "1" : undefined })}`), enabled: !!branchId && enabled });
 
 export interface RecipeFill { recipe: { kind: string; id: string; name: string; version: number; baseOutputQty: string; outputUnit: string }; plannedOutput: string; lines: { ingredientId: string; name: string; unit: IngredientUnit; quantity: string; stockUnit: string }[] }
 export const useRecipeFill = (branchId: string | null) =>

@@ -59,7 +59,7 @@ export function CustomerPicker({
               }}
             >
               <span className="font-medium text-foreground">{m.name ?? "Unnamed"}</span>
-              <span className="text-xs text-muted-foreground">{m.phone}</span>
+              <span className="text-xs text-muted-foreground">{[m.phone, m.pincode, m.status === "INACTIVE" ? "Inactive" : null].filter(Boolean).join(" · ")}</span>
             </button>
           ))}
         </div>

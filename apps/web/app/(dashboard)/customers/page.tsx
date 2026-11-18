@@ -69,7 +69,7 @@ export default function CustomersPage() {
                   {c.name ?? "Unnamed customer"}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {[c.phone, c.email].filter(Boolean).join(" · ") || "No contact info"}
+                  {[c.phone, c.email, c.pincode, c.status === "INACTIVE" ? "Inactive" : null].filter(Boolean).join(" · ") || "No contact info"}
                 </span>
               </div>
               <div className="flex items-center gap-4 text-xs text-muted-foreground">

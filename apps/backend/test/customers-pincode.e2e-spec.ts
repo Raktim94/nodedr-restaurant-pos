@@ -94,6 +94,18 @@ run('Customer PIN code and status (e2e)', () => {
     expect(c.status).toBe('INACTIVE');
   });
 
+  it('editing one field never overwrites the others', async () => {
+    await owner.patch(`/api/v1/customers/${customerId}${q}`).send({ phone: '9000000002', notes: 'likes tea' }).expect(200);
+    await owner.patch(`/api/v1/customers/${customerId}${q}`).send({ name: `Pin ${tag} renamed` }).expect(200);
+    const c = (await owner.get(`/api/v1/customers/${customerId}${q}`).expect(200)).body;
+    expect(c).toMatchObject({ name: `Pin ${tag} renamed`, phone: '9000000002', notes: 'likes tea', address: '12 Rose Apts', status: 'INACTIVE' });
+  });
+
+  it('the customer list returns address, PIN code and status for order selection', async () => {
+    const list = (await owner.get(`/api/v1/customers${q}&search=${tag}`).expect(200)).body as { id: string; address: string; status: string }[];
+    expect(list.find((x) => x.id === customerId)).toMatchObject({ address: '12 Rose Apts', status: 'INACTIVE' });
+  });
+
   it('creates a customer with the new fields in one call', async () => {
     const r = await owner
       .post(`/api/v1/customers${q}`)

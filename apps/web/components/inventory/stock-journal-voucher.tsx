@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { type QualityResult, type VoucherPreview, useMfgSettings, useRecipeFill, useRecipes, useRecipeMutations, useRecordQuality, useVoucherPreview } from "@/hooks/use-manufacturing";
 import { type ProductionEntryFull, type StockItem, usePlaces, useProducibleMenuItems, useSaveProduction, useStockItems, useUpdateProductionDraft } from "@/hooks/use-stock-journal";
 import Link from "next/link";
+import { recipeState, unitProblem } from "@/lib/voucher-rules";
 import { useProductionAction } from "@/hooks/use-stock-journal";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api";
@@ -49,8 +50,8 @@ export interface VoucherContext { productId?: string; batchRef?: string; narrati
  * Destination / Production on the right, side by side from lg and stacked (source first) below it. Every number in the
  * review step is worked out by the server and frozen when posted; the menu selling price is never touched here.
  */
-export function StockJournalVoucher({ branchId, open, onOpenChange, productId, context, inline, onSaved, draft }: { branchId: string | null; /** A saved draft to reopen and keep editing. Saving changes the same entry; it never creates a second one. */ draft?: ProductionEntryFull; open: boolean; onOpenChange: (o: boolean) => void; productId?: string; context?: VoucherContext; inline?: boolean; /** Told what was saved, so the page can confirm it (success toasts are off app-wide). */ onSaved?: (r: { id: string; entryNo: string; posted: boolean }) => void }) {
-  productId = productId ?? context?.productId;
+export function StockJournalVoucher({ branchId, open, onOpenChange, productId: productIdProp, context, inline, onSaved, draft }: { branchId: string | null; /** A saved draft to reopen and keep editing. Saving changes the same entry; it never creates a second one. */ draft?: ProductionEntryFull; open: boolean; onOpenChange: (o: boolean) => void; productId?: string; context?: VoucherContext; inline?: boolean; /** Told what was saved, so the page can confirm it (success toasts are off app-wide). */ onSaved?: (r: { id: string; entryNo: string; posted: boolean }) => void }) {
+  const productId = productIdProp ?? context?.productId;
   const { data: items } = useStockItems(branchId);
   const { data: places } = usePlaces(branchId);
   const { data: settings } = useMfgSettings(branchId);
@@ -105,6 +106,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const canLink = hasPermission(me?.user, "journal.manage");
   const canAddItems = hasPermission(me?.user, "inventory.manage");
   const canPutOnMenu = canAddItems && hasPermission(me?.user, "menu.manage");
+  const canPost = hasPermission(me?.user, "production.post");
   const { data: menuOnlyAll } = useProducibleMenuItems(canLink ? branchId : null);
   const menuOnly = canLink ? menuOnlyAll : undefined;
   const productChoices = useMemo<StockItem[]>(
@@ -120,7 +122,11 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const costed = !!settings?.enabled;
   const busy = preview.isPending || save.isPending || fill.isPending || updateDraft.isPending || postAction.isPending;
   const firstProduct = outs[0]?.ingredientId ?? "";
-  const { data: recipes } = useRecipes(branchId, firstProduct || undefined);
+  // Recipes belong to one product: nothing is requested until the product is chosen, and the empty message is only
+  // shown for a request that succeeded and returned no recipes for that product.
+  const recipesQ = useRecipes(branchId, firstProduct || undefined, false, !!firstProduct);
+  const recipes = recipesQ.isSuccess && !recipesQ.isError ? recipesQ.data : undefined;
+  const rState = recipeState({ hasProduct: !!firstProduct, isError: recipesQ.isError, isSuccess: recipesQ.isSuccess, count: recipes?.length ?? 0 });
   const recipe = (recipes ?? []).find((r) => `${r.kind}:${r.id}` === recipeKey);
   const multi = outs.filter((o) => o.ingredientId).length > 1;
 
@@ -132,15 +138,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
     patchOut(id, { ingredientId: ing, unit: byId.get(ing)?.unit ?? "" });
     setRecipeKey("");
   };
-  const pickRecipe = (v: string) => {
-    setRecipeKey(v);
-    const r = (recipes ?? []).find((x) => `${x.kind}:${x.id}` === v);
-    // A recipe belongs to one product: pick it too when the Destination is still empty.
-    if (r && r.outputIngredientId && !outsRaw.some((o) => o.ingredientId)) {
-      const first = outsRaw[0];
-      if (first) patchOut(first.key, { ingredientId: r.outputIngredientId, unit: byId.get(r.outputIngredientId)?.unit ?? "" });
-    }
-  };
+  const pickRecipe = (v: string) => setRecipeKey(v);
   const startSaveRecipe = () => {
     const o = usedOuts[0];
     if (usedOuts.length !== 1 || !o?.ingredientId) return setError("To save a recipe, choose exactly one finished product in Destination.");
@@ -181,6 +179,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
     if (!usedOuts.length || usedOuts.some((r) => !r.ingredientId)) return "Choose the finished product in the Destination panel.";
     if (!usedIns.length || usedIns.some((r) => !r.ingredientId)) return "Choose every ingredient in the Source panel.";
     if ([...usedIns, ...usedOuts].some((r) => !(Number(r.quantity) > 0))) return "Every row needs a quantity above zero (for a product, the good quantity).";
+    for (const r of [...usedIns, ...usedOuts]) { const u = unitProblem(byId.get(r.ingredientId), r.unit); if (u) return u; }
     if (usedOuts.some((r) => r.rejected !== "" && !(Number(r.rejected) >= 0))) return "Rejected quantity must be zero or more.";
     if (costed && usedIns.some((r) => r.rate !== "" && !(Number(r.rate) >= 0))) return "A rate must be zero or more.";
     if (costs.some((c) => c.amount !== "" && !(Number(c.amount) >= 0))) return "An additional cost must be zero or more.";
@@ -221,7 +220,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const fillRecipe = () => {
     const o = usedOuts[0];
     if (!o?.ingredientId) return setError("Choose the finished product first.");
-    if (!recipe) return setError(recipes?.length ? "Choose which recipe to fill from." : "This product has no saved recipes yet. Enter the ingredients by hand and press \"Save as recipe\", or add one under Inventory > Recipes.");
+    if (!recipe) return setError(!recipesQ.isSuccess ? "The recipes for this product have not loaded yet. Try again in a moment." : recipes?.length ? "Choose which recipe to fill from." : "No saved recipes for this product yet. Enter the ingredients by hand and press \"Save as recipe\", or add one under Inventory > Recipes.");
     if (!(Number(o.quantity) > 0)) return setError("Type the planned good quantity first; the recipe is scaled to it.");
     fill.mutate({ kind: recipe.kind, id: recipe.id, quantity: o.quantity }, {
       onSuccess: (r) => {
@@ -351,16 +350,21 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                     <h3 className="text-sm font-semibold">Source / Consumption</h3>
                     <div className="flex flex-wrap items-center gap-2">
                       <SearchSelect aria-label="Recipe" className="w-56" value={recipeKey} onChange={pickRecipe} placeholder="Search recipes…" emptyText="No recipe matches"
-                        options={[{ value: "", label: recipes?.length ? "No recipe (manual)" : firstProduct ? "No saved recipes for this product yet" : "No saved recipes yet" }, ...(recipes ?? []).map((r) => ({ value: `${r.kind}:${r.id}`, label: r.name, hint: `base ${r.baseOutputQty} ${r.outputUnit.toLowerCase()} · v${r.version}` }))]} />
+                        options={[{ value: "", label: "No recipe (manual)" }, ...(recipes ?? []).map((r) => ({ value: `${r.kind}:${r.id}`, label: r.name, hint: `base ${r.baseOutputQty} ${r.outputUnit.toLowerCase()} · v${r.version}` }))]} />
                       <Button type="button" variant="outline" size="sm" disabled={fill.isPending || !recipeKey} onClick={fillRecipe}>Fill from recipe</Button>
                       {canAddItems && <Button type="button" variant="outline" size="sm" disabled={busy} onClick={startSaveRecipe} title="Keeps these ingredients as a reusable recipe. Stock is not changed.">Save as recipe</Button>}
                     </div>
                   </div>
-                  <p className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
-                    {recipes && recipes.length === 0 && <b className="text-foreground">No saved recipes yet. </b>}
-                    A recipe is a reusable list of ingredients and quantities for making one product. Choosing one fills the rows below; you can change every number before saving. Saving a recipe never changes stock; only posting this voucher does.
-                    {canAddItems && <> <Link href="/inventory/recipes" target="_blank" rel="noopener" className="underline underline-offset-2">Create recipe</Link> in a new tab, or fill the rows and press Save as recipe.</>}
-                  </p>
+                  <div className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
+                    {rState === "choose-product" ? <p role="status">Choose the product to produce first; its saved recipes will appear here.</p>
+                      : rState === "error" ? <p role="alert" className="text-destructive">Could not load recipes for this product. <button type="button" className="underline underline-offset-2" onClick={() => void recipesQ.refetch()}>Try again</button></p>
+                      : rState === "loading" ? <p role="status">Loading recipes…</p>
+                      : rState === "empty" ? <p role="status"><b className="text-foreground">No saved recipes for this product yet</b></p> : null}
+                    <p>
+                      A recipe is a reusable list of ingredients and quantities for making one product. Choosing one fills the rows below; you can change every number before saving. Saving a recipe never changes stock; only posting this voucher does.
+                      {canAddItems && <> <Link href="/inventory/recipes" target="_blank" rel="noopener" className="underline underline-offset-2">Create recipe</Link> in a new tab, or fill the rows and press Save as recipe.</>}
+                    </p>
+                  </div>
                   <div className="overflow-x-auto p-2">
                     <table className="w-full min-w-[36rem] text-sm">
                       <thead><tr><th className={head}>Name of item</th><th className={`${head} text-right`}>Available</th><th className={head}>Quantity</th><th className={head}>Unit</th><th className={`${head} text-right`}>Expected</th>{costed && <><th className={head}>Rate</th><th className={`${head} text-right`}>Amount</th></>}<th className="w-8" /></tr></thead>
@@ -435,9 +439,9 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                     </table>
                     <div className="flex flex-wrap gap-1 px-1 pt-1">
                       <Button type="button" variant="outline" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Add co-product</Button>
-                      {canAddItems && <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: null })}>+ Add menu item</Button>}
+                      {canPutOnMenu && <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: null })}>+ Add menu item</Button>}
                     </div>
-                    {canAddItems && products.length === 0 && (menuOnly ?? []).length === 0 && (
+                    {canPutOnMenu && products.length === 0 && (menuOnly ?? []).length === 0 && (
                       <div className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
                         <span>No finished products or menu items yet.</span>
                         <Button type="button" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: outs[0]?.key ?? null })}>Add Item</Button>
@@ -489,7 +493,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
           {!review ? (
             <><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{cancelText}</Button><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={saveDraft} disabled={busy} title="Keeps the voucher for later. Stock is not changed.">{save.isPending ? "Saving…" : "Save draft (no stock change)"}</Button><Button type="button" onClick={goReview} disabled={busy} title="Shows what will change. Nothing is posted yet.">{busy ? "Checking…" : "Review before posting"}</Button></div></>
           ) : (
-            <><Button type="button" variant="outline" onClick={() => { setReview(null); setError(null); }}>Back to edit</Button><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={saveDraft} disabled={busy} title="Keeps the voucher for later. Stock is not changed.">Save draft (no stock change)</Button><Button type="button" onClick={submit} disabled={busy || !review.canPost} title="Applies the stock movements now. This happens once.">{busy ? "Posting…" : "Post voucher & update stock"}</Button></div></>
+            <><Button type="button" variant="outline" onClick={() => { setReview(null); setError(null); }}>Back to edit</Button><div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={saveDraft} disabled={busy} title="Keeps the voucher for later. Stock is not changed.">Save draft (no stock change)</Button><Button type="button" onClick={submit} disabled={busy || !review.canPost || !canPost} title={canPost ? "Applies the stock movements now. This happens once." : "You can save a draft; someone with permission to post must post it."}>{busy ? "Posting…" : "Post voucher & update stock"}</Button></div></>
           )}
         </div>
     </>
@@ -578,7 +582,12 @@ function ReviewBody({ review, recipe }: { review: VoucherPreview; recipe: string
           <p className="text-xs text-muted-foreground">Cost per good unit = (materials + additional costs − recovered scrap value) × share ÷ good quantity. {review.rateBasis} {review.wastageTreatment}</p>
         </>
       )}
-      {review.costError && <p role="alert" className="text-sm text-destructive">{review.costError} Cost per product is not shown until this is fixed.</p>}
+      {review.costError && (
+        <div role="alert" className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive">
+          <p>{review.costError} Costing is on, so this voucher cannot be posted without a cost for every ingredient. Nothing has been guessed for you.</p>
+          <p className="mt-1 text-foreground">To fix it, either press <b>Back to edit</b> and type a <b>Rate</b> for that ingredient (used for this voucher), or receive the ingredient with a unit cost on a Purchase Order (Inventory &gt; Purchase Orders &gt; Receive) so it carries an average cost.</p>
+        </div>
+      )}
       {review.shortages.length > 0 && <p role="alert" className="text-sm text-destructive">Not enough stock: {review.shortages.join("; ")}. Stock is never allowed to go below zero, so fix the count or the quantity first.</p>}
     </div>
   );
