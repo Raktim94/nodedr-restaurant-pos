@@ -45,6 +45,7 @@ export const PERMISSIONS = [
   { key: "production.post", label: "Post Production Batches (drafting needs only Record)", category: "Inventory" },
   { key: "production.report", label: "View Manufacturing Reports", category: "Inventory" },
   { key: "production.quality", label: "Record Batch Quality Inspection Results", category: "Inventory" },
+  { key: "journal.manage", label: "Manage the Stock Journal (all entry types, link menu items to stock)", category: "Inventory" },
   { key: "menu.price", label: "Change Menu Selling Prices from the Stock Journal", category: "Menu" },
   { key: "nfc.manage", label: "Manage NFC Table Tags & Table Ordering Mode", category: "Tables" },
   { key: "table.session", label: "Open & Close Table Sessions (guest ordering codes)", category: "Tables" },
@@ -59,7 +60,9 @@ export const PERMISSION_IMPLIES: Partial<Record<PermissionKey, PermissionKey[]>>
   "menu.manage": ["menu.view"],
   "tables.manage": ["tables.view"],
   // Whoever manages inventory may also record and reverse production.
-  "inventory.manage": ["production.record", "production.void", "production.post", "production.report", "production.quality"],
+  "inventory.manage": ["production.record", "production.void", "production.post", "production.report", "production.quality", "journal.manage"],
+  // The Stock Journal manager runs every kind of journal entry, so it carries all the production permissions too.
+  "journal.manage": ["production.record", "production.void", "production.post", "production.report", "production.quality"],
 };
 
 /** True when `held` satisfies `required`, directly or through PERMISSION_IMPLIES. */
@@ -88,6 +91,7 @@ export const STAFF_ROLES = [
   "DELIVERY_STAFF",
   "ACCOUNTANT",
   "INVENTORY_MANAGER",
+  "STOCK_JOURNAL_MANAGER",
 ] as const;
 
 export type StaffRole = (typeof STAFF_ROLES)[number];
@@ -120,4 +124,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
   DELIVERY_STAFF: ["orders.edit", "delivery.manage", "delivery.rider"],
   ACCOUNTANT: ["sales.view", "dashboard.sales.view", "reports.access", "reports.financial.view", "data.export", "accounting.manage"],
   INVENTORY_MANAGER: ["inventory.manage", "reports.access"],
+  // Runs the Stock Journal (production, transfers, waste, corrections, quality, reversals) and can see the menu,
+  // but not suppliers, purchasing, recipes or other inventory settings.
+  STOCK_JOURNAL_MANAGER: ["journal.manage", "menu.view"],
 };

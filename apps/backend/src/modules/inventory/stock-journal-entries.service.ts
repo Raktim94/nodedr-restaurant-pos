@@ -43,7 +43,7 @@ export interface JournalListFilters {
   dir?: 'asc' | 'desc';
   /** Production rows are included only for callers who can see production. */
   includeProduction: boolean;
-  /** Transfer and correction rows need inventory.manage; waste needs production.record. */
+  /** Transfer and correction rows need journal.manage; waste needs production.record. */
   kinds: JournalKind[];
 }
 

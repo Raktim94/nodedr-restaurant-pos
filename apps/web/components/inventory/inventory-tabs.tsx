@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -20,12 +21,17 @@ const TABS = [
   { label: "Waste", href: "/inventory/waste" },
 ];
 
+// Tabs a Stock Journal manager (no general inventory permission) can actually use; the rest would only show errors.
+const JOURNAL_TABS = new Set(["/inventory/journal", "/inventory/waste"]);
+
 export function InventoryTabs() {
   const pathname = usePathname();
+  const { data: me } = useCurrentUser();
+  const tabs = hasPermission(me?.user, "inventory.manage") ? TABS : TABS.filter((t) => JOURNAL_TABS.has(t.href));
 
   return (
     <nav aria-label="Inventory sections" className="flex gap-1 overflow-x-auto border-b border-border">
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const isActive =
           tab.href === "/inventory" ? pathname === "/inventory" : pathname?.startsWith(tab.href);
         return (

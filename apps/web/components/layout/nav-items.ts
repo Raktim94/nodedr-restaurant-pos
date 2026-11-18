@@ -41,7 +41,7 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "nav.menu", href: "/menu", icon: UtensilsCrossed, permission: "menu.view" },
   { labelKey: "nav.kds", href: "/kds", icon: ChefHat, permission: "kds.manage" },
   { labelKey: "nav.customers", href: "/customers", icon: UsersRound, permission: "customers.manage" },
-  { labelKey: "nav.inventory", href: "/inventory", icon: Package, permission: "inventory.manage" },
+  { labelKey: "nav.inventory", href: "/inventory", icon: Package, permission: "journal.manage" },
   { labelKey: "nav.myDeliveries", href: "/my-deliveries", icon: Bike, permission: "delivery.rider" },
   { labelKey: "nav.delivery", href: "/delivery", icon: Truck, permission: "delivery.manage" },
   { labelKey: "nav.team", href: "/team", icon: Users, permission: "staff.manage" },

@@ -156,14 +156,14 @@ export class StockJournalController {
 
   // ---- stock journal entries: transfer, waste, correction (production has its own routes) ----------------
 
-  /** Waste is a kitchen job (production.record); moving stock between places and correcting counts need inventory.manage. */
+  /** Waste is a kitchen job (production.record); moving stock between places and correcting counts need journal.manage. */
   private assertKind(u: SessionUser, type: StockJournalType) {
-    const need = type === 'WASTE' ? 'production.record' : 'inventory.manage';
+    const need = type === 'WASTE' ? 'production.record' : 'journal.manage';
     if (!permissionSatisfied(u.permissions, need))
       throw new ForbiddenException(
         type === 'WASTE'
           ? 'Recording waste needs the production permission.'
-          : 'Transfers and stock corrections need the manage inventory permission.',
+          : 'Transfers and stock corrections need the Stock Journal manager permission.',
       );
   }
 
@@ -184,7 +184,7 @@ export class StockJournalController {
 
   private entryFilters(u: SessionUser, q: Record<string, string>) {
     const kinds: JournalKind[] = ['PRODUCTION', 'WASTE'];
-    if (permissionSatisfied(u.permissions, 'inventory.manage'))
+    if (permissionSatisfied(u.permissions, 'journal.manage'))
       kinds.push('TRANSFER', 'CORRECTION');
     return {
       q: q.q?.slice(0, 80) || undefined,
@@ -690,7 +690,7 @@ export class StockJournalController {
 
   // Makes a menu item producible: creates (or reuses) a finished-product stock item with the menu item's name and
   // links the menu item to it (DIRECT, one per sale), in one transaction. The menu price and tax are not touched.
-  @Auth('inventory.manage')
+  @Auth('journal.manage')
   @Post('production/menu-items/:id/stock-item')
   @UsePipes(new ZodValidationPipe(z.object({ unit: ingredientUnitSchema })))
   async makeMenuItemProducible(

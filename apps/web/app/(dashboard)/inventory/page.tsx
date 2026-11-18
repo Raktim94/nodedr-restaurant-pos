@@ -2,7 +2,7 @@
 
 import { AlertTriangle } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { ImportCsvDialog } from "@/components/imports/import-csv-dialog";
 import { AddIngredientDialog } from "@/components/inventory/add-ingredient-dialog";
 import { AdjustStockDialog } from "@/components/inventory/adjust-stock-dialog";
@@ -30,6 +30,11 @@ function InventoryView() {
   const { branchId } = useBranch();
   const { data: me } = useCurrentUser();
   const canImport = hasPermission(me?.user, "inventory.manage");
+  // A Stock Journal manager has no general inventory permission: this stock list would only show an error, so go to the journal.
+  const router0 = useRouter();
+  useEffect(() => {
+    if (me?.user && !hasPermission(me.user, "inventory.manage") && hasPermission(me.user, "journal.manage")) router0.replace("/inventory/journal");
+  }, [me, router0]);
   const [search, setSearch] = useState("");
   // Dashboard deep link: /inventory?filter=low starts on the low-stock view.
   const params = useSearchParams();

@@ -36,7 +36,7 @@ const PICK: { type: NewType; label: string; help: string; Icon: typeof ChefHat; 
 function JournalShell() {
   const { branchId } = useBranch();
   const { data: me } = useCurrentUser();
-  const canManage = hasPermission(me?.user, "inventory.manage");
+  const canManage = hasPermission(me?.user, "journal.manage");
   const router = useRouter();
   const params = useSearchParams();
   const raw = params.get("view");

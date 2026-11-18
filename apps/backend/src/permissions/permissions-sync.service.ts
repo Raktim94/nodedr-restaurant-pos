@@ -1,5 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { PERMISSIONS } from '@nodedr-restaurant/types';
+import {
+  DEFAULT_ROLE_PERMISSIONS,
+  PERMISSIONS,
+  type StaffRole,
+} from '@nodedr-restaurant/types';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Roles this deep are meant to always hold every permission that exists —
@@ -31,6 +35,10 @@ const GRANT_WHEN_CREATED: Record<string, string[]> = {
   'table.session': ['RESTAURANT_MANAGER', 'CASHIER', 'WAITER'],
   'ratings.view': ['RESTAURANT_MANAGER'],
 };
+
+// System roles added after the first release. Restaurants that signed up earlier never got them, so they are
+// created here, once, with their default permissions (an existing role is left exactly as the admin set it).
+const ROLES_ADDED_LATER: StaffRole[] = ['STOCK_JOURNAL_MANAGER'];
 
 @Injectable()
 export class PermissionsSyncService implements OnModuleInit {
@@ -71,6 +79,8 @@ export class PermissionsSyncService implements OnModuleInit {
     }
     const allPermissions = await this.prisma.permission.findMany();
 
+    await this.createMissingRoles(allPermissions);
+
     const roles = await this.prisma.role.findMany({
       where: { name: { in: [...ALWAYS_FULL_ACCESS_ROLES] } },
       include: { permissions: true },
@@ -88,6 +98,39 @@ export class PermissionsSyncService implements OnModuleInit {
       this.logger.log(
         `Backfilled ${missing.length} new permission(s) onto role ${role.id} (${role.name})`,
       );
+    }
+  }
+
+  private async createMissingRoles(
+    allPermissions: { id: string; key: string }[],
+  ) {
+    const idByKey = new Map(allPermissions.map((p) => [p.key, p.id]));
+    const restaurants = await this.prisma.restaurant.findMany({
+      select: { id: true },
+    });
+    for (const name of ROLES_ADDED_LATER) {
+      for (const r of restaurants) {
+        const exists = await this.prisma.role.findUnique({
+          where: { restaurantId_name: { restaurantId: r.id, name } },
+          select: { id: true },
+        });
+        if (exists) continue;
+        const role = await this.prisma.role.create({
+          data: {
+            restaurantId: r.id,
+            name,
+            label: name.replace(/_/g, ' '),
+          },
+        });
+        await this.prisma.rolePermission.createMany({
+          data: DEFAULT_ROLE_PERMISSIONS[name]
+            .map((key) => idByKey.get(key))
+            .filter((id): id is string => Boolean(id))
+            .map((permissionId) => ({ roleId: role.id, permissionId })),
+          skipDuplicates: true,
+        });
+        this.logger.log(`Created role ${name} for restaurant ${r.id}`);
+      }
     }
   }
 }

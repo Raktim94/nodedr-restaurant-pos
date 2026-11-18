@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type QualityResult, type VoucherPreview, useMfgSettings, useRecipeFill, useRecipes, useRecordQuality, useVoucherPreview } from "@/hooks/use-manufacturing";
 import { type StockItem, usePlaces, useProducibleMenuItems, useSaveProduction, useStockItems } from "@/hooks/use-stock-journal";
+import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
 
@@ -81,7 +82,12 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const raw = (items ?? []).filter((i) => i.kind === "PURCHASED");
   const products = (items ?? []).filter((i) => i.kind === "PREPARED");
   // Menu items with no stock item yet are offered too: picking one links it (after a confirmation) and uses it.
-  const { data: menuOnly } = useProducibleMenuItems(branchId);
+  const { data: me } = useCurrentUser();
+  const canLink = hasPermission(me?.user, "journal.manage");
+  const canAddItems = hasPermission(me?.user, "inventory.manage");
+  const canPutOnMenu = canAddItems && hasPermission(me?.user, "menu.manage");
+  const { data: menuOnlyAll } = useProducibleMenuItems(canLink ? branchId : null);
+  const menuOnly = canLink ? menuOnlyAll : undefined;
   const productChoices = useMemo<StockItem[]>(
     () => [...products, ...(menuOnly ?? []).map((m) => ({ id: `${MENU_PREFIX}${m.id}`, name: m.name, unit: "PIECE" as const, kind: "PREPARED" as const, category: m.category, currentStock: "0", units: [] }))],
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -308,7 +314,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                       </tbody>
                     </table>
                     {yieldInfo && <p className="px-1 pt-1 text-xs text-muted-foreground">Against the recipe: <b className={Math.abs(yieldInfo.pct) > 5 ? "text-destructive" : "text-foreground"}>{yieldInfo.pct > 0 ? "+" : ""}{yieldInfo.pct.toFixed(1)}%</b> ingredient use ({yieldInfo.used} of {yieldInfo.expected} expected, same-unit rows). Less is not automatically better; check the quality note.</p>}
-                    <div className="flex items-center justify-between px-1 pt-1"><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add source row</Button><Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PURCHASED", rowKey: null })}>New source item…</Button></div>{costed && <span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span>}</div>
+                    <div className="flex items-center justify-between px-1 pt-1"><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add source row</Button>{canAddItems && <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PURCHASED", rowKey: null })}>New source item…</Button>}</div>{costed && <span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span>}</div>
                   </div>
                 </section>
 
@@ -324,7 +330,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                             <tr key={r.key} className="align-top [&>td]:border-b [&>td]:border-border/60">
                               <td className="p-1">
                                 <ItemCombobox label="Finished product" placeholder="Search products…" items={productChoices} value={r.ingredientId} onChange={(id) => pickOut(r.key, id)} />
-                                {it && it.onMenu === false && (
+                                {canPutOnMenu && it && it.onMenu === false && (
                                   <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => openAdding({ kind: "PREPARED", rowKey: null, existingId: it.id })}>Not on the POS menu yet: put it on the menu…</Button>
                                 )}
                                 <div className="mt-1 grid grid-cols-[minmax(7rem,1fr)_5rem] gap-1">
@@ -344,9 +350,9 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                     </table>
                     <div className="flex flex-wrap gap-1 px-1 pt-1">
                       <Button type="button" variant="outline" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Add co-product</Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: null })}>New finished product…</Button>
+                      {canAddItems && <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: null })}>New finished product…</Button>}
                     </div>
-                    {products.length === 0 && (menuOnly ?? []).length === 0 && (
+                    {canAddItems && products.length === 0 && (menuOnly ?? []).length === 0 && (
                       <div className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
                         <span>No finished products yet.</span>
                         <Button type="button" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: outs[0]?.key ?? null })}>Add Item</Button>
