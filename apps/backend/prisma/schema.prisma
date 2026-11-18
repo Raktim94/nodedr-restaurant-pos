@@ -1214,6 +1214,9 @@ model StockBatch {
   goodsReceiptItem   GoodsReceiptItem? @relation(fields: [goodsReceiptItemId], references: [id], onDelete: SetNull)
 
   batchNumber       String
+  // Journal receipts carry a client key so a retried POST cannot double-count
+  // stock. Other batch sources leave this null (Postgres allows many NULLs).
+  idempotencyKey    String?
   quantityReceived  Decimal   @db.Decimal(12, 3)
   quantityRemaining Decimal   @db.Decimal(12, 3)
   unitCost          Decimal   @db.Decimal(12, 4)
@@ -1224,6 +1227,7 @@ model StockBatch {
   wasteLogs      WasteLog[]
 
   @@index([branchId, ingredientId, receivedAt])
+  @@unique([branchId, idempotencyKey])
   @@map("stock_batches")
 }
 

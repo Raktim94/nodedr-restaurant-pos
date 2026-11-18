@@ -104,9 +104,8 @@ export class GoodsReceiptsService {
       }
     }
 
-    const grnNumber = await this.nextGrnNumber(branchId);
-
     return this.prisma.$transaction(async (tx) => {
+      const grnNumber = await this.nextGrnNumber(tx, branchId);
       const grn = await tx.goodsReceipt.create({
         data: {
           branchId,
@@ -239,8 +238,21 @@ export class GoodsReceiptsService {
     });
   }
 
-  private async nextGrnNumber(branchId: string): Promise<string> {
-    const count = await this.prisma.goodsReceipt.count({ where: { branchId } });
-    return `GRN-${String(count + 1).padStart(4, '0')}`;
+  private async nextGrnNumber(
+    tx: Prisma.TransactionClient,
+    branchId: string,
+  ): Promise<string> {
+    // Count-based allocation raced: two concurrent receipts in one branch could
+    // pick the same number and one insert failed with P2002. Lock per branch,
+    // then use the highest existing number (not the row count) so deletions
+    // cannot cause a collision either.
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`grn:${branchId}`}))`;
+    const last = await tx.goodsReceipt.findFirst({
+      where: { branchId },
+      orderBy: { grnNumber: 'desc' },
+      select: { grnNumber: true },
+    });
+    const seq = last ? Number(last.grnNumber.split('-')[1] ?? 0) + 1 : 1;
+    return `GRN-${String(seq).padStart(4, '0')}`;
   }
 }
