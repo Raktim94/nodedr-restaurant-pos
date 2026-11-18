@@ -19,9 +19,11 @@ const UNITS: IngredientUnit[] = ["KG", "G", "L", "ML", "PIECE", "DOZEN", "PACK",
  * right away; then the operator must type the selling price (tax-inclusive) and the tax rate, and choose the menu
  * category: none of these are guessed. The menu entry is linked to the stock item, so each sale deducts it.
  */
-export function VoucherAddItemDialog({ branchId, kind, open, onOpenChange, onCreated }: {
+export function VoucherAddItemDialog({ branchId, kind, existing, open, onOpenChange, onCreated }: {
   branchId: string | null;
   kind: "PURCHASED" | "PREPARED";
+  /** An existing finished product to put on the POS menu: no stock item is created, only the menu entry. */
+  existing?: { id: string; name: string; unit: IngredientUnit };
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onCreated: (id: string) => void;
@@ -29,9 +31,9 @@ export function VoucherAddItemDialog({ branchId, kind, open, onOpenChange, onCre
   const qc = useQueryClient();
   const { data: categories } = useCategories(branchId);
   const finished = kind === "PREPARED";
-  const [name, setName] = useState("");
-  const [unit, setUnit] = useState<IngredientUnit>(finished ? "PIECE" : "KG");
-  const [onMenu, setOnMenu] = useState(false);
+  const [name, setName] = useState(existing?.name ?? "");
+  const [unit, setUnit] = useState<IngredientUnit>(existing?.unit ?? (finished ? "PIECE" : "KG"));
+  const [onMenu, setOnMenu] = useState(!!existing);
   const [categoryId, setCategoryId] = useState("");
   const [price, setPrice] = useState("");
   const [tax, setTax] = useState("");
@@ -48,15 +50,15 @@ export function VoucherAddItemDialog({ branchId, kind, open, onOpenChange, onCre
       if (tax.trim() === "" || !(Number(tax) >= 0) || Number(tax) > 100) return setError("Type the tax rate in percent (0 if none). It is not filled in for you.");
     }
     setBusy(true);
-    let id = "";
-    try {
-      const ing = await api.post<{ id: string }>(`/inventory/ingredients?branchId=${branchId}`, { name: name.trim(), unit, kind, reorderLevel: 0, isActive: true, conversions: [] });
-      id = ing.id;
-      void qc.invalidateQueries({ queryKey: ["stock-items", branchId] });
-      void qc.invalidateQueries({ queryKey: ["inventory", "ingredients", branchId] });
-    } catch (err) {
-      setBusy(false);
-      return setError(err instanceof ApiError ? err.message : "Could not add the item. Nothing was saved.");
+    let id = existing?.id ?? "";
+    if (!existing) {
+      try {
+        const ing = await api.post<{ id: string }>(`/inventory/ingredients?branchId=${branchId}`, { name: name.trim(), unit, kind, reorderLevel: 0, isActive: true, conversions: [] });
+        id = ing.id;
+      } catch (err) {
+        setBusy(false);
+        return setError(err instanceof ApiError ? err.message : "Could not add the item. Nothing was saved.");
+      }
     }
     if (finished && onMenu) {
       try {
@@ -72,6 +74,8 @@ export function VoucherAddItemDialog({ branchId, kind, open, onOpenChange, onCre
         return;
       }
     }
+    void qc.invalidateQueries({ queryKey: ["stock-items", branchId] });
+    void qc.invalidateQueries({ queryKey: ["inventory", "ingredients", branchId] });
     setBusy(false);
     onCreated(id);
     onOpenChange(false);
@@ -82,16 +86,16 @@ export function VoucherAddItemDialog({ branchId, kind, open, onOpenChange, onCre
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-md">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
-            <DialogTitle>{finished ? "Add finished product" : "Add source item"}</DialogTitle>
-            <DialogDescription>{finished ? "Creates a stock item you can produce in this voucher. Stock starts at zero." : "Creates a raw material for this voucher. Stock starts at zero; receive it through a purchase first."}</DialogDescription>
+            <DialogTitle>{existing ? `Put ${existing.name} on the POS menu` : finished ? "Add finished product" : "Add source item"}</DialogTitle>
+            <DialogDescription>{existing ? "Adds a menu item that sells this stock item. Type the category, selling price and tax; nothing is filled in for you." : finished ? "Creates a stock item you can produce in this voucher. Stock starts at zero." : "Creates a raw material for this voucher. Stock starts at zero; receive it through a purchase first."}</DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-1.5"><Label htmlFor="va-name">Name</Label><Input id="va-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus required /></div>
+          <div className="flex flex-col gap-1.5"><Label htmlFor="va-name">Name</Label><Input id="va-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus required readOnly={!!existing} /></div>
           <div className="flex flex-col gap-1.5"><Label htmlFor="va-unit">Stock unit</Label>
-            <SearchSelect id="va-unit" value={unit} onChange={(v) => v && setUnit(v as IngredientUnit)} options={UNITS.map((u) => ({ value: u, label: u }))} />
+            <SearchSelect id="va-unit" value={unit} disabled={!!existing} onChange={(v) => v && setUnit(v as IngredientUnit)} options={UNITS.map((u) => ({ value: u, label: u }))} />
           </div>
           {finished && (
             <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
-              <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={onMenu} onChange={(e) => setOnMenu(e.target.checked)} /> Also sell this on the POS menu</label>
+              {!existing && <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={onMenu} onChange={(e) => setOnMenu(e.target.checked)} /> Also sell this on the POS menu</label>}
               {onMenu && (
                 <>
                   <div className="flex flex-col gap-1.5"><Label htmlFor="va-cat">Menu category</Label>
@@ -110,7 +114,7 @@ export function VoucherAddItemDialog({ branchId, kind, open, onOpenChange, onCre
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Adding…" : finished ? "Add finished product" : "Add source item"}</Button>
+            <Button type="submit" disabled={busy}>{busy ? "Adding…" : existing ? "Put on POS menu" : finished ? "Add finished product" : "Add source item"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

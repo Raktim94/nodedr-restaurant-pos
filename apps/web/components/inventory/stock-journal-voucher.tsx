@@ -62,8 +62,19 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const [review, setReview] = useState<VoucherPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Which "Add item" dialog is open, and which voucher row should receive the new item.
-  const [adding, setAdding] = useState<{ kind: "PURCHASED" | "PREPARED"; rowKey: number | null } | null>(null);
+  const [adding, setAdding] = useState<{ kind: "PURCHASED" | "PREPARED"; rowKey: number | null; existingId?: string } | null>(null);
   const key = useRef("");
+  // The control that opened the Add Item dialog, so keyboard focus goes back to it when the dialog closes.
+  const opener = useRef<HTMLElement | null>(null);
+  const openAdding = (next: { kind: "PURCHASED" | "PREPARED"; rowKey: number | null; existingId?: string }) => {
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setAdding(next);
+  };
+  const closeAdding = () => {
+    setAdding(null);
+    const el = opener.current;
+    if (el) setTimeout(() => el.isConnected && el.focus(), 0);
+  };
 
   const byId = useMemo(() => new Map((items ?? []).map((i) => [i.id, i])), [items]);
   const raw = (items ?? []).filter((i) => i.kind === "PURCHASED");
@@ -196,8 +207,10 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
   const inner = (
     <>
         {adding && (
-          <VoucherAddItemDialog branchId={branchId} kind={adding.kind} open onOpenChange={(o) => !o && setAdding(null)}
+          <VoucherAddItemDialog branchId={branchId} kind={adding.kind} open onOpenChange={(o) => !o && closeAdding()}
+            existing={adding.existingId ? (() => { const e = byId.get(adding.existingId!); return e ? { id: e.id, name: e.name, unit: e.unit } : undefined; })() : undefined}
             onCreated={(id) => {
+              if (adding.existingId) return;
               // Put the new item straight into the first empty row, or a new one, so nothing is retyped.
               if (adding.kind === "PREPARED") {
                 const empty = outsRaw.find((r) => !r.ingredientId);
@@ -275,7 +288,7 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                       </tbody>
                     </table>
                     {yieldInfo && <p className="px-1 pt-1 text-xs text-muted-foreground">Against the recipe: <b className={Math.abs(yieldInfo.pct) > 5 ? "text-destructive" : "text-foreground"}>{yieldInfo.pct > 0 ? "+" : ""}{yieldInfo.pct.toFixed(1)}%</b> ingredient use ({yieldInfo.used} of {yieldInfo.expected} expected, same-unit rows). Less is not automatically better; check the quality note.</p>}
-                    <div className="flex items-center justify-between px-1 pt-1"><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add source row</Button><Button type="button" variant="ghost" size="sm" onClick={() => setAdding({ kind: "PURCHASED", rowKey: null })}>New source item…</Button></div>{costed && <span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span>}</div>
+                    <div className="flex items-center justify-between px-1 pt-1"><div className="flex flex-wrap gap-1"><Button type="button" variant="outline" size="sm" onClick={() => setIns([...ins, blankIn()])}>+ Add source row</Button><Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PURCHASED", rowKey: null })}>New source item…</Button></div>{costed && <span className="text-xs text-muted-foreground">Typed rates total <b className="tabular-nums text-foreground">{money(estimate)}</b> (blank rate = average cost)</span>}</div>
                   </div>
                 </section>
 
@@ -291,6 +304,9 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                             <tr key={r.key} className="align-top [&>td]:border-b [&>td]:border-border/60">
                               <td className="p-1">
                                 <ItemCombobox label="Finished product" placeholder="Search products…" items={products} value={r.ingredientId} onChange={(id) => pickOut(r.key, id)} />
+                                {it && it.onMenu === false && (
+                                  <Button type="button" variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => openAdding({ kind: "PREPARED", rowKey: null, existingId: it.id })}>Not on the POS menu yet: put it on the menu…</Button>
+                                )}
                                 <div className="mt-1 grid grid-cols-[minmax(7rem,1fr)_5rem] gap-1">
                                   {placeSelect(r.locationId, (v) => patchOut(r.key, { locationId: v }), "Put into place")}
                                   <Input aria-label="Lot or batch no." className="h-9" placeholder="Lot" value={r.lot} onChange={(e) => patchOut(r.key, { lot: e.target.value })} />
@@ -308,12 +324,12 @@ export function StockJournalVoucher({ branchId, open, onOpenChange, productId, c
                     </table>
                     <div className="flex flex-wrap gap-1 px-1 pt-1">
                       <Button type="button" variant="outline" size="sm" onClick={() => setOuts([...outs, blankOut()])}>+ Add co-product</Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => setAdding({ kind: "PREPARED", rowKey: null })}>New finished product…</Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: null })}>New finished product…</Button>
                     </div>
                     {products.length === 0 && (
                       <div className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
                         <span>No finished products yet.</span>
-                        <Button type="button" size="sm" onClick={() => setAdding({ kind: "PREPARED", rowKey: outs[0]?.key ?? null })}>Add Item</Button>
+                        <Button type="button" size="sm" onClick={() => openAdding({ kind: "PREPARED", rowKey: outs[0]?.key ?? null })}>Add Item</Button>
                       </div>
                     )}
                     <p className="px-1 pt-1 text-xs text-muted-foreground">Good quantity goes into stock. Rejected pieces are only recorded; their cost stays in the batch and is carried by the good pieces.</p>

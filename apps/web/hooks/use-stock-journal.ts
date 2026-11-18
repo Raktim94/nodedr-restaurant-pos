@@ -12,6 +12,8 @@ export interface StockItem {
   category: string | null;
   currentStock: string;
   units: IngredientUnit[];
+  /** True when a POS menu item already sells this stock item (one sale takes stock off it). */
+  onMenu?: boolean;
   /** Weighted-average cost per stock unit; only sent to people who may see production costs. */
   costPerUnit?: string;
 }
