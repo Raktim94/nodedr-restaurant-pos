@@ -493,6 +493,11 @@ export class GatewayPaymentsService {
       const heldForOrder = await tx.gatewayRefund.findMany({
         where: {
           orderId: p.orderId,
+          // Once linked to a local Refund the amount is already in `prior`.
+          // Counting it here as well would report only half the balance after
+          // a successful refund. The per-payment limit below still counts all
+          // rows, since that limits how much this payment can ever refund.
+          refundId: null,
           status: { in: ['PENDING', 'SUCCEEDED', 'NEEDS_REVIEW'] },
           currency: p.currency,
         },
@@ -573,20 +578,26 @@ export class GatewayPaymentsService {
     }
 
     try {
-      const local = await this.orders.refund(branchId, p.orderId, userId, {
-        amount: input.amount,
-        method: 'OTHER',
-        reason: input.reason
-          ? `${input.reason} (via ${adapter.name})`
-          : `Refunded via ${adapter.name}`,
-        returnedItems: input.returnedItems,
-      });
+      await this.orders.refund(
+        branchId,
+        p.orderId,
+        userId,
+        {
+          amount: input.amount,
+          method: 'OTHER',
+          reason: input.reason
+            ? `${input.reason} (via ${adapter.name})`
+            : `Refunded via ${adapter.name}`,
+          returnedItems: input.returnedItems,
+        },
+        undefined,
+        row.id, // OrdersService links the reservation in its own transaction.
+      );
       await this.prisma.gatewayRefund.update({
         where: { id: row.id },
         data: {
           status: 'SUCCEEDED',
           providerRefundId,
-          refundId: (local as { id: string }).id,
           note: null,
         },
       });
@@ -619,8 +630,19 @@ export class GatewayPaymentsService {
 
   /** Refunds that need a person, newest first (shown on Settings > Payments). */
   async refundsNeedingReview(restaurantId: string) {
+    // A PENDING row is committed before the provider call. If the process dies
+    // before the follow-up write, nothing else resolves it, yet it keeps a
+    // hold on the whole order. Surface stale ones for an operator to check in
+    // the provider dashboard; we never auto-release or finalise them here.
+    const staleBefore = new Date(Date.now() - 10 * 60_000);
     const rows = await this.prisma.gatewayRefund.findMany({
-      where: { restaurantId, status: 'NEEDS_REVIEW' },
+      where: {
+        restaurantId,
+        OR: [
+          { status: 'NEEDS_REVIEW' },
+          { status: 'PENDING', createdAt: { lt: staleBefore } },
+        ],
+      },
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
@@ -630,7 +652,10 @@ export class GatewayPaymentsService {
       provider: r.provider,
       amountMinor: r.amountMinor,
       currency: r.currency,
-      note: r.note,
+      note:
+        r.status === 'PENDING'
+          ? 'Stuck before the provider result was recorded. Check the provider dashboard; do not retry here.'
+          : r.note,
       providerRefundId: r.providerRefundId,
       createdAt: r.createdAt,
     }));

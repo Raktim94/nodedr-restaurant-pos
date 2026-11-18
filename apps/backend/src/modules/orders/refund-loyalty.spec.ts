@@ -18,26 +18,28 @@ const svc = () =>
 function tx(over: {
   earn?: number;
   redeem?: number;
-  prior?: { reason: string; delta: number }[];
+  balance?: number;
+  prior?: { reason: string; delta: number; customerId?: string }[];
+  earnCustomer?: string;
+  redeemCustomer?: string;
 }) {
   const updates: any[] = [];
   const ledger: any[] = [];
   const db: any = {
     customer: {
-      findUnique: jest.fn(async () => ({ id: 'c1' })),
-      updateMany: jest.fn(async (a: any) => (updates.push(a), { count: 1 })),
+      findUnique: jest.fn(async () => ({ loyaltyPoints: over.balance ?? 0 })),
       update: jest.fn(async (a: any) => (updates.push(a), {})),
     },
     pointsLedger: {
-      findUnique: jest.fn(async ({ where }: any) =>
-        where.idempotencyKey === 'earn:o1'
-          ? over.earn
-            ? { delta: over.earn }
-            : null
-          : over.redeem
-            ? { delta: -over.redeem }
-            : null,
-      ),
+      findUnique: jest.fn(async ({ where }: any) => {
+        if (where.idempotencyKey === 'earn:o1')
+          return over.earn
+            ? { delta: over.earn, customerId: over.earnCustomer ?? 'c1' }
+            : null;
+        return over.redeem
+          ? { delta: -over.redeem, customerId: over.redeemCustomer ?? 'c1' }
+          : null;
+      }),
       findMany: jest.fn(async () => over.prior ?? []),
       createMany: jest.fn(async (a: any) => (ledger.push(a), { count: a.data.length })),
     },
@@ -56,12 +58,17 @@ const base = {
   pointsRedeemed: 40,
 };
 
+const run = (t: ReturnType<typeof tx>, over: Partial<typeof base> = {}) =>
+  (svc() as any).reverseRefundPoints(t.db, { ...base, ...over });
+
 describe('refund loyalty reversal', () => {
   it('reverses earned points and restores redeemed points on a full refund', async () => {
-    const t = tx({ earn: 100, redeem: 40 });
-    await (svc() as any).reverseRefundPoints(t.db, base);
-    expect(t.updates[0].data.loyaltyPoints).toEqual({ decrement: 100 });
-    expect(t.updates[1].data.loyaltyPoints).toEqual({ increment: 40 });
+    const t = tx({ earn: 100, redeem: 40, balance: 200 });
+    await run(t);
+    expect(t.updates.map((u) => u.data.loyaltyPoints)).toEqual([
+      { increment: 40 },
+      { decrement: 100 },
+    ]);
     expect(t.ledger[0].data.map((r: any) => [r.reason, r.delta])).toEqual([
       ['REFUND_EARN_REVERSAL', -100],
       ['REFUND_REDEEM_RESTORATION', 40],
@@ -69,35 +76,77 @@ describe('refund loyalty reversal', () => {
     expect(t.ledger[0].data[0].idempotencyKey).toBe('refund:r1:earn');
   });
 
-  it('prorates a partial refund without reversing more than was earned', async () => {
-    const first = tx({ earn: 100 });
-    await (svc() as any).reverseRefundPoints(first.db, {
-      ...base,
-      refundId: 'r1',
-      refundAmount: 100,
-    });
-    expect(first.updates[0].data.loyaltyPoints).toEqual({ decrement: 50 });
+  it('prorates successive partial refunds without exceeding the original points', async () => {
+    const first = tx({ earn: 100, redeem: 40, balance: 200 });
+    await run(first, { refundId: 'r1', refundAmount: 100 });
+    expect(first.updates.map((u) => u.data.loyaltyPoints)).toEqual([
+      { increment: 20 },
+      { decrement: 50 },
+    ]);
 
-    // Second half: cumulative 100% earned, minus the 50 already reversed.
+    // The second half sees both ledger rows written by the first call.
     const second = tx({
       earn: 100,
-      prior: [{ reason: 'REFUND_EARN_REVERSAL', delta: -50 }],
+      redeem: 40,
+      balance: 170,
+      prior: [
+        { reason: 'REFUND_EARN_REVERSAL', delta: -50 },
+        { reason: 'REFUND_REDEEM_RESTORATION', delta: 20 },
+      ],
     });
-    await (svc() as any).reverseRefundPoints(second.db, {
-      ...base,
+    await run(second, {
       refundId: 'r2',
       refundAmount: 100,
       alreadyRefunded: 100,
     });
-    expect(second.updates[0].data.loyaltyPoints).toEqual({ decrement: 50 });
+    expect(second.updates.map((u) => u.data.loyaltyPoints)).toEqual([
+      { increment: 20 },
+      { decrement: 50 },
+    ]);
+  });
+
+  it('uses integer cents so a 0.10 + 0.70 refund reaches the full boundary', async () => {
+    const t = tx({
+      earn: 10,
+      balance: 50,
+      prior: [{ reason: 'REFUND_EARN_REVERSAL', delta: -1 }],
+    });
+    await run(t, {
+      refundId: 'r2',
+      refundAmount: 0.7,
+      totalAmount: 0.8,
+      alreadyRefunded: 0.1,
+      pointsRedeemed: 0,
+    });
+    expect(t.updates[0].data.loyaltyPoints).toEqual({ decrement: 9 });
+  });
+
+  it('lets restored points cover an earn reversal on the same customer', async () => {
+    const t = tx({ earn: 10, redeem: 40, balance: 0 });
+    await run(t, {
+      refundAmount: 200,
+      totalAmount: 200,
+      pointsRedeemed: 40,
+    });
+    expect(t.updates.map((u) => u.data.loyaltyPoints)).toEqual([
+      { increment: 40 },
+      { decrement: 10 },
+    ]);
+    expect(t.ledger[0].data.some((r: any) => r.reason === 'REFUND_EARN_REVERSAL_PENDING')).toBe(false);
+  });
+
+  it('records an uncollectable reversal instead of failing the refund', async () => {
+    const t = tx({ earn: 100, balance: 0 });
+    await expect(run(t, { refundAmount: 200, totalAmount: 200, pointsRedeemed: 0 })).resolves.toBeUndefined();
+    expect(t.updates).toHaveLength(0);
+    expect(t.ledger[0].data).toEqual([
+      expect.objectContaining({ reason: 'REFUND_EARN_REVERSAL_PENDING', delta: -100 }),
+    ]);
   });
 
   it('does nothing for a customer with no loyalty history on the order', async () => {
-    const t = tx({});
-    await (svc() as any).reverseRefundPoints(t.db, {
-      ...base,
-      pointsRedeemed: 0,
-    });
+    const t = tx({ balance: 50 });
+    await run(t, { pointsRedeemed: 0 });
     expect(t.updates).toHaveLength(0);
     expect(t.ledger).toHaveLength(0);
   });

@@ -50,6 +50,7 @@ import {
 } from '../../common/online-price';
 import { ReferralsService } from '../referrals/referrals.service';
 import { VerifactuService } from '../verifactu/verifactu.service';
+import { fromMinor } from '../../payment-gateways/money';
 
 const KOT_FORWARD_STATUSES = [
   'ACCEPTED',
@@ -1981,8 +1982,10 @@ export class OrdersService {
    * Points earned and redeemed on an order follow the money. A full refund
    * returns every point; a partial refund returns the proportion that was
    * refunded. Reversals are prorated against the *cumulative* refunded amount
-   * so several partial refunds cannot each round up to more than the original
-   * earn, and are keyed by refund id so a replayed request is a no-op.
+   * in integer cents, so several partial refunds cannot each round up to more
+   * than the original earn. Each ledger row is keyed by refund id so a replay
+   * is a no-op, and an uncollectable reversal is recorded as pending instead of
+   * failing the monetary refund (the points may already have been spent).
    */
   private async reverseRefundPoints(
     tx: Prisma.TransactionClient,
@@ -1997,13 +2000,6 @@ export class OrdersService {
       pointsRedeemed: number;
     },
   ) {
-    if (!a.customerId) return;
-    const customer = await tx.customer.findUnique({
-      where: { id: a.customerId },
-      select: { id: true },
-    });
-    if (!customer) return;
-
     const [earn, redeem, prior] = await Promise.all([
       tx.pointsLedger.findUnique({
         where: { idempotencyKey: `earn:${a.orderId}` },
@@ -2015,7 +2011,11 @@ export class OrdersService {
         where: {
           orderId: a.orderId,
           reason: {
-            in: ['REFUND_EARN_REVERSAL', 'REFUND_REDEEM_RESTORATION'],
+            in: [
+              'REFUND_EARN_REVERSAL',
+              'REFUND_EARN_REVERSAL_PENDING',
+              'REFUND_REDEEM_RESTORATION',
+            ],
           },
         },
         select: { reason: true, delta: true },
@@ -2024,59 +2024,106 @@ export class OrdersService {
     const earned = Math.max(earn?.delta ?? 0, 0);
     const redeemed = Math.max(a.pointsRedeemed, -(redeem?.delta ?? 0));
     if (!earned && !redeemed) return;
+    // Use the customer recorded on the original ledger rows: updateOrder can
+    // change the order's customer between validation and a later refund.
+    const earnCustomer = earn?.customerId ?? a.customerId;
+    const redeemCustomer = redeem?.customerId ?? a.customerId;
+    if (!earnCustomer && !redeemCustomer) return;
 
     const priorReversedEarn = prior
-      .filter((r) => r.reason === 'REFUND_EARN_REVERSAL')
+      .filter((r) =>
+        ['REFUND_EARN_REVERSAL', 'REFUND_EARN_REVERSAL_PENDING'].includes(
+          r.reason,
+        ),
+      )
       .reduce((n, r) => n - r.delta, 0);
     const priorRestoredRedeem = prior
       .filter((r) => r.reason === 'REFUND_REDEEM_RESTORATION')
       .reduce((n, r) => n + r.delta, 0);
-    const refundedShare = Math.min(
-      1,
-      (a.alreadyRefunded + a.refundAmount) / Math.max(a.totalAmount, 0.01),
+    const totalCents = Math.round(a.totalAmount * 100);
+    const refundedCents = Math.round(
+      (a.alreadyRefunded + a.refundAmount) * 100,
     );
+    const share =
+      totalCents <= 0 ? 1 : Math.min(1, refundedCents / totalCents);
     const reverseEarn = Math.max(
       0,
-      Math.floor(earned * refundedShare) - priorReversedEarn,
+      Math.floor(earned * share) - priorReversedEarn,
     );
     const restoreRedeem = Math.max(
       0,
-      Math.floor(redeemed * refundedShare) - priorRestoredRedeem,
+      Math.floor(redeemed * share) - priorRestoredRedeem,
     );
     if (!reverseEarn && !restoreRedeem) return;
 
-    if (reverseEarn > 0) {
-      const changed = await tx.customer.updateMany({
-        where: { id: a.customerId, loyaltyPoints: { gte: reverseEarn } },
-        data: { loyaltyPoints: { decrement: reverseEarn } },
-      });
-      if (changed.count === 0) {
-        throw new ConflictException(
-          'The customer loyalty balance changed while the refund was being recorded',
-        );
+    const balances = new Map<string, number>();
+    const balanceFor = async (id: string) => {
+      if (!balances.has(id)) {
+        const c = await tx.customer.findUnique({
+          where: { id },
+          select: { loyaltyPoints: true },
+        });
+        balances.set(id, c ? Number(c.loyaltyPoints) : NaN);
       }
-    }
-    if (restoreRedeem > 0) {
+      return balances.get(id) as number;
+    };
+    const credit = async (id: string | null, amount: number) => {
+      if (!id || amount <= 0) return;
+      const bal = await balanceFor(id);
+      if (Number.isNaN(bal)) return;
       await tx.customer.update({
-        where: { id: a.customerId },
-        data: { loyaltyPoints: { increment: restoreRedeem } },
+        where: { id },
+        data: { loyaltyPoints: { increment: amount } },
       });
-    }
+      balances.set(id, bal + amount);
+    };
+    const debit = async (id: string | null, amount: number) => {
+      if (!id || amount <= 0) return 0;
+      const bal = await balanceFor(id);
+      if (Number.isNaN(bal)) return 0;
+      const taken = Math.min(amount, Math.max(0, bal));
+      if (taken > 0) {
+        await tx.customer.update({
+          where: { id },
+          data: { loyaltyPoints: { decrement: taken } },
+        });
+        balances.set(id, bal - taken);
+      }
+      return taken;
+    };
+
+    // Credit restored points first: if the same customer earned and redeemed
+    // on this order, the restoration can cover the earn reversal.
+    await credit(redeemCustomer, restoreRedeem);
+    const collected = await debit(earnCustomer, reverseEarn);
+    const shortfall = reverseEarn - collected;
+
     const rows: Prisma.PointsLedgerCreateManyInput[] = [];
-    if (reverseEarn > 0) {
+    if (collected > 0) {
       rows.push({
         branchId: a.branchId,
-        customerId: a.customerId,
-        delta: -reverseEarn,
+        customerId: earnCustomer as string,
+        delta: -collected,
         reason: 'REFUND_EARN_REVERSAL',
         orderId: a.orderId,
         idempotencyKey: `refund:${a.refundId}:earn`,
       });
     }
+    if (shortfall > 0) {
+      // Records the debt without touching the balance or blocking the refund.
+      rows.push({
+        branchId: a.branchId,
+        customerId: earnCustomer as string,
+        delta: -shortfall,
+        reason: 'REFUND_EARN_REVERSAL_PENDING',
+        orderId: a.orderId,
+        idempotencyKey: `refund:${a.refundId}:earn-pending`,
+      });
+    }
     if (restoreRedeem > 0) {
       rows.push({
         branchId: a.branchId,
-        customerId: a.customerId,
+        customerId: redeemCustomer as string,
         delta: restoreRedeem,
         reason: 'REFUND_REDEEM_RESTORATION',
         orderId: a.orderId,
@@ -2095,6 +2142,8 @@ export class OrdersService {
     dto: RefundDto,
     /** A phone's event id: stored on the refund, so the same refund sent twice is refused by the unique index. */
     clientRequestId?: string,
+    /** Gateway reservation being finalized: excluded from the hold total and linked atomically below. */
+    excludeReservationId?: string,
   ) {
     // The REST route validates this with a schema, but other callers (the MCP tools) reach this method directly:
     // a zero or negative "refund" would be stored as a ledger entry and raise what can still be refunded.
@@ -2126,7 +2175,31 @@ export class OrdersService {
       const alreadyRefunded = round2(
         refunds.reduce((sum, r) => sum + Number(r.amount), 0),
       );
-      const refundable = round2(Number(order.totalAmount) - alreadyRefunded);
+      // A gateway refund reserves its amount before the provider is called.
+      // Standalone cash/store-credit refunds must respect that hold too, or
+      // both channels can pay out while the provider call is still in flight.
+      // Rows already linked to a local Refund are recorded in `refunds` above,
+      // so only unlinked reservations are counted here.
+      const reservations = await tx.gatewayRefund.findMany({
+        where: {
+          orderId,
+          refundId: null,
+          status: { in: ['PENDING', 'SUCCEEDED', 'NEEDS_REVIEW'] },
+          ...(excludeReservationId
+            ? { id: { not: excludeReservationId } }
+            : {}),
+        },
+        select: { amountMinor: true, currency: true },
+      });
+      const held = round2(
+        reservations.reduce(
+          (sum, r) => sum + fromMinor(r.amountMinor, r.currency),
+          0,
+        ),
+      );
+      const refundable = round2(
+        Number(order.totalAmount) - alreadyRefunded - held,
+      );
       if (dto.amount > refundable) {
         throw new BadRequestException(
           `Cannot refund ${dto.amount} — only ${refundable} remains refundable on this order`,
@@ -2143,6 +2216,15 @@ export class OrdersService {
           ...(clientRequestId ? { clientRequestId } : {}),
         },
       });
+      if (excludeReservationId) {
+        // Consume the gateway hold in this same transaction. If the link write
+        // later failed outside it, the hold would be counted twice (local
+        // Refund + still-unlinked gateway row) and block future refunds.
+        await tx.gatewayRefund.update({
+          where: { id: excludeReservationId },
+          data: { refundId: created.id },
+        });
+      }
       await this.verifactu.recordRefund(tx, orderId, created.id, dto.amount);
       await this.reverseRefundPoints(tx, {
         branchId,
