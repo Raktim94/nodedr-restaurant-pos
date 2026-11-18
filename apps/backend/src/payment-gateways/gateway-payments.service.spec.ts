@@ -66,6 +66,7 @@ function setup(over: Partial<Row> = {}) {
       }),
     },
   };
+  prisma.payment = { findFirst: jest.fn(async () => null) };
   const gateways: any = {
     context: jest.fn(() => ({ mode: pay.mode, credentials: {} })),
   };
@@ -222,6 +223,41 @@ describe('webhooks', () => {
       'db down',
     );
     expect(prisma.gatewayWebhookEvent.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('interrupted settlement', () => {
+  it('finalizes a claimed payment whose local Payment already exists', async () => {
+    const { svc, pay, prisma } = setup();
+    pay.appliedAt = new Date();
+    pay.status = 'CREATED';
+    prisma.gatewayPayment.updateMany.mockResolvedValue({ count: 0 });
+    prisma.payment.findFirst.mockResolvedValue({ id: 'local_payment' });
+    await (svc as any).apply(pay, 'pay_9');
+    expect(prisma.payment.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { orderId: 'o1', clientRequestId: 'gp1' },
+      }),
+    );
+    expect(prisma.gatewayPayment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'gp1' },
+        data: expect.objectContaining({ status: 'SUCCEEDED' }),
+      }),
+    );
+  });
+
+  it('flags a claimed payment with no local Payment for review', async () => {
+    const { svc, pay, prisma } = setup();
+    pay.appliedAt = new Date();
+    pay.status = 'CREATED';
+    prisma.gatewayPayment.updateMany.mockResolvedValue({ count: 0 });
+    await (svc as any).apply(pay, 'pay_9');
+    expect(prisma.gatewayPayment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'NEEDS_REVIEW' }),
+      }),
+    );
   });
 });
 

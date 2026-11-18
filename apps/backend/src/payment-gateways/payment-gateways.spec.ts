@@ -109,16 +109,19 @@ describe('Razorpay webhook verification', () => {
   const ctx = { mode: 'TEST' as const, credentials: { webhookSecret: secret } };
   const body =
     '{"event":"payment_link.paid","payload":{"payment_link":{"entity":{"id":"plink_1"}}}}';
-  it('verifies the raw body and uses the event id header', () => {
+  it('verifies the raw body and derives a dedup id from signed bytes', () => {
     const r = razorpayAdapter.verifyWebhook(
       ctx,
       {
         'x-razorpay-signature': hex(secret, body),
-        'x-razorpay-event-id': 'ev_9',
+        'x-razorpay-event-id': 'ev_9', // unsigned header must not control dedup
       },
       body,
     );
-    expect(r).toEqual({ eventId: 'ev_9', providerRef: 'plink_1' });
+    expect(r).toEqual({
+      eventId: createHash('sha256').update(body).digest('hex'),
+      providerRef: 'plink_1',
+    });
   });
   it('fails if even whitespace changes', () => {
     expect(() =>
@@ -142,7 +145,7 @@ describe('Cashfree webhook verification', () => {
   const body =
     '{"data":{"link_id":"abc123","link_status":"PAID"},"type":"PAYMENT_LINK_EVENT"}';
   it('verifies base64(HMAC(timestamp+body))', () => {
-    const ts = '1700000000000';
+    const ts = String(Date.now());
     const r = cashfreeAdapter.verifyWebhook(
       ctx,
       {
@@ -157,6 +160,19 @@ describe('Cashfree webhook verification', () => {
         .update(ts + body)
         .digest('hex'),
     );
+  });
+  it('rejects a validly signed but stale timestamp (replay)', () => {
+    const ts = String(Date.now() - 10 * 60_000);
+    expect(() =>
+      cashfreeAdapter.verifyWebhook(
+        ctx,
+        {
+          'x-webhook-signature': b64(secret, ts + body),
+          'x-webhook-timestamp': ts,
+        },
+        body,
+      ),
+    ).toThrow(/timestamp/);
   });
   it('rejects bad signature or missing timestamp', () => {
     expect(() =>

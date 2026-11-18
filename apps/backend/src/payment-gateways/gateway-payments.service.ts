@@ -292,9 +292,33 @@ export class GatewayPaymentsService {
       data: { appliedAt: new Date(), providerPaymentId },
     });
     if (claimed.count === 0) {
-      return this.prisma.gatewayPayment.findUniqueOrThrow({
+      const current = await this.prisma.gatewayPayment.findUniqueOrThrow({
         where: { id: p.id },
       });
+      if (current.appliedAt && current.status !== 'SUCCEEDED') {
+        // The crash window: another caller (or an earlier process) claimed the
+        // payment, checkout committed, but the final status write never ran.
+        // Check for the local Payment that checkout creates with our id as its
+        // requestId, then finalize or flag it. Never silently return CREATED.
+        const settled = await this.prisma.payment.findFirst({
+          where: { orderId: current.orderId, clientRequestId: current.id },
+          select: { id: true },
+        });
+        if (settled) {
+          return this.prisma.gatewayPayment.update({
+            where: { id: current.id },
+            data: { status: 'SUCCEEDED', note: null },
+          });
+        }
+        return this.prisma.gatewayPayment.update({
+          where: { id: current.id },
+          data: {
+            status: 'NEEDS_REVIEW',
+            note: 'Payment was claimed but no local payment was recorded. Check the provider before retrying.',
+          },
+        });
+      }
+      return current;
     }
     try {
       await this.orders.checkout(p.branchId, p.orderId, p.createdById, {
