@@ -52,20 +52,40 @@ export class StockService {
       void (async () => {
         const ing = await this.prisma.ingredient.findFirst({
           where: { id: ingredientId, branchId },
-          select: { name: true, unit: true, currentStock: true, reorderLevel: true },
+          select: {
+            name: true,
+            unit: true,
+            currentStock: true,
+            reorderLevel: true,
+          },
         });
-        if (!ing || Dec(ing.reorderLevel).lte(0) || Dec(ing.currentStock).gt(ing.reorderLevel)) return;
-        if (Date.now() - (this.lowStockAlerted.get(ingredientId) ?? 0) < 6 * 3600_000) return;
+        if (
+          !ing ||
+          Dec(ing.reorderLevel).lte(0) ||
+          Dec(ing.currentStock).gt(ing.reorderLevel)
+        )
+          return;
+        if (
+          Date.now() - (this.lowStockAlerted.get(ingredientId) ?? 0) <
+          6 * 3600_000
+        )
+          return;
         this.lowStockAlerted.set(ingredientId, Date.now());
         const unit = String(ing.unit).toLowerCase();
-        await this.notifications!.notifyByPermission(branchId, 'inventory.manage', {
-          type: 'stock.low',
-          title: `Low stock: ${ing.name}`,
-          body: `${Dec(ing.currentStock).toDecimalPlaces(3).toString()} ${unit} left (reorder level ${Dec(ing.reorderLevel).toString()} ${unit}).`,
-          entity: 'Ingredient',
-          entityId: ingredientId,
-        });
-      })().catch((e: Error) => this.log.warn(`Low-stock alert failed: ${e.message}`));
+        await this.notifications!.notifyByPermission(
+          branchId,
+          'inventory.manage',
+          {
+            type: 'stock.low',
+            title: `Low stock: ${ing.name}`,
+            body: `${Dec(ing.currentStock).toDecimalPlaces(3).toString()} ${unit} left (reorder level ${Dec(ing.reorderLevel).toString()} ${unit}).`,
+            entity: 'Ingredient',
+            entityId: ingredientId,
+          },
+        );
+      })().catch((e: Error) =>
+        this.log.warn(`Low-stock alert failed: ${e.message}`),
+      );
     }, 2_000).unref?.();
   }
 
@@ -217,7 +237,11 @@ export class StockService {
       data: { currentStock: after },
     });
     const level = Dec(ingredient.reorderLevel);
-    if (level.gt(0) && Dec(ingredient.currentStock).gt(level) && after.lte(level)) {
+    if (
+      level.gt(0) &&
+      Dec(ingredient.currentStock).gt(level) &&
+      after.lte(level)
+    ) {
       this.scheduleLowStockAlert(branchId, ingredientId);
     }
 

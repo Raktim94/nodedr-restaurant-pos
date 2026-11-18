@@ -638,7 +638,11 @@ export class StockJournalController {
     const showCost = permissionSatisfied(u.permissions, 'production.report');
     // Which stock items already have a POS menu entry that sells them (so the voucher offers "Put on POS menu" only for the rest).
     const sold = await this.prisma.menuItem.findMany({
-      where: { branchId, inventoryTracking: 'DIRECT', stockIngredientId: { not: null } },
+      where: {
+        branchId,
+        inventoryTracking: 'DIRECT',
+        stockIngredientId: { not: null },
+      },
       select: { stockIngredientId: true },
     });
     const onMenu = new Set(sold.map((m) => m.stockIngredientId));
