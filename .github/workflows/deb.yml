@@ -30,10 +30,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with: { fetch-depth: 0 } # need tags to pick the latest release
       - name: Build both architectures
         run: |
           VERSION="${{ github.event.inputs.version }}"; VERSION="${VERSION#v}"
-          [ -n "$VERSION" ] || VERSION="1.10.0"
+          [ -n "$VERSION" ] || VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
           packaging/deb/build.sh "$VERSION"
           for f in dist/*.deb; do dpkg-deb -I "$f" | head -12; done
       - name: Scripts parse

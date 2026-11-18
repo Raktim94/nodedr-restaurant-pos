@@ -88,6 +88,9 @@ services:
       - "4000"
     volumes:
       - uploads_data:/data/uploads
+      # The backend persists an auto-generated JWT secret here on first boot.
+      # Without a volume, recreating the container silently logs everyone out.
+      - state:/data/state
       # Direct-USB thermal printing (see apps/backend/src/modules/orders/
       # escpos-usb.ts, ported from nodedr-pos's real hardware-verified
       # transport) needs the backend to see the host's USB device nodes.
@@ -152,3 +155,4 @@ services:
 volumes:
   pg_data:
   uploads_data:
+  state:
