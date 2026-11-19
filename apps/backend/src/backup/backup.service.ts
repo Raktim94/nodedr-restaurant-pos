@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as fs from 'node:fs/promises';
 import * as fsSync from 'node:fs';
+import { createReadStream } from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { Readable } from 'node:stream';
@@ -33,6 +34,12 @@ import { uploadsDir } from '../common/upload/image-upload.config';
 
 const execFileAsync = promisify(execFile);
 const CONFIG_ID = 'singleton';
+
+async function sha256File(file: string): Promise<string> {
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(file)) hash.update(chunk);
+  return hash.digest('hex');
+}
 
 interface EffectiveConfig {
   endpoint: string;
@@ -660,6 +667,15 @@ export class BackupService {
 
     try {
       await this.downloadTo(s3, config.bucket, record.s3KeyDb, dbDumpPath);
+      // The backup hash was verified at creation time, but the object can have
+      // been replaced or corrupted since. Check the bytes we are about to
+      // feed to pg_restore, before any destructive database operation.
+      const actualHash = await sha256File(dbDumpPath);
+      if (!record.sha256 || actualHash !== record.sha256) {
+        throw new BadRequestException(
+          'The stored database backup failed its checksum. Nothing was restored.',
+        );
+      }
       // Fetch and vet the uploads archive BEFORE the database is touched: a hostile or damaged archive then fails the
       // restore early, with nothing changed (see safe-tar.ts).
       if (record.s3KeyUploads) {
@@ -678,6 +694,10 @@ export class BackupService {
         '--clean',
         '--if-exists',
         '--no-owner',
+        // A failure part-way through a plain --clean restore would leave the
+        // shared instance half-dropped. Do it all in one transaction.
+        '--single-transaction',
+        '--exit-on-error',
         '--dbname',
         process.env.DATABASE_URL!,
         dbDumpPath,
