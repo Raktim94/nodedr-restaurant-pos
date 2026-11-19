@@ -27,6 +27,7 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 
 <p align="center">
   <a href="https://orderrestro.nodedr.com/"><img src="https://img.shields.io/badge/Go%20to%20the%20OrderRestro%20website-orderrestro.nodedr.com-E0234E?style=for-the-badge" alt="Go to the OrderRestro website"></a>
+  <a href="https://play.google.com/store/apps/details?id=com.nodedr.orderrestro&pcampaignid=web_share"><img src="https://img.shields.io/badge/Get%20it%20on-Google%20Play-3DDC84?style=for-the-badge&logo=googleplay&logoColor=white" alt="Get OrderRestro on Google Play"></a>
 </p>
 
 <p align="center">
