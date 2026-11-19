@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { QueryError } from "@/components/ui/query-error";
 import {
   useDisableSync,
   useEnableSync,
@@ -21,7 +22,7 @@ import { ApiError } from "@/lib/api";
 const errMsg = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback);
 
 export default function SyncSettingsPage() {
-  const { data, isLoading } = useSyncStatus();
+  const { data, isLoading, isError, error, refetch, isFetching } = useSyncStatus();
   const test = useTestSync();
   const enable = useEnableSync();
   const syncNow = useSyncNow();
@@ -65,7 +66,9 @@ export default function SyncSettingsPage() {
           </p>
         </div>
 
-        {isLoading || !data ? (
+        {isError ? (
+          <QueryError error={error} what="sync status" onRetry={() => void refetch()} retrying={isFetching} />
+        ) : isLoading || !data ? (
           <Skeleton className="h-24 w-full" />
         ) : data.role === "server" ? (
           <p className="text-sm text-muted-foreground">

@@ -1,7 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
 import type { KioskMenuItem } from "@/lib/kiosk-api";
 import { cn } from "@/lib/utils";
@@ -27,6 +27,35 @@ export function ModifierSheet({
   onConfirm: (choice: ModifierChoice) => void;
 }) {
   const { t } = useI18n();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    dialog?.querySelector<HTMLElement>("button, [tabindex]:not([tabindex='-1'])")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+      if (e.key !== "Tab" || !dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>("button:not([disabled]), [tabindex]:not([tabindex='-1'])")];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previous?.focus();
+    };
+  }, [onCancel]);
   const groups = item.modifierGroups.map((g) => g.modifierGroup);
   const [selected, setSelected] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(
@@ -69,6 +98,7 @@ export function ModifierSheet({
 
   return (
     <div
+      ref={dialogRef}
       className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6"
       role="dialog"
       aria-modal="true"

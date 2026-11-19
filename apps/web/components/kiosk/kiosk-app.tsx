@@ -282,9 +282,38 @@ export function KioskApp({ token }: { token: string }) {
   );
 }
 
-function Overlay({ children }: { children: React.ReactNode }) {
+function Overlay({ children, onEscape }: { children: React.ReactNode; onEscape?: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = ref.current;
+    dialog?.querySelector<HTMLElement>("button, [tabindex]:not([tabindex='-1'])")?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && onEscape) {
+        e.preventDefault();
+        onEscape();
+      }
+      if (e.key !== "Tab" || !dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>("button:not([disabled]), [tabindex]:not([tabindex='-1'])")];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previous?.focus();
+    };
+  }, [onEscape]);
   return (
-    <div role="alertdialog" aria-modal="true" className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 p-6">
+    <div ref={ref} role="alertdialog" aria-modal="true" className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 p-6">
       <div className="flex w-full max-w-[40rem] flex-col gap-5 rounded-3xl bg-card p-8 text-center shadow-2xl">
         {children}
       </div>
