@@ -25,6 +25,8 @@ import { PaymentGatewaysService } from './payment-gateways.service';
 const REUSE_WINDOW_MS = 30 * 60_000;
 // The public return page may be refreshed; never hit the provider more than once in this window per payment.
 const MIN_REFRESH_GAP_MS = 2_000;
+// A claim younger than this is assumed to still have a live checkout owner.
+const RECOVERY_ABANDONED_MS = 2 * 60_000;
 
 export class WebhookRejected extends Error {}
 
@@ -292,9 +294,62 @@ export class GatewayPaymentsService {
       data: { appliedAt: new Date(), providerPaymentId },
     });
     if (claimed.count === 0) {
-      return this.prisma.gatewayPayment.findUniqueOrThrow({
+      const current = await this.prisma.gatewayPayment.findUniqueOrThrow({
         where: { id: p.id },
       });
+      if (current.appliedAt && current.status !== 'SUCCEEDED') {
+        // The crash window: another caller (or an earlier process) claimed the
+        // payment, checkout committed, but the final status write never ran.
+        // Check for the local Payment that checkout creates with our id as its
+        // requestId, then finalize or flag it. Never silently return CREATED.
+        const settled = await this.prisma.payment.findFirst({
+          where: { orderId: current.orderId, clientRequestId: current.id },
+          select: { id: true },
+        });
+        if (settled) {
+          // Checkout committed before the kitchen release ran. Release now;
+          // this is a no-op if the original owner already did it.
+          try {
+            await this.orders.releaseHeldOrder(
+              current.branchId,
+              current.orderId,
+            );
+          } catch (e) {
+            this.logger.error(
+              `Could not release order ${current.orderId} during recovery: ${(e as Error).message}`,
+            );
+          }
+          return this.prisma.gatewayPayment.update({
+            where: { id: current.id },
+            data: { status: 'SUCCEEDED', note: null },
+          });
+        }
+        // A second confirmation can arrive while the claim owner is still in
+        // checkout. Give it time to commit before calling the claim abandoned.
+        if (
+          current.appliedAt &&
+          Date.now() - current.appliedAt.getTime() < RECOVERY_ABANDONED_MS
+        ) {
+          return current;
+        }
+        // Conditional: the owner may have committed checkout (and written
+        // SUCCEEDED) while we were looking. Never overwrite that result.
+        await this.prisma.gatewayPayment.updateMany({
+          where: {
+            id: current.id,
+            appliedAt: current.appliedAt,
+            status: { in: ['CREATED', 'NEEDS_REVIEW'] },
+          },
+          data: {
+            status: 'NEEDS_REVIEW',
+            note: 'Payment was claimed but no local payment was recorded. Check the provider before retrying.',
+          },
+        });
+        return this.prisma.gatewayPayment.findUniqueOrThrow({
+          where: { id: current.id },
+        });
+      }
+      return current;
     }
     try {
       await this.orders.checkout(p.branchId, p.orderId, p.createdById, {
@@ -376,6 +431,17 @@ export class GatewayPaymentsService {
       throw new WebhookRejected();
     }
 
+    // Only the signed-body hash is trusted for dedup. The legacy header is
+    // not covered by the provider's HMAC, so a holder of a valid signed body
+    // could pair it with an arbitrary old id and suppress a real event. A
+    // legacy-only match therefore still runs refresh; both keys are recorded
+    // afterwards so later deliveries of the same body hash dedupe normally.
+    const keys = [
+      verified.eventId,
+      ...(verified.legacyEventId && verified.legacyEventId !== verified.eventId
+        ? [verified.legacyEventId]
+        : []),
+    ];
     const seen = await this.prisma.gatewayWebhookEvent.findUnique({
       where: {
         provider_mode_eventId: { provider, mode, eventId: verified.eventId },
@@ -400,7 +466,10 @@ export class GatewayPaymentsService {
     }
     // Recorded only after successful handling, so a failure is retried by the provider.
     await this.prisma.gatewayWebhookEvent
-      .create({ data: { provider, mode, eventId: verified.eventId } })
+      .createMany({
+        data: keys.map((eventId) => ({ provider, mode, eventId })),
+        skipDuplicates: true,
+      })
       .catch(() => undefined);
     return { duplicate: false };
   }
@@ -685,8 +754,15 @@ export class GatewayPaymentsService {
 
   /** Everything the payer-facing return page may learn: a status word, nothing else. */
   async publicStatus(id: string) {
-    const p = await this.refresh(id).catch(() => null);
-    if (!p) throw new NotFoundException('Payment not found');
+    // Distinguish "no such payment" from a failure during settlement
+    // recovery: the return page should retry operational errors, not tell the
+    // customer their payment vanished.
+    const exists = await this.prisma.gatewayPayment.findFirst({
+      where: { id },
+      select: { id: true },
+    });
+    if (!exists) throw new NotFoundException('Payment not found');
+    const p = await this.refresh(id);
     return { status: p.status, test: p.mode === 'TEST' };
   }
 

@@ -56,6 +56,12 @@ export interface RemoteStatus {
 export interface VerifiedWebhook {
   /** Unique per provider event, for duplicate suppression. */
   eventId: string;
+  /**
+   * A provider-supplied id that older deployments used as the dedup key. It
+   * is untrusted, so it is only used to recognise events recorded before we
+   * switched to signed-body hashes — never as the primary key.
+   */
+  legacyEventId?: string | null;
   /** The hosted checkout this event is about, or null if it is not about one. */
   providerRef: string | null;
 }

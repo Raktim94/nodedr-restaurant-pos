@@ -31,7 +31,7 @@ interface RzpLink {
   amount_paid: number;
   currency: string;
   reference_id?: string | null;
-  payments?: { payment_id?: string; status?: string }[] | null;
+  payments?: { payment_id?: string; status?: string; amount?: number }[] | null;
 }
 
 export const razorpayAdapter: PaymentGatewayAdapter = {
@@ -132,8 +132,17 @@ export const razorpayAdapter: PaymentGatewayAdapter = {
       requestedMinor: l.amount,
       currency: (l.currency ?? '').toUpperCase(),
       reference: l.reference_id ?? null,
+      // A link can carry several attempts (a declined card, then a successful
+      // UPI). Refunds must target the captured one, not the first attempt.
       providerPaymentId:
-        l.payments?.find((p) => p.payment_id)?.payment_id ?? null,
+        state === 'PAID'
+          ? (l.payments?.find((p) => p.status === 'captured' && p.payment_id)
+              ?.payment_id ??
+            l.payments?.find(
+              (p) => p.payment_id && p.amount === l.amount_paid,
+            )?.payment_id ??
+            null)
+          : null,
     };
   },
 
@@ -176,9 +185,11 @@ export const razorpayAdapter: PaymentGatewayAdapter = {
       payload?: { payment_link?: { entity?: { id?: string } } };
     };
     return {
-      eventId:
-        headers['x-razorpay-event-id'] ??
-        createHash('sha256').update(rawBody).digest('hex'),
+      // The event-id header is not covered by Razorpay's HMAC (which is over
+      // the raw body), so an attacker replaying a captured delivery could
+      // choose a fresh id and defeat dedup. Derive it from signed bytes.
+      eventId: createHash('sha256').update(rawBody).digest('hex'),
+      legacyEventId: headers['x-razorpay-event-id'] ?? null,
       providerRef: ev.event?.startsWith('payment_link.')
         ? (ev.payload?.payment_link?.entity?.id ?? null)
         : null,

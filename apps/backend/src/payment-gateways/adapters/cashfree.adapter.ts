@@ -18,6 +18,7 @@ import { hmacBase64, safeEqual } from './signature';
 //   https://www.cashfree.com/docs/api-reference/payments/latest/payment-links/webhooks
 // Sandbox and production are different hosts, chosen by the mode.
 const API_VERSION = '2026-01-01';
+const WEBHOOK_TOLERANCE_SECONDS = 300;
 const base = (c: GatewayContext) =>
   c.mode === 'TEST'
     ? 'https://sandbox.cashfree.com/pg'
@@ -152,6 +153,16 @@ export const cashfreeAdapter: PaymentGatewayAdapter = {
     // Base64(HMAC-SHA256(timestamp + rawBody)), key = the PG secret key.
     if (!safeEqual(sig, hmacBase64(secret, ts + rawBody))) {
       throw new GatewayError('Webhook signature mismatch');
+    }
+    // The timestamp is covered by the signature but must also be fresh:
+    // otherwise one captured signed delivery can be replayed forever.
+    const tsNum = Number(ts);
+    const seconds = tsNum > 1e12 ? tsNum / 1000 : tsNum; // tolerate ms too
+    if (
+      !Number.isFinite(seconds) ||
+      Math.abs(Date.now() / 1000 - seconds) > WEBHOOK_TOLERANCE_SECONDS
+    ) {
+      throw new GatewayError('Webhook timestamp outside the allowed window');
     }
     return {
       // Cashfree documents no event id, so the signed delivery itself is the id.
