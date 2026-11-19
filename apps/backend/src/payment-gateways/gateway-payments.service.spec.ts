@@ -82,7 +82,7 @@ function setup(over: Partial<Row> = {}) {
     releaseHeldOrder: jest.fn(async () => false),
   };
   const svc = new GatewayPaymentsService(prisma, gateways, orders);
-  return { svc, pay, orders, prisma };
+  return { svc, pay, orders, prisma, events };
 }
 
 const paid = (over: Row = {}) => ({
@@ -209,6 +209,25 @@ describe('webhooks', () => {
     expect(first).toEqual({ duplicate: false });
     expect(again).toEqual({ duplicate: true });
     expect(orders.checkout).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not acknowledge a legacy-only match before refreshing', async () => {
+    const { svc, orders, events } = setup();
+    events.add('ev_legacy'); // row written by the old deployment
+    fake.verifyWebhook.mockReturnValue({
+      eventId: 'hash-new',
+      legacyEventId: 'ev_legacy',
+      providerRef: 'ref1',
+    });
+    fake.fetchStatus.mockResolvedValue(paid());
+    const first = await svc.webhook('r1', 'fake', 'LIVE', {}, '{}');
+    expect(first.duplicate).toBe(false);
+    expect(fake.fetchStatus).toHaveBeenCalled();
+    expect(orders.checkout).toHaveBeenCalledTimes(1);
+    // Both keys are recorded after handling, so a later signed delivery dedupes.
+    expect(events.has('hash-new')).toBe(true);
+    const again = await svc.webhook('r1', 'fake', 'LIVE', {}, '{}');
+    expect(again.duplicate).toBe(true);
   });
 
   it('recognises a legacy event id from before the signed-body dedup switch', async () => {

@@ -431,29 +431,23 @@ export class GatewayPaymentsService {
       throw new WebhookRejected();
     }
 
-    // The signed-body hash is the real key. The legacy header id is checked
-    // only so deliveries retried from before the switch are recognised; both
-    // keys are recorded for new events so neither generation reprocesses.
+    // Only the signed-body hash is trusted for dedup. The legacy header is
+    // not covered by the provider's HMAC, so a holder of a valid signed body
+    // could pair it with an arbitrary old id and suppress a real event. A
+    // legacy-only match therefore still runs refresh; both keys are recorded
+    // afterwards so later deliveries of the same body hash dedupe normally.
     const keys = [
       verified.eventId,
       ...(verified.legacyEventId && verified.legacyEventId !== verified.eventId
         ? [verified.legacyEventId]
         : []),
     ];
-    const seen = await this.prisma.gatewayWebhookEvent.findMany({
-      where: { provider, mode, eventId: { in: keys } },
-      select: { eventId: true },
+    const seen = await this.prisma.gatewayWebhookEvent.findUnique({
+      where: {
+        provider_mode_eventId: { provider, mode, eventId: verified.eventId },
+      },
     });
-    if (seen.length) {
-      if (!seen.some((s) => s.eventId === verified.eventId)) {
-        await this.prisma.gatewayWebhookEvent
-          .create({
-            data: { provider, mode, eventId: verified.eventId },
-          })
-          .catch(() => undefined);
-      }
-      return { duplicate: true };
-    }
+    if (seen) return { duplicate: true };
 
     if (verified.providerRef) {
       const p = await this.prisma.gatewayPayment.findFirst({
