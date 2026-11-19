@@ -1834,16 +1834,18 @@ async function duesSheet() {
 async function collectSheet(saleId, message, draft = {}) {
   const sale = await sales.get(saleId);
   const due = dueOf(sale);
+  const locked = !!draft.eventId; // a queued event already carries this payload
   const method = draft.method || 'CASH';
   openSheet(
     `${head(`Collect on ${sale.localNumber}`)}
      <div class="body">
        ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       ${locked ? '<p class="note" role="status">Retrying the same payment that was already queued. Its amount and method cannot be changed.</p>' : ''}
        <p>${esc([sale.customer && sale.customer.name, sale.customer && sale.customer.phone].filter(Boolean).join(' · '))}</p>
        <div class="tot big"><span>Owed</span><span>${inr(due)}</span></div>
-       <label>Paid by</label><div class="seg" role="group" aria-label="Paid by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button type="button" data-m="${m}" aria-pressed="${method === m}">${l}</button>`).join('')}</div>
-       <label for="ca">Amount received (₹)</label><input id="ca" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(draft.amount ?? due)}">
-       <label for="cr">Reference <span class="mute">(optional)</span></label><input id="cr" value="${esc(draft.reference || '')}" placeholder="UPI or card transaction id">
+       <label>Paid by</label><div class="seg" role="group" aria-label="Paid by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button type="button" data-m="${m}" aria-pressed="${method === m}"${locked ? ' disabled' : ''}>${l}</button>`).join('')}</div>
+       <label for="ca">Amount received (₹)</label><input id="ca" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(draft.amount ?? due)}"${locked ? ' disabled' : ''}>
+       <label for="cr">Reference <span class="mute">(optional)</span></label><input id="cr" value="${esc(draft.reference || '')}" placeholder="UPI or card transaction id"${locked ? ' disabled' : ''}>
      </div>
      <footer><button class="btn block" id="go">Record payment</button></footer>`,
     (p) => {
@@ -1858,7 +1860,9 @@ async function collectSheet(saleId, message, draft = {}) {
         if (!acquireMoneyGuard(guardKey)) return;
         p.querySelector('#go').disabled = true;
         // Capture submitted values before any await; the sheet may close.
-        const keep = { method: m, amount: $('ca').value, reference: $('cr').value, eventId: draft.eventId };
+        const keep = locked
+          ? { method: draft.method, amount: draft.amount, reference: draft.reference, eventId: draft.eventId }
+          : { method: m, amount: $('ca').value, reference: $('cr').value, eventId: draft.eventId };
         try {
           const fresh = await sales.get(saleId); // never collect twice on a stale copy
           const c = buildCollection({ id: newId(), sale: fresh, method: keep.method, amount: keep.amount, reference: keep.reference });
@@ -2146,14 +2150,16 @@ async function refundSheet(saleId, message, draft = {}) {
   const lines = refundableLines(sale, rs).filter((l) => l.left > 0);
   const method = draft.method || (sale.payments[0] && sale.payments[0].method) || 'CASH';
   const qty = draft.qty || {};
+  const locked = !!draft.eventId; // queued refund: keep its exact payload on retry
   openSheet(
     `${head(`Refund ${sale.localNumber}`)}
      <div class="body">
        ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       ${locked ? '<p class="note" role="status">Retrying the same refund that was already queued. Its lines and method cannot be changed.</p>' : ''}
        ${lines.length ? lines.map((l) => `<div class="row"><div class="grow"><b>${esc(l.item.name)}</b><br><small>${inr(l.item.price)} &middot; up to ${l.left}</small></div>
-          <input type="number" inputmode="numeric" min="0" max="${l.left}" step="1" data-q="${l.index}" value="${esc(qty[l.index] ?? '')}" placeholder="0" aria-label="How many ${esc(l.item.name)} to refund" style="width:5rem"></div>`).join('') : '<p class="mute center">Everything on this sale is already refunded.</p>'}
-       <label>Paid back by</label><div class="seg" role="group" aria-label="Paid back by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button data-m="${m}" aria-pressed="${method === m}">${l}</button>`).join('')}</div>
-       <label for="rr">Reason <span class="mute">(optional)</span></label><input id="rr" value="${esc(draft.reason || '')}" placeholder="Wrong dish, cold food…">
+          <input type="number" inputmode="numeric" min="0" max="${l.left}" step="1" data-q="${l.index}" value="${esc(qty[l.index] ?? '')}" placeholder="0" aria-label="How many ${esc(l.item.name)} to refund" style="width:5rem"${locked ? ' disabled' : ''}></div>`).join('') : '<p class="mute center">Everything on this sale is already refunded.</p>'}
+       <label>Paid back by</label><div class="seg" role="group" aria-label="Paid back by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button data-m="${m}" aria-pressed="${method === m}"${locked ? ' disabled' : ''}>${l}</button>`).join('')}</div>
+       <label for="rr">Reason <span class="mute">(optional)</span></label><input id="rr" value="${esc(draft.reason || '')}" placeholder="Wrong dish, cold food…"${locked ? ' disabled' : ''}>
        <div class="tot big mt"><span>Pay back</span><span id="amt">${inr(0)}</span></div>
        <p class="mute">Recorded in this phone's books and taken off the day's sales.${S.snap.local ? ' Dishes are not put back into stock.' : ' It goes to the server too (money only; stock is not put back).'}</p>
      </div>
@@ -2161,7 +2167,10 @@ async function refundSheet(saleId, message, draft = {}) {
     (p) => {
       let m = method;
       const guardKey = `refund:${saleId}`;
-      const picks = () => [...p.querySelectorAll('[data-q]')].map((i) => ({ index: Number(i.dataset.q), qty: Number(i.value) || 0 }));
+      const picks = () =>
+        locked
+          ? Object.entries(draft.qty || {}).map(([index, q]) => ({ index: Number(index), qty: Number(q) || 0 }))
+          : [...p.querySelectorAll('[data-q]')].map((i) => ({ index: Number(i.dataset.q), qty: Number(i.value) || 0 }));
       const preview = () => {
         try {
           $('amt').textContent = inr(buildRefund({ id: 'x', sale, refunds: rs, picks: picks() }).amount);
@@ -2178,7 +2187,9 @@ async function refundSheet(saleId, message, draft = {}) {
       p.querySelector('#go').onclick = async () => {
         if (!acquireMoneyGuard(guardKey)) return;
         p.querySelector('#go').disabled = true;
-        const keep = () => ({ method: m, reason: $('rr').value, qty: Object.fromEntries(picks().map((x) => [x.index, x.qty || ''])), eventId: draft.eventId });
+        const keep = () => locked
+          ? { ...draft }
+          : { method: m, reason: $('rr').value, qty: Object.fromEntries(picks().map((x) => [x.index, x.qty || ''])), eventId: draft.eventId };
         const submitted = keep();
         try {
           const latest = await refunds.all(); // read under the guard
