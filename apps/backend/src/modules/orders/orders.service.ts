@@ -207,7 +207,7 @@ export class OrdersService {
     if (channel === 'ONLINE')
       await this.assertOrderableOnWebsite(branchId, menuItemIds);
     const menuItems = await this.prisma.menuItem.findMany({
-      where: { id: { in: menuItemIds }, branchId },
+      where: { id: { in: menuItemIds }, branchId, isActive: true },
     });
     if (menuItems.length !== menuItemIds.length) {
       throw new BadRequestException(
@@ -542,7 +542,7 @@ export class OrdersService {
     if (options.websiteOnly)
       await this.assertOrderableOnWebsite(branchId, menuItemIds);
     const menuItems = await this.prisma.menuItem.findMany({
-      where: { id: { in: menuItemIds }, branchId },
+      where: { id: { in: menuItemIds }, branchId, isActive: true },
     });
     if (menuItems.length !== menuItemIds.length) {
       throw new BadRequestException(
