@@ -49,8 +49,9 @@ export class StockJournalService {
       });
       if (dup) return dup;
     }
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${dto.ingredientId} FOR UPDATE`;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${dto.ingredientId} FOR UPDATE`;
       const ing = await tx.ingredient.findFirst({
         where: { id: dto.ingredientId, branchId },
       });
@@ -83,6 +84,7 @@ export class StockJournalService {
           batchNumber: dto.idempotencyKey
             ? `K:${dto.idempotencyKey}`
             : dto.reference || 'RCV',
+          idempotencyKey: dto.idempotencyKey || null,
           quantityReceived: qty,
           quantityRemaining: qty,
           unitCost: rate ?? 0,
@@ -138,7 +140,23 @@ export class StockJournalService {
         where: { id: batch.id },
         include: { stockMovements: true },
       });
-    });
+      });
+    } catch (e) {
+      if (
+        dto.idempotencyKey &&
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        // A concurrent retry won the unique key: return its batch instead of
+        // reporting a 500. The losing transaction rolled back completely.
+        const winner = await this.prisma.stockBatch.findFirst({
+          where: { branchId, idempotencyKey: dto.idempotencyKey },
+          include: { stockMovements: true },
+        });
+        if (winner) return winner;
+      }
+      throw e;
+    }
   }
 
   // ---- stock take (the shelf count) ------------------------------------------------------

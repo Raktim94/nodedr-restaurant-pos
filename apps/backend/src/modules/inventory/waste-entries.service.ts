@@ -246,6 +246,17 @@ export class WasteEntriesService {
 
   /** Reject = reverse. Both put the stock back through an appended REVERSAL, never a delete. */
   async reject(branchId: string, userId: string, id: string, note?: string) {
+    const e = await this.prisma.wasteEntry.findFirst({
+      where: { id, branchId },
+      select: { idempotencyKey: true },
+    });
+    if (e?.idempotencyKey?.startsWith(JOURNAL_KEY_PREFIX)) {
+      // Journal waste also adjusts the place-level StockLevel. Reversing it
+      // here would restore total stock but leave that place short forever.
+      throw new BadRequestException(
+        'This waste was recorded by a stock journal entry. Reverse that entry under Inventory > Stock journal instead.',
+      );
+    }
     return this.reverseWith(
       branchId,
       userId,
