@@ -29,6 +29,23 @@ const docs = [
 export default function DocsIndexPage() {
   return (
     <DocPage title="Documentation" updated="30 September 2026">
+      <DocSection heading="Watch OrderRestro in action">
+        <p className="mb-4">
+          Watch the OrderRestro video walkthrough to see the product in action.
+        </p>
+        <div className="aspect-video overflow-hidden rounded-xl border border-border/60">
+          <iframe
+            className="h-full w-full"
+            src="https://www.youtube.com/embed/mlcK4KAXVgU"
+            title="OrderRestro video walkthrough"
+            loading="lazy"
+            referrerPolicy="strict-origin-when-cross-origin"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+          />
+        </div>
+      </DocSection>
+
       <DocSection heading="Guides">
         <div className="flex flex-col divide-y divide-border/60 rounded-xl border border-border/60">
           {docs.map((doc) => (
