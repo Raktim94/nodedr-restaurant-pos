@@ -22,6 +22,7 @@ export function useLogin() {
       // Anything cached before this login belongs to nobody (or to the previous
       // user): drop it so branches and the rest load fresh for this account.
       queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "auth" });
+      clearOfflineCache();
       queryClient.setQueryData(["auth", "me"], data);
     },
   });
@@ -32,6 +33,10 @@ export function useRegister() {
   return useMutation({
     mutationFn: (dto: RegisterDto) => api.post<{ user: SessionUser }>("/auth/register", dto),
     onSuccess: (data) => {
+      // Same hygiene as login: a browser with an expired previous session can
+      // otherwise show the new owner that person's cached orders and KDS data.
+      queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== "auth" });
+      clearOfflineCache();
       queryClient.setQueryData(["auth", "me"], data);
     },
   });
