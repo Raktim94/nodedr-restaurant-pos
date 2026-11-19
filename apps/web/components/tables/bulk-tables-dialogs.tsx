@@ -20,8 +20,30 @@ const SIZE: Record<TableShape, [number, number]> = {
 };
 
 /** Create several tables at once: numbering pattern, seats, shape, size, a grid, and a preview before saving. */
-export function CreateTablesDialog({ branchId, floorId, floorName, existing }: { branchId: string | null; floorId: string; floorName: string; existing: string[] }) {
-  const [open, setOpen] = useState(false);
+export function CreateTablesDialog({
+  branchId,
+  floorId,
+  floorName,
+  existing,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  trigger,
+}: {
+  branchId: string | null;
+  floorId: string;
+  floorName: string;
+  existing: string[];
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: React.ReactElement;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = (v: boolean) => {
+    if (!isControlled) setInternalOpen(v);
+    controlledOnOpenChange?.(v);
+  };
   const [prefix, setPrefix] = useState("T");
   const [start, setStart] = useState("1");
   const [count, setCount] = useState("6");
@@ -50,7 +72,8 @@ export function CreateTablesDialog({ branchId, floorId, floorName, existing }: {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" size="sm">Create several tables</Button>} />
+      {trigger && <DialogTrigger render={trigger} />}
+      {!trigger && !isControlled && <DialogTrigger render={<Button variant="outline" size="sm">Create several tables</Button>} />}
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Create several tables</DialogTitle>
@@ -83,8 +106,28 @@ export function CreateTablesDialog({ branchId, floorId, floorName, existing }: {
 }
 
 /** A plain list with checkboxes: the reliable way to change many tables on a small screen. */
-export function ManageTablesDialog({ branchId, tables, floorName }: { branchId: string | null; tables: RestaurantTable[]; floorName: string }) {
-  const [open, setOpen] = useState(false);
+export function ManageTablesDialog({
+  branchId,
+  tables,
+  floorName,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  trigger,
+}: {
+  branchId: string | null;
+  tables: RestaurantTable[];
+  floorName: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: React.ReactElement;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = (v: boolean) => {
+    if (!isControlled) setInternalOpen(v);
+    controlledOnOpenChange?.(v);
+  };
   const [picked, setPicked] = useState<string[]>([]);
   const [seats, setSeats] = useState("");
   const [shape, setShape] = useState<"" | TableShape>("");
@@ -106,7 +149,8 @@ export function ManageTablesDialog({ branchId, tables, floorName }: { branchId: 
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" size="sm">Edit several tables</Button>} />
+      {trigger && <DialogTrigger render={trigger} />}
+      {!trigger && !isControlled && <DialogTrigger render={<Button variant="outline" size="sm">Edit several tables</Button>} />}
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader><DialogTitle>Edit several tables</DialogTitle><DialogDescription>{floorName}. Tick the tables to change.</DialogDescription></DialogHeader>
         <div className="flex items-center justify-between text-sm">

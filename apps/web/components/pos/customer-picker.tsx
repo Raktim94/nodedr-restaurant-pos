@@ -43,23 +43,25 @@ export function CustomerPicker({
         placeholder="Attach customer (name or phone)…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="flex-1"
+        className="h-9 min-w-0 flex-1 rounded-xl bg-card text-xs sm:text-sm"
       />
-      <AddCustomerDialog branchId={branchId} onCreated={(c) => onSelect(c)} />
+      <div className="shrink-0">
+        <AddCustomerDialog branchId={branchId} onCreated={(c) => onSelect(c)} />
+      </div>
       {search.length >= 2 && matches && matches.length > 0 && (
-        <div className="absolute top-full z-10 mt-1 w-full rounded-lg border border-border bg-card shadow-md">
+        <div className="absolute top-full z-20 mt-1 w-full rounded-xl border border-border bg-card p-1 shadow-lg backdrop-blur">
           {matches.slice(0, 5).map((m) => (
             <button
               key={m.id}
               type="button"
-              className="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-secondary"
+              className="flex w-full flex-col items-start rounded-lg px-3 py-1.5 text-left text-xs hover:bg-secondary transition-colors"
               onClick={() => {
                 onSelect(m);
                 setSearch("");
               }}
             >
-              <span className="font-medium text-foreground">{m.name ?? "Unnamed"}</span>
-              <span className="text-xs text-muted-foreground">{[m.phone, m.pincode, m.status === "INACTIVE" ? "Inactive" : null].filter(Boolean).join(" · ")}</span>
+              <span className="font-semibold text-foreground">{m.name ?? "Unnamed"}</span>
+              <span className="text-[11px] text-muted-foreground">{m.phone}</span>
             </button>
           ))}
         </div>

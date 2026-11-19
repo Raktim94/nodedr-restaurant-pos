@@ -28,6 +28,10 @@ export function MobileBottomNav({
   const { t } = useI18n();
   const badges = useNavBadges();
 
+  if (pathname === "/ask") {
+    return null;
+  }
+
   const allowed = NAV_ITEMS.filter(
     (item) => !item.permission || hasPermission(user, item.permission),
   );
@@ -54,7 +58,7 @@ export function MobileBottomNav({
             className={cn(
               itemClass,
               "h-16",
-              isActive ? "text-primary" : "text-muted-foreground active:text-foreground",
+              isActive ? "text-primary font-semibold" : "text-muted-foreground active:text-foreground",
             )}
           >
             <Icon className="h-5 w-5" strokeWidth={isActive ? 2.5 : 2} />

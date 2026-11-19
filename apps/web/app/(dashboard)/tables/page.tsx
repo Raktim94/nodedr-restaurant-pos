@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutGrid, Plus } from "lucide-react";
+import { Layers, LayoutGrid, MoreHorizontal, Plus, QrCode, Radio, Tv } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { CreateTablesDialog, ManageTablesDialog } from "@/components/tables/bulk-tables-dialogs";
 import { GuestCodesPanel } from "@/components/tables/guest-codes-panel";
@@ -13,6 +13,14 @@ import { TableTile } from "@/components/tables/table-tile";
 import { WaitlistPanel } from "@/components/tables/waitlist-panel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { BranchNotice } from "@/components/layout/branch-notice";
 import { QueryError } from "@/components/ui/query-error";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +29,7 @@ import { TableRequestsBar } from "@/components/tables/table-requests-bar";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
 import { useBranch } from "@/hooks/use-branch";
 import { useFloors, type RestaurantTable } from "@/hooks/use-tables";
+import { cn } from "@/lib/utils";
 
 export default function TablesPage() {
   const { branchId } = useBranch();
@@ -38,6 +47,9 @@ export default function TablesPage() {
   const editMode = canManage && editModeRequested;
   const [editorTable, setEditorTable] = useState<RestaurantTable | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [addFloorOpen, setAddFloorOpen] = useState(false);
+  const [createSeveralOpen, setCreateSeveralOpen] = useState(false);
+  const [manageSeveralOpen, setManageSeveralOpen] = useState(false);
   // Forces a fresh mount of TableEditorDialog every time it's opened, so its
   // internal form state (number, bulk-mode toggle, etc.) never carries over
   // stale values from a previous open.
@@ -91,18 +103,26 @@ export default function TablesPage() {
   return (
     <div className="flex flex-col gap-6">
       <TableRequestsBar branchId={branchId} />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div>
-          <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Tables</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Tables</h1>
+          <p className="text-xs text-muted-foreground sm:text-sm">
             {editMode
               ? "Drag tables to match your floor — changes save automatically"
               : "Live floor status — tap a table to update it"}
           </p>
         </div>
         {canManage && floors && floors.length > 0 && (
-          <Button variant={editMode ? "default" : "outline"} size="sm" className="h-11 w-full sm:h-8 sm:w-auto" onClick={() => setEditMode((v) => !v)}>
-            <LayoutGrid className="h-4 w-4" />
+          <Button
+            variant={editMode ? "default" : "outline"}
+            size="sm"
+            className={cn(
+              "h-10 w-full sm:h-9 sm:w-auto rounded-xl font-semibold shadow-xs active:scale-95 transition-all",
+              editMode ? "bg-primary text-white" : "border-border/80 bg-card hover:bg-secondary",
+            )}
+            onClick={() => setEditMode((v) => !v)}
+          >
+            <LayoutGrid className="h-4 w-4 mr-1.5" />
             {editMode ? "Done editing" : "Edit floor plan"}
           </Button>
         )}
@@ -120,39 +140,130 @@ export default function TablesPage() {
       ) : !branchId ? (
         <BranchNotice />
       ) : floors && floors.length > 0 ? (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_320px]">
-          <div className="flex flex-col gap-4">
-            <div className="flex min-w-0 flex-wrap items-center gap-2 [&_button]:max-sm:min-h-10">
-              {(floors.length > 1 || editMode) && (
-                <ResponsiveTabs
-                  className="max-lg:w-full"
-                  label="Floor"
-                  value={activeFloorId ?? floors[0].id}
-                  onChange={setActiveFloorId}
-                  items={floors.map((f) => ({ id: f.id, label: f.name }))}
-                />
-              )}
-              {editMode && (
-                <>
-                  <RenameFloorDialog
-                    branchId={branchId}
-                    floorId={activeFloor?.id ?? floors[0].id}
-                    currentName={activeFloor?.name ?? floors[0].name}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_380px]">
+          <div className="flex flex-col gap-4 min-w-0">
+            {editMode ? (
+              <div className="flex flex-col gap-3 rounded-2xl border border-border/80 bg-secondary/30 p-3 shadow-xs">
+                {/* Floor Switcher & Action Controls Toolbar */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 max-w-xs">
+                      <ResponsiveTabs
+                        className="w-full"
+                        label="Floor"
+                        value={activeFloorId ?? floors[0].id}
+                        onChange={setActiveFloorId}
+                        items={floors.map((f) => ({ id: f.id, label: f.name }))}
+                      />
+                    </div>
+                    <RenameFloorDialog
+                      branchId={branchId}
+                      floorId={activeFloor?.id ?? floors[0].id}
+                      currentName={activeFloor?.name ?? floors[0].name}
+                    />
+                  </div>
+
+                  {/* Primary Tools & More Menu */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 rounded-xl px-2.5 text-xs font-semibold bg-card border-border/80 shadow-xs"
+                      onClick={openAddTable}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add table
+                    </Button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-9 px-2 rounded-xl text-xs font-medium bg-card border-border/80"
+                            aria-label="Floor and table actions"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        }
+                      />
+                      <DropdownMenuContent align="end" className="w-56 p-1 rounded-xl shadow-lg border border-border">
+                        <DropdownMenuLabel className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1">
+                          Floor Management
+                        </DropdownMenuLabel>
+                        <DropdownMenuItem
+                          onClick={() => setAddFloorOpen(true)}
+                          className="text-xs font-medium cursor-pointer"
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-2" />
+                          Add new floor
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => setCreateSeveralOpen(true)}
+                          className="text-xs font-medium cursor-pointer"
+                        >
+                          <Layers className="h-3.5 w-3.5 mr-2" />
+                          Create several tables
+                        </DropdownMenuItem>
+                        {(activeFloor ?? floors[0]).tables.length > 0 && (
+                          <DropdownMenuItem
+                            onClick={() => setManageSeveralOpen(true)}
+                            className="text-xs font-medium cursor-pointer"
+                          >
+                            <LayoutGrid className="h-3.5 w-3.5 mr-2" />
+                            Edit several tables
+                          </DropdownMenuItem>
+                        )}
+
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-2 py-1">
+                          Tools &amp; Devices
+                        </DropdownMenuLabel>
+                        <DropdownMenuItem
+                          className="text-xs font-medium cursor-pointer"
+                          render={<a href="/tables/cards" className="flex items-center w-full" />}
+                        >
+                          <QrCode className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                          Table cards (QR &amp; NFC)
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-xs font-medium cursor-pointer"
+                          render={<a href="/tables/live" className="flex items-center w-full" />}
+                        >
+                          <Tv className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                          Live board
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-xs font-medium cursor-pointer"
+                          render={<a href="/tables/nfc" className="flex items-center w-full" />}
+                        >
+                          <Radio className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                          Ordering mode &amp; NFC
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+
+                {/* Layouts Section */}
+                <div className="w-full">
+                  <LayoutsBar branchId={branchId} floor={activeFloor ?? floors[0]} />
+                </div>
+              </div>
+            ) : (
+              floors.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <ResponsiveTabs
+                    className="max-lg:w-full"
+                    label="Floor"
+                    value={activeFloorId ?? floors[0].id}
+                    onChange={setActiveFloorId}
+                    items={floors.map((f) => ({ id: f.id, label: f.name }))}
                   />
-                  <AddFloorDialog branchId={branchId} />
-                  <Button variant="outline" size="sm" onClick={openAddTable}>
-                    <Plus className="h-4 w-4" />
-                    Add table
-                  </Button>
-                  <a href="/tables/cards" className="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-[0.8rem] hover:bg-muted">Table cards (QR + NFC)</a>
-                  <a href="/tables/live" className="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-[0.8rem] hover:bg-muted">Live board</a>
-                  <a href="/tables/nfc" className="inline-flex h-7 items-center rounded-lg border border-border px-2.5 text-[0.8rem] hover:bg-muted">Ordering mode &amp; NFC tags</a>
-                  <CreateTablesDialog branchId={branchId} floorId={activeFloor?.id ?? floors[0].id} floorName={activeFloor?.name ?? floors[0].name} existing={(activeFloor ?? floors[0]).tables.map((t) => t.number)} />
-                  <div className="w-full"><LayoutsBar branchId={branchId} floor={activeFloor ?? floors[0]} /></div>
-                  {(activeFloor ?? floors[0]).tables.length > 0 && <ManageTablesDialog branchId={branchId} tables={(activeFloor ?? floors[0]).tables} floorName={activeFloor?.name ?? floors[0].name} />}
-                </>
-              )}
-            </div>
+                </div>
+              )
+            )}
 
             <Card ref={cardRef} className="overflow-auto p-3 sm:p-6">
               <div
@@ -221,14 +332,38 @@ export default function TablesPage() {
       )}
 
       {activeFloor && (
-        <TableEditorDialog
-          key={editorKey}
-          branchId={branchId}
-          floorId={activeFloor.id}
-          table={editorTable}
-          open={editorOpen}
-          onOpenChange={setEditorOpen}
-        />
+        <>
+          <TableEditorDialog
+            key={editorKey}
+            branchId={branchId}
+            floorId={activeFloor.id}
+            table={editorTable}
+            open={editorOpen}
+            onOpenChange={setEditorOpen}
+          />
+          <AddFloorDialog
+            branchId={branchId}
+            open={addFloorOpen}
+            onOpenChange={setAddFloorOpen}
+          />
+          <CreateTablesDialog
+            branchId={branchId}
+            floorId={activeFloor.id}
+            floorName={activeFloor.name}
+            existing={activeFloor.tables.map((t) => t.number)}
+            open={createSeveralOpen}
+            onOpenChange={setCreateSeveralOpen}
+          />
+          {activeFloor.tables.length > 0 && (
+            <ManageTablesDialog
+              branchId={branchId}
+              tables={activeFloor.tables}
+              floorName={activeFloor.name}
+              open={manageSeveralOpen}
+              onOpenChange={setManageSeveralOpen}
+            />
+          )}
+        </>
       )}
     </div>
   );

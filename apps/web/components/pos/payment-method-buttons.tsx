@@ -38,7 +38,7 @@ export function PaymentMethodButtons<T extends string>({
 }) {
   return (
     <div
-      className={cn("grid gap-2", methods.length > 4 ? "grid-cols-3" : "grid-cols-4")}
+      className="grid grid-cols-4 gap-2"
       role="radiogroup"
       aria-label={label}
     >
@@ -53,14 +53,14 @@ export function PaymentMethodButtons<T extends string>({
             aria-checked={active}
             onClick={() => onChange(m)}
             className={cn(
-              "flex flex-col items-center gap-1 rounded-xl border px-2 py-2.5 text-xs font-medium transition-colors",
+              "flex flex-col items-center justify-center gap-1.5 rounded-2xl border py-2.5 px-1.5 text-center transition-all duration-150 active:scale-96 min-h-[52px]",
               active
-                ? "border-primary bg-primary/10 text-foreground shadow-sm"
-                : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground",
+                ? "border-primary bg-primary/10 text-primary font-bold shadow-xs ring-2 ring-primary/40"
+                : "border-border/80 bg-card text-muted-foreground hover:bg-secondary/70 hover:text-foreground",
             )}
           >
-            <Icon className="h-[18px] w-[18px]" />
-            {text}
+            <Icon className="h-4.5 w-4.5" />
+            <span className="text-[11px] font-semibold leading-none">{text}</span>
           </button>
         );
       })}

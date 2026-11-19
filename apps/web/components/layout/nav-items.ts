@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   UsersRound,
   UtensilsCrossed,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 

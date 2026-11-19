@@ -1,6 +1,6 @@
 "use client";
 
-import { ImagePlus, X } from "lucide-react";
+import { Building2, ImagePlus, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import {
@@ -46,18 +46,18 @@ export default function SettingsPage() {
   const { data, isLoading } = useSettings(branchId);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Settings</h1>
-        <p className="text-sm text-muted-foreground">Restaurant, branch, and staff configuration</p>
+    <div className="flex flex-col gap-5 sm:gap-6 pb-24 sm:pb-20 max-w-7xl">
+      <div className="flex flex-col gap-1 pb-1">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Settings</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground">Restaurant, branch, hardware, and staff configuration</p>
       </div>
 
       <SettingsTabs />
 
       {isLoading || !data ? (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Skeleton className="h-72 rounded-xl" />
-          <Skeleton className="h-72 rounded-xl" />
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <Skeleton className="h-96 rounded-2xl" />
+          <Skeleton className="h-96 rounded-2xl" />
         </div>
       ) : (
         <GeneralSettingsForm
@@ -96,17 +96,17 @@ function OnlineOrdersCard({
     });
 
   return (
-    <Card className="flex flex-col gap-4 p-6">
+    <Card className="flex flex-col gap-4 p-4 sm:p-6 rounded-2xl border border-border/80 shadow-2xs">
       <div>
-        <h2 className="text-[18px] font-medium text-foreground">Online orders &amp; table bookings</h2>
-        <p className="text-sm text-muted-foreground">
+        <h2 className="text-base sm:text-lg font-bold text-foreground">Online orders &amp; table bookings</h2>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
           Choose whether orders and bookings from your website are accepted automatically or wait for
           you to accept them. You can always cancel an order or booking from its window.
         </p>
       </div>
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-border/70 p-3.5 sm:p-4 bg-muted/20">
         <div className="flex flex-col gap-0.5">
-          <Label htmlFor="auto-confirm-orders">Auto-confirm online orders</Label>
+          <Label htmlFor="auto-confirm-orders" className="text-xs sm:text-sm font-semibold">Auto-confirm online orders</Label>
           <p className="text-xs text-muted-foreground">
             Off = each new order rings, then waits for you to Accept or Reject before it reaches the
             kitchen. On = sent to the kitchen straight away.
@@ -119,9 +119,9 @@ function OnlineOrdersCard({
           onCheckedChange={(v) => save({ autoConfirmOrders: v })}
         />
       </div>
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-border/70 p-3.5 sm:p-4 bg-muted/20">
         <div className="flex flex-col gap-0.5">
-          <Label htmlFor="auto-confirm-bookings">Auto-confirm table bookings</Label>
+          <Label htmlFor="auto-confirm-bookings" className="text-xs sm:text-sm font-semibold">Auto-confirm table bookings</Label>
           <p className="text-xs text-muted-foreground">
             Off = new bookings wait for you to Accept. On = confirmed automatically.
           </p>
@@ -141,16 +141,16 @@ function NotificationSettingsCard() {
   const [muted, toggleMuted] = useNotificationMute();
 
   return (
-    <Card className="flex flex-col gap-4 p-6">
+    <Card className="flex flex-col gap-4 p-4 sm:p-6 rounded-2xl border border-border/80 shadow-2xs">
       <div>
-        <h2 className="text-[18px] font-medium text-foreground">Notifications</h2>
-        <p className="text-sm text-muted-foreground">
+        <h2 className="text-base sm:text-lg font-bold text-foreground">Notifications</h2>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
           New orders, table reservations, and kitchen tickets on this device.
         </p>
       </div>
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-border/70 p-3.5 sm:p-4 bg-muted/20">
         <div className="flex flex-col gap-0.5">
-          <Label htmlFor="notification-sound">Notification sound</Label>
+          <Label htmlFor="notification-sound" className="text-xs sm:text-sm font-semibold">Notification sound</Label>
           <p className="text-xs text-muted-foreground">
             Plays a chime for new orders, reservations, and kitchen display
             tickets. This only affects this device/browser — mute the
@@ -279,12 +279,21 @@ function GeneralSettingsForm({
   };
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <Card className="flex flex-col gap-4 p-6">
-        <h2 className="text-[18px] font-medium text-foreground">Restaurant</h2>
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <Card className="flex flex-col gap-4 p-4 sm:p-6 rounded-2xl border border-border/80 shadow-2xs">
+        <div className="flex items-center gap-2.5 pb-2 border-b border-border/60">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
+            <ImagePlus className="h-4.5 w-4.5" />
+          </div>
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-foreground">Restaurant Profile</h2>
+            <p className="text-xs text-muted-foreground">Brand identity, loyalty, and website pricing defaults</p>
+          </div>
+        </div>
+
         <form onSubmit={onSubmitRestaurant} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label>Logo</Label>
+            <Label className="text-xs font-semibold">Logo</Label>
             <div className="flex items-center gap-4">
               <input
                 ref={logoInputRef}
@@ -302,7 +311,7 @@ function GeneralSettingsForm({
                 }}
               />
               {logoUrl ? (
-                <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-border bg-secondary">
+                <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-border bg-secondary shadow-2xs">
                   {/* eslint-disable-next-line @next/next/no-img-element -- uploaded asset served from the backend, not a Next-optimizable remote source */}
                   <img src={logoUrl} alt="" className="h-full w-full object-contain" />
                   <button
@@ -311,7 +320,7 @@ function GeneralSettingsForm({
                       setLogoUrl(null);
                       if (logoInputRef.current) logoInputRef.current.value = "";
                     }}
-                    className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-background/80 text-foreground"
+                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/90 text-foreground shadow-xs"
                     aria-label="Remove logo"
                   >
                     <X className="h-3 w-3" />
@@ -322,101 +331,121 @@ function GeneralSettingsForm({
                   type="button"
                   onClick={() => logoInputRef.current?.click()}
                   disabled={uploadLogo.isPending}
-                  className="flex h-16 w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary"
+                  className="flex h-16 w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-border/80 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
                 >
-                  <ImagePlus className="h-4 w-4" />
-                  <span className="text-[10px]">
+                  <ImagePlus className="h-5 w-5" />
+                  <span className="text-[10px] font-semibold">
                     {uploadLogo.isPending ? "Uploading…" : "Upload"}
                   </span>
                 </button>
               )}
-              <p className="text-xs text-muted-foreground">
-                Shows in the app sidebar and login screen instead of the OrderRestro mark.
-                Square, at least 256×256px, PNG with a transparent background works best.
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Shows in the app sidebar and login screen instead of the default mark.
+                Square, at least 256×256px, PNG with transparent background recommended.
               </p>
             </div>
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="r-name">Name</Label>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="r-name" className="text-xs font-semibold">Restaurant Name *</Label>
             <Input
               id="r-name"
+              className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium"
               value={name}
               onChange={(e) => setName(e.target.value.slice(0, RESTAURANT_NAME_MAX_LENGTH))}
               maxLength={RESTAURANT_NAME_MAX_LENGTH}
               required
             />
-            <p className="text-right text-xs text-muted-foreground">
+            <p className="text-right text-[11px] text-muted-foreground tabular-nums">
               {name.length}/{RESTAURANT_NAME_MAX_LENGTH}
             </p>
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="r-legal">Legal name</Label>
-            <Input id="r-legal" value={legalName} onChange={(e) => setLegalName(e.target.value)} />
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="r-legal" className="text-xs font-semibold">Legal / Registered Name</Label>
+            <Input 
+              id="r-legal" 
+              className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium"
+              value={legalName} 
+              onChange={(e) => setLegalName(e.target.value)} 
+            />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="r-currency">Currency</Label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="r-currency" className="text-xs font-semibold">Currency Code</Label>
               <Input
                 id="r-currency"
+                className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium uppercase tabular-nums"
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value.toUpperCase())}
                 maxLength={3}
                 required
               />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="r-timezone">Timezone</Label>
-              <Input id="r-timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} required />
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="r-timezone" className="text-xs font-semibold">Timezone</Label>
+              <Input 
+                id="r-timezone" 
+                className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium"
+                value={timezone} 
+                onChange={(e) => setTimezone(e.target.value)} 
+                required 
+              />
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 border-t border-border pt-4">
-            <h3 className="text-sm font-medium text-foreground">Loyalty program</h3>
-            <p className="text-xs text-muted-foreground">
-              How customers earn and redeem points at checkout.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="r-loyalty-earn">Earn 1 point per</Label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">{currency}</span>
-                <Input
-                  id="r-loyalty-earn"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={loyaltyEarnPerCurrency}
-                  onChange={(e) => setLoyaltyEarnPerCurrency(e.target.value)}
-                  required
-                />
-              </div>
+          {/* Loyalty Program Section */}
+          <div className="flex flex-col gap-2.5 rounded-xl border border-border/70 p-3.5 sm:p-4 bg-muted/20">
+            <div>
+              <h3 className="text-xs sm:text-sm font-bold text-foreground">Loyalty Rewards Program</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Configure points earned and value redeemed during customer checkout.
+              </p>
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="r-loyalty-value">1 point redeems for</Label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">{currency}</span>
-                <Input
-                  id="r-loyalty-value"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={loyaltyPointValue}
-                  onChange={(e) => setLoyaltyPointValue(e.target.value)}
-                  required
-                />
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="r-loyalty-earn" className="text-xs font-medium">Earn 1 point per</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-muted-foreground">{currency}</span>
+                  <Input
+                    id="r-loyalty-earn"
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-semibold tabular-nums"
+                    value={loyaltyEarnPerCurrency}
+                    onChange={(e) => setLoyaltyEarnPerCurrency(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="r-loyalty-value" className="text-xs font-medium">1 point redeems for</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-muted-foreground">{currency}</span>
+                  <Input
+                    id="r-loyalty-value"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-semibold tabular-nums"
+                    value={loyaltyPointValue}
+                    onChange={(e) => setLoyaltyPointValue(e.target.value)}
+                    required
+                  />
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+          {/* Referral Rewards */}
+          <div className="flex flex-col gap-3 rounded-xl border border-border/70 p-3.5 sm:p-4 bg-muted/20">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-sm font-medium text-foreground">Referral rewards</h3>
-                <p className="text-xs text-muted-foreground">
-                  Customers share a dish or their personal link. Points are paid only after the new customer&apos;s
-                  first purchase is paid. Points are worth the &ldquo;1 point redeems for&rdquo; amount above
-                  (for 100 points = {currency} 10, enter 0.10).
+                <h3 className="text-xs sm:text-sm font-bold text-foreground">Referral Rewards</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Points awarded to sharer and referee after first successful paid purchase.
                 </p>
               </div>
               <Switch
@@ -426,60 +455,63 @@ function GeneralSettingsForm({
                 onCheckedChange={setReferralEnabled}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="r-referral-sharer">Points for the customer who shares</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="r-referral-sharer" className="text-xs font-medium">Sharer Points</Label>
                 <Input
                   id="r-referral-sharer"
                   type="number"
                   min="0"
                   step="1"
                   disabled={!referralEnabled}
+                  className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-semibold tabular-nums"
                   value={referralSharerPoints}
                   onChange={(e) => setReferralSharerPoints(e.target.value)}
                 />
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="r-referral-referred">Points for the new customer</Label>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="r-referral-referred" className="text-xs font-medium">Referee Points</Label>
                 <Input
                   id="r-referral-referred"
                   type="number"
                   min="0"
                   step="1"
                   disabled={!referralEnabled}
+                  className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-semibold tabular-nums"
                   value={referralReferredPoints}
                   onChange={(e) => setReferralReferredPoints(e.target.value)}
                 />
               </div>
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="r-referral-min">Minimum food value of the first order for rewards ({currency})</Label>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="r-referral-min" className="text-xs font-medium">First order min purchase ({currency})</Label>
               <Input
                 id="r-referral-min"
                 type="number"
                 min="0"
                 step="1"
                 disabled={!referralEnabled}
+                className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-semibold tabular-nums"
                 value={referralMinPurchase}
                 onChange={(e) => setReferralMinPurchase(e.target.value)}
               />
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+          {/* Website Food Pricing Adjustment */}
+          <div className="flex flex-col gap-3 rounded-xl border border-border/70 p-3.5 sm:p-4 bg-muted/20">
             <div>
-              <h3 className="text-sm font-medium text-foreground">Website food prices</h3>
-              <p className="text-xs text-muted-foreground">
-                Make every dish cheaper or costlier for customers ordering on your website, by a percentage or a fixed
-                amount. In-restaurant, POS and marketplace prices do not change. Leave at 0 for no change.
+              <h3 className="text-xs sm:text-sm font-bold text-foreground">Website Food Prices</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Price variance for online ordering menu items (in-store POS prices remain untouched).
               </p>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="r-adjust-dir">Make prices</Label>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="r-adjust-dir" className="text-xs font-medium">Direction</Label>
                 <select
                   id="r-adjust-dir"
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-11 sm:h-9 rounded-xl border border-input bg-background px-3 text-xs sm:text-sm font-medium"
                   value={adjustDir}
                   onChange={(e) => setAdjustDir(e.target.value as "cheaper" | "costlier")}
                 >
@@ -487,105 +519,108 @@ function GeneralSettingsForm({
                   <option value="costlier">Costlier</option>
                 </select>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="r-adjust-kind">By</Label>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="r-adjust-kind" className="text-xs font-medium">Adjustment Type</Label>
                 <select
                   id="r-adjust-kind"
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-11 sm:h-9 rounded-xl border border-input bg-background px-3 text-xs sm:text-sm font-medium"
                   value={adjustKind}
                   onChange={(e) => setAdjustKind(e.target.value as "PERCENT" | "AMOUNT")}
                 >
                   <option value="PERCENT">Percentage (%)</option>
-                  <option value="AMOUNT">Amount ({currency} per dish)</option>
+                  <option value="AMOUNT">Amount ({currency} / dish)</option>
                 </select>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="r-adjust-value">{adjustKind === "PERCENT" ? "Percent" : `Amount (${currency})`}</Label>
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="r-adjust-value" className="text-xs font-medium">{adjustKind === "PERCENT" ? "Percent (%)" : `Amount (${currency})`}</Label>
                 <Input
                   id="r-adjust-value"
                   type="number"
                   min="0"
                   step="0.01"
+                  className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-semibold tabular-nums"
                   value={adjustValue}
                   onChange={(e) => setAdjustValue(e.target.value)}
                 />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground" aria-live="polite">
+            <p className="text-xs text-muted-foreground font-medium" aria-live="polite">
               {Number(adjustValue) > 0
-                ? `A ${currency} 100 dish will cost ${currency} ${Math.max(
+                ? `Preview: A ${currency} 100 dish will cost ${currency} ${Math.max(
                     Math.round(
                       (adjustKind === "PERCENT"
                         ? 100 * (1 + ((adjustDir === "cheaper" ? -1 : 1) * Number(adjustValue)) / 100)
                         : 100 + (adjustDir === "cheaper" ? -1 : 1) * Number(adjustValue)) * 100,
                     ) / 100,
                     0,
-                  )} on the website.`
-                : "No change to website prices."}
+                  )} online.`
+                : "No change to online ordering prices."}
             </p>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="r-online-min">Smallest online order accepted ({currency}, 0 = no minimum)</Label>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="r-online-min" className="text-xs font-semibold">Minimum Online Order ({currency})</Label>
             <Input
               id="r-online-min"
               type="number"
               min="0"
               step="1"
+              className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-semibold tabular-nums"
               value={onlineMinOrder}
               onChange={(e) => setOnlineMinOrder(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Orders from your website or the API below this amount are refused. Marketplace orders (Zomato, Swiggy)
-              and table QR orders are not affected.
+              Orders from your direct website below this amount are refused (0 = no minimum).
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="r-max-discount">Highest cashier discount (%)</Label>
+          {/* Cashier Discount Limits */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="r-max-discount" className="text-xs font-semibold">Max Cashier Discount (%)</Label>
               <Input
                 id="r-max-discount"
                 type="number"
                 min="0"
                 max="100"
                 step="0.01"
+                className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-semibold tabular-nums"
                 value={maxDiscount}
                 onChange={(e) => setMaxDiscount(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                100 means no limit. Owners, administrators and roles with “Discount Above the Cashier Limit” can go higher.
+                100 = unconstrained. Managers with override rights can exceed this.
               </p>
             </div>
-            <label className="flex items-start gap-2 text-sm sm:pt-7">
+            <label className="flex items-center gap-2 text-xs font-medium sm:pt-6 cursor-pointer">
               <input
                 type="checkbox"
-                className="mt-1"
+                className="h-4 w-4 rounded border-input text-primary"
                 checked={requireReason}
                 onChange={(e) => setRequireReason(e.target.checked)}
               />
-              Require a reason for every discount
+              <span>Require reason for cashier discounts</span>
             </label>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="r-upi">UPI id (for QR payments)</Label>
+          {/* UPI Payment ID */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="r-upi" className="text-xs font-semibold">UPI ID (QR Payments)</Label>
               <Input
                 id="r-upi"
+                className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium font-mono"
                 value={upiVpa}
                 onChange={(e) => setUpiVpa(e.target.value)}
-                placeholder="yourshop@okbank"
+                placeholder="restaurant@bank"
                 autoComplete="off"
               />
-              <p className="text-xs text-muted-foreground">
-                Shown as a scannable QR at checkout and on the customer display, with the exact bill amount filled in.
-              </p>
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="r-upi-name">UPI payee name</Label>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="r-upi-name" className="text-xs font-semibold">UPI Payee Display Name</Label>
               <Input
                 id="r-upi-name"
+                className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium"
                 value={upiPayeeName}
                 onChange={(e) => setUpiPayeeName(e.target.value)}
                 placeholder={name}
@@ -595,116 +630,152 @@ function GeneralSettingsForm({
           </div>
 
           <StatusNote note={saveNote} onClear={clearSaveNote} />
-          <Button type="submit" disabled={updateRestaurant.isPending} className="self-start">
-            {updateRestaurant.isPending ? "Saving…" : "Save restaurant"}
+          <Button 
+            type="submit" 
+            disabled={updateRestaurant.isPending} 
+            className="h-11 sm:h-9 rounded-xl text-xs font-semibold self-start px-5 active:scale-98"
+          >
+            {updateRestaurant.isPending ? "Saving Details…" : "Save Restaurant Profile"}
           </Button>
         </form>
       </Card>
 
-      <Card className="flex flex-col gap-4 p-6">
-        <h2 className="text-[18px] font-medium text-foreground">This branch</h2>
+      {/* Branch Settings Card */}
+      <Card className="flex flex-col gap-4 p-4 sm:p-6 rounded-2xl border border-border/80 shadow-2xs">
+        <div className="flex items-center gap-2.5 pb-2 border-b border-border/60">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary shrink-0">
+            <Building2 className="h-4.5 w-4.5" />
+          </div>
+          <div>
+            <h2 className="text-base sm:text-lg font-bold text-foreground">Current Branch Details</h2>
+            <p className="text-xs text-muted-foreground">Store location, tax regimes, and local billing configuration</p>
+          </div>
+        </div>
+
         <form onSubmit={onSubmitBranch} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="b-name">Branch name</Label>
-            <Input id="b-name" value={branchName} onChange={(e) => setBranchName(e.target.value)} required />
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="b-name" className="text-xs font-semibold">Branch Name *</Label>
+            <Input 
+              id="b-name" 
+              className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium"
+              value={branchName} 
+              onChange={(e) => setBranchName(e.target.value)} 
+              required 
+            />
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="b-address">Address</Label>
-            <Input id="b-address" value={address} onChange={(e) => setAddress(e.target.value)} />
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="b-address" className="text-xs font-semibold">Street Address</Label>
+            <Input 
+              id="b-address" 
+              className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium"
+              value={address} 
+              onChange={(e) => setAddress(e.target.value)} 
+            />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="b-phone">Phone</Label>
-              <Input id="b-phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="b-phone" className="text-xs font-semibold">Contact Phone</Label>
+              <Input 
+                id="b-phone" 
+                className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium"
+                value={phone} 
+                onChange={(e) => setPhone(e.target.value)} 
+              />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="b-gst">GST number (legacy)</Label>
-              <Input id="b-gst" value={gstNumber} onChange={(e) => setGstNumber(e.target.value)} />
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="b-gst" className="text-xs font-semibold">GST / Tax Registration</Label>
+              <Input 
+                id="b-gst" 
+                className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium font-mono"
+                value={gstNumber} 
+                onChange={(e) => setGstNumber(e.target.value)} 
+              />
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 border-t border-border pt-4">
-            <h3 className="text-sm font-medium text-foreground">Tax</h3>
+          <div className="flex flex-col gap-3 rounded-xl border border-border/70 p-3.5 sm:p-4 bg-muted/20">
+            <div>
+              <h3 className="text-xs sm:text-sm font-bold text-foreground">Tax Configuration</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Picks how menu prices and printed customer receipts compute tax for this branch.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="b-tax-regime" className="text-xs font-medium">Region / Regime</Label>
+                <Select value={taxRegime} onValueChange={onRegimeChange}>
+                  <SelectTrigger id="b-tax-regime" className="h-11 sm:h-9 rounded-xl text-xs sm:text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TAX_REGIMES.map((regime) => (
+                      <SelectItem key={regime} value={regime}>
+                        {TAX_REGIME_PRESETS[regime].displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="b-tax-mode" className="text-xs font-medium">Menu Prices Are</Label>
+                <Select value={taxMode} onValueChange={(v) => setTaxMode(v as TaxMode)}>
+                  <SelectTrigger id="b-tax-mode" className="h-11 sm:h-9 rounded-xl text-xs sm:text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="INCLUSIVE">Tax-inclusive (Included)</SelectItem>
+                    <SelectItem value="EXCLUSIVE">Tax-exclusive (Added at checkout)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <p className="text-xs text-muted-foreground">
-              Picks how menu prices and receipts handle tax for this branch.
+              {preset.exampleRates} — set exact percentage rates per item under Menu.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="b-tax-regime">Region / regime</Label>
-              <Select value={taxRegime} onValueChange={onRegimeChange}>
-                <SelectTrigger id="b-tax-regime">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TAX_REGIMES.map((regime) => (
-                    <SelectItem key={regime} value={regime}>
-                      {TAX_REGIME_PRESETS[regime].displayName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="b-tax-mode">Menu prices are</Label>
-              <Select value={taxMode} onValueChange={(v) => setTaxMode(v as TaxMode)}>
-                <SelectTrigger id="b-tax-mode">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="INCLUSIVE">Tax-inclusive</SelectItem>
-                  <SelectItem value="EXCLUSIVE">Tax-exclusive (tax added at checkout)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {preset.exampleRates} — set the exact rate per menu item under Menu.
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="b-country">Country code</Label>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="b-country" className="text-xs font-semibold">Country Code</Label>
               <Input
                 id="b-country"
+                className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium uppercase font-mono"
                 value={country}
                 onChange={(e) => setCountry(e.target.value.toUpperCase())}
                 maxLength={2}
               />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="b-tax-id">{TAX_REGIME_PRESETS[taxRegime].taxIdLabel}</Label>
-              <Input id="b-tax-id" value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="b-tax-id" className="text-xs font-semibold">{TAX_REGIME_PRESETS[taxRegime].taxIdLabel}</Label>
+              <Input 
+                id="b-tax-id" 
+                className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium font-mono"
+                value={taxId} 
+                onChange={(e) => setTaxId(e.target.value)} 
+              />
             </div>
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="b-tax-label">Receipt label override (optional)</Label>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="b-tax-label" className="text-xs font-semibold">Receipt Label Override</Label>
             <Input
               id="b-tax-label"
+              className="h-11 sm:h-9 text-xs sm:text-sm rounded-xl font-medium"
               value={taxLabel}
               onChange={(e) => setTaxLabel(e.target.value)}
               placeholder={preset.taxLabel}
             />
           </div>
 
-          <Button type="submit" disabled={updateBranch.isPending} className="self-start">
-            {updateBranch.isPending ? "Saving…" : "Save branch"}
+          <Button 
+            type="submit" 
+            disabled={updateBranch.isPending} 
+            className="h-11 sm:h-9 rounded-xl text-xs font-semibold self-start px-5 active:scale-98"
+          >
+            {updateBranch.isPending ? "Saving Branch…" : "Save Branch Details"}
           </Button>
         </form>
       </Card>
-
-      <p className="text-xs text-muted-foreground">
-        Nodedr OrderRestro is free software under the GNU AGPL-3.0. The source code of the version
-        you are using is available to every user of this service at{" "}
-        <a
-          className="underline"
-          href="https://github.com/Raktim94/nodedr-restaurant-pos"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          github.com/Raktim94/nodedr-restaurant-pos
-        </a>
-        .
-      </p>
     </div>
   );
 }

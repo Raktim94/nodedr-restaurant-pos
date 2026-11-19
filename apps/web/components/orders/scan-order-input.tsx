@@ -58,14 +58,14 @@ export function ScanOrderInput({ branchId }: { branchId: string | null }) {
 
   return (
     <form
-      className="flex max-w-md flex-col gap-1"
+      className="flex w-full flex-col gap-1"
       onSubmit={(e) => {
         e.preventDefault();
         void lookup();
       }}
     >
       <label htmlFor="scan-order" className="sr-only">
-        Scan or type an order number
+        Search order or scan QR
       </label>
       <div className="relative">
         <ScanLine className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -77,15 +77,28 @@ export function ScanOrderInput({ branchId }: { branchId: string | null }) {
             setMessage(null);
           }}
           disabled={busy}
-          placeholder="Scan ticket QR or type order number, then Enter"
+          placeholder="Scan QR or search order #..."
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
-          className="pl-9"
+          className="h-10 pl-9 pr-9 rounded-xl text-xs sm:text-sm bg-card border-border/80 shadow-xs"
         />
+        {value && (
+          <button
+            type="button"
+            aria-label="Clear order search"
+            onClick={() => {
+              setValue("");
+              setMessage(null);
+            }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs font-semibold"
+          >
+            ✕
+          </button>
+        )}
       </div>
-      <p className="min-h-4 text-xs text-muted-foreground" role="status" aria-live="polite">
-        {message}
+      <p className="px-1 text-xs text-destructive font-medium min-h-[1.25rem]" role="status" aria-live="polite">
+        {message || ""}
       </p>
     </form>
   );

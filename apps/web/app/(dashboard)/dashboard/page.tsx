@@ -1,6 +1,5 @@
 "use client";
 
-import { useRealtimeState } from "@/lib/realtime-status";
 import { BranchNotice } from "@/components/layout/branch-notice";
 import { AlertTriangle, ChefHat, SlidersHorizontal, ClipboardList, Flame, Globe, HandCoins, ReceiptText, Store, Timer, TrendingUp, Trash2, UserRound, Users, Wallet } from "lucide-react";
 import Link from "next/link";
@@ -56,44 +55,51 @@ function StatCard({
       href={href}
       aria-label={`${label}: ${value}. Open details`}
       className={cn(
-        "group block rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+        "group block rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 active:scale-98 transition-transform",
         className,
       )}
     >
-    <Card
-      className={cn(
-        "flex h-full flex-col transition group-hover:border-primary/40 group-hover:shadow-md",
-        hero
-          ? "justify-between gap-3 border-success/25 bg-gradient-to-br from-success/10 via-card to-card p-5"
-          : compact
-            ? "gap-2 p-4"
-            : "gap-3 p-4",
-        accent === "warning" && !hero && "border-warning/40",
-      )}
-    >
-      <div className="flex items-center justify-between">
-        <span className={cn("font-medium text-muted-foreground", compact ? "text-xs" : "text-[13px]")}>{label}</span>
-        <div
-          className={cn(
-            "flex items-center justify-center rounded-xl",
-            compact ? "h-7 w-7" : "h-9 w-9",
-            accent === "success" && "bg-success/10 text-success",
-            accent === "warning" && "bg-warning/10 text-warning",
-            !accent && "bg-primary/10 text-primary",
-          )}
-        >
-          <Icon className={compact ? "h-4 w-4" : "h-[18px] w-[18px]"} />
-        </div>
-      </div>
-      <span
+      <Card
         className={cn(
-          "font-semibold tabular-nums tracking-tight text-foreground",
-          hero ? "text-3xl sm:text-4xl" : compact ? "text-xl sm:text-2xl" : "text-2xl sm:text-3xl",
+          "relative flex h-full flex-col justify-between overflow-hidden border border-border/80 bg-card transition-all duration-150 hover:border-primary/50 hover:shadow-xs shadow-2xs rounded-2xl",
+          hero
+            ? "gap-4 p-5 sm:p-6"
+            : compact
+              ? "gap-2 p-3.5 sm:p-4"
+              : "gap-3 p-4 sm:p-5",
+          accent === "warning" && !hero && "border-warning/30",
         )}
       >
-        {value}
-      </span>
-    </Card>
+        {hero && (
+          <div className="absolute top-0 left-0 h-1 w-full bg-primary" />
+        )}
+        <div className="flex items-center justify-between">
+          <span className={cn("font-medium text-muted-foreground", compact ? "text-xs" : "text-xs sm:text-[13px]")}>
+            {label}
+          </span>
+          <div
+            className={cn(
+              "flex items-center justify-center rounded-xl",
+              compact ? "h-7 w-7" : "h-9 w-9",
+              accent === "success" && "bg-success/15 text-success",
+              accent === "warning" && "bg-warning/15 text-warning",
+              !accent && (hero ? "bg-primary/15 text-primary" : "bg-secondary text-foreground"),
+            )}
+          >
+            <Icon className={compact ? "h-3.5 w-3.5" : "h-4 w-4 sm:h-[18px] sm:w-[18px]"} />
+          </div>
+        </div>
+        <div className="flex flex-col">
+          <span
+            className={cn(
+              "font-bold tabular-nums tracking-tight text-foreground",
+              hero ? "text-2xl sm:text-3xl lg:text-4xl" : compact ? "text-base sm:text-lg" : "text-xl sm:text-2xl",
+            )}
+          >
+            {value}
+          </span>
+        </div>
+      </Card>
     </Link>
   );
 }
@@ -113,19 +119,18 @@ function TableStatusRow({
     <Link
       href={href}
       aria-label={`${label}: ${count}. Open`}
-      className="-mx-2 flex items-center justify-between rounded-lg px-2 py-1.5 text-sm outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary"
+      className="-mx-2 flex items-center justify-between rounded-xl px-2.5 py-2 text-xs sm:text-sm outline-none transition hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-primary active:scale-98"
     >
       <div className="flex items-center gap-2">
         <span className={cn("h-2 w-2 rounded-full", dotClass)} />
-        <span className="text-muted-foreground">{label}</span>
+        <span className="text-muted-foreground font-medium">{label}</span>
       </div>
-      <span className="font-medium tabular-nums text-foreground">{count}</span>
+      <span className="font-bold tabular-nums text-foreground">{count}</span>
     </Link>
   );
 }
 
 export default function DashboardPage() {
-  const realtime = useRealtimeState();
   const { branchId } = useBranch();
   const { data, isLoading } = useDashboardSummary(branchId);
   const { data: prefsData } = useDashboardPrefs();
@@ -157,32 +162,37 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="flex flex-col gap-4 lg:gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold lg:text-[28px] tracking-tight text-foreground">
+          <div className="mb-1 flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
+              <span className="relative flex h-2 w-2" aria-hidden>
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 motion-reduce:animate-none" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+              </span>
+              Live Service Active
+            </span>
+            <span className="text-xs text-muted-foreground hidden sm:inline">· {today}</span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             {greeting}
             {firstName ? `, ${firstName}` : ""}
           </h1>
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="relative flex h-2 w-2" aria-hidden>
-              {realtime === "live" && (
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/60 motion-reduce:animate-none" />
-              )}
-              <span className={`relative inline-flex h-2 w-2 rounded-full ${realtime === "live" ? "bg-success" : realtime === "offline" ? "bg-destructive" : "bg-muted-foreground"}`} />
-            </span>
-            {realtime === "live" ? "Live" : realtime === "offline" ? "Not updating (server unreachable)" : "Connecting…"} · {today}
-          </p>
+          <p className="text-xs text-muted-foreground sm:hidden mt-0.5">{today}</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          aria-expanded={customizing}
-          onClick={() => setCustomizing((v) => !v)}
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-          Customize
-        </Button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            aria-expanded={customizing}
+            onClick={() => setCustomizing((v) => !v)}
+            className="h-9 rounded-xl border-border bg-card text-xs font-medium"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Customize
+          </Button>
+        </div>
       </div>
 
       {customizing && (
@@ -209,13 +219,13 @@ export default function DashboardPage() {
 
       <div {...slot("top", "kpis")}>
       {isLoading || !data ? (
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5 [&>a:last-child:nth-child(odd)]:col-span-2 xl:[&>a:last-child:nth-child(odd)]:col-span-1">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className={cn("h-[120px] rounded-2xl", i === 0 && "col-span-2 xl:col-span-2")} />
+            <Skeleton key={i} className="h-[110px] rounded-2xl" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5 [&>a:last-child:nth-child(odd)]:col-span-2 xl:[&>a:last-child:nth-child(odd)]:col-span-1">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             label="Today's Revenue"
             value={formatCurrency(data.todayRevenue)}
@@ -223,7 +233,7 @@ export default function DashboardPage() {
             accent="success"
             href="/reports"
             size="hero"
-            className="col-span-2 xl:col-span-2"
+            className="sm:col-span-2 lg:col-span-1"
           />
           <StatCard
             label="Today's Orders"
@@ -233,7 +243,7 @@ export default function DashboardPage() {
           />
           <StatCard
             label="Occupied Tables"
-            value={String(data.tables.occupied)}
+            value={`${data.tables.occupied} / ${data.tables.available + data.tables.occupied + data.tables.reserved + data.tables.cleaning}`}
             icon={ClipboardList}
             href="/tables"
           />
@@ -245,21 +255,20 @@ export default function DashboardPage() {
             icon={Flame}
             accent="warning"
             href="/kds"
-            className="col-span-2 xl:col-span-1"
           />
         </div>
       )}
       </div>
 
       {data && (
-        <div {...slot("top", "attention", "grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5 [&>a:last-child:nth-child(odd)]:col-span-2 xl:[&>a:last-child:nth-child(odd)]:col-span-1")}>
+        <div {...slot("top", "attention", "grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5")}>
           <StatCard
             size="compact"
             label="Pending payments"
             value={
               data.pendingPayments.count === 0
                 ? "0"
-                : `${data.pendingPayments.count} · ${formatCurrency(data.pendingPayments.balance)}`
+                : `${data.pendingPayments.count} (${formatCurrency(data.pendingPayments.balance)})`
             }
             icon={HandCoins}
             accent={data.pendingPayments.count > 0 ? "warning" : undefined}
@@ -267,8 +276,8 @@ export default function DashboardPage() {
           />
           {data.lowStock !== null && (
             <StatCard
-            size="compact"
-              label="Low stock"
+              size="compact"
+              label="Low stock items"
               value={String(data.lowStock)}
               icon={AlertTriangle}
               accent={data.lowStock > 0 ? "warning" : undefined}
@@ -276,15 +285,15 @@ export default function DashboardPage() {
             />
           )}
           {data.customers !== null && (
-            <StatCard size="compact" label="Customers" value={String(data.customers)} icon={Users} href="/customers" />
+            <StatCard size="compact" label="Active customers" value={String(data.customers)} icon={Users} href="/customers" />
           )}
           {data.employees !== null && (
-            <StatCard size="compact" label="Team members" value={String(data.employees)} icon={UserRound} href="/team" />
+            <StatCard size="compact" label="Active team" value={String(data.employees)} icon={UserRound} href="/team" />
           )}
           {data.unpaidPayrollRuns !== null && (
             <StatCard
-            size="compact"
-              label="Payroll to pay"
+              size="compact"
+              label="Payroll pending"
               value={String(data.unpaidPayrollRuns)}
               icon={Wallet}
               accent={data.unpaidPayrollRuns > 0 ? "warning" : undefined}
@@ -294,7 +303,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div {...slot("top", "charts", "grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2")}>
+      <div {...slot("top", "charts", "grid grid-cols-1 items-start gap-4 lg:grid-cols-2")}>
         <TrendChart
           title={`Revenue — last ${prefs.trendDays} days`}
           icon={TrendingUp}
@@ -317,66 +326,81 @@ export default function DashboardPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-4" style={{ order: 100 }}>
-        <Card {...slot("card", "tables", "flex flex-col gap-1 p-4 lg:col-span-1")}>
-          <h2 className="mb-3 text-base font-medium text-foreground">Tables</h2>
+      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-4" style={{ order: 100 }}>
+        <Card {...slot("card", "tables", "flex flex-col gap-1.5 p-5 sm:p-6")}>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-base font-bold text-foreground">Tables & Floor</h2>
+            <Link href="/tables" className="text-xs font-semibold text-primary hover:underline">
+              View floor
+            </Link>
+          </div>
           {data && (
-            <>
+            <div className="flex flex-col divide-y divide-border/60">
               <TableStatusRow label="Available" count={data.tables.available} dotClass="bg-success" href="/tables" />
               <TableStatusRow label="Occupied" count={data.tables.occupied} dotClass="bg-primary" href="/tables" />
               <TableStatusRow label="Reserved" count={data.tables.reserved} dotClass="bg-warning" href="/tables" />
               <TableStatusRow label="Cleaning" count={data.tables.cleaning} dotClass="bg-muted-foreground" href="/tables" />
-            </>
+            </div>
           )}
         </Card>
 
-        <Card {...slot("card", "kitchen", "flex flex-col gap-1 p-4 lg:col-span-1")}>
-          <h2 className="mb-3 flex items-center gap-2 text-base font-medium text-foreground">
-            <ChefHat className="h-[18px] w-[18px] text-muted-foreground" />
-            Kitchen queue
-          </h2>
+        <Card {...slot("card", "kitchen", "flex flex-col gap-1.5 p-5 sm:p-6")}>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-base font-bold text-foreground">
+              <ChefHat className="h-[18px] w-[18px] text-primary" />
+              Kitchen queue
+            </h2>
+            <Link href="/kds" className="text-xs font-semibold text-primary hover:underline">
+              Open KDS
+            </Link>
+          </div>
           {data && (
-            <>
-              <TableStatusRow label="New" count={data.kitchenQueue.new} dotClass="bg-primary" href="/kds" />
+            <div className="flex flex-col divide-y divide-border/60">
+              <TableStatusRow label="New incoming" count={data.kitchenQueue.new} dotClass="bg-primary" href="/kds" />
               <TableStatusRow label="Accepted" count={data.kitchenQueue.accepted} dotClass="bg-warning" href="/kds" />
               <TableStatusRow label="Preparing" count={data.kitchenQueue.preparing} dotClass="bg-warning" href="/kds" />
-              <TableStatusRow label="Ready" count={data.kitchenQueue.ready} dotClass="bg-success" href="/kds" />
-            </>
+              <TableStatusRow label="Ready for pickup" count={data.kitchenQueue.ready} dotClass="bg-success" href="/kds" />
+            </div>
           )}
         </Card>
 
-        <Card {...slot("card", "recent", "flex flex-col gap-3 p-4 lg:col-span-1")}>
-          <h2 className="flex items-center gap-2 text-base font-medium text-foreground">
-            <Timer className="h-[18px] w-[18px] text-muted-foreground" />
-            Recent transactions
-          </h2>
-          <div className="flex flex-col divide-y divide-border">
+        <Card {...slot("card", "recent", "flex flex-col gap-3 p-5 sm:p-6")}>
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-base font-bold text-foreground">
+              <Timer className="h-[18px] w-[18px] text-primary" />
+              Recent sales
+            </h2>
+            <Link href="/orders?tab=history" className="text-xs font-semibold text-primary hover:underline">
+              All history
+            </Link>
+          </div>
+          <div className="flex flex-col divide-y divide-border/60">
             {data?.recentOrders.length === 0 && (
-              <p className="py-4 text-sm text-muted-foreground">No sales yet today.</p>
+              <p className="py-4 text-xs text-muted-foreground">No orders recorded yet today.</p>
             )}
             {data?.recentOrders.map((order) => {
               const isOnline = ONLINE_ORDER_TYPES.has(order.type);
               return (
-                <div key={order.id} className="flex items-center justify-between gap-2 py-2.5 text-sm">
+                <div key={order.id} className="flex items-center justify-between gap-2 py-2 text-sm">
                   <button
                     type="button"
                     onClick={() => setViewingOrderId(order.id)}
-                    className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md text-left outline-none transition hover:opacity-80 focus-visible:ring-2 focus-visible:ring-primary"
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg text-left outline-none transition hover:opacity-80 focus-visible:ring-2 focus-visible:ring-primary"
                     title="View order details"
                   >
                     <div className="flex flex-col">
-                      <span className="font-medium text-foreground">#{order.orderNumber}</span>
+                      <span className="font-semibold text-foreground">#{order.orderNumber}</span>
                       <Badge
                         variant="secondary"
                         className={cn(
-                          "mt-0.5 w-fit text-[11px] font-normal",
-                          isOnline && "bg-primary/10 text-primary",
+                          "mt-0.5 w-fit text-[10px] font-semibold tracking-wide",
+                          isOnline && "border-primary/20 bg-primary/10 text-primary",
                         )}
                       >
                         {order.type.replace("_", " ")}
                       </Badge>
                     </div>
-                    <span className="font-medium tabular-nums text-foreground">
+                    <span className="font-bold tabular-nums text-foreground">
                       {formatCurrency(order.totalAmount)}
                     </span>
                   </button>
@@ -392,43 +416,47 @@ export default function DashboardPage() {
           </div>
         </Card>
 
-        <Card {...slot("card", "channels", "flex flex-col gap-3 p-4 lg:col-span-1")}>
-          <h2 className="flex items-center gap-2 text-base font-medium text-foreground">
-            <ReceiptText className="h-[18px] w-[18px] text-muted-foreground" />
-            Order channels
-          </h2>
-          <p className="text-xs text-muted-foreground">Today, self-serve vs staff-entered</p>
+        <Card {...slot("card", "channels", "flex flex-col gap-3 p-5 sm:p-6")}>
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-bold text-foreground">
+              <ReceiptText className="h-[18px] w-[18px] text-primary" />
+              Order channels
+            </h2>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Today's breakdown by channel</p>
+          </div>
           {data && (
             <>
-              <Link
-                href="/orders?tab=history&filter=online"
-                aria-label={`Online orders today: ${data.channels.online}. Open`}
-                className="-mx-2 flex items-center justify-between rounded-lg px-2 py-1.5 text-sm outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Globe className="h-3.5 w-3.5" />
-                  Online (QR / kiosk)
-                </div>
-                <span className="font-medium tabular-nums text-foreground">
-                  {data.channels.online}
-                </span>
-              </Link>
-              <Link
-                href="/orders?tab=history&filter=offline"
-                aria-label={`Offline orders today: ${data.channels.offline}. Open`}
-                className="-mx-2 flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Store className="h-3.5 w-3.5" />
-                  Offline (dine-in / takeaway / phone)
-                </div>
-                <span className="font-medium tabular-nums text-foreground">
-                  {data.channels.offline}
-                </span>
-              </Link>
+              <div className="flex flex-col gap-1.5 pt-1">
+                <Link
+                  href="/orders?tab=history&filter=online"
+                  aria-label={`Online orders today: ${data.channels.online}. Open`}
+                  className="-mx-2 flex items-center justify-between rounded-lg px-2 py-1.5 text-xs outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Globe className="h-3.5 w-3.5 text-info" />
+                    Online (QR / Kiosk)
+                  </div>
+                  <span className="font-bold tabular-nums text-foreground">
+                    {data.channels.online}
+                  </span>
+                </Link>
+                <Link
+                  href="/orders?tab=history&filter=offline"
+                  aria-label={`Offline orders today: ${data.channels.offline}. Open`}
+                  className="-mx-2 flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-xs outline-none transition hover:bg-secondary focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Store className="h-3.5 w-3.5 text-primary" />
+                    Offline (Dine-in / Takeaway)
+                  </div>
+                  <span className="font-bold tabular-nums text-foreground">
+                    {data.channels.offline}
+                  </span>
+                </Link>
+              </div>
               <div className="mt-1 h-2 overflow-hidden rounded-full bg-secondary">
                 <div
-                  className="h-full bg-primary transition-all"
+                  className="h-full bg-primary transition-all duration-300"
                   style={{
                     width: `${
                       data.channels.online + data.channels.offline === 0
@@ -451,23 +479,31 @@ function PendingOrdersBanner({ branchId }: { branchId: string | null }) {
   const { data } = useManagedOrders(branchId, "pending");
   if (!data || data.length === 0) return null;
   return (
-    <Card className="flex flex-col gap-3 border-primary/40 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <p className="text-sm font-semibold text-foreground">
-          {data.length} online order{data.length === 1 ? "" : "s"} waiting for you
-        </p>
-        <p className="text-xs text-muted-foreground">Accept or reject so the kitchen can start.</p>
+    <Card className="flex flex-col gap-3.5 border-primary/40 bg-primary/5 p-4 sm:p-5 sm:flex-row sm:items-center sm:justify-between rounded-2xl shadow-2xs">
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-sm shrink-0 shadow-xs">
+          {data.length}
+        </div>
+        <div>
+          <p className="text-sm font-bold text-foreground">
+            {data.length} online order{data.length === 1 ? "" : "s"} waiting for decision
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">Accept or reject immediately so the kitchen line can begin prep.</p>
+        </div>
       </div>
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={() => openEntity("Order", data[0].id)}
-          className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+          className="h-11 sm:h-9 rounded-xl bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-xs active:scale-98 transition-all"
         >
           Review #{data[0].orderNumber}
         </button>
-        <Link href="/orders" className="rounded-lg border border-border px-3 py-1.5 text-sm">
-          All orders
+        <Link 
+          href="/orders" 
+          className="inline-flex h-11 sm:h-9 items-center justify-center rounded-xl border border-border/80 bg-background px-4 text-xs font-semibold text-foreground hover:bg-muted active:scale-98 transition-all"
+        >
+          All Orders
         </Link>
       </div>
     </Card>

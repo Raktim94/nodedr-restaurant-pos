@@ -13,41 +13,43 @@ import { formatCurrency } from "@/lib/format";
 // Status colours follow one rule everywhere: grey = nothing happening, green = served and open, blue = kitchen working,
 // orange = money expected, red = a person must look. Colour is never the only signal: every card also says the state in words.
 const STATE: Record<TableState, { label: string; chip: string; edge: string }> = {
-  CLOSED: { label: "Available", chip: "bg-muted text-muted-foreground", edge: "border-border" },
-  ACCESS_VERIFIED: { label: "Guest tapped in", chip: "bg-muted text-foreground", edge: "border-dashed border-muted-foreground/50" },
-  OPEN: { label: "Occupied", chip: "bg-green-600/15 text-green-700 dark:text-green-400", edge: "border-green-600/50" },
-  ORDER_PROCESSING: { label: "With the kitchen", chip: "bg-blue-600/15 text-blue-700 dark:text-blue-400", edge: "border-blue-600/50" },
-  PAYMENT_PENDING: { label: "Payment pending", chip: "bg-orange-500/15 text-orange-700 dark:text-orange-400", edge: "border-orange-500/60" },
-  SETTLED: { label: "Paid", chip: "bg-green-600/10 text-green-700 dark:text-green-400", edge: "border-green-600/30" },
-  ATTENTION_REQUIRED: { label: "Needs attention", chip: "bg-red-600/15 text-red-700 dark:text-red-400", edge: "border-red-600/60" },
+  CLOSED: { label: "Available", chip: "bg-secondary text-muted-foreground border border-border/60", edge: "border-border/80" },
+  ACCESS_VERIFIED: { label: "Guest tapped in", chip: "bg-secondary text-foreground border border-border/80", edge: "border-dashed border-muted-foreground/40" },
+  OPEN: { label: "Occupied", chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20", edge: "border-emerald-500/40" },
+  ORDER_PROCESSING: { label: "With kitchen", chip: "bg-sky-500/15 text-sky-700 dark:text-sky-400 border border-sky-500/20", edge: "border-sky-500/40" },
+  PAYMENT_PENDING: { label: "Payment pending", chip: "bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/20", edge: "border-amber-500/40" },
+  SETTLED: { label: "Paid", chip: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20", edge: "border-emerald-500/30" },
+  ATTENTION_REQUIRED: { label: "Needs attention", chip: "bg-destructive/15 text-destructive border border-destructive/20", edge: "border-destructive/40" },
 };
 const ORDER: TableState[] = ["ATTENTION_REQUIRED", "PAYMENT_PENDING", "ORDER_PROCESSING", "OPEN", "ACCESS_VERIFIED", "SETTLED", "CLOSED"];
 
 function since(iso: string | null): string {
   if (!iso) return "–";
   const m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
-  return m < 1 ? "just now" : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`;
+  return m < 1 ? "just now" : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
 function TableCard({ t }: { t: TableBoardRow }) {
   const s = STATE[t.state];
   return (
-    <Card className={`flex flex-col gap-2 border-2 p-4 ${s.edge}`} aria-label={`Table ${t.number}, ${s.label}`}>
+    <Card className={`flex flex-col justify-between gap-3 border p-3.5 sm:p-4 rounded-2xl bg-card shadow-xs transition-all hover:shadow-sm ${s.edge}`} aria-label={`Table ${t.number}, ${s.label}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-lg font-semibold text-foreground">{t.name ?? `Table ${t.number}`}</p>
-          <p className="truncate text-xs text-muted-foreground">{t.floor} · seats {t.capacity}</p>
+          <p className="truncate text-base sm:text-lg font-bold text-foreground">{t.name ?? `Table ${t.number}`}</p>
+          <p className="truncate text-xs text-muted-foreground">{t.floor} · {t.capacity} seats</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${s.chip}`}>{s.label}</span>
+        <span className={`shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-semibold tracking-tight ${s.chip}`}>{s.label}</span>
       </div>
-      {t.reasons.length > 0 && <p className="text-xs text-muted-foreground">{t.reasons[0]}{t.reasons.length > 1 ? ` (+${t.reasons.length - 1} more)` : ""}</p>}
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-        <div><dt className="text-xs text-muted-foreground">Bill</dt><dd className="font-semibold tabular-nums">{t.orderCount ? formatCurrency(Number(t.billTotal)) : "–"}</dd></div>
-        <div><dt className="text-xs text-muted-foreground">Orders</dt><dd className="font-semibold tabular-nums">{t.orderCount}</dd></div>
-        <div><dt className="text-xs text-muted-foreground">Seated</dt><dd>{since(t.sessionOpenedAt)}</dd></div>
-        <div><dt className="text-xs text-muted-foreground">Last activity</dt><dd>{since(t.lastActivityAt)}</dd></div>
-        {t.guestCount > 0 && <div><dt className="text-xs text-muted-foreground">Guests</dt><dd>{t.guestCount}</dd></div>}
-        {t.openedVia === "NFC" && <div><dt className="text-xs text-muted-foreground">Opened by</dt><dd>Guest tap</dd></div>}
+      {t.reasons.length > 0 && (
+        <p className="text-xs text-muted-foreground bg-secondary/50 rounded-lg px-2 py-1 line-clamp-1">
+          {t.reasons[0]}{t.reasons.length > 1 ? ` (+${t.reasons.length - 1} more)` : ""}
+        </p>
+      )}
+      <dl className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-xs border-t border-border/50 pt-2.5">
+        <div><dt className="text-[11px] text-muted-foreground font-medium">Bill</dt><dd className="font-bold tabular-nums text-foreground">{t.orderCount ? formatCurrency(Number(t.billTotal)) : "–"}</dd></div>
+        <div><dt className="text-[11px] text-muted-foreground font-medium">Orders</dt><dd className="font-semibold tabular-nums text-foreground">{t.orderCount}</dd></div>
+        <div><dt className="text-[11px] text-muted-foreground font-medium">Seated</dt><dd className="text-muted-foreground font-medium">{since(t.sessionOpenedAt)}</dd></div>
+        <div><dt className="text-[11px] text-muted-foreground font-medium">Last active</dt><dd className="text-muted-foreground font-medium">{since(t.lastActivityAt)}</dd></div>
       </dl>
     </Card>
   );
@@ -75,42 +77,101 @@ export default function LiveTablesPage() {
   }, [data, filter, floor, q, sort]);
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-4 sm:gap-5">
       <div>
-        <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Live tables</h1>
-        <p className="text-sm text-muted-foreground">What every table is doing right now. Worked out by the server from orders, the kitchen and payments; it refreshes by itself.</p>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Live tables</h1>
+        <p className="text-xs sm:text-sm text-muted-foreground">Real-time status, active orders, and payments across all floors</p>
       </div>
 
       {isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}</div>
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-2xl" />)}</div>
       ) : isError || !data ? (
-        <Card className="p-6 text-sm"><p className="text-destructive">Could not load the table board.</p><button className="mt-2 underline" onClick={() => void refetch()}>Try again</button></Card>
+        <Card className="p-6 text-sm"><p className="text-destructive font-medium">Could not load the table board.</p><button className="mt-2 text-primary font-semibold underline" onClick={() => void refetch()}>Try again</button></Card>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Card className="p-3"><p className="text-xs text-muted-foreground">Active sessions</p><p className="text-2xl font-semibold tabular-nums">{data.activeSessions}</p></Card>
-            <Card className="p-3"><p className="text-xs text-muted-foreground">Open orders</p><p className="text-2xl font-semibold tabular-nums">{data.activeOrders}</p></Card>
-            <Card className="p-3"><p className="text-xs text-muted-foreground">Payment pending</p><p className="text-2xl font-semibold tabular-nums">{data.counts.PAYMENT_PENDING}</p></Card>
-            <Card className="p-3"><p className="text-xs text-muted-foreground">Needs attention</p><p className="text-2xl font-semibold tabular-nums">{data.counts.ATTENTION_REQUIRED}</p></Card>
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+            <Card className="p-3 sm:p-4 rounded-xl border border-border/80 bg-card shadow-xs">
+              <p className="text-[11px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider">Active sessions</p>
+              <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-foreground">{data.activeSessions}</p>
+            </Card>
+            <Card className="p-3 sm:p-4 rounded-xl border border-border/80 bg-card shadow-xs">
+              <p className="text-[11px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider">Open orders</p>
+              <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-foreground">{data.activeOrders}</p>
+            </Card>
+            <Card className="p-3 sm:p-4 rounded-xl border border-border/80 bg-card shadow-xs">
+              <p className="text-[11px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider">Payment pending</p>
+              <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-warning">{data.counts.PAYMENT_PENDING}</p>
+            </Card>
+            <Card className="p-3 sm:p-4 rounded-xl border border-border/80 bg-card shadow-xs">
+              <p className="text-[11px] sm:text-xs font-semibold text-muted-foreground uppercase tracking-wider">Needs attention</p>
+              <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-destructive">{data.counts.ATTENTION_REQUIRED}</p>
+            </Card>
           </div>
 
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by state">
-            <button type="button" aria-pressed={filter === "ALL"} onClick={() => setFilter("ALL")} className={`h-10 rounded-full border px-3 text-sm ${filter === "ALL" ? "border-primary bg-primary/10 font-semibold" : "border-border"}`}>All ({data.tables.length})</button>
+          {/* Filter Pills: Horizontal scroll on mobile */}
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1" role="group" aria-label="Filter by state">
+            <button
+              type="button"
+              aria-pressed={filter === "ALL"}
+              onClick={() => setFilter("ALL")}
+              className={`shrink-0 h-8 rounded-xl px-3 text-xs font-semibold transition-all active:scale-95 ${
+                filter === "ALL"
+                  ? "bg-primary text-white shadow-xs"
+                  : "border border-border/70 bg-card text-muted-foreground hover:bg-secondary hover:text-foreground"
+              }`}
+            >
+              All ({data.tables.length})
+            </button>
             {ORDER.map((s) => (
-              <button key={s} type="button" aria-pressed={filter === s} onClick={() => setFilter(s)} className={`h-10 rounded-full border px-3 text-sm ${filter === s ? "border-primary bg-primary/10 font-semibold" : "border-border"}`}>{STATE[s].label} ({data.counts[s]})</button>
+              <button
+                key={s}
+                type="button"
+                aria-pressed={filter === s}
+                onClick={() => setFilter(s)}
+                className={`shrink-0 h-8 rounded-xl px-3 text-xs font-medium transition-all active:scale-95 ${
+                  filter === s
+                    ? "bg-primary text-white font-semibold shadow-xs"
+                    : "border border-border/70 bg-card text-muted-foreground hover:bg-secondary hover:text-foreground"
+                }`}
+              >
+                {STATE[s].label} ({data.counts[s]})
+              </button>
             ))}
           </div>
 
-          <Card className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3">
-            <div className="col-span-2 flex flex-col gap-1.5 sm:col-span-1"><Label htmlFor="t-search">Search</Label><Input id="t-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Table number or name" /></div>
-            <div className="flex flex-col gap-1.5"><Label htmlFor="t-floor">Floor</Label><select id="t-floor" className={selectClass} value={floor} onChange={(e) => setFloor(e.target.value)}><option value="">All floors</option>{floors.map((f) => <option key={f}>{f}</option>)}</select></div>
-            <div className="flex flex-col gap-1.5"><Label htmlFor="t-sort">Sort by</Label><select id="t-sort" className={selectClass} value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}><option value="state">Needs me first</option><option value="number">Table number</option><option value="activity">Latest activity</option><option value="bill">Biggest bill</option></select></div>
+          {/* Filter Bar */}
+          <Card className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 rounded-xl border border-border/80 bg-card shadow-xs">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="t-search" className="text-xs font-semibold">Search</Label>
+              <Input id="t-search" type="search" className="h-9 rounded-lg text-xs" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Table number or name" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="t-floor" className="text-xs font-semibold">Floor</Label>
+              <select id="t-floor" className={`${selectClass} text-xs`} value={floor} onChange={(e) => setFloor(e.target.value)}>
+                <option value="">All floors</option>
+                {floors.map((f) => <option key={f}>{f}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="t-sort" className="text-xs font-semibold">Sort by</Label>
+              <select id="t-sort" className={`${selectClass} text-xs`} value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
+                <option value="state">Needs me first</option>
+                <option value="number">Table number</option>
+                <option value="activity">Latest activity</option>
+                <option value="bill">Biggest bill</option>
+              </select>
+            </div>
           </Card>
 
           {rows.length === 0 ? (
-            <Card className="py-10 text-center text-sm text-muted-foreground">{data.tables.length === 0 ? "No tables yet. Add tables under Tables." : "No table matches these filters."}</Card>
+            <Card className="py-16 text-center text-sm text-muted-foreground rounded-2xl border border-border/80">
+              {data.tables.length === 0 ? "No tables configured yet." : "No tables match these filters."}
+            </Card>
           ) : (
-            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{rows.map((t) => <li key={t.id}><TableCard t={t} /></li>)}</ul>
+            <ul className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {rows.map((t) => <li key={t.id}><TableCard t={t} /></li>)}
+            </ul>
           )}
         </>
       )}

@@ -54,17 +54,23 @@ export default function KdsPage() {
 
   return (
     <div className="flex min-h-[calc(100dvh-10rem)] flex-col gap-4 lg:h-[calc(100dvh-8rem)]">
-      <div>
-        <h1 className="text-2xl font-semibold sm:text-[32px] tracking-tight text-foreground">
-          Kitchen Display
-        </h1>
-        <p className="text-sm text-muted-foreground">Live order tickets by station</p>
+      {/* Page Header + Live sound status */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+            Kitchen Display
+          </h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">Live order tickets by station</p>
+        </div>
+        <LiveStatus />
       </div>
 
-      <LiveStatus />
-
       {stations && stations.length > 0 && (
-        <div role="group" aria-label="Station" className="flex flex-wrap gap-2">
+        <div
+          role="group"
+          aria-label="Station"
+          className="inline-flex w-fit max-w-full items-center gap-1 rounded-xl bg-secondary/80 p-1 border border-border/50 overflow-x-auto text-xs"
+        >
           {[{ id: "", name: "All stations" }, ...stations].map((s) => (
             <button
               key={s.id || "all"}
@@ -72,10 +78,10 @@ export default function KdsPage() {
               aria-pressed={s.id === activeStation}
               onClick={() => pref.choose(s.id)}
               className={cn(
-                "min-h-11 rounded-full border px-4 text-sm font-medium transition-colors",
+                "shrink-0 rounded-lg px-3.5 py-1.5 font-semibold transition-all active:scale-95 text-xs",
                 s.id === activeStation
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:bg-secondary",
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               {s.name}
@@ -157,29 +163,42 @@ export default function KdsPage() {
           retrying={tickets.isFetching}
         />
       ) : (
-        <div className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto sm:grid sm:snap-none sm:grid-cols-2 sm:gap-4 sm:overflow-hidden xl:grid-cols-4">
-          {COLUMNS.map((col) => (
-            <div key={col.status} className="flex w-[85%] shrink-0 snap-center flex-col gap-3 overflow-hidden rounded-2xl bg-secondary/40 p-3 sm:w-auto sm:shrink">
-              <div className="flex items-center justify-between px-1">
-                <h2 className="text-sm font-semibold text-foreground">{col.label}</h2>
-                <span className="text-xs font-medium text-muted-foreground">
-                  {byStatus(col.status).length}
-                </span>
-              </div>
-              <div className="flex flex-1 flex-col gap-3 overflow-y-auto pb-2">
-                {(tickets.isLoading || !canFetch) &&
-                  Array.from({ length: 2 }).map((_, i) => (
-                    <Skeleton key={i} className="h-32 rounded-2xl" />
+        <div className="flex min-h-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto sm:grid sm:snap-none sm:grid-cols-2 sm:gap-4 sm:overflow-hidden xl:grid-cols-4 pb-4">
+          {COLUMNS.map((col) => {
+            const count = byStatus(col.status).length;
+            return (
+              <div
+                key={col.status}
+                className="flex w-[82vw] max-w-[340px] shrink-0 snap-center flex-col gap-3 overflow-hidden rounded-2xl bg-secondary/35 border border-border/50 p-3 sm:w-auto sm:max-w-none sm:shrink"
+              >
+                <div className="flex items-center justify-between px-1.5 py-0.5">
+                  <h2 className="text-sm font-bold text-foreground tracking-tight">{col.label}</h2>
+                  <span className={cn(
+                    "rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums border",
+                    count > 0
+                      ? "bg-primary/10 text-primary border-primary/20"
+                      : "bg-muted text-muted-foreground border-border/50"
+                  )}>
+                    {count}
+                  </span>
+                </div>
+                <div className="flex flex-1 flex-col gap-3 overflow-y-auto pb-2">
+                  {(tickets.isLoading || !canFetch) &&
+                    Array.from({ length: 2 }).map((_, i) => (
+                      <Skeleton key={i} className="h-32 rounded-2xl" />
+                    ))}
+                  {byStatus(col.status).map((ticket) => (
+                    <TicketCard key={ticket.id} ticket={ticket} branchId={branchId} />
                   ))}
-                {byStatus(col.status).map((ticket) => (
-                  <TicketCard key={ticket.id} ticket={ticket} branchId={branchId} />
-                ))}
-                {canFetch && !tickets.isLoading && byStatus(col.status).length === 0 && (
-                  <p className="py-6 text-center text-xs text-muted-foreground">No tickets</p>
-                )}
+                  {canFetch && !tickets.isLoading && count === 0 && (
+                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                      <p className="text-xs font-medium text-muted-foreground">No tickets in {col.label.toLowerCase()}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

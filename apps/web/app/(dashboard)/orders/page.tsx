@@ -98,42 +98,74 @@ function OrdersView() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-[32px] font-semibold tracking-tight text-foreground">Orders</h1>
-        <p className="text-sm text-muted-foreground">
-          Accept new online orders and manage everything in progress
-        </p>
+      {/* Header + Search bar */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Orders</h1>
+          <p className="text-xs text-muted-foreground sm:text-sm">
+            Live orders, kitchen progress, and full transaction history
+          </p>
+        </div>
+        <div className="w-full sm:w-80 md:w-96">
+          <ScanOrderInput branchId={branchId} />
+        </div>
       </div>
 
-      <ScanOrderInput branchId={branchId} />
+      {/* Tabs & Filters bar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border/70 pb-3">
+        {/* Apple Segmented Control for main tabs */}
+        <div role="tablist" aria-label="Order stages" className="inline-flex h-9.5 items-center rounded-xl bg-secondary/70 p-1 border border-border/50">
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => {
+                  setTab(t.key);
+                  setSelected(new Set());
+                }}
+                className={cn(
+                  "relative flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-150 active:scale-95",
+                  active
+                    ? "bg-card text-foreground shadow-xs font-bold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <span>{t.label}</span>
+                {t.key === "pending" && pendingCount > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-white shadow-xs">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((t) => (
-          <button key={t.key} type="button" onClick={() => {
-              setTab(t.key);
-              setSelected(new Set());
-            }} className={chip(tab === t.key)}>
-            {t.label}
-            {t.key === "pending" && pendingCount > 0 && (
-              <span className="ml-2 rounded-full bg-destructive px-1.5 text-xs text-white">
-                {pendingCount}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            type="button"
-            onClick={() => setFilterKey(f.key)}
-            className={cn(chip(filterKey === f.key), "py-1 text-xs")}
-          >
-            {f.label}
-          </button>
-        ))}
+        {/* Filter Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+          {FILTERS.map((f) => {
+            const active = filterKey === f.key;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilterKey(f.key)}
+                className={cn(
+                  "shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150 active:scale-95",
+                  active
+                    ? "bg-primary text-white font-semibold shadow-xs"
+                    : "border border-border/60 bg-card text-muted-foreground hover:bg-secondary hover:text-foreground",
+                )}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {selectable && finished.length > 0 && (
@@ -143,11 +175,11 @@ function OrdersView() {
         </label>
       )}
 
-      <Card className="flex flex-col divide-y divide-border p-2">
+      <Card className="flex flex-col divide-y divide-border/60 overflow-hidden border border-border/80 bg-card shadow-xs">
         {isLoading ? (
-          <div className="flex flex-col gap-2 p-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 rounded-lg" />
+          <div className="flex flex-col gap-3 p-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-18 rounded-xl" />
             ))}
           </div>
         ) : orders && orders.length > 0 ? (
@@ -161,12 +193,17 @@ function OrdersView() {
             />
           ))
         ) : (
-          <div className="flex flex-col items-center gap-1 py-16 text-center">
-            <p className="text-sm font-medium text-foreground">
-              {tab === "pending" ? "No orders waiting for you" : "No orders here"}
+          <div className="flex flex-col items-center justify-center gap-2 py-20 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary/70 text-muted-foreground">
+              <Clock className="h-6 w-6 opacity-40" />
+            </div>
+            <p className="text-sm font-semibold text-foreground">
+              {tab === "pending" ? "No new orders waiting" : "No orders found"}
             </p>
-            <p className="text-sm text-muted-foreground">
-              New online orders appear here with a sound alert.
+            <p className="text-xs text-muted-foreground max-w-sm">
+              {tab === "pending"
+                ? "New online & QR orders will appear here automatically with real-time sound alerts."
+                : "Try selecting a different filter category or stage above."}
             </p>
           </div>
         )}
@@ -256,44 +293,50 @@ function OrderRow({
     <button
       type="button"
       onClick={() => openEntity("Order", order.id)}
-      className="flex flex-1 items-start justify-between gap-4 rounded-lg px-4 py-3 text-left transition hover:bg-secondary/50"
+      className="flex flex-1 items-start justify-between gap-3 p-3.5 sm:px-5 sm:py-4 text-left transition hover:bg-secondary/40 active:bg-secondary/60"
     >
-      <div className="flex min-w-0 flex-col gap-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-foreground">#{order.orderNumber}</span>
-          <span className="text-sm text-foreground">{name}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <span className="font-mono text-xs sm:text-sm font-bold tracking-tight text-foreground">
+            #{order.orderNumber}
+          </span>
+          <span className="text-xs sm:text-sm font-semibold text-foreground truncate max-w-[140px] sm:max-w-xs">
+            {name}
+          </span>
           <ChannelBadge channel={order.channel} />
           <TypeBadge type={order.type} />
           {order.acceptance === "PENDING" && (
-            <Badge className="font-normal">Needs action</Badge>
+            <Badge className="font-semibold bg-primary text-white text-[11px]">Needs action</Badge>
           )}
           {order.status === "OPEN" && order.payIntent === "CASH" && (
-            <Badge variant="outline" className="border-warning font-normal text-warning">Cash due at register</Badge>
+            <Badge variant="outline" className="border-warning/60 bg-warning/10 text-[11px] font-semibold text-warning">Cash due</Badge>
           )}
           {order.status === "OPEN" && order.heldForPayment && (
             <>
-              <Badge variant="outline" className="border-warning font-normal text-warning">Waiting for online payment</Badge>
-              <Button size="xs" variant="outline" disabled={release.isPending} onClick={(e) => { e.stopPropagation(); release.mutate(order.id); }}>Send to kitchen anyway</Button>
+              <Badge variant="outline" className="border-warning/60 bg-warning/10 text-[11px] font-semibold text-warning">Awaiting payment</Badge>
+              <Button size="xs" variant="outline" className="h-6 text-[10px] font-medium" disabled={release.isPending} onClick={(e) => { e.stopPropagation(); release.mutate(order.id); }}>Send to kitchen</Button>
             </>
           )}
-          {rejected && <Badge variant="secondary" className="font-normal">Rejected</Badge>}
+          {rejected && <Badge variant="secondary" className="font-medium text-[11px] text-destructive bg-destructive/10">Rejected</Badge>}
           {!rejected && order.status === "CANCELLED" && (
-            <Badge variant="secondary" className="font-normal">Cancelled</Badge>
+            <Badge variant="secondary" className="font-medium text-[11px]">Cancelled</Badge>
           )}
         </div>
-        <span className="truncate text-xs text-muted-foreground">{summary}</span>
+        <p className="line-clamp-2 text-xs text-muted-foreground leading-relaxed sm:line-clamp-1">
+          {summary}
+        </p>
         {order.type === "DELIVERY" && order.deliveryAddress && (
-          <span className="truncate text-xs text-muted-foreground">
+          <p className="truncate text-[11px] text-muted-foreground font-medium">
             📍 {order.deliveryAddress}
-            {order.deliveryLat != null ? " · location shared" : ""}
-          </span>
+            {order.deliveryLat != null ? " · location pinned" : ""}
+          </p>
         )}
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-1">
-        <span className="text-sm font-medium tabular-nums text-foreground">
+      <div className="flex shrink-0 flex-col items-end gap-1 pl-2">
+        <span className="text-sm sm:text-base font-bold tabular-nums text-foreground tracking-tight">
           {formatCurrency(order.totalAmount)}
         </span>
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
           <Clock className="h-3 w-3" /> {timeAgo(order.createdAt)}
         </span>
       </div>

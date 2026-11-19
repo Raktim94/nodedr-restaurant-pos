@@ -1,7 +1,7 @@
 "use client";
 
 import { kitchenProgress, type PaymentMethodDto } from "@nodedr-restaurant/types";
-import { CheckCircle2, ChefHat, Pencil, Printer } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChefHat, Pencil, Printer } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { StatusNote, useNoteToast } from "@/components/ui/status-note";
@@ -76,12 +76,12 @@ export function CheckoutPanel({
   const { data: live } = useOrder(branchId, orderSnapshot.id);
   const order: CreatedOrder = live
     ? {
-        ...orderSnapshot,
-        subtotal: live.subtotal,
-        taxAmount: live.taxAmount,
-        totalAmount: live.totalAmount,
-        status: live.status,
-      }
+      ...orderSnapshot,
+      subtotal: live.subtotal,
+      taxAmount: live.taxAmount,
+      totalAmount: live.totalAmount,
+      status: live.status,
+    }
     : orderSnapshot;
   const [method, setMethod] = useState<PaymentMethodDto>("CASH");
   const [amountText, setAmountText] = useState("");
@@ -214,12 +214,12 @@ export function CheckoutPanel({
     method !== "UPI" || !upiVpa || !(upiAmount > 0)
       ? null
       : buildUpiUri({
-          vpa: upiVpa,
-          name: upiName,
-          amount: upiAmount,
-          note: `Order ${order.id.slice(-6).toUpperCase()}`,
-          ref: order.id,
-        });
+        vpa: upiVpa,
+        name: upiName,
+        amount: upiAmount,
+        note: `Order ${order.id.slice(-6).toUpperCase()}`,
+        ref: order.id,
+      });
 
   // Mirror the QR to the customer-facing screen while UPI is selected, and
   // clear it again if the cashier switches method.
@@ -246,12 +246,12 @@ export function CheckoutPanel({
     const payments =
       plan.applied > 0
         ? [
-            {
-              method,
-              amount: plan.applied,
-              ...(plan.tendered ? { tendered: plan.tendered } : {}),
-            },
-          ]
+          {
+            method,
+            amount: plan.applied,
+            ...(plan.tendered ? { tendered: plan.tendered } : {}),
+          },
+        ]
         : [];
     const dto = {
       customerId: customer?.id,
@@ -370,386 +370,441 @@ export function CheckoutPanel({
   const partialLabel = `Record partial payment · ${formatCurrency(plan.applied)}`;
 
   return (
-    <div className="flex h-full flex-col gap-5 overflow-y-auto">
-      <StatusNote note={note} onClear={clearNote} />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap justify-end gap-2">
-          {canEditRole && !locked && (
-            <Button type="button" variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-              <Pencil className="h-4 w-4" />
-              Edit bill
-            </Button>
-          )}
-          {canCancelRole && !locked && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setCancelOpen(true)}
-            >
-              Cancel order
-            </Button>
-          )}
-        </div>
-        <CancelOrderDialog
-          branchId={branchId}
-          orderId={order.id}
-          orderNumber={order.orderNumber}
-          open={cancelOpen}
-          onOpenChange={setCancelOpen}
-        />
-        <EditBillDialog branchId={branchId} orderId={order.id} open={editOpen} onOpenChange={setEditOpen} />
-      </div>
+    <div className="flex h-full min-h-0 flex-col justify-between overflow-hidden">
+      {/* Scrollable Form Body */}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-0.5 space-y-3 pb-4">
+        <StatusNote note={note} onClear={clearNote} />
 
-      <div>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-sm text-muted-foreground">Order #{order.orderNumber} sent to kitchen</p>
-            {kitchen && (
-              <p className="mt-0.5 flex items-center gap-1.5 text-xs font-medium text-foreground">
-                <ChefHat className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-                {KITCHEN_LABEL[kitchen]}
-              </p>
+        {/* Apple HIG Standard Navigation Bar */}
+        <div className="flex items-center justify-between gap-2 pb-1 border-b border-border/40 shrink-0">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-ml-1 h-9 rounded-xl px-2.5 text-xs font-semibold text-muted-foreground hover:text-foreground active:bg-secondary"
+            onClick={onDone}
+          >
+            <ArrowLeft className="h-4 w-4 mr-1.5" />
+            Back to menu
+          </Button>
+          <div className="flex items-center gap-1.5">
+            {canEditRole && !locked && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-xl px-2.5 text-xs font-medium"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil className="h-3 w-3 mr-1.5" />
+                Edit
+              </Button>
+            )}
+            {canCancelRole && !locked && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-xl px-2.5 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setCancelOpen(true)}
+              >
+                Cancel
+              </Button>
             )}
           </div>
-          <div className="flex shrink-0 flex-wrap justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={() => branchId && openKotPrint(order.id, branchId)}
-          >
-            <Printer className="h-4 w-4" />
-            {phone ? "KOT / PDF" : "KOT (browser)"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            disabled={printKot.isPending}
-            onClick={() => printKotNow(false)}
-          >
-            <Printer className="h-4 w-4" />
-            {printKot.isPending ? "Printing…" : phone ? "KOT (Bluetooth)" : "KOT (thermal)"}
-          </Button>
-          </div>
-        </div>
-        {!locked && (
-          <p className="mt-2 rounded-lg bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-            No need to pay right now — use the buttons at the top to go back, and bill this one later from here or the Tables page.
-          </p>
-        )}
-      </div>
-
-      {paidSoFar.length > 0 && (
-        <div className="rounded-xl border border-border px-3 py-2">
-          <p className="text-xs font-medium text-muted-foreground">Payments so far</p>
-          <ul className="mt-1 flex flex-col gap-0.5 text-sm">
-            {paidSoFar.map((p) => (
-              <li key={p.id} className="flex justify-between tabular-nums">
-                <span>{p.method}</span>
-                <span>{formatCurrency(p.amount)}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Discount, tip and points are locked until this bill is settled.
-          </p>
-        </div>
-      )}
-
-      <CustomerPicker branchId={branchId} customer={customer} onSelect={setCustomer} />
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <Label htmlFor="discount">Discount</Label>
-            <div role="group" aria-label="Discount type" className="flex overflow-hidden rounded-lg border border-border text-xs">
-              {(["PERCENT", "FLAT"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={discountMode === m}
-                  disabled={locked || !canDiscount}
-                  onClick={() => {
-                    setDiscountMode(m);
-                    setDiscountValue("0");
-                  }}
-                  className={cn(
-                    "min-h-8 px-2.5 font-medium transition-colors disabled:opacity-50",
-                    discountMode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary",
-                  )}
-                >
-                  {m === "PERCENT" ? "%" : "₹ Cash"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <Input
-            id="discount"
-            type="number"
-            min="0"
-            max={discountMode === "PERCENT" ? 100 : undefined}
-            inputMode="decimal"
-            className="h-11"
-            value={discountValue}
-            disabled={locked || !canDiscount}
-            onChange={(e) => setDiscountValue(e.target.value)}
+          <CancelOrderDialog
+            branchId={branchId}
+            orderId={order.id}
+            orderNumber={order.orderNumber}
+            open={cancelOpen}
+            onOpenChange={setCancelOpen}
           />
-          {canDiscount && !locked && (
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Discount presets">
-              {(discountMode === "PERCENT" ? [5, 10, 15, 20] : [10, 20, 50, 100]).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setDiscountValue(String(v))}
-                  className="min-h-8 rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-secondary"
-                >
-                  {discountMode === "PERCENT" ? `${v}%` : `₹${v}`}
-                </button>
-              ))}
-            </div>
-          )}
-          {!canDiscount && (
-            <p className="text-[11px] text-muted-foreground">Your role cannot apply discounts.</p>
-          )}
-          {canDiscount && !locked && Number(discountValue) > 0 && (
-            <Input
-              aria-label="Discount reason"
-              placeholder="Reason for discount"
-              maxLength={200}
-              className="h-9 text-sm"
-              value={discountReason}
-              onChange={(e) => setDiscountReason(e.target.value)}
-            />
-          )}
+          <EditBillDialog branchId={branchId} orderId={order.id} open={editOpen} onOpenChange={setEditOpen} />
         </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="tip">Tip</Label>
+
+        {/* Order Info & Quick Print Card */}
+        <div className="rounded-2xl border border-border/80 bg-secondary/35 p-3 shrink-0 shadow-xs">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <span className="text-xs font-bold text-foreground tracking-tight">
+                Order #{order.orderNumber}
+              </span>
+              {kitchen && (
+                <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                  <ChefHat className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden />
+                  <span className="truncate">{KITCHEN_LABEL[kitchen]}</span>
+                </p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-xl px-2.5 text-xs font-medium bg-background"
+                onClick={() => branchId && openKotPrint(order.id, branchId)}
+                title="Print KOT via browser"
+              >
+                <Printer className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                {phone ? "PDF" : "Browser"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-xl px-2.5 text-xs font-medium bg-background"
+                disabled={printKot.isPending}
+                onClick={() => printKotNow(false)}
+                title="Print KOT via thermal printer"
+              >
+                <Printer className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                {printKot.isPending ? "…" : "Thermal"}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {paidSoFar.length > 0 && (
+          <div className="rounded-2xl border border-border/80 bg-secondary/20 px-3 py-2.5 shrink-0">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Payments so far</p>
+            <ul className="mt-1 flex flex-col gap-1 text-xs">
+              {paidSoFar.map((p) => (
+                <li key={p.id} className="flex justify-between tabular-nums">
+                  <span className="font-medium text-foreground">{p.method}</span>
+                  <span className="font-semibold text-foreground">{formatCurrency(p.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Customer Attachment */}
+        <div className="shrink-0">
+          <CustomerPicker branchId={branchId} customer={customer} onSelect={setCustomer} />
+        </div>
+
+        {/* Grouped Inset Card: Discount */}
+        <div className="rounded-2xl border border-border/80 bg-card p-3 shadow-xs space-y-3 shrink-0">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="discount" className="text-xs font-bold text-foreground">
+                Discount
+              </Label>
+              {/* Apple Segmented Control */}
+              <div role="group" aria-label="Discount type" className="inline-flex rounded-xl bg-muted/60 p-1 border border-border/40">
+                {(["PERCENT", "FLAT"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={discountMode === m}
+                    disabled={locked || !canDiscount}
+                    onClick={() => {
+                      setDiscountMode(m);
+                      setDiscountValue("0");
+                    }}
+                    className={cn(
+                      "px-2.5 py-1 text-xs font-semibold rounded-lg transition-all disabled:opacity-50",
+                      discountMode === m
+                        ? "bg-background text-foreground shadow-xs font-bold"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {m === "PERCENT" ? "Percent (%)" : "Flat (₹)"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Input
+              id="discount"
+              type="number"
+              min="0"
+              max={discountMode === "PERCENT" ? 100 : undefined}
+              inputMode="decimal"
+              placeholder="0"
+              className="h-10 rounded-xl tabular-nums text-xs font-bold bg-background"
+              value={discountValue}
+              disabled={locked || !canDiscount}
+              onChange={(e) => setDiscountValue(e.target.value)}
+            />
+
+            {/* Clean Segmented Preset Chips */}
+            {canDiscount && !locked && (
+              <div className="grid grid-cols-4 gap-1.5 pt-0.5" role="group" aria-label="Discount presets">
+                {(discountMode === "PERCENT" ? [5, 10, 15, 20] : [10, 20, 50, 100]).map((v) => {
+                  const isSelected = discountValue === String(v);
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setDiscountValue(String(v))}
+                      className={cn(
+                        "h-8 rounded-xl border text-xs font-semibold transition-all active:scale-95 flex items-center justify-center",
+                        isSelected
+                          ? "border-primary bg-primary/10 text-primary font-bold shadow-xs"
+                          : "border-border/60 bg-secondary/30 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      )}
+                    >
+                      {discountMode === "PERCENT" ? `${v}%` : `₹${v}`}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {canDiscount && !locked && Number(discountValue) > 0 && (
+              <Input
+                aria-label="Discount reason"
+                placeholder="Reason for discount (optional)"
+                maxLength={200}
+                className="h-8.5 rounded-xl text-xs bg-background"
+                value={discountReason}
+                onChange={(e) => setDiscountReason(e.target.value)}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Grouped Inset Card: Tip */}
+        <div className="rounded-2xl border border-border/80 bg-card p-3 shadow-xs space-y-1.5 shrink-0">
+          <Label htmlFor="tip" className="text-xs font-bold text-foreground">
+            Tip
+          </Label>
           <Input
             id="tip"
             type="number"
             min="0"
-            className="h-11"
+            inputMode="decimal"
+            placeholder="0"
+            className="h-10 rounded-xl tabular-nums text-xs font-bold bg-background"
             value={tipAmount}
             disabled={locked}
             onChange={(e) => setTipAmount(e.target.value)}
           />
         </div>
+
+        {customer && customer.loyaltyPoints > 0 && !locked && (
+          <div className="rounded-2xl border border-border/80 bg-secondary/25 p-3 shrink-0 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="points" className="text-xs font-bold text-foreground">Loyalty Points</Label>
+              <button
+                type="button"
+                className="text-xs font-semibold text-primary hover:underline"
+                onClick={() =>
+                  setPointsToRedeem(String(Math.min(customer.loyaltyPoints, Math.floor(bill?.totalDue ?? 0))))
+                }
+              >
+                Redeem Max ({customer.loyaltyPoints} pts)
+              </button>
+            </div>
+            <Input
+              id="points"
+              type="number"
+              min="0"
+              max={customer.loyaltyPoints}
+              className="h-9 rounded-xl text-xs bg-background"
+              value={pointsToRedeem}
+              onChange={(e) => setPointsToRedeem(e.target.value)}
+            />
+          </div>
+        )}
+
+        {/* Coupon & Gift Card - 2 Separate Rows */}
+        {(!locked || (canDiscount && !locked)) && (
+          <div className="space-y-2.5 shrink-0">
+            {canDiscount && !locked && (
+              <div className="space-y-1.5 rounded-2xl border border-border/80 bg-card p-3 shadow-xs">
+                <Label htmlFor="coupon" className="text-xs font-bold text-foreground">Coupon</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="coupon"
+                    className="h-10 min-w-0 flex-1 rounded-xl text-xs uppercase bg-background font-medium"
+                    value={couponInput}
+                    onChange={(e) => setCouponInput(e.target.value)}
+                    placeholder="ENTER COUPON CODE"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 shrink-0 rounded-xl px-4 text-xs font-semibold"
+                    disabled={!couponInput.trim() && !appliedCoupon}
+                    onClick={applyCoupon}
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </div>
+            )}
+            {!locked && (
+              <div className="space-y-1.5 rounded-2xl border border-border/80 bg-card p-3 shadow-xs">
+                <Label htmlFor="gift-card" className="text-xs font-bold text-foreground">Gift Card</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="gift-card"
+                    className="h-10 min-w-0 flex-1 rounded-xl text-xs uppercase bg-background font-medium"
+                    value={giftCardCode}
+                    onChange={(e) => {
+                      setGiftCardCode(e.target.value);
+                      setGiftCardBalance(null);
+                    }}
+                    placeholder="ENTER GIFT CARD CODE"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-10 shrink-0 rounded-xl px-4 text-xs font-semibold"
+                    disabled={!giftCardCode || checkingGiftCard}
+                    onClick={checkGiftCard}
+                  >
+                    {checkingGiftCard ? "…" : "Check"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {giftCardBalance !== null && (
+          <p className="text-xs text-success font-semibold px-1">
+            Balance {formatCurrency(giftCardBalance)} — applying {formatCurrency(giftCardApplied)}
+          </p>
+        )}
+
+        {/* Payment Methods Section */}
+        {billQuery.isError && !bill ? (
+          <QueryError
+            error={billQuery.error}
+            what="the bill"
+            onRetry={() => void billQuery.refetch()}
+            retrying={billQuery.isFetching}
+          />
+        ) : (
+          <>
+            {remainingDue > 0 && (
+              <div className="space-y-2 shrink-0 pt-1">
+                <Label className="text-xs font-bold text-foreground">Payment method</Label>
+                <PaymentMethodButtons methods={METHODS} value={method} onChange={setMethod} />
+              </div>
+            )}
+
+            {remainingDue > 0 && (
+              <div className="space-y-2 shrink-0">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="amount" className="text-xs font-bold text-foreground">
+                    {method === "CASH" ? "Cash received" : "Amount to pay"}
+                  </Label>
+                  {remainingDue > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setAmountText(String(remainingDue))}
+                      className="text-xs font-semibold text-primary hover:underline"
+                    >
+                      Exact ({formatCurrency(remainingDue)})
+                    </button>
+                  )}
+                </div>
+                <Input
+                  id="amount"
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  className="h-11 text-base font-bold tabular-nums rounded-xl bg-background"
+                  value={amountText}
+                  placeholder={String(remainingDue)}
+                  onChange={(e) => setAmountText(e.target.value)}
+                />
+                {plan.valid && plan.change > 0 && (
+                  <div className="rounded-xl bg-success/15 border border-success/20 px-3 py-2 text-xs font-bold tabular-nums text-success flex items-center justify-between" role="status">
+                    <span>Change due</span>
+                    <span className="text-sm">{formatCurrency(plan.change)}</span>
+                  </div>
+                )}
+                {plan.valid && plan.partial && (
+                  <div className="rounded-xl bg-warning/15 border border-warning/20 px-3 py-2 text-xs text-warning" role="status">
+                    Part payment — <span className="font-bold">{formatCurrency(plan.balanceAfter)}</span> will stay due.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {method === "UPI" && remainingDue > 0 && (
+              <div className="flex flex-col items-center gap-2 rounded-2xl border border-border bg-white p-3.5 shrink-0 shadow-xs">
+                {upiUri ? (
+                  <>
+                    <QRCodeSVG value={upiUri} size={130} level="M" marginSize={1} />
+                    <p className="text-xs font-bold text-[#17251d]">
+                      Scan to pay · {formatCurrency(upiAmount)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-center text-xs text-neutral-600">
+                    No UPI id set. Add it in Settings.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {remainingDue > 0 && <OnlinePayment orderId={order.id} branchId={branchId} />}
+
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/80 bg-secondary/20 px-3.5 py-2.5 shrink-0">
+              <Label htmlFor="split" className="text-xs font-semibold text-foreground">
+                Split bill
+              </Label>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  id="split"
+                  type="number"
+                  min="1"
+                  value={splitCount}
+                  onChange={(e) => setSplitCount(e.target.value)}
+                  className="h-8 w-14 text-center text-xs font-bold rounded-xl bg-background"
+                />
+                <span className="text-xs text-muted-foreground font-medium">guests</span>
+              </div>
+            </div>
+            {split > 1 && bill && (
+              <p className="-mt-1 text-center text-xs text-muted-foreground font-medium">
+                {formatCurrency(round2(balance / split))} per guest
+              </p>
+            )}
+          </>
+        )}
+
+        {/* Bill Summary Grouped Card */}
+        <div className="rounded-2xl border border-border/80 bg-secondary/25 p-3.5 shrink-0 shadow-xs">
+          <BillSummary bill={bill} giftCardApplied={giftCardApplied} pending={repricing || billQuery.isFetching} />
+        </div>
       </div>
 
-      {customer && customer.loyaltyPoints > 0 && !locked && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="points">Redeem loyalty points</Label>
-            <button
-              type="button"
-              className="text-xs font-medium text-primary hover:underline"
-              onClick={() =>
-                setPointsToRedeem(String(Math.min(customer.loyaltyPoints, Math.floor(bill?.totalDue ?? 0))))
-              }
-            >
-              Max ({customer.loyaltyPoints} available)
-            </button>
-          </div>
-          <Input
-            id="points"
-            type="number"
-            min="0"
-            max={customer.loyaltyPoints}
-            className="h-11"
-            value={pointsToRedeem}
-            onChange={(e) => setPointsToRedeem(e.target.value)}
-          />
-        </div>
-      )}
-
-      {canDiscount && !locked && (
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="coupon">Coupon code (optional)</Label>
-          <div className="flex gap-2">
-            <Input
-              id="coupon"
-              className="h-11"
-              value={couponInput}
-              onChange={(e) => setCouponInput(e.target.value)}
-              placeholder="e.g. SAVE10"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11"
-              disabled={!couponInput.trim() && !appliedCoupon}
-              onClick={applyCoupon}
-            >
-              Apply
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {!locked && (
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="gift-card">Gift card code (optional)</Label>
-          <div className="flex gap-2">
-            <Input
-              id="gift-card"
-              className="h-11"
-              value={giftCardCode}
-              onChange={(e) => {
-                setGiftCardCode(e.target.value);
-                setGiftCardBalance(null);
-              }}
-              placeholder="e.g. 8A7B629E8EEA"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11"
-              disabled={!giftCardCode || checkingGiftCard}
-              onClick={checkGiftCard}
-            >
-              {checkingGiftCard ? "…" : "Check"}
-            </Button>
-          </div>
-          {giftCardBalance !== null && (
-            <p className="text-xs text-success">
-              Balance {formatCurrency(giftCardBalance)} — applying {formatCurrency(giftCardApplied)}
-            </p>
-          )}
-        </div>
-      )}
-
-      {billQuery.isError && !bill ? (
-        <QueryError
-          error={billQuery.error}
-          what="the bill"
-          onRetry={() => void billQuery.refetch()}
-          retrying={billQuery.isFetching}
-        />
-      ) : (
-        <>
-          {remainingDue > 0 && (
-            <div className="flex flex-col gap-2">
-              <Label>Payment method</Label>
-              <PaymentMethodButtons methods={METHODS} value={method} onChange={setMethod} />
-            </div>
-          )}
-
-          {remainingDue > 0 && (
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="amount">{method === "CASH" ? "Cash received" : "Amount to pay now"}</Label>
-              <Input
-                id="amount"
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="0.01"
-                className="h-12 text-lg tabular-nums"
-                value={amountText}
-                placeholder={String(remainingDue)}
-                onChange={(e) => setAmountText(e.target.value)}
-              />
-              {plan.valid && plan.change > 0 && (
-                <p className="rounded-lg bg-success/10 px-3 py-2 text-base font-semibold tabular-nums text-success" role="status">
-                  Change due {formatCurrency(plan.change)}
-                </p>
-              )}
-              {plan.valid && plan.partial && (
-                <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning" role="status">
-                  Part payment — {formatCurrency(plan.balanceAfter)} will stay due and the table stays open.
-                </p>
-              )}
-              {plan.clamped && (
-                <p className="text-xs text-muted-foreground" role="status">
-                  {method} can only pay the balance ({formatCurrency(remainingDue)}); only that will be charged.
-                </p>
-              )}
-            </div>
-          )}
-
-          {method === "UPI" && remainingDue > 0 && (
-            <div className="flex flex-col items-center gap-2 rounded-xl border border-border bg-white p-4">
-              {upiUri ? (
-                <>
-                  <QRCodeSVG value={upiUri} size={176} level="M" marginSize={1} />
-                  <p className="text-xs font-medium text-[#17251d]">
-                    Scan with any UPI app · {formatCurrency(upiAmount)} pre-filled
-                  </p>
-                  <p className="text-[11px] text-neutral-500">Also shown on the customer display</p>
-                </>
-              ) : (
-                <p className="text-center text-xs text-neutral-600">
-                  No UPI id set yet. <Link href="/settings" className="font-medium underline">Add your UPI id in Settings → Restaurant</Link> to show a payment QR here.
-                </p>
-              )}
-            </div>
-          )}
-
-          {remainingDue > 0 && <OnlinePayment orderId={order.id} branchId={branchId} />}
-
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
-            <Label htmlFor="split" className="text-xs text-muted-foreground">
-              Split between
-            </Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="split"
-                type="number"
-                min="1"
-                value={splitCount}
-                onChange={(e) => setSplitCount(e.target.value)}
-                className="h-8 w-16 text-center"
-              />
-              <span className="text-xs text-muted-foreground">guests</span>
-            </div>
-          </div>
-          {split > 1 && bill && (
-            <p className="-mt-2 text-center text-xs text-muted-foreground">
-              {formatCurrency(round2(balance / split))} each — enter each guest&apos;s share as a part
-              payment, or collect separately and complete payment once for the whole table.
-            </p>
-          )}
-        </>
-      )}
-
-      <div className="mt-auto flex flex-col gap-3 border-t border-border pt-4">
-        <BillSummary bill={bill} giftCardApplied={giftCardApplied} pending={repricing || billQuery.isFetching} />
-
+      {/* Pinned Bottom CTA Section (Apple HIG Safe-Area Pinned Bar) */}
+      <div className="shrink-0 pt-3 border-t border-border mt-auto flex flex-col gap-2.5 bg-background/95 backdrop-blur-md">
         <div className="grid grid-cols-2 gap-2">
           <Button
             type="button"
             variant="outline"
-            className="h-11"
+            className="h-10 rounded-xl text-xs font-semibold bg-background"
             disabled={!bill}
             onClick={printBill}
             title="Prints the bill for the guest. Nothing is charged and the table stays open."
           >
-            <Printer className="h-4 w-4" />
-            {phone ? "Print / Save PDF" : "Print bill"}
+            <Printer className="h-4 w-4 mr-1.5 text-muted-foreground" />
+            {phone ? "PDF bill" : "Print bill"}
           </Button>
           <Button
             type="button"
             variant="outline"
-            className="h-11"
+            className="h-10 rounded-xl text-xs font-semibold bg-background"
             disabled={!bill || printUsb.isPending}
             onClick={printBillThermal}
-            title="Prints the bill on the thermal printer. Nothing is charged and the cash drawer stays shut."
+            title="Prints the bill on the thermal printer."
           >
-            <Printer className="h-4 w-4" />
-            {printUsb.isPending ? "Printing…" : phone ? "Print bill (Bluetooth)" : "Print bill (thermal)"}
+            <Printer className="h-4 w-4 mr-1.5 text-muted-foreground" />
+            {printUsb.isPending ? "Printing…" : "Thermal bill"}
           </Button>
         </div>
 
-      </div>
-
-      {/* Pinned to the bottom of the scrolling panel on phones, so billing is always one tap away. */}
-      <div className="sticky bottom-0 z-10 -mx-1 bg-card px-1 pb-1 pt-2 max-lg:border-t max-lg:border-border max-lg:shadow-[0_-8px_12px_-10px_rgba(0,0,0,0.25)]">
         <Button
-          className="h-12 w-full text-base"
+          className="h-12 w-full rounded-2xl bg-primary text-white text-sm font-bold shadow-md hover:bg-primary-hover active:scale-[0.98] transition-all disabled:opacity-50"
           disabled={checkout.isPending || !bill || repricing || !plan.valid}
           onClick={handleCheckout}
         >
@@ -758,7 +813,7 @@ export function CheckoutPanel({
             : plan.partial
               ? partialLabel
               : plan.change > 0
-                ? `Complete payment · change ${formatCurrency(plan.change)}`
+                ? `Complete payment · Change ${formatCurrency(plan.change)}`
                 : bill
                   ? `Complete payment · ${formatCurrency(bill.totalDue)}`
                   : "Complete payment"}

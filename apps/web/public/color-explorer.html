@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OrderRestro - Ultra-Modern Next-Gen Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif; }
+    .tabular { font-variant-numeric: tabular-nums; }
+    .theme-transition { transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+    .glass-panel {
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    .palette-btn.active {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 0 0 2px var(--btn-glow, #6366F1);
+    }
+  </style>
+</head>
+<body class="bg-[#09090C] text-slate-100 min-h-screen p-4 sm:p-6 flex flex-col items-center">
+
+  <!-- Header -->
+  <header class="w-full max-w-7xl mb-6 bg-[#111116]/90 p-5 rounded-2xl border border-white/10 flex flex-wrap items-center justify-between gap-4 glass-panel">
+    <div>
+      <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30 mb-1.5">
+        ⚡ Next-Gen 2026 Studio
+      </div>
+      <h1 class="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+        Next-Gen Futuristic POS Palettes
+      </h1>
+      <p class="text-xs text-slate-400 mt-0.5">Linear / Raycast / Arc / Vercel style — ultra-sharp, glassmorphic & alive</p>
+    </div>
+
+    <!-- Device & Dark mode switches -->
+    <div class="flex items-center gap-3">
+      <div class="bg-black/40 p-1 rounded-xl flex items-center border border-white/10 text-xs font-medium">
+        <button onclick="setDevice('pc')" id="btn-pc" class="px-3 py-1.5 rounded-lg bg-white/15 text-white transition font-semibold">Desktop</button>
+        <button onclick="setDevice('tab')" id="btn-tab" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Tablet</button>
+        <button onclick="setDevice('mobile')" id="btn-mobile" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">Mobile</button>
+      </div>
+      <button onclick="toggleTheme()" id="theme-btn" class="px-3.5 py-1.5 text-xs font-semibold rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/10 flex items-center gap-1.5 transition">
+        <span id="theme-icon">☀️</span> Light Mode
+      </button>
+    </div>
+  </header>
+
+  <!-- 4 Ultra-Modern Themes -->
+  <div class="w-full max-w-7xl mb-8">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+      <!-- 1. Linear Electric Violet & Neon Fuchsia -->
+      <button onclick="applyTheme('linear_violet')" id="card-linear_violet" style="--btn-glow: #8B5CF6;" class="palette-btn active text-left p-4 rounded-2xl border border-white/10 bg-[#13131A] transition hover:scale-[1.01] relative overflow-hidden group">
+        <div class="absolute -right-10 -top-10 w-24 h-24 bg-violet-600/20 rounded-full blur-2xl pointer-events-none"></div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-violet-400">1. Linear Style</span>
+          <span class="w-3.5 h-3.5 rounded-full bg-gradient-to-tr from-violet-600 to-fuchsia-500 shadow-[0_0_10px_#8B5CF6]"></span>
+        </div>
+        <h3 class="font-bold text-white text-sm">Electric Violet & Aurora</h3>
+        <p class="text-[11px] text-slate-400 mt-1 leading-snug">Vibrant deep space indigo, glowing electric violet action and neon cyan accents.</p>
+        <div class="flex gap-1.5 mt-3">
+          <div class="h-3.5 flex-1 rounded-md bg-[#6366F1]" title="Electric Indigo"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#A855F7]" title="Neon Violet"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#06B6D4]" title="Cyan Accent"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#0E0E14]" title="Deep Void"></div>
+        </div>
+      </button>
+
+      <!-- 2. Raycast Dark & Hot Sunset Tangerine -->
+      <button onclick="applyTheme('raycast_tangerine')" id="card-raycast_tangerine" style="--btn-glow: #FF5C00;" class="palette-btn text-left p-4 rounded-2xl border border-white/10 bg-[#13131A] transition hover:scale-[1.01] relative overflow-hidden group">
+        <div class="absolute -right-10 -top-10 w-24 h-24 bg-orange-600/20 rounded-full blur-2xl pointer-events-none"></div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-orange-400">2. Raycast Style</span>
+          <span class="w-3.5 h-3.5 rounded-full bg-[#FF5C00] shadow-[0_0_10px_#FF5C00]"></span>
+        </div>
+        <h3 class="font-bold text-white text-sm">Hot Sunset Tangerine</h3>
+        <p class="text-[11px] text-slate-400 mt-1 leading-snug">Pure carbon dark with hyper-saturated neon orange & amber. Aggressive, fast, punchy.</p>
+        <div class="flex gap-1.5 mt-3">
+          <div class="h-3.5 flex-1 rounded-md bg-[#FF5C00]" title="Sunset Tangerine"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#FF9900]" title="Hot Amber"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#FAFAFA]" title="Frost White"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#0B0B0E]" title="Carbon Black"></div>
+        </div>
+      </button>
+
+      <!-- 3. Neo-Mint / Cyberpunk Emerald -->
+      <button onclick="applyTheme('cyber_mint')" id="card-cyber_mint" style="--btn-glow: #10B981;" class="palette-btn text-left p-4 rounded-2xl border border-white/10 bg-[#13131A] transition hover:scale-[1.01] relative overflow-hidden group">
+        <div class="absolute -right-10 -top-10 w-24 h-24 bg-emerald-500/20 rounded-full blur-2xl pointer-events-none"></div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-emerald-400">3. Neo-Mint Glass</span>
+          <span class="w-3.5 h-3.5 rounded-full bg-[#10B981] shadow-[0_0_10px_#10B981]"></span>
+        </div>
+        <h3 class="font-bold text-white text-sm">Cyber Mint & Acid Ice</h3>
+        <p class="text-[11px] text-slate-400 mt-1 leading-snug">Futuristic mint cyan glow on obsidian dark. Razor-sharp precision tech aesthetic.</p>
+        <div class="flex gap-1.5 mt-3">
+          <div class="h-3.5 flex-1 rounded-md bg-[#00F59B]" title="Hyper Mint"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#00D2B4]" title="Teal Neon"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#052E2B]" title="Abyssal Green"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#080B0A]" title="Onyx Void"></div>
+        </div>
+      </button>
+
+      <!-- 4. Vercel Monolith & Acid Yellow -->
+      <button onclick="applyTheme('vercel_acid')" id="card-vercel_acid" style="--btn-glow: #FACC15;" class="palette-btn text-left p-4 rounded-2xl border border-white/10 bg-[#13131A] transition hover:scale-[1.01] relative overflow-hidden group">
+        <div class="absolute -right-10 -top-10 w-24 h-24 bg-yellow-400/20 rounded-full blur-2xl pointer-events-none"></div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[11px] font-extrabold uppercase tracking-wider text-yellow-300">4. Vercel Acid</span>
+          <span class="w-3.5 h-3.5 rounded-full bg-[#EAB308] shadow-[0_0_10px_#FACC15]"></span>
+        </div>
+        <h3 class="font-bold text-white text-sm">Pitch Monolith & Acid Yellow</h3>
+        <p class="text-[11px] text-slate-400 mt-1 leading-snug">Brutalist pitch-black surface with blinding neon acid yellow/volt and high-contrast typography.</p>
+        <div class="flex gap-1.5 mt-3">
+          <div class="h-3.5 flex-1 rounded-md bg-[#FAFF00]" title="Acid Volt"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#FFFFFF]" title="Laser White"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#18181B]" title="Card Dark"></div>
+          <div class="h-3.5 flex-1 rounded-md bg-[#000000]" title="Zero Pitch Black"></div>
+        </div>
+      </button>
+
+    </div>
+  </div>
+
+  <!-- Interactive Device Simulation -->
+  <div class="w-full flex justify-center pb-12">
+    <div id="device-wrapper" class="w-full max-w-7xl transition-all duration-300 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] rounded-3xl overflow-hidden border-2 border-white/15 bg-black p-2">
+      
+      <!-- Live Screen -->
+      <div id="sim-screen" class="w-full min-h-[600px] rounded-2xl p-5 md:p-8 theme-transition relative">
+        
+        <!-- Screen Header -->
+        <div class="flex flex-wrap items-center justify-between pb-6 mb-6 border-b gap-4" id="screen-header">
+          <div>
+            <div class="flex items-center gap-2 mb-1.5">
+              <span id="badge-pill" class="text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider border">
+                OrderRestro 2.0
+              </span>
+              <span class="flex items-center gap-1.5 text-xs font-semibold" id="status-live-text">
+                <span class="w-2 h-2 rounded-full animate-ping" id="status-dot"></span> Live Shift Active
+              </span>
+            </div>
+            <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight" id="screen-title">Good evening, Shyam</h2>
+            <p class="text-xs mt-0.5 opacity-80" id="screen-subtitle">Bistro Downtown • Service Rush Hour</p>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex items-center gap-2.5">
+            <button id="primary-btn" class="px-5 py-2.5 rounded-xl text-xs font-bold shadow-lg transition active:scale-95 flex items-center gap-1.5">
+              <span>⚡</span> + Quick Order
+            </button>
+            <button id="secondary-btn" class="px-4 py-2.5 rounded-xl text-xs font-semibold border transition">
+              Tables (14/20)
+            </button>
+          </div>
+        </div>
+
+        <!-- Metric Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          
+          <!-- Revenue Hero Card -->
+          <div class="p-5 rounded-2xl border shadow-sm relative overflow-hidden group" id="card-1">
+            <div class="absolute -right-10 -bottom-10 w-28 h-28 rounded-full blur-2xl opacity-30 pointer-events-none" id="card-glow-1"></div>
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold tracking-wide" id="card-1-label">Today's Revenue</span>
+              <span class="text-[11px] font-bold px-2 py-0.5 rounded-full" id="card-1-pill">Live</span>
+            </div>
+            <div class="text-3xl sm:text-4xl font-extrabold tabular mt-2" id="card-1-val">$4,820.50</div>
+            <div class="flex items-center gap-1.5 mt-2.5 text-xs font-bold" id="card-1-trend">
+              <span>▲ +18.4%</span> <span class="text-[11px] font-normal opacity-70">surge vs yesterday</span>
+            </div>
+          </div>
+
+          <!-- Total Orders Card -->
+          <div class="p-5 rounded-2xl border shadow-sm" id="card-2">
+            <span class="text-xs font-semibold tracking-wide" id="card-2-label">Total Tickets</span>
+            <div class="text-3xl sm:text-4xl font-extrabold tabular mt-2" id="card-2-val">94</div>
+            <div class="mt-2.5 text-xs opacity-80 font-medium" id="card-2-sub">80 Dine-in • 14 Delivery</div>
+          </div>
+
+          <!-- Table Occupancy Card -->
+          <div class="p-5 rounded-2xl border shadow-sm" id="card-3">
+            <span class="text-xs font-semibold tracking-wide" id="card-3-label">Table Occupancy</span>
+            <div class="text-3xl sm:text-4xl font-extrabold tabular mt-2" id="card-3-val">70%</div>
+            <div class="mt-2.5 text-xs font-semibold" id="card-3-sub">14 Occupied • 6 Ready</div>
+          </div>
+
+          <!-- Kitchen Load Card -->
+          <div class="p-5 rounded-2xl border shadow-sm" id="card-4">
+            <span class="text-xs font-semibold tracking-wide" id="card-4-label">Kitchen Pressure</span>
+            <div class="text-3xl sm:text-4xl font-extrabold tabular mt-2" id="card-4-val">8 Tickets</div>
+            <div class="mt-2.5 text-xs font-semibold" id="card-4-sub">⏱ Avg Speed: 9.4 mins</div>
+          </div>
+
+        </div>
+
+        <!-- Active Stream & Heatmap -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div class="lg:col-span-2 p-5 sm:p-6 rounded-2xl border shadow-sm" id="card-orders">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-extrabold tracking-tight flex items-center gap-2" id="orders-title">
+                <span>🔥</span> Live Kitchen Orders Stream
+              </h3>
+              <span class="text-[11px] font-mono px-2 py-0.5 rounded border opacity-80" id="orders-badge">WS: CONNECTED</span>
+            </div>
+
+            <div class="space-y-3">
+              <div class="p-4 rounded-xl border flex items-center justify-between transition hover:scale-[1.005]" id="order-row-1">
+                <div class="flex items-center gap-3.5">
+                  <span class="text-xs font-mono font-bold px-2.5 py-1.5 rounded-lg" id="row-1-num">#108</span>
+                  <div>
+                    <div class="text-xs font-bold" id="row-1-title">Table 4 (4 Guests) • VIP Section</div>
+                    <div class="text-[11px] opacity-70 mt-0.5" id="row-1-sub">2x Wagyu Ribeye, 1x Truffle Fries, 2x Pinot Noir</div>
+                  </div>
+                </div>
+                <span class="px-2.5 py-1 rounded-lg text-xs font-bold" id="row-1-tag">In Prep (7m)</span>
+              </div>
+
+              <div class="p-4 rounded-xl border flex items-center justify-between transition hover:scale-[1.005]" id="order-row-2">
+                <div class="flex items-center gap-3.5">
+                  <span class="text-xs font-mono font-bold px-2.5 py-1.5 rounded-lg" id="row-2-num">#109</span>
+                  <div>
+                    <div class="text-xs font-bold" id="row-2-title">Bar Counter • Quick Seat</div>
+                    <div class="text-[11px] opacity-70 mt-0.5" id="row-2-sub">1x Smoked Old Fashioned, 1x Tuna Tartare</div>
+                  </div>
+                </div>
+                <span class="px-2.5 py-1 rounded-lg text-xs font-bold" id="row-2-tag">Ready to Serve</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-5 sm:p-6 rounded-2xl border shadow-sm flex flex-col justify-between" id="card-alerts">
+            <div>
+              <h3 class="text-sm font-extrabold tracking-tight mb-3" id="alerts-title">Service Action Rail</h3>
+              <div class="space-y-2.5 text-xs">
+                <div class="p-3 rounded-xl border font-medium" id="alert-1">
+                  <strong class="font-bold">2 Tables Requesting Bill:</strong> Table 8 & Table 12
+                </div>
+                <div class="p-3 rounded-xl border font-medium" id="alert-2">
+                  <strong class="font-bold">Inventory Low:</strong> Fresh Truffle Oil (1 left)
+                </div>
+              </div>
+            </div>
+            <div class="mt-4 pt-3 border-t text-xs opacity-80 flex justify-between font-medium" id="footer-rail">
+              <span>Shift Lead:</span>
+              <span class="font-bold" id="footer-name">Sarah M.</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const themes = {
+      linear_violet: {
+        name: "Linear Electric Violet",
+        dark: {
+          bg: "#0B0C10",
+          card: "#12141C",
+          border: "#1E2230",
+          text: "#F8FAFC",
+          subtext: "#94A3B8",
+          primary: "#6366F1", // Electric Indigo/Violet
+          primaryText: "#FFFFFF",
+          glow: "#6366F1",
+          accentBg: "#1E1E38",
+          accentBorder: "#3730A3",
+          accentText: "#A5B4FC",
+          pillBg: "#2E1065",
+          pillText: "#C084FC",
+          tagPrepBg: "#312E81",
+          tagPrepText: "#C7D2FE",
+          tagReadyBg: "#064E3B",
+          tagReadyText: "#34D399",
+          alertBg: "#1E1428",
+          alertBorder: "#4A1D6D",
+          alertText: "#E879F9"
+        },
+        light: {
+          bg: "#F8FAFC",
+          card: "#FFFFFF",
+          border: "#E2E8F0",
+          text: "#0F172A",
+          subtext: "#64748B",
+          primary: "#4F46E5",
+          primaryText: "#FFFFFF",
+          glow: "#4F46E5",
+          accentBg: "#EEF2FF",
+          accentBorder: "#C7D2FE",
+          accentText: "#4338CA",
+          pillBg: "#F3E8FF",
+          pillText: "#7E22CE",
+          tagPrepBg: "#E0E7FF",
+          tagPrepText: "#3730A3",
+          tagReadyBg: "#D1FAE5",
+          tagReadyText: "#065F46",
+          alertBg: "#FAE8FF",
+          alertBorder: "#F0ABFC",
+          alertText: "#86198F"
+        }
+      },
+      raycast_tangerine: {
+        name: "Raycast Hot Tangerine",
+        dark: {
+          bg: "#0A0A0C",
+          card: "#121215",
+          border: "#202026",
+          text: "#FAFAFA",
+          subtext: "#A1A1AA",
+          primary: "#FF5C00", // Hot Neon Tangerine
+          primaryText: "#FFFFFF",
+          glow: "#FF5C00",
+          accentBg: "#2B160B",
+          accentBorder: "#5A280D",
+          accentText: "#FF985E",
+          pillBg: "#2B160B",
+          pillText: "#FF7A30",
+          tagPrepBg: "#2E1A0F",
+          tagPrepText: "#FDBA74",
+          tagReadyBg: "#063D2E",
+          tagReadyText: "#34D399",
+          alertBg: "#2C1014",
+          alertBorder: "#541B23",
+          alertText: "#FB7185"
+        },
+        light: {
+          bg: "#FAFAFA",
+          card: "#FFFFFF",
+          border: "#E4E4E7",
+          text: "#18181B",
+          subtext: "#71717A",
+          primary: "#EA580C",
+          primaryText: "#FFFFFF",
+          glow: "#EA580C",
+          accentBg: "#FFF7ED",
+          accentBorder: "#FFEDD5",
+          accentText: "#C2410C",
+          pillBg: "#FFEDD5",
+          pillText: "#9A3412",
+          tagPrepBg: "#FFEDD5",
+          tagPrepText: "#9A3412",
+          tagReadyBg: "#DCFCE7",
+          tagReadyText: "#15803D",
+          alertBg: "#FFE4E6",
+          alertBorder: "#FECDD3",
+          alertText: "#9F1239"
+        }
+      },
+      cyber_mint: {
+        name: "Cyber Mint Glass",
+        dark: {
+          bg: "#060A09",
+          card: "#0C1412",
+          border: "#152622",
+          text: "#F0FDF8",
+          subtext: "#7FA396",
+          primary: "#00F59B", // Blinding Hyper Mint
+          primaryText: "#022416",
+          glow: "#00F59B",
+          accentBg: "#0C2E25",
+          accentBorder: "#155747",
+          accentText: "#5EEAD4",
+          pillBg: "#0C2E25",
+          pillText: "#2DD4BF",
+          tagPrepBg: "#2E2410",
+          tagPrepText: "#FBBF24",
+          tagReadyBg: "#093828",
+          tagReadyText: "#00F59B",
+          alertBg: "#2E1218",
+          alertBorder: "#4F1D26",
+          alertText: "#F87171"
+        },
+        light: {
+          bg: "#F2F8F5",
+          card: "#FFFFFF",
+          border: "#D8E8E1",
+          text: "#0F241C",
+          subtext: "#527568",
+          primary: "#059669",
+          primaryText: "#FFFFFF",
+          glow: "#059669",
+          accentBg: "#E6F4EF",
+          accentBorder: "#B9DECFC",
+          accentText: "#047857",
+          pillBg: "#CCFBF1",
+          pillText: "#0F766E",
+          tagPrepBg: "#FEF3C7",
+          tagPrepText: "#92400E",
+          tagReadyBg: "#D1FAE5",
+          tagReadyText: "#065F46",
+          alertBg: "#FEE2E2",
+          alertBorder: "#FECACA",
+          alertText: "#991B1B"
+        }
+      },
+      vercel_acid: {
+        name: "Pitch Monolith & Acid Yellow",
+        dark: {
+          bg: "#000000",
+          card: "#111111",
+          border: "#262626",
+          text: "#FFFFFF",
+          subtext: "#A3A3A3",
+          primary: "#FAFF00", // Blinding Acid Yellow
+          primaryText: "#000000",
+          glow: "#FAFF00",
+          accentBg: "#1F2100",
+          accentBorder: "#3E4200",
+          accentText: "#E5EB34",
+          pillBg: "#222222",
+          pillText: "#FAFF00",
+          tagPrepBg: "#262108",
+          tagPrepText: "#FACC15",
+          tagReadyBg: "#142617",
+          tagReadyText: "#4ADE80",
+          alertBg: "#291012",
+          alertBorder: "#4A181C",
+          alertText: "#FB7185"
+        },
+        light: {
+          bg: "#FFFFFF",
+          card: "#FAFAFA",
+          border: "#E5E5E5",
+          text: "#000000",
+          subtext: "#737373",
+          primary: "#000000",
+          primaryText: "#FFFFFF",
+          glow: "#000000",
+          accentBg: "#F5F5F5",
+          accentBorder: "#E5E5E5",
+          accentText: "#000000",
+          pillBg: "#FEF08A",
+          pillText: "#713F12",
+          tagPrepBg: "#FEF9C3",
+          tagPrepText: "#854D0E",
+          tagReadyBg: "#DCFCE7",
+          tagReadyText: "#166534",
+          alertBg: "#FEE2E2",
+          alertBorder: "#FECACA",
+          alertText: "#991B1B"
+        }
+      }
+    };
+
+    let activeThemeKey = 'linear_violet';
+    let isDark = true;
+
+    function applyTheme(themeKey) {
+      activeThemeKey = themeKey;
+      Object.keys(themes).forEach(k => {
+        const card = document.getElementById('card-' + k);
+        if (card) {
+          if (k === themeKey) {
+            card.classList.add('active');
+          } else {
+            card.classList.remove('active');
+          }
+        }
+      });
+      render();
+    }
+
+    function toggleTheme() {
+      isDark = !isDark;
+      const btn = document.getElementById('theme-btn');
+      if (isDark) {
+        btn.innerHTML = '<span>☀️</span> Light Mode';
+      } else {
+        btn.innerHTML = '<span>🌙</span> Dark Mode';
+      }
+      render();
+    }
+
+    function render() {
+      const t = themes[activeThemeKey][isDark ? 'dark' : 'light'];
+      const screen = document.getElementById('sim-screen');
+      screen.style.backgroundColor = t.bg;
+      screen.style.color = t.text;
+
+      // Glow behind card
+      document.getElementById('card-glow-1').style.backgroundColor = t.glow;
+
+      // Header
+      document.getElementById('screen-header').style.borderColor = t.border;
+      const badge = document.getElementById('badge-pill');
+      badge.style.backgroundColor = t.accentBg;
+      badge.style.borderColor = t.accentBorder;
+      badge.style.color = t.accentText;
+
+      document.getElementById('status-live-text').style.color = t.primary;
+      document.getElementById('status-dot').style.backgroundColor = t.primary;
+
+      document.getElementById('screen-title').style.color = t.text;
+      document.getElementById('screen-subtitle').style.color = t.subtext;
+
+      // Buttons
+      const pBtn = document.getElementById('primary-btn');
+      pBtn.style.backgroundColor = t.primary;
+      pBtn.style.color = t.primaryText;
+      pBtn.style.boxShadow = `0 8px 20px -4px ${t.glow}55`;
+
+      const sBtn = document.getElementById('secondary-btn');
+      sBtn.style.borderColor = t.border;
+      sBtn.style.backgroundColor = t.card;
+      sBtn.style.color = t.text;
+
+      // Metric Cards
+      ['card-1', 'card-2', 'card-3', 'card-4', 'card-orders', 'card-alerts'].forEach(id => {
+        const el = document.getElementById(id);
+        el.style.backgroundColor = t.card;
+        el.style.borderColor = t.border;
+      });
+
+      document.getElementById('card-1-label').style.color = t.subtext;
+      document.getElementById('card-2-label').style.color = t.subtext;
+      document.getElementById('card-3-label').style.color = t.subtext;
+      document.getElementById('card-4-label').style.color = t.subtext;
+
+      const c1Pill = document.getElementById('card-1-pill');
+      c1Pill.style.backgroundColor = t.pillBg;
+      c1Pill.style.color = t.pillText;
+
+      document.getElementById('card-1-val').style.color = t.text;
+      document.getElementById('card-2-val').style.color = t.text;
+      document.getElementById('card-3-val').style.color = t.text;
+      document.getElementById('card-4-val').style.color = t.text;
+
+      document.getElementById('card-1-trend').style.color = t.primary;
+      document.getElementById('card-2-sub').style.color = t.subtext;
+      document.getElementById('card-3-sub').style.color = t.subtext;
+      document.getElementById('card-4-sub').style.color = t.subtext;
+
+      // Orders
+      document.getElementById('orders-title').style.color = t.text;
+      document.getElementById('orders-badge').style.borderColor = t.border;
+      document.getElementById('orders-badge').style.color = t.subtext;
+
+      const r1 = document.getElementById('order-row-1');
+      r1.style.borderColor = t.border;
+      document.getElementById('row-1-num').style.backgroundColor = t.accentBg;
+      document.getElementById('row-1-num').style.color = t.accentText;
+      document.getElementById('row-1-title').style.color = t.text;
+      document.getElementById('row-1-sub').style.color = t.subtext;
+      const tag1 = document.getElementById('row-1-tag');
+      tag1.style.backgroundColor = t.tagPrepBg;
+      tag1.style.color = t.tagPrepText;
+
+      const r2 = document.getElementById('order-row-2');
+      r2.style.borderColor = t.border;
+      document.getElementById('row-2-num').style.backgroundColor = t.accentBg;
+      document.getElementById('row-2-num').style.color = t.accentText;
+      document.getElementById('row-2-title').style.color = t.text;
+      document.getElementById('row-2-sub').style.color = t.subtext;
+      const tag2 = document.getElementById('row-2-tag');
+      tag2.style.backgroundColor = t.tagReadyBg;
+      tag2.style.color = t.tagReadyText;
+
+      // Alerts
+      document.getElementById('alerts-title').style.color = t.text;
+      const a1 = document.getElementById('alert-1');
+      a1.style.backgroundColor = t.accentBg;
+      a1.style.borderColor = t.accentBorder;
+      a1.style.color = t.accentText;
+
+      const a2 = document.getElementById('alert-2');
+      a2.style.backgroundColor = t.alertBg;
+      a2.style.borderColor = t.alertBorder;
+      a2.style.color = t.alertText;
+
+      document.getElementById('footer-rail').style.borderColor = t.border;
+    }
+
+    function setDevice(device) {
+      const wrapper = document.getElementById('device-wrapper');
+      const btnPc = document.getElementById('btn-pc');
+      const btnTab = document.getElementById('btn-tab');
+      const btnMob = document.getElementById('btn-mobile');
+
+      [btnPc, btnTab, btnMob].forEach(b => {
+        b.className = 'px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition';
+      });
+
+      if (device === 'pc') {
+        wrapper.className = 'w-full max-w-7xl transition-all duration-300 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] rounded-3xl overflow-hidden border-2 border-white/15 bg-black p-2';
+        btnPc.className = 'px-3 py-1.5 rounded-lg bg-white/20 text-white font-bold transition';
+      } else if (device === 'tab') {
+        wrapper.className = 'w-[768px] transition-all duration-300 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] rounded-3xl overflow-hidden border-2 border-white/15 bg-black p-2';
+        btnTab.className = 'px-3 py-1.5 rounded-lg bg-white/20 text-white font-bold transition';
+      } else if (device === 'mobile') {
+        wrapper.className = 'w-[390px] transition-all duration-300 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.8)] rounded-3xl overflow-hidden border-2 border-white/15 bg-black p-2';
+        btnMob.className = 'px-3 py-1.5 rounded-lg bg-white/20 text-white font-bold transition';
+      }
+    }
+
+    // Default to linear
+    applyTheme('linear_violet');
+  </script>
+</body>
+</html>

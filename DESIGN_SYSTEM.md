@@ -1,63 +1,78 @@
-# Design System
+# Design System — OrderRestro
 
-Bar to hit: Stripe Dashboard, Linear, Notion, Vercel, Raycast, Arc, Figma,
-Framer, Shopify Admin, Clerk Dashboard. Minimal, spacious, confident
-typography, restrained color, real motion — not a "POS with rounded
-corners." A screen that looks like a generic admin template is not done.
+Aesthetic Direction: **Hot Sunset Tangerine on Deep Carbon & Warm Frost Canvas**.
+Punchy, hyper-saturated, fast, and aggressive with crisp border structures and deep, rich surfaces (no washed-out/ashy greys).
 
-Every nontrivial UI task in this repo should pull from the installed
-frontend skills in this order (see global `~/.claude/CLAUDE.md` for full
-detail): `frontend-design` for the initial Design Read →
-`bencium-controlled-ux-designer`'s ask-first protocol for real
-color/typography stakes → `react-best-practices` / `composition-patterns`
-while writing components → `web-design-guidelines` + `accesslint` audit
-before calling anything done.
+## 1. Color Palette
 
-> **2026-11-05: the Product Design System & UI/UX Handbook v1.0 now governs this app.**
-> Tokens in `apps/web/app/globals.css` follow it (warm-neutral surfaces, violet `#6D4AFF` /
-> `#A18AFF` action colour, 1px-border cards, flat primary buttons, focus ring `#3C82F6`/`#80B4FF`,
-> 12px base radius, 120-180ms motion with a reduced-motion safety net). Full contract: the
-> `product-design-system` skill. Where the colour tables below still show the previous
-> wine/burgundy palette, the handbook tokens win.
+### Dark Mode (Deep Carbon & Hot Sunset Tangerine)
+Pure carbon with zero muddy grey or ashy wash. High-contrast neon orange and amber accents.
+```css
+--background:          #0A0A0C;   /* true deep carbon canvas */
+--card:                #121216;   /* crisp elevated card surface */
+--card-foreground:     #FBFBFC;   /* high-contrast white */
+--foreground:          #FBFBFC;
+--muted-foreground:    #9E9EA8;   /* crisp cool slate metadata */
+--border:              #22222B;   /* razor-sharp 1px border */
+--input:               #2E2E3A;
 
-## Color tokens (light)
+/* Signature Punchy Accent */
+--primary:             #FF5C00;   /* hyper-saturated neon sunset tangerine */
+--primary-hover:       #FF7426;
+--primary-foreground:  #FFFFFF;
+--accent:              #26150C;   /* deep amber-tangerine tint */
+--accent-foreground:   #FFA26B;
 
-```
---background:      #FAFAFA
---card:             #FFFFFF
---sidebar:          #FCFCFC
---foreground:       #111827   /* primary text */
---muted-foreground: #6B7280   /* secondary text */
---border:           #E5E7EB
---success:          #22C55E
---warning:          #F59E0B
---danger:           #EF4444
---primary:          #9F1239   /* wine/burgundy — see rationale below */
---primary-foreground: #FFFFFF
+/* Operational Status Colors */
+--success:             #00E599;   /* high-voltage neo-mint: ready tickets, paid tabs */
+--warning:             #FFB800;   /* electric gold amber: cooking, simmering */
+--destructive:         #FF3B56;   /* razor rose-red: urgent alerts, overdue tickets */
+--info:                #38BDF8;   /* electric sky */
 ```
 
-Dark mode (own token set, not `background * 0.1` math):
+### Light Mode (Warm Frost & Hot Tangerine)
+Clean, brilliant, glare-free light mode with vibrant orange CTAs.
+```css
+--background:          #F8F9FA;   /* crisp frost canvas */
+--card:                #FFFFFF;   /* pure white elevated surface */
+--card-foreground:     #0D0D11;   /* intense carbon black text */
+--foreground:          #0D0D11;
+--muted-foreground:    #63636E;   /* legible secondary text */
+--border:              #E2E4E8;   /* sharp boundary structure */
+--input:               #D0D3D9;
 
-```
---background:       #0B0B0D
---card:              #151517
---sidebar:           #111113
---foreground:        #F4F4F5
---muted-foreground:  #9CA3AF
---border:            #26262A
---success:           #34D399
---warning:           #FBBF24
---danger:            #F87171
---primary:           #FB7185   /* brighter rose for dark-bg contrast */
---primary-foreground: #1F0A0F
+/* Signature Punchy Accent */
+--primary:             #FF5C00;   /* radiant sunset tangerine */
+--primary-hover:       #E05200;
+--primary-foreground:  #FFFFFF;
+--accent:              #FFF0E6;   /* luminous tangerine wash */
+--accent-foreground:   #D94E00;
+
+/* Operational Status Colors */
+--success:             #059669;   /* vivid emerald */
+--warning:             #D97706;   /* vivid amber */
+--destructive:         #E11D48;   /* intense ruby */
+--info:                #0284C7;
 ```
 
-**Primary accent decision (the one deliberate risk):** wine/burgundy
-instead of the expected SaaS indigo/blurple (Stripe, Linear) or restaurant
-cliché tomato-red. It's a considered nod to hospitality (wine lists, velvet
-banquettes, fine dining) that stays distinct from the danger-red already in
-the palette, and reads as premium rather than generic-dashboard-default —
-finalized directly rather than looped back for a color-swatch vote, since
+## 2. Typography & Numbers
+
+- **Font Family**: Plus Jakarta Sans / Geist Sans (`--font-sans`).
+- **Tabular Numerals**: `font-variant-numeric: tabular-nums; tracking-tight` enabled for all live ticket IDs, real-time revenue, item pricing, and kitchen countdowns.
+- **Scale**:
+  - **Hero Display**: `32px–42px` (600/700 weight, tight tracking).
+  - **Section Headings (H1/H2)**: `18px–24px` (600 weight).
+  - **Body / Interactive Rows**: `14px` (400 regular, 500 medium).
+  - **Metadata & Timestamps**: `12px` (500 medium).
+  - **Badges / Live Status**: `11px` (600 semibold, sentence case).
+
+## 3. Responsive Targets
+
+1. **Desktop / PC (>= 1280px)**: Multi-column panoramic dashboard with live kitchen radar and revenue trendline.
+2. **Tablet / Counter POS (768px – 1024px)**: Dual-column grid, generous touch targets (min 44px) for rapid finger taps.
+3. **Mobile Phone (< 768px)**: Fast single-column feed with thumb-accessible horizontal quick actions.
+
+
 this is an internal operator tool, not a client-facing brand identity where
 that stakes-based ask-first call would apply. Revisit only if a real
 restaurant-brand pass (logo, physical signage) later demands matching an

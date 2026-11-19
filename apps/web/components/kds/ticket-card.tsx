@@ -76,8 +76,8 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
   return (
     <Card
       className={cn(
-        "flex shrink-0 flex-col gap-3 p-4",
-        (isLate || ticket.isPriority) && "border-warning/50 ring-1 ring-warning/30",
+        "flex shrink-0 flex-col gap-3 p-3.5 rounded-2xl border-border/70 bg-card shadow-xs transition-shadow",
+        (isLate || ticket.isPriority) && "border-amber-500/50 ring-1 ring-amber-500/30",
         isFresh && "border-primary ring-2 ring-primary/40 motion-safe:animate-pulse",
       )}
     >
@@ -111,27 +111,31 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
       <button
         type="button"
         onClick={() => setDetailsOpen(true)}
-        className="flex items-center justify-between rounded-md text-left transition hover:opacity-80"
+        className="flex items-center justify-between rounded-md text-left transition hover:opacity-80 gap-2"
         title="View customer details"
       >
-        <div>
-          <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-            #{ticket.order.orderNumber}
-            {ticket.isPriority && <Star className="h-3.5 w-3.5 fill-warning text-warning" />}
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-sm font-bold text-foreground">
+            <span className="font-mono tracking-tight">#{ticket.order.orderNumber}</span>
+            {ticket.isPriority && <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500 shrink-0" />}
             {ticket.order.channel === "ONLINE" && (
-              <Globe className="h-3.5 w-3.5 text-muted-foreground" aria-label="Online order" />
+              <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-label="Online order" />
             )}
           </p>
-          <p className="text-xs text-muted-foreground">
-            {ticket.order.table ? `Table ${ticket.order.table.number}` : ticket.order.type}
+          <p className="text-xs text-muted-foreground truncate mt-0.5">
+            <span className="font-semibold text-foreground/85">
+              {ticket.order.table ? `Table ${ticket.order.table.number}` : ticket.order.type}
+            </span>
             {ticket.station && ` · ${ticket.station.name}`}
             {customerDisplayName(ticket.order) && ` · ${customerDisplayName(ticket.order)}`}
           </p>
         </div>
         <div
           className={cn(
-            "flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium tabular-nums",
-            isLate ? "bg-warning/15 text-warning" : "bg-secondary text-muted-foreground",
+            "flex shrink-0 items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold tabular-nums border",
+            isLate
+              ? "bg-amber-500/15 text-amber-800 dark:text-amber-400 border-amber-500/30"
+              : "bg-secondary/80 text-muted-foreground border-border/50",
           )}
         >
           <Timer className="h-3 w-3" />
@@ -140,30 +144,31 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
       </button>
 
       {ticket.savedOnPhone && (
-        <p className="flex items-center gap-1.5 text-xs text-warning">
-          <CloudOff className="h-3 w-3" aria-hidden /> Saved on this phone - will be sent when the connection is back
+        <p className="flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-400 font-medium">
+          <CloudOff className="h-3.5 w-3.5" aria-hidden /> Saved offline
         </p>
       )}
 
       {ticket.order.notes && (
-        <p className="flex items-start gap-1 rounded-lg bg-warning/10 px-2 py-1.5 text-xs text-warning">
-          <Flame className="mt-0.5 h-3 w-3 shrink-0" /> {ticket.order.notes}
+        <p className="flex items-start gap-1 rounded-xl bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400 font-medium">
+          <Flame className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {ticket.order.notes}
         </p>
       )}
 
-      <div className="flex flex-col gap-2 border-t border-border pt-3">
+      <div className="flex flex-col gap-2 border-t border-border/60 pt-2.5">
         {ticket.items.map((item) => (
           <div key={item.id} className="text-sm">
-            <p className="font-medium text-foreground">
-              {item.orderItem.quantity}× {item.orderItem.nameSnapshot}
+            <p className="font-semibold text-foreground tracking-tight">
+              <span className="text-primary font-bold mr-1">{item.orderItem.quantity}×</span>
+              {item.orderItem.nameSnapshot}
             </p>
             {item.orderItem.modifiers.length > 0 && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground pl-4">
                 {item.orderItem.modifiers.map((m) => m.nameSnapshot).join(", ")}
               </p>
             )}
             {item.orderItem.kitchenNote && (
-              <p className="flex items-center gap-1 text-xs text-warning">
+              <p className="flex items-center gap-1 text-xs text-amber-800 dark:text-amber-400 pl-4 font-medium">
                 <Flame className="h-3 w-3" /> {item.orderItem.kitchenNote}
               </p>
             )}
@@ -171,11 +176,12 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
         ))}
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 pt-1">
         {ticket.status === "READY" && ticket.order.table && (
           <Button
             size="sm"
             variant="outline"
+            className="h-9 rounded-xl font-medium active:scale-95 transition-transform"
             disabled={callBuzzer.isPending}
             onClick={() =>
               callBuzzer.mutate(
@@ -197,7 +203,7 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
         )}
         {nextStatus && (
           <Button
-            className="h-12 w-full text-base"
+            className="h-11 w-full rounded-xl text-sm font-semibold active:scale-[0.98] transition-transform shadow-xs"
             disabled={updateStatus.isPending}
             onClick={() =>
               updateStatus.mutate(
@@ -222,19 +228,19 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
         <div className="flex items-center gap-2">
         {canReject && (
           <Button
-            variant="destructive"
-            className="h-12 min-w-0 flex-1 px-4"
+            variant="outline"
+            className="h-10 min-w-0 flex-1 px-3 rounded-xl border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 bg-rose-50/50 dark:bg-rose-950/20 hover:bg-rose-100/60 dark:hover:bg-rose-900/30 text-xs font-semibold active:scale-95 transition-transform"
             onClick={() => setRejectOpen(true)}
             aria-label={`Reject ticket for order ${ticket.order.orderNumber}`}
           >
-            <X className="h-5 w-5" aria-hidden />
+            <X className="h-4 w-4 mr-1 stroke-[2.5]" aria-hidden />
             Reject
           </Button>
         )}
         <Button
           variant="outline"
           size="icon"
-          className="h-12 w-12 shrink-0"
+          className="h-10 w-10 shrink-0 rounded-xl border-border/70 hover:bg-secondary/70 active:scale-95 transition-transform"
           title={ticket.isPriority ? "Unmark priority" : "Mark priority"}
           aria-label={ticket.isPriority ? "Unmark priority" : "Mark priority"}
           disabled={setPriority.isPending}
@@ -242,12 +248,12 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
             setPriority.mutate({ id: ticket.id, isPriority: !ticket.isPriority })
           }
         >
-          <Star className={cn("h-5 w-5", ticket.isPriority && "fill-warning text-warning")} />
+          <Star className={cn("h-4 w-4", ticket.isPriority ? "fill-amber-500 text-amber-500" : "text-muted-foreground")} />
         </Button>
         <Button
           variant="outline"
           size="icon"
-          className="h-12 w-12 shrink-0"
+          className="h-10 w-10 shrink-0 rounded-xl border-border/70 hover:bg-secondary/70 active:scale-95 transition-transform"
           title={ticket.printedCount > 0 ? "Reprint ticket (marked REPRINT)" : "Print ticket"}
           aria-label={ticket.printedCount > 0 ? "Reprint ticket" : "Print ticket"}
           disabled={reprint.isPending}
@@ -267,7 +273,7 @@ export function TicketCard({ ticket, branchId }: { ticket: KotTicket; branchId: 
             )
           }
         >
-          <Printer className="h-5 w-5" />
+          <Printer className="h-4 w-4 text-muted-foreground" />
         </Button>
         </div>
       </div>

@@ -44,18 +44,18 @@ export function KitchenProgressWidget({ branchId }: { branchId: string | null })
   if (active.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-border bg-secondary/30 px-3 py-2 text-xs">
+    <div className="flex items-center gap-2 sm:gap-3 rounded-xl border border-border bg-secondary/30 px-3 py-1.5 text-xs overflow-x-auto scrollbar-none">
       <span className="flex shrink-0 items-center gap-1.5 font-medium text-muted-foreground">
         <ChefHat className="h-3.5 w-3.5" />
-        Kitchen
+        <span className="hidden xs:inline">Kitchen</span>
       </span>
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex items-center gap-2.5 sm:gap-3 min-w-max">
         {COLUMNS.map((col) => {
           const count = countOf(col.status);
           if (count === 0) return null;
           return (
-            <span key={col.status} className="flex items-center gap-1.5">
-              <span className={cn("h-1.5 w-1.5 rounded-full", col.dotClass)} />
+            <span key={col.status} className="flex items-center gap-1.5 whitespace-nowrap">
+              <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", col.dotClass)} />
               <span className="text-muted-foreground">{col.label}</span>
               <span className="font-semibold tabular-nums text-foreground">{count}</span>
             </span>

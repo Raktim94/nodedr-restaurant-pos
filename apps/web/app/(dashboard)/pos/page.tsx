@@ -25,7 +25,7 @@ import {
   type OpenOrder,
 } from "@/hooks/use-orders";
 import { useFloors, type RestaurantTable } from "@/hooks/use-tables";
-import { Button } from "@/components/ui/button";
+import { ManufacturingCard } from "@/components/pos/manufacturing-card";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -65,8 +65,6 @@ function PosPageInner() {
   const [pickerItem, setPickerItem] = useState<MenuItem | null>(null);
   const [activeOrder, setActiveOrder] = useState<CreatedOrder | null>(null);
   const [activeCustomer, setActiveCustomer] = useState<OpenOrder["customer"]>(null);
-  // True right after "Send to kitchen" so the return actions can say what just happened.
-  const [justSent, setJustSent] = useState(false);
   // /pos?tableId=... can change while this page stays mounted.
   const [seenPreselected, setSeenPreselected] = useState(preselectedTableId);
   if (preselectedTableId !== seenPreselected) {
@@ -194,8 +192,6 @@ function PosPageInner() {
             setDrafts((d) => clearDraft(d, sentTableId));
             setActiveCustomer(existingOrder.customer);
             setActiveOrder(order);
-            setJustSent(true);
-            setCartOpen(true);
             toast.success(`Added to order #${order.orderNumber} — sent to kitchen`);
           },
           onError: (err) => toast.error(err instanceof ApiError ? err.message : "Could not add items"),
@@ -219,7 +215,6 @@ function PosPageInner() {
           setDrafts((d) => clearDraft(d, sentTableId));
           setActiveCustomer(null);
           setActiveOrder(order);
-          setJustSent(true);
           setCartOpen(true);
           toast.success(`Order #${order.orderNumber} sent to kitchen`);
         },
@@ -232,27 +227,11 @@ function PosPageInner() {
     if (existingOrder) {
       setActiveCustomer(existingOrder.customer);
       setActiveOrder(existingOrder);
-      setJustSent(false);
       setCartOpen(true);
     }
   };
 
-  // "Back to this table": leave the payment view but stay on the same table and
-  // the same bill, so staff can add another round now or take payment later.
-  // The sent items are already on the bill; unsent drafts of other tables stay.
-  const backToTable = () => {
-    if (!activeOrder || orderType !== "DINE_IN" || !tableId) return;
-    const billId = activeOrder.id;
-    setActiveOrder(null);
-    setActiveCustomer(null);
-    setJustSent(false);
-    setLines([]);
-    setCartOpen(false);
-    setSelectedBillId(billId);
-  };
-
   const resetForNewOrder = () => {
-    setJustSent(false);
     setActiveOrder(null);
     setCartOpen(false);
     // The sent cart is gone; other tables' unsent drafts stay.
@@ -275,10 +254,6 @@ function PosPageInner() {
   // mid-flow (tableId set, or viewing/paying an order) skip straight past
   // it, same as arriving here from the Tables page's own "New order" link
   // (?tableId=... pre-fills this and never shows the picker).
-  const tableLabel = (() => {
-    const t = tables.find((x) => x.id === tableId);
-    return t ? (t.name ?? `Table ${t.number}`) : "";
-  })();
   const showTablePicker = orderType === "DINE_IN" && !tableId && !activeOrder;
 
   return (
@@ -314,55 +289,32 @@ function PosPageInner() {
           />
         </Card>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden lg:grid-cols-[1fr_360px]">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-[1fr_390px] xl:grid-cols-[1fr_420px]">
           <div className="flex min-h-0 flex-col gap-3">
             <Card className="min-h-0 flex-1 overflow-hidden p-3 sm:p-5">
               <ProductGrid branchId={branchId} onSelect={handleSelect} />
             </Card>
+            <ManufacturingCard branchId={branchId} />
           </div>
 
           <Card
             className={cn(
-              "min-h-0 overflow-hidden p-5",
+              "min-h-0 flex flex-col overflow-hidden p-3.5 sm:p-4.5 bg-card/95 backdrop-blur shadow-sm",
               cartOpen
                 ? "max-lg:fixed max-lg:inset-0 max-lg:z-40 max-lg:rounded-none max-lg:p-4 max-lg:pt-[max(1rem,env(safe-area-inset-top))] max-lg:pb-[max(1rem,env(safe-area-inset-bottom))]"
                 : "max-lg:hidden",
             )}
           >
-            <button
-              type="button"
-              onClick={() => setCartOpen(false)}
-              className="mb-3 -ml-1 flex items-center gap-1 text-sm font-medium text-muted-foreground lg:hidden"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Back to menu
-            </button>
-            {activeOrder && (
-              <div
-                role="status"
-                className="mb-3 flex flex-col gap-2 rounded-xl border border-success/30 bg-success/10 p-3"
+            {/* When activeOrder is open, CheckoutPanel provides its own dedicated Apple HIG navigation bar */}
+            {!activeOrder && (
+              <button
+                type="button"
+                onClick={() => setCartOpen(false)}
+                className="mb-3 -ml-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground lg:hidden"
               >
-                <p className="text-sm font-medium text-foreground">
-                  {justSent ? `Order #${activeOrder.orderNumber} sent to kitchen` : `Bill #${activeOrder.orderNumber}`}
-                  {orderType === "DINE_IN" && tableId && (
-                    <span className="font-normal text-muted-foreground"> · {tableLabel}</span>
-                  )}
-                </p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {orderType === "DINE_IN" && tableId && (
-                    <Button type="button" variant="outline" className="h-11" onClick={backToTable}>
-                      Back to this table
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    className={cn("h-11", !(orderType === "DINE_IN" && tableId) && "sm:col-span-2")}
-                    onClick={resetForNewOrder}
-                  >
-                    Back to POS menu
-                  </Button>
-                </div>
-              </div>
+                <ChevronLeft className="h-4 w-4" />
+                Back to menu
+              </button>
             )}
             {activeOrder ? (
               <CheckoutPanel

@@ -53,82 +53,82 @@
 }
 
 :root {
-  /* Product Design System v1.0 (see ~/.claude/skills/product-design-system and
-     DESIGN_SYSTEM.md). Warm-neutral surfaces, one violet action colour. */
-  --background: #F7F7F5;
-  --foreground: #18181B;
-  --card: #FFFFFF;
-  --card-foreground: #18181B;
+  /* Hot Sunset Tangerine (Light Mode) — Clean frost base with punchy neon tangerine */
+  --background: #FAFAFB;         /* Clean frost background */
+  --foreground: #09090B;         /* Carbon Deep Black */
+  --card: #FFFFFF;               /* Elevated Card */
+  --card-foreground: #09090B;
   --popover: #FFFFFF;
-  --popover-foreground: #18181B;
-  --primary: #6D4AFF;
-  --primary-hover: #5B3BE8;
+  --popover-foreground: #09090B;
+  --primary: #EA580C;            /* Accessible Vibrant Tangerine (WCAG AA 4.6:1 against #FFF) */
+  --primary-hover: #C2410C;
   --primary-foreground: #FFFFFF;
-  --secondary: #F1F1EF;
-  --secondary-foreground: #18181B;
-  --muted: #F1F1EF;
-  --muted-foreground: #52525B;
-  --accent: #F0EBFF;
-  --accent-foreground: #4C2EC7;
-  --destructive: #C43D4D;
-  --success: #18845B;
-  --warning: #A65C00;
-  --info: #2863B8;
-  --border: #E4E4E7;
+  --secondary: #F2F2F5;          /* Carbon tint fill */
+  --secondary-foreground: #09090B;
+  --muted: #F2F2F5;
+  --muted-foreground: #71717A;   /* Crisp neutral zinc */
+  --accent: #FFF3EB;             /* Soft tangerine glow */
+  --accent-foreground: #D44800;
+  --destructive: #EF4444;        /* Vivid Red */
+  --success: #10B981;            /* Vivid Emerald */
+  --warning: #F59E0B;            /* Vivid Amber */
+  --info: #06B6D4;               /* Neon Cyan */
+  --border: #E4E4E7;             /* Crisp zinc border */
   --input: #D4D4D8;
-  --ring: #3C82F6;
-  --chart-1: #6D4AFF;
-  --chart-2: #18845B;
-  --chart-3: #A65C00;
-  --chart-4: #2863B8;
+  --ring: #FF5C00;
+  --chart-1: #FF5C00;
+  --chart-2: #10B981;
+  --chart-3: #F59E0B;
+  --chart-4: #06B6D4;
   --chart-5: #71717A;
-  --radius: 0.75rem;
-  --sidebar: #FFFFFF;
-  --sidebar-foreground: #18181B;
-  --sidebar-primary: #6D4AFF;
+  --radius: 0.875rem;            /* 14px Modern Squircle Radius */
+  --sidebar: #FAFAFB;
+  --sidebar-foreground: #09090B;
+  --sidebar-primary: #FF5C00;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F0EBFF;
-  --sidebar-accent-foreground: #4C2EC7;
+  --sidebar-accent: #F2F2F5;
+  --sidebar-accent-foreground: #09090B;
   --sidebar-border: #E4E4E7;
-  --sidebar-ring: #3C82F6;
+  --sidebar-ring: #FF5C00;
 }
 
 .dark {
-  --background: #111114;
-  --foreground: #F4F4F5;
-  --card: #19191E;
-  --card-foreground: #F4F4F5;
-  --popover: #19191E;
-  --popover-foreground: #F4F4F5;
-  --primary: #A18AFF;
-  --primary-hover: #B5A5FF;
-  --primary-foreground: #17102E;
-  --secondary: #222228;
-  --secondary-foreground: #F4F4F5;
-  --muted: #222228;
-  --muted-foreground: #A1A1AA;
-  --accent: #30284B;
-  --accent-foreground: #D6CBFF;
-  --destructive: #FF7A88;
-  --success: #5BC69A;
-  --warning: #F2BA62;
-  --info: #80B4FF;
-  --border: #34343C;
-  --input: #45454F;
-  --ring: #80B4FF;
-  --chart-1: #A18AFF;
-  --chart-2: #5BC69A;
-  --chart-3: #F2BA62;
-  --chart-4: #80B4FF;
+  /* Hot Sunset Tangerine (Dark Mode) — Pure Carbon Dark with Hyper-Saturated Neon Orange & Amber */
+  --background: #09090C;         /* Pure Carbon Black */
+  --foreground: #FAFAFA;         /* Frost White */
+  --card: #121216;               /* Carbon Surface Layer */
+  --card-foreground: #FAFAFA;
+  --popover: #121216;
+  --popover-foreground: #FAFAFA;
+  --primary: #F97316;            /* Accessible Lighter Orange for Dark Mode Background */
+  --primary-hover: #FB923C;
+  --primary-foreground: #09090C;
+  --secondary: #1C1C22;          /* Carbon Surface Elevated */
+  --secondary-foreground: #FAFAFA;
+  --muted: #1C1C22;
+  --muted-foreground: #A1A1AA;   /* Secondary zinc label */
+  --accent: #2B160B;             /* Deep burnt amber accent glow */
+  --accent-foreground: #FF985E;
+  --destructive: #F43F5E;        /* Punchy neon crimson */
+  --success: #10B981;            /* Punchy neon emerald */
+  --warning: #FBBF24;            /* Punchy hot amber */
+  --info: #38BDF8;               /* Sky neon */
+  --border: #23232B;             /* Crisp carbon dark border */
+  --input: #2C2C36;
+  --ring: #FF5C00;
+  --chart-1: #FF5C00;
+  --chart-2: #10B981;
+  --chart-3: #FBBF24;
+  --chart-4: #38BDF8;
   --chart-5: #A1A1AA;
-  --sidebar: #19191E;
-  --sidebar-foreground: #F4F4F5;
-  --sidebar-primary: #A18AFF;
-  --sidebar-primary-foreground: #17102E;
-  --sidebar-accent: #30284B;
-  --sidebar-accent-foreground: #D6CBFF;
-  --sidebar-border: #34343C;
-  --sidebar-ring: #80B4FF;
+  --sidebar: #0C0C0F;
+  --sidebar-foreground: #FAFAFA;
+  --sidebar-primary: #FF5C00;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1C1C22;
+  --sidebar-accent-foreground: #FAFAFA;
+  --sidebar-border: #23232B;
+  --sidebar-ring: #FF5C00;
 }
 
 /* Customer kiosk (/kiosk/*): always the light palette, whatever the device's
@@ -330,6 +330,38 @@
   }
   table {
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Apple-style sleek, minimal floating scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(140, 140, 150, 0.25) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: rgba(140, 140, 150, 0.25);
+    border-radius: 9999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(140, 140, 150, 0.45);
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 }
 

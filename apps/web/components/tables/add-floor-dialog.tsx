@@ -17,8 +17,24 @@ import { Label } from "@/components/ui/label";
 import { useCreateFloor } from "@/hooks/use-tables";
 import { ApiError } from "@/lib/api";
 
-export function AddFloorDialog({ branchId }: { branchId: string | null }) {
-  const [open, setOpen] = useState(false);
+export function AddFloorDialog({
+  branchId,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  trigger,
+}: {
+  branchId: string | null;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: React.ReactElement;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = (v: boolean) => {
+    if (!isControlled) setInternalOpen(v);
+    controlledOnOpenChange?.(v);
+  };
   const [name, setName] = useState("");
   const createFloor = useCreateFloor(branchId);
 
@@ -36,14 +52,17 @@ export function AddFloorDialog({ branchId }: { branchId: string | null }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          <Button variant="outline" size="sm">
-            <Plus className="h-4 w-4" />
-            Add floor
-          </Button>
-        }
-      />
+      {trigger && <DialogTrigger render={trigger} />}
+      {!trigger && !isControlled && (
+        <DialogTrigger
+          render={
+            <Button variant="outline" size="sm">
+              <Plus className="h-4 w-4" />
+              Add floor
+            </Button>
+          }
+        />
+      )}
       <DialogContent>
         <form onSubmit={onSubmit}>
           <DialogHeader>
