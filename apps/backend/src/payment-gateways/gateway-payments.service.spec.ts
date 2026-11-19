@@ -72,6 +72,7 @@ function setup(over: Partial<Row> = {}) {
   const orders: any = {
     checkout: jest.fn(async () => ({})),
     releaseHeldOrder: jest.fn(async () => false),
+    previewBill: jest.fn(async () => ({ balanceDue: 123.45 })),
   };
   const svc = new GatewayPaymentsService(prisma, gateways, orders);
   return { svc, pay, orders, prisma };
@@ -100,6 +101,17 @@ describe('confirming a payment', () => {
     expect(dto.payments[0].amount).toBe(123.45);
     expect(dto.requestId).toBe('gp1');
     expect(pay.status).toBe('SUCCEEDED');
+  });
+
+  it('books no more than the bill owes when a zero-decimal currency rounds the charge up', async () => {
+    const { svc, orders } = setup({ currency: 'JPY', amountMinor: 95 });
+    orders.previewBill.mockResolvedValue({ balanceDue: 94.5 });
+    fake.fetchStatus.mockResolvedValue(
+      paid({ paidMinor: 95, currency: 'JPY' }),
+    );
+    await svc.refresh('gp1');
+    const dto = orders.checkout.mock.calls[0][3];
+    expect(dto.payments[0].amount).toBe(94.5);
   });
 
   it('a second look at an already-settled payment never settles again', async () => {
