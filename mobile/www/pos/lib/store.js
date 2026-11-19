@@ -54,6 +54,29 @@ export const kv = {
 export const sales = {
   put: (sale) => tx('sales', 'readwrite', (s) => s.put(sale)),
   get: (id) => tx('sales', 'readonly', (s) => s.get(id)),
+  // Read, merge and write in ONE readwrite transaction. A separate get/put
+  // pair lets a concurrent collection update be overwritten by a sync result.
+  merge: (id, merge) =>
+    open().then(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const t = db.transaction('sales', 'readwrite');
+          const store = t.objectStore('sales');
+          const req = store.get(id);
+          let result;
+          req.onsuccess = () => {
+            if (!req.result) {
+              result = null;
+              return;
+            }
+            result = merge(req.result);
+            if (result) store.put(result);
+          };
+          t.oncomplete = () => resolve(result);
+          t.onerror = () => reject(t.error);
+          t.onabort = () => reject(t.error);
+        }),
+    ),
   all: () => tx('sales', 'readonly', (s) => s.getAll()).then((a) => a.sort((x, y) => (x.soldAt < y.soldAt ? 1 : -1))),
   clear: () => tx('sales', 'readwrite', (s) => s.clear()),
   pending: () => sales.all().then((a) => a.filter((s) => s.status === 'pending')),
