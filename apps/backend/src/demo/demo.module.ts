@@ -17,12 +17,19 @@ export const isDemo = () => process.env.DEMO_MODE === 'true';
 // Anything a public visitor could use to hurt the server or other people. Matched against the path under /api.
 // Reading is fine; these are blocked for every method.
 const DENY = [
-  /^\/v1\/(users|roles|api-keys|webhooks|backups?|sync|integrations?|payment-gateways|updates?|reports\/schedules)(\/|$)/,
+  /^\/v1\/(users|roles|api-keys|staff-api-keys|integration-api-keys|mcp|webhooks|backups?|sync|integrations?|payment-gateways|updates?|reports\/schedules)(\/|$)/,
   /^\/v1\/auth\/(password|change-password|two-factor|2fa|pin|me)(\/|$)/,
   /^\/v1\/settings\/(email|smtp|printers?)(\/|$)/,
   /upload|\/media\b|\/photo\b|\/import/,
   /^\/v1\/paging\/buzzers\/[^/]+\/test$/, // test calls could hit a webhook address
 ];
+
+/** Exposed for tests: is this path/method off-limits in the public demo? */
+export const demoRestricted = (path: string, method: string) =>
+  method !== 'GET' &&
+  method !== 'HEAD' &&
+  method !== 'OPTIONS' &&
+  DENY.some((r) => r.test(path));
 
 @Injectable()
 export class DemoGuardMiddleware implements NestMiddleware {
@@ -42,9 +49,7 @@ export class DemoGuardMiddleware implements NestMiddleware {
     if (!demo) return next();
     // originalUrl, not req.path: inside middleware mounted on '*', path is relative to the mount point.
     const path = req.originalUrl.split('?')[0].replace(/^\/api/, '');
-    const mutating =
-      req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS';
-    if (mutating && DENY.some((r) => r.test(path))) {
+    if (demoRestricted(path, req.method)) {
       return void res.status(403).json({
         message: 'This is switched off in the public demo.',
         code: 'DEMO_RESTRICTED',

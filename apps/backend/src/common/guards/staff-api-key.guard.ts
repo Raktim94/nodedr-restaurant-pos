@@ -1,10 +1,13 @@
 import {
   CanActivate,
   ExecutionContext,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
+import type { Response } from 'express';
 import type { SessionUser } from '@nodedr-restaurant/types';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -12,6 +15,7 @@ import {
   permissionInclude,
 } from '../../auth/effective-permissions';
 import type { AuthenticatedRequest } from '../types/authenticated-request';
+import { envLimit, KeyRateLimiter } from './key-rate-limiter';
 
 // Authenticates the MCP server (src/mcp/) via a personal access token
 // (StaffApiKey) instead of the cookie-based Passport JWT session — an AI
@@ -25,6 +29,9 @@ import type { AuthenticatedRequest } from '../types/authenticated-request';
 // strategy would be a much larger, riskier change for the same result.
 @Injectable()
 export class StaffApiKeyGuard implements CanActivate {
+  private readonly limiter = new KeyRateLimiter();
+  private readonly limit = envLimit('STAFF_API_KEY_LIMIT_PER_MIN', 120);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -53,6 +60,18 @@ export class StaffApiKeyGuard implements CanActivate {
     }
     if (!key.user.isActive) {
       throw new UnauthorizedException('Staff account is not active');
+    }
+
+    const retryAfter = this.limiter.hit(key.id, this.limit);
+    if (retryAfter > 0) {
+      context
+        .switchToHttp()
+        .getResponse<Response>()
+        .setHeader('Retry-After', String(retryAfter));
+      throw new HttpException(
+        'Too many requests for this API key - slow down and retry later',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     const sessionUser: SessionUser = {
