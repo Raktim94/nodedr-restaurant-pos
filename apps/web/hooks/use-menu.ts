@@ -49,6 +49,9 @@ export interface MenuItem {
   isVeg: boolean;
   isActive: boolean;
   isCombo: boolean;
+  barcode: string | null;
+  sku: string | null;
+  stockIngredient: { sku: string | null } | null;
   category: { id: string; name: string };
   station: { id: string; name: string } | null;
   modifierGroups: { modifierGroup: ModifierGroup }[];

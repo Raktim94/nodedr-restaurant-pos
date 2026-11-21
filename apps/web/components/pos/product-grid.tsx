@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useMenuCosts, useMfgSettings } from "@/hooks/use-manufacturing";
 import { useCategories, useMenuItems, type MenuItem } from "@/hooks/use-menu";
 import { formatCurrency } from "@/lib/format";
+import { findItemByCode } from "@/lib/pos-scan";
 
 export function ProductGrid({
   branchId,
@@ -36,7 +37,12 @@ export function ProductGrid({
   const { data: costs } = useMenuCosts(branchId, canSeeCost && showCost);
   const costOf = new Map((costs?.items ?? []).map((c) => [c.menuItemId, c]));
 
-  const filtered = items?.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()));
+  // Archived items (deleted but kept for old orders) are not for sale. A typed/scanned barcode or SKU also finds its item.
+  const sellable = items?.filter((i) => i.isActive);
+  const needle = search.toLowerCase();
+  const filtered = sellable?.filter(
+    (i) => i.name.toLowerCase().includes(needle) || (!!needle && findItemByCode([i], search) === i),
+  );
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -46,6 +52,15 @@ export function ProductGrid({
           aria-label="Search menu"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            // A scanner focused in this box ends with Enter: add the exact barcode/SKU match and clear the box.
+            if (e.key !== "Enter") return;
+            const hit = findItemByCode(sellable, search);
+            if (!hit) return;
+            e.preventDefault();
+            onSelect(hit);
+            setSearch("");
+          }}
           className="h-11 sm:flex-1"
         />
         {categories && categories.length > 0 && (

@@ -2,7 +2,7 @@
 
 import { ChevronLeft, MonitorSmartphone, ShoppingCart } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { StatusNote, useNoteToast } from "@/components/ui/status-note";
 import { publishDisplay } from "@/lib/customer-display";
 import { BranchNotice } from "@/components/layout/branch-notice";
@@ -16,7 +16,8 @@ import { PosTablePicker } from "@/components/pos/pos-table-picker";
 import { ProductGrid } from "@/components/pos/product-grid";
 import { Card } from "@/components/ui/card";
 import { useBranch } from "@/hooks/use-branch";
-import type { MenuItem } from "@/hooks/use-menu";
+import { useMenuItems, type MenuItem } from "@/hooks/use-menu";
+import { findItemByCode, pushKey, type ScanBuffer } from "@/lib/pos-scan";
 import {
   useAddOrderItems,
   useCreateOrder,
@@ -138,6 +139,33 @@ function PosPageInner() {
     }
     addLine(item.id, item.name, Number(item.price), [], "");
   };
+
+  // Keyboard-wedge barcode scanner: it types the code as a fast burst + Enter. Listen anywhere on the page except
+  // inside a text field (the search box handles its own Enter), look the code up across all categories and add it.
+  const { data: allItems } = useMenuItems(branchId);
+  const scanRef = useRef({ buf: { text: "", last: 0 } as ScanBuffer, items: allItems, select: handleSelect, toast });
+  useEffect(() => {
+    scanRef.current.items = allItems;
+    scanRef.current.select = handleSelect;
+    scanRef.current.toast = toast;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      const r = scanRef.current;
+      const { buf, code } = pushKey(r.buf, e.key, e.timeStamp);
+      r.buf = buf;
+      if (!code) return;
+      e.preventDefault();
+      const item = findItemByCode(r.items, code);
+      if (item) r.select(item);
+      else r.toast.error(`No menu item with barcode ${code}. Add the barcode to the item or its stock ingredient.`);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const handleModifierConfirm = (modifierIds: string[], modifierLabel: string, portion?: Portion) => {
     if (!pickerItem) return;

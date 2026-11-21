@@ -86,6 +86,8 @@ export class MenuService {
       include: {
         category: true,
         station: true,
+        // The POS matches scanned barcodes against this too.
+        stockIngredient: { select: { sku: true } },
         modifierGroups: {
           include: { modifierGroup: { include: ACTIVE_MODIFIERS } },
         },
