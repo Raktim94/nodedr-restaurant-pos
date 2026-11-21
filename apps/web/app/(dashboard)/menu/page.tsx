@@ -45,8 +45,11 @@ export default function MenuPage() {
   const canManage = hasPermission(me?.user, "menu.manage");
   const { data: categories, isLoading: categoriesLoading } = useCategories(branchId);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>(undefined);
-  const { data: items, isLoading: itemsLoading } = useMenuItems(branchId, selectedCategoryId);
-  const { data: allItems } = useMenuItems(branchId);
+  // Deleting an item that appears in past orders archives it (isActive false) instead of removing it, so hide those here.
+  const { data: rawItems, isLoading: itemsLoading } = useMenuItems(branchId, selectedCategoryId);
+  const { data: rawAllItems } = useMenuItems(branchId);
+  const items = rawItems?.filter((i) => i.isActive);
+  const allItems = rawAllItems?.filter((i) => i.isActive);
   const deleteItem = useDeleteMenuItem(branchId);
   const deleteCategory = useDeleteCategory(branchId);
   const [comboItem, setComboItem] = useState<MenuItem | null>(null);
