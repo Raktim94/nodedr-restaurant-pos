@@ -117,6 +117,25 @@ allowing readers but not a second writer), producing exactly:
 > The process cannot access the file '...\backend.log' because it is being
 > used by another process.
 
+## Store submission (prepare, do not publish)
+
+`build-windows-msix.ps1` writes **`windows/msix/out/OrderRestro_<version>_x64.msixupload`**
+next to `OrderRestro.msix`. That zip (the package at its root, built *before* the
+dev-only test signature, so nothing signed with a throwaway certificate is ever
+sent) is the file Partner Center takes under *Packages*. CI uploads it as part of the
+`OrderRestro-embedded-server-msix-<sha>` artifact of `windows-msix.yml`.
+
+Checklist before uploading (a person does these in Partner Center, nothing here submits):
+
+1. `Identity/@Version` in `AppxManifest.xml` and `<Version>` in `Launcher/Launcher.csproj` both raised
+   (the Store refuses the same version twice; the last digit stays 0 for Store packages).
+2. The build above was made with `-IncludeEmbeddedServer` (the "Start on this computer" edition).
+3. A real Windows 10/11 machine was used for the install, first-run, sale, close/relaunch and Exit checks
+   in "What has and hasn't been tested" below; WACK was run there with an interactive session.
+4. Submission notes: the app declares only `internetClient` and `runFullTrust` (a desktop app that hosts
+   WebView2 and starts its own local server); it asks for no administrator rights, installs no service,
+   and writes only under `%LOCALAPPDATA%\OrderRestro`. The Docker/self-hosted install is separate and unchanged.
+
 ## Uninstalling OrderRestro
 
 MSIX/Desktop Bridge has no uninstall-hook mechanism — unlike a classic MSI

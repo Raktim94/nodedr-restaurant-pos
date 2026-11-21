@@ -117,6 +117,26 @@ if ($LASTEXITCODE -ne 0) { throw "makeappx pack failed with exit code $LASTEXITC
 Write-Host "Built package: $msixOut" -ForegroundColor Green
 
 # --- 4. Optional: sign with a throwaway local test certificate -------------
+# --- 4b. Microsoft Store upload artifact -----------------------------------
+# Partner Center takes a .msixupload: a zip whose root holds the package (and,
+# optionally, symbols). It is made from the package BEFORE the dev-only test
+# signature below, so nothing signed with a throwaway certificate is ever
+# uploaded; the Store signs the package itself. This is the file to upload to a
+# submission (see windows/msix/README.md, "Store submission").
+[xml]$manifestForUpload = Get-Content $manifestSrc
+$uploadVersion = $manifestForUpload.Package.Identity.Version
+$uploadStage = Join-Path $root 'out/upload-stage'
+Remove-Item -Recurse -Force $uploadStage -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path $uploadStage | Out-Null
+Copy-Item $msixOut (Join-Path $uploadStage "OrderRestro_${uploadVersion}_${Platform}.msix")
+$uploadZip = Join-Path $root "out/OrderRestro_${uploadVersion}_${Platform}.zip"
+$uploadOut = Join-Path $root "out/OrderRestro_${uploadVersion}_${Platform}.msixupload"
+Remove-Item $uploadZip, $uploadOut -ErrorAction SilentlyContinue
+Compress-Archive -Path (Join-Path $uploadStage '*') -DestinationPath $uploadZip
+Move-Item $uploadZip $uploadOut
+Remove-Item -Recurse -Force $uploadStage
+Write-Host "Store upload package: $uploadOut" -ForegroundColor Green
+
 if ($SelfSignedTest) {
     if (-not (Get-Command signtool -ErrorAction SilentlyContinue)) {
         throw "signtool not found on PATH — required for -SelfSignedTest. Install the Windows 10/11 SDK."

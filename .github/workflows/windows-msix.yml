@@ -596,6 +596,20 @@ jobs:
           Write-Host "Installed via the one-click installer: $($pkg.PackageFullName)" -ForegroundColor Green
           Remove-AppxPackage -Package $pkg.PackageFullName
 
+      - name: Check the Store upload package (.msixupload)
+        shell: pwsh
+        working-directory: windows/msix
+        run: |
+          $up = Get-ChildItem out -Filter *.msixupload | Select-Object -First 1
+          if (-not $up) { throw "No .msixupload was produced" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($up.FullName)
+          try { $names = $zip.Entries.Name } finally { $zip.Dispose() }
+          if (-not ($names | Where-Object { $_ -like '*.msix' })) { throw "msixupload has no .msix inside: $names" }
+          [xml]$m = Get-Content AppxManifest.xml
+          if ($up.Name -notlike "*$($m.Package.Identity.Version)*") { throw "msixupload name does not carry the manifest version" }
+          Write-Host "OK: $($up.Name) contains $($names -join ', ')"
+
       - name: Upload embedded-server MSIX artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -603,6 +617,7 @@ jobs:
           name: OrderRestro-embedded-server-msix-${{ github.sha }}
           path: |
             windows/msix/out/OrderRestro.msix
+            windows/msix/out/*.msixupload
             windows/msix/out/Install-OrderRestro.ps1
             windows/msix/out/Install-OrderRestro.cmd
             windows/msix/out/INSTALL-README.txt
