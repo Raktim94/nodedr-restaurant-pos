@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { StatusNote, useNoteToast } from "@/components/ui/status-note";
+import { saveFileInApp } from "@/lib/native";
 import { ApiError } from "@/lib/api";
 import {
   templateUrl,
@@ -37,8 +38,11 @@ function errorReportCsv(result: ImportResult) {
   return ["line,name,problem", ...result.errors.map((e) => [e.line, esc(e.name), esc(e.messages.join("; "))].join(","))].join("\r\n");
 }
 
-function download(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" }));
+async function download(name: string, text: string) {
+  const blob = new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" });
+  // Inside the Android app the web view cannot download a blob link; the app saves the file to Downloads instead.
+  if (await saveFileInApp(name, blob)) return;
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
@@ -119,7 +123,7 @@ export function ImportCsvDialog({ kind, branchId }: { kind: ImportKind; branchId
               <li className="rounded-lg bg-secondary p-3"><b className="block text-lg tabular-nums">{done.summary.errors}</b>skipped (errors)</li>
             </ul>
             {done.summary.errors > 0 && (
-              <Button variant="outline" size="sm" className="self-start" onClick={() => download("import-errors.csv", errorReportCsv(done))}>
+              <Button variant="outline" size="sm" className="self-start" onClick={() => void download("import-errors.csv", errorReportCsv(done))}>
                 <Download className="h-3.5 w-3.5" /> Download the rows that were skipped
               </Button>
             )}
@@ -221,7 +225,7 @@ export function ImportCsvDialog({ kind, branchId }: { kind: ImportKind; branchId
                       ))}
                       {preview.errors.length > 50 && <li>…and {preview.errors.length - 50} more. Download the full list.</li>}
                     </ul>
-                    <Button variant="outline" size="sm" className="self-start" onClick={() => download("import-errors.csv", errorReportCsv(preview))}>
+                    <Button variant="outline" size="sm" className="self-start" onClick={() => void download("import-errors.csv", errorReportCsv(preview))}>
                       <Download className="h-3.5 w-3.5" /> Download problem list
                     </Button>
                     {importable > 0 && (

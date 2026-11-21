@@ -10,6 +10,19 @@
 <body>
 <main>
   <img class="logo" src="assets/logo.png" alt="" width="72" height="72">
+  <section id="choose" hidden>
+    <h1>How will you use OrderRestro?</h1>
+    <p class="sub">You can change this later in the app.</p>
+    <button class="choice" id="pick-server" type="button">
+      <b>Connect to my restaurant server</b>
+      <span>Staff sign-in, tables, kitchen screen and all your sales in one place. Needs the server address.</span>
+    </button>
+    <button class="choice" id="pick-offline" type="button">
+      <b>Use on this phone, no server</b>
+      <span>Start selling in a minute. Everything stays on this phone and works with no internet. Connect a server later.</span>
+    </button>
+  </section>
+  <section id="connectbox">
   <h1>Connect to your restaurant</h1>
   <p class="sub">Enter the address of your OrderRestro server. Staff and riders use the same sign-in as the web app.</p>
   <form id="f" class="card" novalidate>
@@ -25,6 +38,8 @@
   </form>
   <div id="recent" class="recent" hidden></div>
   <button class="btn ghost" id="standalone" type="button" hidden style="margin-top:1rem">No server yet? Use the app on this phone</button>
+  <button class="btn ghost" id="back" type="button" hidden style="margin-top:.5rem">&larr; Back</button>
+  </section>
   <p class="foot"><span id="ver"></span> · <a href="https://orderrestro.nodedr.com/privacy">Privacy</a> · <a href="https://orderrestro.nodedr.com/">orderrestro.nodedr.com</a></p>
 </main>
 <script src="connect.js"></script>

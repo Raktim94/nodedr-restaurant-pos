@@ -124,5 +124,5 @@ stock on hand per ingredient, separate **Add inventory item** / **Add menu item*
 save as recipe, and **Drafts and posted vouchers**. All rules stay on the server; see `../docs/STOCK-JOURNAL.md`. Code: `www/pos/lib/stockjournal.js`
 (tested in `stockjournal.test.mjs`) and the "stock journal" section of `www/pos/pos.js`.
 
-Release prep: `versionName 1.40.1` / `versionCode 140100`. `npm run android:release` builds the bundle; signing uses `keystore.properties` or
+Release prep: `versionName 1.41.0` / `versionCode 141000`. `npm run android:release` builds the bundle; signing uses `keystore.properties` or
 `ORDERRESTRO_KEYSTORE_PROPERTIES` as before. Nothing is submitted by the build.

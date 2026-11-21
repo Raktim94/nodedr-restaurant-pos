@@ -53,6 +53,7 @@ public class MainActivity extends BridgeActivity {
         });
         watchNetwork();
         quietErrors();
+        handleDownloads();
         // The error page is served locally, where the Capacitor bridge is not
         // injected, so it gets this tiny interface to retry or change server.
         if (getBridge() != null && getBridge().getWebView() != null) {
@@ -89,6 +90,16 @@ public class MainActivity extends BridgeActivity {
                     });
                 }
 
+                /**
+                 * Saves a file the web app made on the phone (a CSV or report). A WebView cannot
+                 * download blob: links by itself, so the page sends the bytes as base64 and we
+                 * put the file in the phone's Downloads folder.
+                 */
+                @android.webkit.JavascriptInterface
+                public boolean saveFile(String name, String mime, String base64) {
+                    return saveToDownloads(name, mime, android.util.Base64.decode(base64, android.util.Base64.DEFAULT));
+                }
+
                 @android.webkit.JavascriptInterface
                 public void retry() {
                     // Pick the local or online address again, then reopen.
@@ -96,6 +107,59 @@ public class MainActivity extends BridgeActivity {
                 }
             }, "OrderRestroNative");
         }
+    }
+
+    /** Writes bytes to Downloads (MediaStore on Android 10+, the public folder before). Returns true on success. */
+    private boolean saveToDownloads(String rawName, String mime, byte[] bytes) {
+        try {
+            String name = rawName == null ? "download" : rawName.replaceAll("[\\\\/:*?\"<>|]", "_");
+            if (name.isEmpty()) name = "download";
+            String type = mime == null || mime.isEmpty() ? "application/octet-stream" : mime;
+            java.io.OutputStream out;
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                android.content.ContentValues v = new android.content.ContentValues();
+                v.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name);
+                v.put(android.provider.MediaStore.Downloads.MIME_TYPE, type);
+                v.put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS);
+                android.net.Uri uri = getContentResolver().insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                if (uri == null) return false;
+                out = getContentResolver().openOutputStream(uri);
+            } else {
+                java.io.File dir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+                if (!dir.exists() && !dir.mkdirs()) return false;
+                out = new java.io.FileOutputStream(new java.io.File(dir, name));
+            }
+            if (out == null) return false;
+            try { out.write(bytes); } finally { out.close(); }
+            final String shown = name;
+            runOnUiThread(() -> android.widget.Toast.makeText(this, "Saved to Downloads: " + shown, android.widget.Toast.LENGTH_LONG).show());
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** Normal https download links (a file the server sends): hand them to the phone's download manager with the sign-in cookie. */
+    private void handleDownloads() {
+        if (getBridge() == null || getBridge().getWebView() == null) return;
+        getBridge().getWebView().setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
+            try {
+                if (url == null || !(url.startsWith("https://") || url.startsWith("http://"))) return;
+                android.app.DownloadManager.Request r = new android.app.DownloadManager.Request(android.net.Uri.parse(url));
+                String cookie = android.webkit.CookieManager.getInstance().getCookie(url);
+                if (cookie != null) r.addRequestHeader("Cookie", cookie);
+                if (userAgent != null) r.addRequestHeader("User-Agent", userAgent);
+                String name = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType);
+                r.setMimeType(mimeType);
+                r.setTitle(name);
+                r.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                r.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, name);
+                ((android.app.DownloadManager) getSystemService(DOWNLOAD_SERVICE)).enqueue(r);
+                android.widget.Toast.makeText(this, "Downloading " + name, android.widget.Toast.LENGTH_SHORT).show();
+            } catch (Throwable t) {
+                android.widget.Toast.makeText(this, "Could not download this file", android.widget.Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     private android.net.ConnectivityManager.NetworkCallback networkCallback;

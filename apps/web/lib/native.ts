@@ -57,3 +57,25 @@ export function savePushToken(token: string | null) {
     // storage blocked: push still works, it just re-registers next launch
   }
 }
+
+interface OrderRestroNativeBridge {
+  saveFile?: (name: string, mime: string, base64: string) => boolean;
+}
+
+/**
+ * Saves a file the page just made. In the OrderRestro Android app a blob: link cannot be downloaded by the web
+ * view, so the bytes go to the app, which puts the file in Downloads. Returns false in a normal browser (use the
+ * usual link download there) or when the app could not save it.
+ */
+export async function saveFileInApp(name: string, blob: Blob): Promise<boolean> {
+  const bridge = typeof window === "undefined" ? undefined : (window as unknown as { OrderRestroNative?: OrderRestroNativeBridge }).OrderRestroNative;
+  if (!bridge?.saveFile) return false;
+  try {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return !!bridge.saveFile(name, blob.type || "application/octet-stream", btoa(binary));
+  } catch {
+    return false;
+  }
+}

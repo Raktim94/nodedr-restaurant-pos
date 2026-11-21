@@ -5,6 +5,7 @@ import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
 import { events, reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
 import { agingBuckets, backupJson, buildCollection, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, dueOf, dueSales, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
+import { planTables } from './lib/tables.js';
 import { pushKey } from './lib/scanburst.js';
 import { buildChoice, defaultPicks, findByCode, lineKey, needsChoice } from './lib/options.js';
 import { afterRight, afterWrong, hashPin, lockState, needsManager, pinTaken, validPin, weakPin, whoHasPin } from './lib/staff.js';
@@ -16,7 +17,7 @@ import { dismissEvent, queueEvent, retryEvent, shiftState } from './lib/journal.
 import { NO_RECIPES_FOR_PRODUCT, capsFrom, createInventoryItem, loadCosting, createMenuItem, deleteDraft, emptyForm, fillFromRecipe, formFromDraft, formProblem, friendlyError, loadRecipes, loadStockItems, postDraft, postNew, recipeProblem, saveDraft, saveRecipe, shortRows, voucherBody } from './lib/stockjournal.js';
 import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
-import { addOnsText, addSection, addTable, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
+import { addOnsText, addSection, addTable, addTables, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -1615,7 +1616,7 @@ async function viewTables() {
           <b>${esc(t.label)}</b><small>${o ? `${inr(orderBill(o).total)} &middot; ${minutesSince(o.createdAt, now)}m` : hb ? `Booked ${new Date(hb.reservedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : `Free &middot; ${t.capacity} seats`}</small>
           ${S.editTables && local ? `<span class="mini" data-deltbl="${esc(t.id)}" role="button" aria-label="Remove table ${esc(t.label)}">&times;</span>` : ''}</button>`;
       }).join('') || '<p class="mute">No tables in this section.</p>'}
-        ${local ? `<button class="tbl add" data-addtbl="${esc(f.id)}"><b>+ Table</b></button>` : ''}</div>`).join('')
+        ${local ? `<button class="tbl add" data-addtbl="${esc(f.id)}"><b>+ Table</b></button><button class="tbl add" data-addmany="${esc(f.id)}"><b>+ Several</b></button>` : ''}</div>`).join('')
       : `<div class="note">${local ? 'No tables yet. Add a section (for example Ground floor), then its tables.' : 'No tables are set up on the server. Add them in the full app, then sync.'}</div>`}
     ${local ? `<div class="mt grid"><button class="btn ghost" id="addsec">+ Add section</button><button class="btn ghost" id="edt">${S.editTables ? 'Done editing' : 'Edit tables'}</button></div>` : ''}
     <p class="mute mt">${local ? 'Tables and open orders are kept on this phone only. Another phone will not see them.' : 'Table status here is for this phone only. Other devices do not see these open orders until a sale is paid and synced.'}</p>`;
@@ -1657,6 +1658,41 @@ async function viewTables() {
           p.querySelector('#ok').onclick = async () => {
             try {
               S.snap = await addTable(S.snap, b.dataset.addtbl, { label: p.querySelector('#tn').value, capacity: p.querySelector('#tc').value });
+              S.note = null;
+              closeSheet();
+              viewTables();
+            } catch (e) {
+              closeSheet();
+              fail(e);
+            }
+          };
+        })),
+  );
+  document.querySelectorAll('[data-addmany]').forEach(
+    (b) =>
+      (b.onclick = () =>
+        openSheet(`<header><h2>Add several tables</h2><button class="x" data-close aria-label="Close">&times;</button></header><div class="body">
+          <label for="mp">Name</label><input id="mp" value="T" maxlength="12" autocomplete="off">
+          <label for="mf">Start at number</label><input id="mf" type="number" inputmode="numeric" value="1" min="0">
+          <label for="mc">How many tables</label><input id="mc" type="number" inputmode="numeric" value="10" min="1" max="100">
+          <label for="ms">Seats on each</label><input id="ms" type="number" inputmode="numeric" value="4" min="1" max="50">
+          <p class="note" id="mpre" role="status"></p></div><footer><button class="btn" id="ok">Add tables</button></footer>`, (p) => {
+          const pre = () => {
+            try {
+              const l = planTables({ existing: S.snap.floors.flatMap((f) => f.tables.map((t) => t.label)), prefix: p.querySelector('#mp').value, from: p.querySelector('#mf').value, count: p.querySelector('#mc').value });
+              p.querySelector('#mpre').textContent = l.length > 3 ? `Will add ${l.length} tables: ${l[0]}, ${l[1]} … ${l[l.length - 1]}` : `Will add: ${l.join(', ')}`;
+              return true;
+            } catch (e) {
+              p.querySelector('#mpre').textContent = e.message;
+              return false;
+            }
+          };
+          ['#mp', '#mf', '#mc'].forEach((id) => (p.querySelector(id).oninput = pre));
+          pre();
+          p.querySelector('#ok').onclick = async () => {
+            if (!pre()) return;
+            try {
+              S.snap = await addTables(S.snap, b.dataset.addmany, { prefix: p.querySelector('#mp').value, from: p.querySelector('#mf').value, count: p.querySelector('#mc').value, capacity: p.querySelector('#ms').value });
               S.note = null;
               closeSheet();
               viewTables();

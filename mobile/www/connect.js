@@ -147,4 +147,23 @@
   }
   var qs = new URLSearchParams(location.search);
   if (qs.get('server')) { var q = qs.get('server'); if (isLocal(q)) inLocal.value = q; else inOnline.value = q; }
+
+  // First start: ask plainly whether this is a server phone or a stand-alone (offline) phone.
+  var choose = document.getElementById('choose');
+  var box = document.getElementById('connectbox');
+  var back = document.getElementById('back');
+  function useOffline() {
+    if (native && P.ServerLink) P.ServerLink.setMode({ mode: 'standalone' });
+    else location.href = 'pos/index.html';
+  }
+  function showChooser(on) {
+    choose.hidden = !on;
+    box.hidden = on;
+    back.hidden = on || recent().length > 0;
+  }
+  document.getElementById('pick-server').addEventListener('click', function () { showChooser(false); inLocal.focus(); });
+  document.getElementById('pick-offline').addEventListener('click', useOffline);
+  back.addEventListener('click', function () { showChooser(true); });
+  var firstRun = !recent().length && !qs.get('server') && !/[?&]stay=1/.test(location.search);
+  showChooser(firstRun);
 })();

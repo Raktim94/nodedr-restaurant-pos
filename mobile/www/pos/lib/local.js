@@ -2,6 +2,7 @@
 // the phone (IndexedDB), so the app is usable before any server exists. Later
 // the owner connects a server; the sales taken here are then matched to the
 // server's dishes by name and sent (see remapSalesToServer).
+import { planTables } from './tables.js';
 import { expenses, kv, kots, newId, orders, refunds, sales, shifts } from './store.js';
 
 const enc = new TextEncoder();
@@ -214,6 +215,17 @@ export async function addTable(snap, floorId, { label, capacity }) {
   const floor = snap.floors.find((f) => f.id === floorId);
   if (!floor) throw new Error('Choose a section first.');
   floor.tables.push({ id: `loc-${newId()}`, label, capacity });
+  return saveSnap(snap);
+}
+
+/** Several tables at once (T1..T10). Checks every name first, so either all are added or none. */
+export async function addTables(snap, floorId, { prefix, from, count, capacity }) {
+  capacity = Number(capacity || 4);
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) throw new Error('Seats must be a whole number from 1 to 50.');
+  const floor = snap.floors.find((f) => f.id === floorId);
+  if (!floor) throw new Error('Choose a section first.');
+  const labels = planTables({ existing: allTables(snap).map((t) => t.label), prefix, from, count });
+  for (const label of labels) floor.tables.push({ id: `loc-${newId()}`, label, capacity });
   return saveSnap(snap);
 }
 
