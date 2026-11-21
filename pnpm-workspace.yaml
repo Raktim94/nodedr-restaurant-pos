@@ -3,6 +3,8 @@ packages:
   - "packages/*"
 overrides:
   lodash: ^4.18.1
+  # ReDoS in Schema.TemplateLiteral (<=3.22.0); reached only through prisma's config loader.
+  effect: ^3.22.1
   postcss: ^8.5.25
   sharp: ^0.35.5
   # Blanket, not scoped to @nestjs/swagger: the other js-yaml consumer in
