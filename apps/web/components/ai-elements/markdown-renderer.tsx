@@ -215,9 +215,11 @@ function renderFormattedText(text: string): React.ReactNode[] {
   return parts.map((part, index) => {
     // Markdown link: [Title](/url)
     const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (linkMatch) {
+    // The text comes from a language model, so only in-app paths and plain http(s) links are ever made clickable
+    // (never javascript:, data: or protocol-relative //host URLs).
+    if (linkMatch && /^(\/(?!\/)|https?:\/\/)/i.test(linkMatch[2].trim())) {
       const linkLabel = linkMatch[1];
-      const linkHref = linkMatch[2];
+      const linkHref = linkMatch[2].trim();
       return (
         <Link
           key={index}

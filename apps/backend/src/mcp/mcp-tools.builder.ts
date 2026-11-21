@@ -14,6 +14,7 @@ import {
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertMayManageRole } from '../common/privilege-ceiling';
 import { BranchAccessService } from '../common/services/branch-access.service';
 import { OrdersService } from '../modules/orders/orders.service';
 import { ReservationsService } from '../modules/reservations/reservations.service';
@@ -1588,6 +1589,13 @@ export class McpToolsBuilder {
               restaurantId: actor.restaurantId,
               name: { equals: roleName, mode: 'insensitive' },
             },
+            select: {
+              id: true,
+              name: true,
+              permissions: {
+                select: { permission: { select: { key: true } } },
+              },
+            },
           });
           if (!role) {
             const availableRoles = await this.prisma.role.findMany({
@@ -1599,6 +1607,10 @@ export class McpToolsBuilder {
               `Role "${roleName}" not found. Valid roles for this restaurant are: ${validNames || 'none configured'}.`,
             );
           }
+
+          // Same privilege ceiling as the Staff screen: nobody can create an account above their own access
+          // (e.g. a manager making an OWNER). The AI must not be a way around it.
+          assertMayManageRole(actor, role);
 
           // Validate PIN format and uniqueness if provided
           let pinHash: string | null = null;
@@ -1628,8 +1640,8 @@ export class McpToolsBuilder {
           // Resolve password: use manager-supplied password or generate an explicit temporary password
           let initialPassword = rawPassword;
           if (!initialPassword) {
-            // Generate readable, high-entropy temporary password
-            initialPassword = `Pass_${crypto.randomInt(100000, 999999)}!`;
+            // ~72 bits of randomness (the old 6-digit scheme was guessable in a few hundred thousand tries)
+            initialPassword = `${crypto.randomBytes(9).toString('base64url')}-9a`;
           } else if (initialPassword.length < 8) {
             throw new Error('Password must be at least 8 characters long.');
           }
