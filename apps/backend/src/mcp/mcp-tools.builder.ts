@@ -1,3 +1,4 @@
+import { IngredientUnit } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -216,7 +217,7 @@ export class Args {
     const value = this.raw[key];
     if (value === undefined) return undefined;
     if (!Array.isArray(value)) throw new Error(`"${key}" must be an array`);
-    return value;
+    return value as unknown[];
   }
 }
 
@@ -244,6 +245,14 @@ export interface ToolDef {
   readOnly: boolean;
   requiredPermission?: string;
   handler: (args: Args) => Promise<CallToolResult>;
+}
+
+// The model proposes unit names; only real enum values may reach the database (anything else becomes PIECE).
+function toIngredientUnit(raw?: string): IngredientUnit {
+  const u = (raw ?? '').trim().toUpperCase();
+  return (
+    Object.values(IngredientUnit).find((v) => v === u) ?? IngredientUnit.PIECE
+  );
 }
 
 /**
@@ -1526,7 +1535,8 @@ export class McpToolsBuilder {
       {
         name: 'create_staff_member',
         title: 'Create staff member',
-        description: 'Register a new staff member with name, email, role, and POS PIN.',
+        description:
+          'Register a new staff member with name, email, role, and POS PIN.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1534,8 +1544,16 @@ export class McpToolsBuilder {
             name: { type: 'string' },
             email: { type: 'string' },
             role: { type: 'string' },
-            pin: { type: 'string', description: '4 to 6 digit quick-login PIN for POS and KDS terminal' },
-            password: { type: 'string', description: 'Web dashboard login password (optional, min 8 chars)' },
+            pin: {
+              type: 'string',
+              description:
+                '4 to 6 digit quick-login PIN for POS and KDS terminal',
+            },
+            password: {
+              type: 'string',
+              description:
+                'Web dashboard login password (optional, min 8 chars)',
+            },
             phone: { type: 'string' },
           },
           required: ['name', 'email'],
@@ -1550,14 +1568,18 @@ export class McpToolsBuilder {
           const pin = args.optionalString('pin');
           const rawPassword = args.optionalString('password');
           const phone = args.optionalString('phone');
-          const roleName = (args.optionalString('role') || 'KITCHEN_STAFF').toUpperCase();
+          const roleName = (
+            args.optionalString('role') || 'KITCHEN_STAFF'
+          ).toUpperCase();
 
           // Check if email already registered
           const existing = await this.prisma.user.findFirst({
             where: { restaurantId: actor.restaurantId, email },
           });
           if (existing) {
-            throw new Error(`Staff member with email "${email}" already exists.`);
+            throw new Error(
+              `Staff member with email "${email}" already exists.`,
+            );
           }
 
           // Strict role resolution — do not fall back to owner or arbitrary first role
@@ -1586,12 +1608,18 @@ export class McpToolsBuilder {
             }
             // Check PIN collision against active users in the restaurant
             const activeUsers = await this.prisma.user.findMany({
-              where: { restaurantId: actor.restaurantId, isActive: true, pinHash: { not: null } },
+              where: {
+                restaurantId: actor.restaurantId,
+                isActive: true,
+                pinHash: { not: null },
+              },
               select: { id: true, name: true, pinHash: true },
             });
             for (const u of activeUsers) {
               if (u.pinHash && (await bcrypt.compare(pin, u.pinHash))) {
-                throw new Error(`PIN "${pin}" is already in use by another staff member (${u.name}). Please choose a unique PIN.`);
+                throw new Error(
+                  `PIN "${pin}" is already in use by another staff member (${u.name}). Please choose a unique PIN.`,
+                );
               }
             }
             pinHash = await bcrypt.hash(pin, 10);
@@ -1624,7 +1652,12 @@ export class McpToolsBuilder {
                 },
               },
             },
-            select: { id: true, name: true, email: true, role: { select: { name: true } } },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              role: { select: { name: true } },
+            },
           });
 
           return json({
@@ -1642,7 +1675,8 @@ export class McpToolsBuilder {
       {
         name: 'assign_storage_areas',
         title: 'Assign stock items to storage areas',
-        description: 'Automatically allocate unassigned stockroom ingredients into Dry Store, Walk-in Fridge, and Freezer according to food safety rules.',
+        description:
+          'Automatically allocate unassigned stockroom ingredients into Dry Store, Walk-in Fridge, and Freezer according to food safety rules.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1699,23 +1733,45 @@ export class McpToolsBuilder {
             let targetArea = 'Dry store';
             let targetId = dryStoreId;
 
-            if (n.includes('patty') || n.includes('ice') || n.includes('frozen') || n.includes('meat')) {
+            if (
+              n.includes('patty') ||
+              n.includes('ice') ||
+              n.includes('frozen') ||
+              n.includes('meat')
+            ) {
               targetArea = 'Freezer';
               targetId = freezerId;
             } else if (
-              n.includes('paneer') || n.includes('cheese') || n.includes('milk') ||
-              n.includes('curd') || n.includes('yogurt') || n.includes('sauce') ||
-              n.includes('mayo') || n.includes('lettuce') || n.includes('tomato') ||
-              n.includes('onion') || n.includes('cream') || n.includes('butter') ||
-              n.includes('mint') || n.includes('coriander')
+              n.includes('paneer') ||
+              n.includes('cheese') ||
+              n.includes('milk') ||
+              n.includes('curd') ||
+              n.includes('yogurt') ||
+              n.includes('sauce') ||
+              n.includes('mayo') ||
+              n.includes('lettuce') ||
+              n.includes('tomato') ||
+              n.includes('onion') ||
+              n.includes('cream') ||
+              n.includes('butter') ||
+              n.includes('mint') ||
+              n.includes('coriander')
             ) {
               targetArea = 'Walk-in fridge';
               targetId = fridgeId;
             } else if (
-              n.includes('bun') || n.includes('bread') || n.includes('rice') ||
-              n.includes('flour') || n.includes('atta') || n.includes('oil') ||
-              n.includes('ghee') || n.includes('sugar') || n.includes('salt') ||
-              n.includes('spice') || n.includes('masala') || n.includes('powder')
+              n.includes('bun') ||
+              n.includes('bread') ||
+              n.includes('rice') ||
+              n.includes('flour') ||
+              n.includes('atta') ||
+              n.includes('oil') ||
+              n.includes('ghee') ||
+              n.includes('sugar') ||
+              n.includes('salt') ||
+              n.includes('spice') ||
+              n.includes('masala') ||
+              n.includes('powder')
             ) {
               targetArea = 'Dry store';
               targetId = dryStoreId;
@@ -1760,7 +1816,8 @@ export class McpToolsBuilder {
       {
         name: 'clean_menu_and_create_stock',
         title: 'Clean accidental menu items and register as stock',
-        description: 'Remove accidental raw ingredient items from sales menu and ensure they are recorded in the stockroom inventory.',
+        description:
+          'Remove accidental raw ingredient items from sales menu and ensure they are recorded in the stockroom inventory.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1794,7 +1851,9 @@ export class McpToolsBuilder {
 
               const createdStockItems: string[] = [];
               for (const name of rawItems) {
-                const existing = await tx.ingredient.findFirst({ where: { branchId, name } });
+                const existing = await tx.ingredient.findFirst({
+                  where: { branchId, name },
+                });
                 if (!existing) {
                   // Do not guess inventory quantities or cost values; register with 0 stock/cost
                   // requiring manager to log an actual purchase invoice or stock count.
@@ -1825,7 +1884,8 @@ export class McpToolsBuilder {
       {
         name: 'create_menu_item_with_recipe',
         title: 'Create menu item with recipe (BOM)',
-        description: 'Create or update a sellable dish on the menu and link all recipe ingredients (Bill of Materials) with automatic stock deduction.',
+        description:
+          'Create or update a sellable dish on the menu and link all recipe ingredients (Bill of Materials) with automatic stock deduction.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1858,7 +1918,15 @@ export class McpToolsBuilder {
           const categoryName = args.optionalString('category') || 'Specialties';
           const price = args.optionalNumber('price') || 120;
           const isVeg = (args.rawArg('isVeg') as boolean) ?? true;
-          const rawBomLines = (args.optionalArray('bomLines') as any[]) || [];
+          const rawBomLines =
+            (args.optionalArray('bomLines') as
+              | {
+                  ingredientName?: string;
+                  name?: string;
+                  quantity?: number;
+                  unit?: string;
+                }[]
+              | undefined) || [];
 
           return json(
             await this.prisma.$transaction(async (tx) => {
@@ -1898,7 +1966,10 @@ export class McpToolsBuilder {
               } else {
                 await tx.menuItem.update({
                   where: { id: menuItem.id },
-                  data: { inventoryTracking: 'RECIPE', stockIngredientId: null },
+                  data: {
+                    inventoryTracking: 'RECIPE',
+                    stockIngredientId: null,
+                  },
                 });
               }
 
@@ -1907,7 +1978,11 @@ export class McpToolsBuilder {
                 where: { branchId },
               });
 
-              const linkedIngredients: { id: string; name: string; quantity: number }[] = [];
+              const linkedIngredients: {
+                id: string;
+                name: string;
+                quantity: number;
+              }[] = [];
 
               for (const bom of rawBomLines) {
                 const ingName = (bom.ingredientName || bom.name || '').trim();
@@ -1929,10 +2004,15 @@ export class McpToolsBuilder {
                   );
                 });
 
-                const portionQty = Number(bom.quantity) > 0 ? Number(bom.quantity) : 1;
+                const portionQty =
+                  Number(bom.quantity) > 0 ? Number(bom.quantity) : 1;
 
                 if (match) {
-                  linkedIngredients.push({ id: match.id, name: match.name, quantity: portionQty });
+                  linkedIngredients.push({
+                    id: match.id,
+                    name: match.name,
+                    quantity: portionQty,
+                  });
                 } else {
                   // Do not guess arbitrary stock quantities or unit costs; record with 0 stock/cost
                   // so accounting and profit margins reflect only verified purchase invoices.
@@ -1940,14 +2020,18 @@ export class McpToolsBuilder {
                     data: {
                       branchId,
                       name: ingName,
-                      unit: (bom.unit?.toUpperCase() as any) || 'PIECE',
+                      unit: toIngredientUnit(bom.unit),
                       currentStock: 0,
                       costPerUnit: 0,
                       reorderLevel: 0,
                     },
                   });
                   allBranchIngredients.push(created);
-                  linkedIngredients.push({ id: created.id, name: ingName, quantity: portionQty });
+                  linkedIngredients.push({
+                    id: created.id,
+                    name: ingName,
+                    quantity: portionQty,
+                  });
                 }
               }
 

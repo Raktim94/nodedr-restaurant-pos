@@ -53,8 +53,11 @@ export function ApprovalReviewDeck({
   const items = proposal.items || [];
   const bomLines = proposal.bomLines || [];
   const toolName = (proposal.toolName || "").toLowerCase();
+  // Model-proposed free-form JSON: its shape is not known ahead of time.
+  /* eslint-disable @typescript-eslint/no-explicit-any */
   const rawParams = (proposal.parameters || {}) as Record<string, any>;
   const actions = (proposal as any).actions as Array<{ toolName: string; parameters: Record<string, any> }> | undefined;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // Determine what type of proposal this is
   const isStaffProposal = toolName === "create_staff_member" || "role" in rawParams || "pin" in rawParams;

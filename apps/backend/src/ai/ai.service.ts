@@ -1,9 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument --
+   This file parses free-form JSON from external LLM providers and model-proposed tool arguments, which are untyped
+   by nature; every action is still checked against the caller's permissions and branch before it runs. */
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { permissionSatisfied } from '@nodedr-restaurant/types';
+import {
+  permissionSatisfied,
+  type SessionUser,
+} from '@nodedr-restaurant/types';
+import { BranchAccessService } from '../common/services/branch-access.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { McpToolsBuilder, Args } from '../mcp/mcp-tools.builder';
 import { SYSTEM_GUIDE_PROMPT } from './prompts/system-guide.prompt';
+
+const MAX_ACTIONS = 20;
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -15,7 +24,7 @@ export interface ChatMessage {
 }
 
 export interface ChatCompletionOptions {
-  user: any;
+  user: SessionUser;
   messages: ChatMessage[];
   branchId?: string;
   model?: string;
@@ -29,18 +38,23 @@ export class AiService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly mcpToolsBuilder: McpToolsBuilder,
+    private readonly branchAccess: BranchAccessService,
   ) {}
 
   /**
    * Process a chat query or multimodal vision request (e.g. invoice or menu photo).
    */
   async processChat(options: ChatCompletionOptions) {
-    const { user, messages, branchId } = options;
+    const { messages } = options;
     const lastMessage = messages[messages.length - 1];
 
     // Check for API key (supports GEMINI_API_KEY, OPENAI_API_KEY, etc.)
-    const geminiKey = this.configService.get<string>('GEMINI_API_KEY') || process.env.GEMINI_API_KEY;
-    const openaiKey = this.configService.get<string>('OPENAI_API_KEY') || process.env.OPENAI_API_KEY;
+    const geminiKey =
+      this.configService.get<string>('GEMINI_API_KEY') ||
+      process.env.GEMINI_API_KEY;
+    const openaiKey =
+      this.configService.get<string>('OPENAI_API_KEY') ||
+      process.env.OPENAI_API_KEY;
 
     if (!geminiKey && !openaiKey) {
       this.logger.warn('No AI API key found in config or process.env');
@@ -52,7 +66,11 @@ export class AiService {
 
     // If an image is attached, run multimodal vision extraction
     if (lastMessage?.image) {
-      return this.handleVisionAnalysis(lastMessage.image, lastMessage.content, geminiKey || undefined);
+      return this.handleVisionAnalysis(
+        lastMessage.image,
+        lastMessage.content,
+        geminiKey || undefined,
+      );
     }
 
     // If an LLM key is configured, invoke the provider
@@ -65,7 +83,7 @@ export class AiService {
     }
 
     // Graceful offline fallback: Contextual restaurant assistant response
-    return this.generateSmartFallback(lastMessage?.content || '', branchId);
+    return this.generateSmartFallback(lastMessage?.content || '');
   }
 
   /**
@@ -83,11 +101,14 @@ export class AiService {
 
     if (geminiKey) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`;
 
         const response = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': geminiKey,
+          },
           body: JSON.stringify({
             systemInstruction: {
               parts: [{ text: SYSTEM_GUIDE_PROMPT }],
@@ -121,25 +142,44 @@ export class AiService {
           let actionProposal: any = null;
 
           // 1. Check for Question Card pause
-          const questionMatch = text.match(/ASK_QUESTION_START([\s\S]*?)ASK_QUESTION_END/);
+          const questionMatch = text.match(
+            /ASK_QUESTION_START([\s\S]*?)ASK_QUESTION_END/,
+          );
           if (questionMatch) {
             try {
               questionCard = JSON.parse(questionMatch[1].trim());
-              cleanText = text.replace(/ASK_QUESTION_START[\s\S]*?ASK_QUESTION_END/, '').trim();
-            } catch {}
+              cleanText = text
+                .replace(/ASK_QUESTION_START[\s\S]*?ASK_QUESTION_END/, '')
+                .trim();
+            } catch (err) {
+              this.logger.debug(
+                `Ignored recoverable AI parse/lookup error: ${String(err)}`,
+              );
+            }
           }
 
           // 2. Check for Action Proposal
-          const actionMatch = cleanText.match(/ACTION_PROPOSAL_START([\s\S]*?)ACTION_PROPOSAL_END/);
+          const actionMatch = cleanText.match(
+            /ACTION_PROPOSAL_START([\s\S]*?)ACTION_PROPOSAL_END/,
+          );
           if (actionMatch) {
             try {
               actionProposal = JSON.parse(actionMatch[1].trim());
-              cleanText = cleanText.replace(/ACTION_PROPOSAL_START[\s\S]*?ACTION_PROPOSAL_END/, '').trim();
-            } catch {}
+              cleanText = cleanText
+                .replace(/ACTION_PROPOSAL_START[\s\S]*?ACTION_PROPOSAL_END/, '')
+                .trim();
+            } catch (err) {
+              this.logger.debug(
+                `Ignored recoverable AI parse/lookup error: ${String(err)}`,
+              );
+            }
           }
 
           // Clean any remaining markdown fence residues
-          cleanText = cleanText.replace(/```(?:json)?\s*```/g, '').replace(/```json\s*$/g, '').trim();
+          cleanText = cleanText
+            .replace(/```(?:json)?\s*```/g, '')
+            .replace(/```json\s*$/g, '')
+            .trim();
 
           return {
             role: 'assistant',
@@ -167,7 +207,11 @@ export class AiService {
     };
   }
 
-  private async callGemini(messages: ChatMessage[], apiKey: string, selectedModel?: string) {
+  private async callGemini(
+    messages: ChatMessage[],
+    apiKey: string,
+    selectedModel?: string,
+  ) {
     try {
       const contents = messages.map((m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
@@ -175,15 +219,19 @@ export class AiService {
       }));
 
       // In KitchenOS and modern Gemini endpoints, 'gemini-flash-latest' or 'gemini-3.8-flash' is active
-      const modelToUse = selectedModel && selectedModel !== 'gemini-1.5-flash'
-        ? selectedModel
-        : 'gemini-flash-latest';
+      const modelToUse =
+        selectedModel && selectedModel !== 'gemini-1.5-flash'
+          ? selectedModel
+          : 'gemini-flash-latest';
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent`;
 
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
         body: JSON.stringify({
           systemInstruction: {
             parts: [{ text: SYSTEM_GUIDE_PROMPT }],
@@ -232,25 +280,44 @@ export class AiService {
 
       if (reply) {
         // 1. Check for Question Card pause
-        const questionMatch = reply.match(/ASK_QUESTION_START([\s\S]*?)ASK_QUESTION_END/);
+        const questionMatch = reply.match(
+          /ASK_QUESTION_START([\s\S]*?)ASK_QUESTION_END/,
+        );
         if (questionMatch) {
           try {
             questionCard = JSON.parse(questionMatch[1].trim());
-            cleanText = reply.replace(/ASK_QUESTION_START[\s\S]*?ASK_QUESTION_END/, '').trim();
-          } catch {}
+            cleanText = reply
+              .replace(/ASK_QUESTION_START[\s\S]*?ASK_QUESTION_END/, '')
+              .trim();
+          } catch (err) {
+            this.logger.debug(
+              `Ignored recoverable AI parse/lookup error: ${String(err)}`,
+            );
+          }
         }
 
         // 2. Check for Action Proposal
-        const actionMatch = cleanText.match(/ACTION_PROPOSAL_START([\s\S]*?)ACTION_PROPOSAL_END/);
+        const actionMatch = cleanText.match(
+          /ACTION_PROPOSAL_START([\s\S]*?)ACTION_PROPOSAL_END/,
+        );
         if (actionMatch) {
           try {
             actionProposal = JSON.parse(actionMatch[1].trim());
-            cleanText = cleanText.replace(/ACTION_PROPOSAL_START[\s\S]*?ACTION_PROPOSAL_END/, '').trim();
-          } catch {}
+            cleanText = cleanText
+              .replace(/ACTION_PROPOSAL_START[\s\S]*?ACTION_PROPOSAL_END/, '')
+              .trim();
+          } catch (err) {
+            this.logger.debug(
+              `Ignored recoverable AI parse/lookup error: ${String(err)}`,
+            );
+          }
         }
 
         // Clean any remaining markdown fence residues
-        cleanText = cleanText.replace(/```(?:json)?\s*```/g, '').replace(/```json\s*$/g, '').trim();
+        cleanText = cleanText
+          .replace(/```(?:json)?\s*```/g, '')
+          .replace(/```json\s*$/g, '')
+          .trim();
       }
 
       return {
@@ -258,7 +325,9 @@ export class AiService {
         text: cleanText,
         questionCard,
         actionProposal,
-        reasoning: modelThoughts || `Analyzed operational request, inspected inventory stockroom ingredients, and verified menu Bill of Materials linkage.`,
+        reasoning:
+          modelThoughts ||
+          `Analyzed operational request, inspected inventory stockroom ingredients, and verified menu Bill of Materials linkage.`,
       };
     } catch (error: any) {
       this.logger.error('Gemini call failed', error);
@@ -305,7 +374,7 @@ export class AiService {
   /**
    * Restaurant knowledge fallback: Answers common operational questions offline
    */
-  private generateSmartFallback(query: string, branchId?: string) {
+  private generateSmartFallback(query: string) {
     const q = query.toLowerCase();
 
     if (q.includes('split') && q.includes('bill')) {
@@ -339,7 +408,7 @@ export class AiService {
    * Execute real actions on behalf of the restaurant operator when they click Approve
    */
   async executeAction(params: {
-    user: any;
+    user: SessionUser;
     branchId?: string;
     actionPayload: {
       command?: string;
@@ -369,31 +438,64 @@ export class AiService {
     const { user, actionPayload } = params;
 
     // Resolve branch
+    // The branch must belong to the caller's restaurant. With none given, use the caller's own restaurant's first
+    // branch — never another tenant's.
     let targetBranchId = params.branchId;
-    if (!targetBranchId) {
-      const firstBranch = await this.prisma.branch.findFirst({ select: { id: true } });
+    if (targetBranchId) {
+      await this.branchAccess.assertAccess(user.restaurantId, targetBranchId);
+    } else {
+      const firstBranch = await this.prisma.branch.findFirst({
+        where: { restaurantId: user.restaurantId },
+        orderBy: { id: 'asc' },
+        select: { id: true },
+      });
       targetBranchId = firstBranch?.id;
     }
 
     if (!targetBranchId) {
-      return { success: false, message: 'No active branch found to execute action.' };
+      return {
+        success: false,
+        message: 'No active branch found to execute action.',
+      };
     }
 
     // Check if user submitted a multi-action pipeline
-    const actionList: Array<{ toolName?: string; command?: string; parameters?: Record<string, any> }> =
-      Array.isArray((actionPayload as any).actions) && (actionPayload as any).actions.length > 0
+    const actionList: Array<{
+      toolName?: string;
+      command?: string;
+      parameters?: Record<string, any>;
+    }> =
+      Array.isArray((actionPayload as any).actions) &&
+      (actionPayload as any).actions.length > 0
         ? (actionPayload as any).actions
         : [actionPayload];
+    if (actionList.length > MAX_ACTIONS) {
+      throw new BadRequestException(
+        `At most ${MAX_ACTIONS} actions per approval`,
+      );
+    }
 
     const executionResults: string[] = [];
     const allTools = this.mcpToolsBuilder.toolDefs(user);
 
     for (const step of actionList) {
-      const rawReqName = (step.toolName || step.command || actionPayload.toolName || actionPayload.command || '').trim().toLowerCase();
+      const rawReqName = (
+        step.toolName ||
+        step.command ||
+        actionPayload.toolName ||
+        actionPayload.command ||
+        ''
+      )
+        .trim()
+        .toLowerCase();
       if (!rawReqName) continue;
 
       // 1. EXACT match first
-      let matchedTool = allTools.find((t) => t.name.toLowerCase() === rawReqName || t.name.toLowerCase() === rawReqName.replace(/-/g, '_'));
+      let matchedTool = allTools.find(
+        (t) =>
+          t.name.toLowerCase() === rawReqName ||
+          t.name.toLowerCase() === rawReqName.replace(/-/g, '_'),
+      );
 
       // 2. Exact word boundary match fallback
       if (!matchedTool) {
@@ -422,28 +524,40 @@ export class AiService {
           message: `Permission Denied: Your account role does not have permission "${matchedTool.requiredPermission}" required to execute "${matchedTool.name}".`,
         };
       }
-      const stepParams = { ...(step.parameters || actionPayload.parameters || {}) };
+      const stepParams = {
+        ...(step.parameters || actionPayload.parameters || {}),
+      };
 
       // Map Staff Parameters
       if (matchedTool.name === 'create_staff_member') {
         if (!stepParams.name && actionPayload.title) {
-          const nameMatch = actionPayload.title.match(/(?:Chef|Staff|Member)\s+([A-Za-z]+)/i);
+          const nameMatch = actionPayload.title.match(
+            /(?:Chef|Staff|Member)\s+([A-Za-z]+)/i,
+          );
           if (nameMatch) stepParams.name = nameMatch[1];
         }
         if (!stepParams.email) {
-          const emailMatch = JSON.stringify(actionPayload).match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+          const emailMatch = JSON.stringify(actionPayload).match(
+            /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/,
+          );
           if (emailMatch) stepParams.email = emailMatch[0];
         }
         if (!stepParams.pin) {
-          const pinMatch = JSON.stringify(actionPayload).match(/\b(?:pin|PIN)\s*[:=]?\s*(\d{4})\b/);
+          const pinMatch = JSON.stringify(actionPayload).match(
+            /\b(?:pin|PIN)\s*[:=]?\s*(\d{4})\b/,
+          );
           if (pinMatch) stepParams.pin = pinMatch[1];
         }
         if (!stepParams.role) {
-          const roleMatch = JSON.stringify(actionPayload).match(/role[:\s"]+([A-Za-z_]+)/i);
+          const roleMatch = JSON.stringify(actionPayload).match(
+            /role[:\s"]+([A-Za-z_]+)/i,
+          );
           if (roleMatch) stepParams.role = roleMatch[1];
         }
         if (!stepParams.password) {
-          const passMatch = JSON.stringify(actionPayload).match(/password[:\s"]+([^",}]+)/i);
+          const passMatch = JSON.stringify(actionPayload).match(
+            /password[:\s"]+([^",}]+)/i,
+          );
           if (passMatch) stepParams.password = passMatch[1].trim();
         }
       }
@@ -451,9 +565,12 @@ export class AiService {
       // Map Recipe / Dish Parameters (handling every possible JSON nesting)
       if (matchedTool.name === 'create_menu_item_with_recipe') {
         const firstItem = actionPayload.items?.[0];
-        if (firstItem?.name && !stepParams.name) stepParams.name = firstItem.name;
-        if (firstItem?.price && !stepParams.price) stepParams.price = firstItem.price;
-        if (firstItem?.category && !stepParams.category) stepParams.category = firstItem.category;
+        if (firstItem?.name && !stepParams.name)
+          stepParams.name = firstItem.name;
+        if (firstItem?.price && !stepParams.price)
+          stepParams.price = firstItem.price;
+        if (firstItem?.category && !stepParams.category)
+          stepParams.category = firstItem.category;
 
         const candidateBom =
           stepParams.bomLines ||
@@ -484,12 +601,17 @@ export class AiService {
       if (matchedTool.name === 'create_tables_bulk' && !stepParams.floorId) {
         if (stepParams.floorName) {
           const floor = await this.prisma.floor.findFirst({
-            where: { branchId: targetBranchId, name: { contains: stepParams.floorName, mode: 'insensitive' } },
+            where: {
+              branchId: targetBranchId,
+              name: { contains: stepParams.floorName, mode: 'insensitive' },
+            },
           });
           if (floor) stepParams.floorId = floor.id;
         }
         if (!stepParams.floorId) {
-          const firstFloor = await this.prisma.floor.findFirst({ where: { branchId: targetBranchId } });
+          const firstFloor = await this.prisma.floor.findFirst({
+            where: { branchId: targetBranchId },
+          });
           if (firstFloor) stepParams.floorId = firstFloor.id;
         }
       }
@@ -497,13 +619,18 @@ export class AiService {
       const toolArgs = {
         branchId: targetBranchId,
         ...stepParams,
-        ...(actionPayload.deleteItems?.length ? { itemNames: actionPayload.deleteItems } : {}),
+        ...(actionPayload.deleteItems?.length
+          ? { itemNames: actionPayload.deleteItems }
+          : {}),
       };
 
       try {
         const toolRes = await matchedTool.handler(new Args(toolArgs));
         if (toolRes.isError) {
-          const errText = toolRes.content?.[0]?.type === 'text' ? toolRes.content[0].text : 'Tool error';
+          const errText =
+            toolRes.content?.[0]?.type === 'text'
+              ? toolRes.content[0].text
+              : 'Tool error';
           return {
             success: false,
             branchId: targetBranchId,
@@ -511,11 +638,16 @@ export class AiService {
           };
         }
 
-        const textContent = toolRes.content?.[0]?.type === 'text' ? toolRes.content[0].text : '';
+        const textContent =
+          toolRes.content?.[0]?.type === 'text' ? toolRes.content[0].text : '';
         let parsedData: any = null;
         try {
           parsedData = JSON.parse(textContent);
-        } catch {}
+        } catch (err) {
+          this.logger.debug(
+            `Ignored recoverable AI parse/lookup error: ${String(err)}`,
+          );
+        }
 
         if (parsedData?.message) {
           executionResults.push(parsedData.message);
@@ -524,20 +656,25 @@ export class AiService {
           if ('todayRevenue' in parsedData || 'todayOrders' in parsedData) {
             executionResults.push(
               `📊 **Sales & Orders Snapshot:**\n` +
-              `• **Total Orders Today:** ${parsedData.todayOrders ?? 0} (${parsedData.channels?.offline ?? 0} In-store, ${parsedData.channels?.online ?? 0} Online)\n` +
-              `• **Today's Revenue:** ₹${Number(parsedData.todayRevenue ?? 0).toFixed(2)}\n` +
-              `• **Table Status:** ${parsedData.tables?.available ?? 0} Available, ${parsedData.tables?.occupied ?? 0} Occupied, ${parsedData.tables?.reserved ?? 0} Reserved`
+                `• **Total Orders Today:** ${parsedData.todayOrders ?? 0} (${parsedData.channels?.offline ?? 0} In-store, ${parsedData.channels?.online ?? 0} Online)\n` +
+                `• **Today's Revenue:** ₹${Number(parsedData.todayRevenue ?? 0).toFixed(2)}\n` +
+                `• **Table Status:** ${parsedData.tables?.available ?? 0} Available, ${parsedData.tables?.occupied ?? 0} Occupied, ${parsedData.tables?.reserved ?? 0} Reserved`,
             );
           } else {
             executionResults.push(
-              '```json\n' + JSON.stringify(parsedData, null, 2) + '\n```'
+              '```json\n' + JSON.stringify(parsedData, null, 2) + '\n```',
             );
           }
         } else {
-          executionResults.push(textContent || `Executed "${matchedTool.name}" successfully.`);
+          executionResults.push(
+            textContent || `Executed "${matchedTool.name}" successfully.`,
+          );
         }
       } catch (toolErr: any) {
-        this.logger.error(`Error executing MCP tool ${matchedTool.name}:`, toolErr);
+        this.logger.error(
+          `Error executing MCP tool ${matchedTool.name}:`,
+          toolErr,
+        );
         return {
           success: false,
           branchId: targetBranchId,

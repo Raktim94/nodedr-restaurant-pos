@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Post,
-  Body,
-  UseGuards,
-  Req,
-} from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AiService, ChatMessage } from './ai.service';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
@@ -15,9 +9,13 @@ export class ChatDto {
   model?: string;
 }
 
+type ExecuteActionPayload = Parameters<
+  AiService['executeAction']
+>[0]['actionPayload'];
+
 export class ExecuteActionDto {
   branchId?: string;
-  actionPayload: any;
+  actionPayload: ExecuteActionPayload;
 }
 
 @UseGuards(JwtAuthGuard)
@@ -37,7 +35,10 @@ export class AiController {
   }
 
   @Post('execute-action')
-  async executeAction(@Body() dto: ExecuteActionDto, @Req() req: AuthenticatedRequest) {
+  async executeAction(
+    @Body() dto: ExecuteActionDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
     const user = req.user;
     return this.aiService.executeAction({
       user,

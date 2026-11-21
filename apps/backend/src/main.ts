@@ -1,4 +1,5 @@
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { json } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
@@ -122,8 +123,10 @@ async function bootstrap() {
     app.set('trust proxy', hops);
   }
   // Same 100kb as Express's default, stated so it is a decision, not an accident.
-  // Allow up to 15mb for multimodal AI vision image payloads (receipts, vendor invoices)
-  app.useBodyParser('json', { limit: process.env.BODY_LIMIT ?? '15mb' });
+  // Only the AI assistant takes images (receipts, vendor invoices as base64), so only that route gets the larger
+  // limit. It is registered first, so it parses those bodies before the default parser below sees them.
+  app.use('/api/v1/ai', json({ limit: process.env.AI_BODY_LIMIT ?? '12mb' }));
+  app.useBodyParser('json', { limit: process.env.BODY_LIMIT ?? '100kb' });
   app.use(cookieParser());
   // Browsers only ever talk to the web container (same origin, /api is proxied),
   // and a website's backend calls the Integration API server-to-server, so the

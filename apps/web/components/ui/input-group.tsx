@@ -103,7 +103,7 @@ function InputGroupButton({
     <Button
       data-slot="input-group-button"
       variant={variant}
-      size={size as any}
+      size={size as React.ComponentProps<typeof Button>["size"]}
       className={cn(
         "h-7 px-2 text-xs shadow-none data-[slot=input-group-button]:focus-visible:ring-0",
         className

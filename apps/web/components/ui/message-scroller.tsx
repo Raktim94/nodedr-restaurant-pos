@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/immutability --
+   The viewport element is shared through a callback ref (the standard way to merge a forwarded ref with an internal one). */
 "use client";
 
 import * as React from "react";
@@ -48,7 +50,7 @@ export function MessageScrollerProvider({
   );
 }
 
-export interface MessageScrollerProps extends React.HTMLAttributes<HTMLDivElement> {}
+export type MessageScrollerProps = React.HTMLAttributes<HTMLDivElement>;
 
 export const MessageScroller = React.forwardRef<HTMLDivElement, MessageScrollerProps>(
   ({ className, children, ...props }, ref) => {
@@ -65,7 +67,7 @@ export const MessageScroller = React.forwardRef<HTMLDivElement, MessageScrollerP
 );
 MessageScroller.displayName = "MessageScroller";
 
-export interface MessageScrollerViewportProps extends React.HTMLAttributes<HTMLDivElement> {}
+export type MessageScrollerViewportProps = React.HTMLAttributes<HTMLDivElement>;
 
 export const MessageScrollerViewport = React.forwardRef<HTMLDivElement, MessageScrollerViewportProps>(
   ({ className, children, onScroll, ...props }, ref) => {
@@ -75,13 +77,16 @@ export const MessageScrollerViewport = React.forwardRef<HTMLDivElement, MessageS
       onScroll?.(e);
     };
 
+    // Hands the element to both the scroller's own ref and any ref the caller passed.
+    const setRefs = (node: HTMLDivElement | null) => {
+      (viewportRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+    };
+
     return (
       <div
-        ref={(node) => {
-          (viewportRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
-          if (typeof ref === "function") ref(node);
-          else if (ref) (ref as any).current = node;
-        }}
+        ref={setRefs}
         tabIndex={0}
         role="region"
         aria-label="Message transcript"
@@ -99,7 +104,7 @@ export const MessageScrollerViewport = React.forwardRef<HTMLDivElement, MessageS
 );
 MessageScrollerViewport.displayName = "MessageScrollerViewport";
 
-export interface MessageScrollerContentProps extends React.HTMLAttributes<HTMLDivElement> {}
+export type MessageScrollerContentProps = React.HTMLAttributes<HTMLDivElement>;
 
 export const MessageScrollerContent = React.forwardRef<HTMLDivElement, MessageScrollerContentProps>(
   ({ className, ...props }, ref) => {
@@ -134,7 +139,7 @@ export const MessageScrollerItem = React.forwardRef<HTMLDivElement, MessageScrol
 );
 MessageScrollerItem.displayName = "MessageScrollerItem";
 
-export interface MessageScrollerButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {}
+export type MessageScrollerButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement>;
 
 export const MessageScrollerButton = React.forwardRef<HTMLButtonElement, MessageScrollerButtonProps>(
   ({ className, ...props }, ref) => {

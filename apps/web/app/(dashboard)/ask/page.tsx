@@ -116,6 +116,11 @@ interface ChatMessagePart {
   proposalData?: ProposalData;
 }
 
+// Module-level so ids are generated in event handlers, not during render.
+function newMessageId() {
+  return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 interface MessageItem {
   id: string;
   role: "user" | "assistant";
@@ -189,6 +194,8 @@ export default function AskAssistantPage() {
   }, [messages, status]);
 
   // Load saved state from LocalStorage on mount
+  // localStorage only exists in the browser, so this has to run after mount (reading it during render would break hydration).
+  /* eslint-disable react-hooks/set-state-in-effect */
   React.useEffect(() => {
     try {
       const savedThreads = localStorage.getItem(STORAGE_KEY_THREADS);
@@ -214,6 +221,7 @@ export default function AskAssistantPage() {
       }
     } catch {}
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const persistMessages = (threadId: string, newMsgs: MessageItem[]) => {
     setMessages(newMsgs);
@@ -330,7 +338,7 @@ export default function AskAssistantPage() {
           if (p.type === "tool-runCommand" && p.toolCallId === toolCallId) {
             return {
               ...p,
-              state: "output-denied" as any,
+              state: "output-denied" as const,
               approved: false,
             };
           }
@@ -341,7 +349,7 @@ export default function AskAssistantPage() {
       persistMessages(threadId, updated);
 
       const cancelMsg: MessageItem = {
-        id: `msg-${Date.now()}`,
+        id: newMessageId(),
         role: "assistant",
         parts: [
           {
@@ -403,7 +411,7 @@ export default function AskAssistantPage() {
           if (p.type === "tool-runCommand" && p.toolCallId === toolCallId) {
             return {
               ...p,
-              state: "output-available" as any,
+              state: "output-available" as const,
               approved: !isFailed,
             };
           }
@@ -417,7 +425,7 @@ export default function AskAssistantPage() {
         const errorText = result.message || "Action execution failed. Please verify permissions and data requirements.";
         const isPermission = errorText.toLowerCase().includes("permission");
         const followUpError: MessageItem = {
-          id: `msg-${Date.now()}`,
+          id: newMessageId(),
           role: "assistant",
           parts: [
             {
@@ -453,7 +461,7 @@ export default function AskAssistantPage() {
       ].filter(Boolean).join("\n\n");
 
       const followUp: MessageItem = {
-        id: `msg-${Date.now()}`,
+        id: newMessageId(),
         role: "assistant",
         parts: [
           {
@@ -466,7 +474,7 @@ export default function AskAssistantPage() {
     } catch (err) {
       console.error("Action execution error:", err);
       const errorMsg: MessageItem = {
-        id: `msg-${Date.now()}`,
+        id: newMessageId(),
         role: "assistant",
         parts: [
           {
@@ -604,7 +612,7 @@ export default function AskAssistantPage() {
           {
             type: "reasoning",
             text: data.reasoning || `Processed operational logic for "${userText || "Image"}"`,
-            state: "output-available",
+            state: "output-available" as const,
           },
           {
             type: "text",
@@ -650,7 +658,7 @@ export default function AskAssistantPage() {
             {
               type: "reasoning",
               text: `Processing query for "${userText || "Image"}".`,
-              state: "output-available",
+              state: "output-available" as const,
             },
             {
               type: "text",
