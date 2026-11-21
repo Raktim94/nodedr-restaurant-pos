@@ -59,3 +59,45 @@ describe('AiService.executeAction tenancy', () => {
     ).rejects.toThrow(/At most/);
   });
 });
+
+describe('AiService.executeAction tool matching', () => {
+  it('matches tool names with dashes or spaces, and never guesses staff credentials from other text', async () => {
+    const run = jest
+      .fn()
+      .mockResolvedValue({ content: [{ type: 'text', text: '{}' }] });
+    const tool = {
+      name: 'create_staff_member',
+      requiredPermission: undefined,
+      run,
+      handler: run,
+    };
+    const prisma = {
+      branch: { findFirst: jest.fn().mockResolvedValue({ id: 'b1' }) },
+    };
+    const mcp = { toolDefs: jest.fn().mockReturnValue([tool]) };
+    const svc = new AiService(
+      { get: jest.fn() } as never,
+      prisma as never,
+      mcp as never,
+      {
+        assertAccess: jest.fn(),
+      } as never,
+    );
+    const res = await svc.executeAction({
+      user,
+      branchId: 'b1',
+      actionPayload: {
+        command: 'create-staff member',
+        title: 'note',
+        items: [{ name: 'password: hunter2 pin 1234 a@b.co' }],
+      },
+    });
+    expect((res as { message?: string }).message ?? '').not.toMatch(
+      /No MCP tool found/,
+    );
+    expect(run).toHaveBeenCalled();
+    const passed = JSON.stringify(run.mock.calls);
+    expect(passed).not.toContain('hunter2');
+    expect(passed).not.toContain('a@b.co');
+  });
+});

@@ -490,20 +490,11 @@ export class AiService {
         .toLowerCase();
       if (!rawReqName) continue;
 
-      // 1. EXACT match first
-      let matchedTool = allTools.find(
-        (t) =>
-          t.name.toLowerCase() === rawReqName ||
-          t.name.toLowerCase() === rawReqName.replace(/-/g, '_'),
+      // Tool names are matched exactly, tolerating dashes or spaces where the model wrote underscores.
+      const toolKey = rawReqName.replace(/[-\s]+/g, '_');
+      const matchedTool = allTools.find(
+        (t) => t.name.toLowerCase() === toolKey,
       );
-
-      // 2. Exact word boundary match fallback
-      if (!matchedTool) {
-        matchedTool = allTools.find((t) => {
-          const tName = t.name.toLowerCase();
-          return tName === rawReqName.replace(/\s+/g, '_');
-        });
-      }
 
       if (!matchedTool) {
         return {
@@ -536,30 +527,8 @@ export class AiService {
           );
           if (nameMatch) stepParams.name = nameMatch[1];
         }
-        if (!stepParams.email) {
-          const emailMatch = JSON.stringify(actionPayload).match(
-            /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/,
-          );
-          if (emailMatch) stepParams.email = emailMatch[0];
-        }
-        if (!stepParams.pin) {
-          const pinMatch = JSON.stringify(actionPayload).match(
-            /\b(?:pin|PIN)\s*[:=]?\s*(\d{4})\b/,
-          );
-          if (pinMatch) stepParams.pin = pinMatch[1];
-        }
-        if (!stepParams.role) {
-          const roleMatch = JSON.stringify(actionPayload).match(
-            /role[:\s"]+([A-Za-z_]+)/i,
-          );
-          if (roleMatch) stepParams.role = roleMatch[1];
-        }
-        if (!stepParams.password) {
-          const passMatch = JSON.stringify(actionPayload).match(
-            /password[:\s"]+([^",}]+)/i,
-          );
-          if (passMatch) stepParams.password = passMatch[1].trim();
-        }
+        // Email, PIN, role and password are taken only from the explicit parameters the model was told to send; they are
+        // never guessed out of other text in the payload.
       }
 
       // Map Recipe / Dish Parameters (handling every possible JSON nesting)
