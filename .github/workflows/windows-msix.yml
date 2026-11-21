@@ -514,6 +514,18 @@ jobs:
 
           Get-Process -Name 'OrderRestro' -ErrorAction SilentlyContinue | Stop-Process -Force
           Start-Sleep -Seconds 2
+          # Force-killing the launcher leaves its server (node, postgres) running. Stop those too, otherwise the
+          # health check below is answered by the OLD server within seconds and says nothing about this launch.
+          $pgCtlStop = Join-Path $runtime 'postgres\bin\pg_ctl.exe'
+          $pgDataStop = Join-Path $serverDir 'pgdata'
+          if ((Test-Path $pgCtlStop) -and (Test-Path $pgDataStop)) { & $pgCtlStop stop -D $pgDataStop -m immediate -w 2>&1 | Out-Null }
+          Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($runtime, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue
+          $down = $false
+          for ($i = 0; $i -lt 30; $i++) {
+              try { Invoke-WebRequest 'http://localhost:1995/api/health' -UseBasicParsing -TimeoutSec 2 | Out-Null } catch { $down = $true; break }
+              Start-Sleep -Seconds 1
+          }
+          if (-not $down) { throw "The old server is still answering on port 1995 after it was stopped" }
           # Pretend an update arrived: a different version stamp, and one file whose hash in the local manifest no
           # longer matches the package (and is missing on disk). The launcher must copy just that file back.
           '0.0.0.0' | Set-Content (Join-Path $serverDir 'runtime.version')
@@ -536,6 +548,8 @@ jobs:
               if (Test-Path $supervisorErrorLog) { Write-Host (Get-Content $supervisorErrorLog -Raw) -ForegroundColor Red; break }
               Start-Sleep -Seconds 2
           }
+          # Healthy is not the end of the launch: wait until it has logged its migration decision too.
+          for ($i = 0; $i -lt 30 -and -not ((Get-Content $startupLog | Select-Object -Skip $before) -match 'migrations:'); $i++) { Start-Sleep -Seconds 2 }
           $newLines = (Get-Content $startupLog) | Select-Object -Skip $before
           Write-Host "---- startup.log (this launch) ----"; $newLines | ForEach-Object { Write-Host $_ }
           if (-not $ok) { throw "App did not come back healthy after the simulated update" }
