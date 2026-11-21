@@ -59,6 +59,10 @@ jobs:
           for f in $(grep -rhoE 'process\.env\.[A-Z_]+_E2E' test src | sed 's/process.env.//' | sort -u); do export "$f=1"; done
           export JWT_SECRET="$(openssl rand -hex 32)"
           pnpm exec jest --config ./test/jest-e2e.json --runInBand --forceExit --testTimeout=60000
+      - name: Backend build + runtime dependency check
+        run: |
+          pnpm --filter backend build
+          node apps/backend/scripts/check-runtime-deps.cjs
       - name: Web build
         run: pnpm --filter ./apps/web build
 
