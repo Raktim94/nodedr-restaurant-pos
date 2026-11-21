@@ -71,6 +71,22 @@ export const dueOf = (sale) => (sale.payLater ? round2(Math.max(sale.bill.total 
 /** Sales with money still owed, oldest first. */
 export const dueSales = (sales) => sales.filter((s) => dueOf(s) > 0 && s.status !== 'dismissed').sort((a, b) => (a.soldAt < b.soldAt ? -1 : 1));
 
+/** Money owed, split by how long ago the sale was (the "sale aging" view). */
+export function agingBuckets(sales, now = new Date()) {
+  const out = { total: 0, today: 0, d1_30: 0, d31_60: 0, over60: 0 };
+  for (const s of dueSales(sales)) {
+    const d = dueOf(s);
+    const days = Math.floor((now.getTime() - new Date(s.soldAt).getTime()) / 86400000);
+    out.total += d;
+    if (days < 1) out.today += d;
+    else if (days <= 30) out.d1_30 += d;
+    else if (days <= 60) out.d31_60 += d;
+    else out.over60 += d;
+  }
+  for (const k of Object.keys(out)) out[k] = round2(out[k]);
+  return out;
+}
+
 /** Money taken later on a due sale. Cash above what is owed is change, like at the till. */
 export function buildCollection({ id, sale, method = 'CASH', amount, reference = '', now = new Date() }) {
   const due = dueOf(sale);

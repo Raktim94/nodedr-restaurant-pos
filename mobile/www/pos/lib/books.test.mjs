@@ -127,3 +127,15 @@ test('cash collected today on an older bill is in today\'s drawer; today\'s dues
   assert.equal(b.dueToday, 200);
   assert.equal(b.expectedCash, 220); // 100 paid on today's bill + 120 collected
 });
+
+import { agingBuckets } from './books.js';
+
+test('a 500 bill with 100 paid leaves 400 owed, and aging groups it by how old the sale is', () => {
+  const mk = (id, soldAt, paid, total) =>
+    sale({ id, soldAt, payLater: true, customer: { name: 'A', phone: '9876543210' }, bill: { ...sale().bill, total }, payments: [{ method: 'CASH', amount: paid }] });
+  const a = mk('x1', '2026-11-08T09:00:00', 100, 500); // today: 400 owed
+  const b = mk('x2', '2026-10-20T09:00:00', 0, 300); // 19 days
+  const c = mk('x3', '2026-09-01T09:00:00', 50, 250); // 68 days: 200 owed
+  assert.equal(dueOf(a), 400);
+  assert.deepEqual(agingBuckets([a, b, c, sale()], NOW), { total: 900, today: 400, d1_30: 300, d31_60: 0, over60: 200 });
+});

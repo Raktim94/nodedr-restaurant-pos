@@ -138,3 +138,9 @@ details>summary{cursor:pointer;font-weight:700;min-height:44px;display:flex;alig
 #sj-body .btn,#sjl-body .btn{margin-top:.5rem}
 #sj-body .note .btn{display:inline-flex;margin:.3rem 0 0}
 #sj-body select,#sj-body input{min-width:0}
+/* Payment sheet: bill / paid / balance at a glance (credit sales) */
+.paycard{border:1.5px solid var(--line);border-radius:16px;padding:.7rem 1rem;background:var(--card)}
+.paycard .tot.big{margin-top:.2rem;padding-top:.5rem;border-top:1px dashed var(--line)}
+.paycard .tot.due{color:#b45309}.paycard .tot.ok{color:var(--ok)}
+@media(prefers-color-scheme:dark){.paycard .tot.due{color:#fcd34d}}
+.paycard .tot.big:first-child{border-top:0;margin-top:0;padding-top:.25rem}

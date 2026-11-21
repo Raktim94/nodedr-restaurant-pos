@@ -4,7 +4,7 @@
 import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
 import { events, reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
-import { backupJson, buildCollection, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, dueOf, dueSales, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
+import { agingBuckets, backupJson, buildCollection, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, dueOf, dueSales, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
 import { pushKey } from './lib/scanburst.js';
 import { buildChoice, defaultPicks, findByCode, lineKey, needsChoice } from './lib/options.js';
 import { afterRight, afterWrong, hashPin, lockState, needsManager, pinTaken, validPin, weakPin, whoHasPin } from './lib/staff.js';
@@ -1353,30 +1353,35 @@ function openPay() {
     root.innerHTML = `
       <header><h2>Payment</h2><button class="x" data-close aria-label="Close">&times;</button></header>
       <div class="body">
-        <div class="tot big"><span>Total</span><span>${inr(bill.total)}</span></div>
+        <div class="paycard" role="status">
+          <div class="tot big"><span>Bill total</span><span>${inr(bill.total)}</span></div>
+          <div class="tot"><span>Customer pays now</span><span>${inr(bill.total - st.balance)}</span></div>
+          ${st.change > 0 ? `<div class="tot big ok"><span>Change to give</span><span>${inr(st.change)}</span></div>` : ''}
+          ${!st.fullyPaid ? `<div class="tot big due"><span>Balance due${can('offlineOptions') ? ' (goes to dues)' : ''}</span><span>${inr(st.balance)}</span></div>` : ''}
+        </div>
         ${rows
           .map(
             (r, i) => `<div class="mt"><div class="seg" role="group" aria-label="Payment method">${METHODS.map(([m, l]) => `<button data-m="${i}:${m}" aria-pressed="${r.method === m}">${l}</button>`).join('')}</div>
-            <label for="am${i}">${r.method === 'CASH' ? 'Cash received' : 'Amount'}</label>
+            <label for="am${i}">${rows.length === 1 ? 'Customer pays now' : r.method === 'CASH' ? 'Cash received' : 'Amount'}</label>
             <input id="am${i}" data-am="${i}" type="number" inputmode="decimal" value="${esc(r.amount)}">
-            ${r.method === 'CASH' ? `<div class="chips mt" style="padding-bottom:0">${[bill.total, 100, 200, 500, 2000].map((q) => `<button class="chip" data-q="${i}:${q}">${q === bill.total ? 'Exact' : q}</button>`).join('')}</div>` : ''}
+            ${r.method === 'CASH' ? `<div class="chips mt" style="padding-bottom:0">${[bill.total, 100, 200, 500, 2000].filter((q, k, a) => a.indexOf(q) === k).map((q) => `<button class="chip" data-q="${i}:${q}">${q === bill.total ? 'Exact' : q}</button>`).join('') + (can('offlineOptions') ? `<button class="chip" data-q="${i}:0">Nothing now</button>` : '')}</div>` : ''}
             ${r.method !== 'CASH' ? `<label for="rf${i}">Reference (optional)</label><input id="rf${i}" data-rf="${i}" value="${esc(r.reference || '')}" placeholder="Transaction id">` : ''}</div>`,
           )
           .join('')}
         ${qr}
         <button class="btn line block mt" id="split">+ Add another payment</button>
-        <details class="mt" ${S.customer.phone || S.customer.name || !st.fullyPaid ? 'open' : ''}><summary>Customer ${S.customer.name || S.customer.phone ? `&middot; ${esc(S.customer.name || S.customer.phone)}` : '<span class="mute">(optional)</span>'}</summary>
-          <label for="cn">Name</label><input id="cn" autocomplete="off" maxlength="100" value="${esc(S.customer.name)}" list="custs">
-          <label for="cph">Phone</label><input id="cph" type="tel" inputmode="tel" autocomplete="off" maxlength="20" value="${esc(S.customer.phone)}" list="custph">
+        <details class="mt" ${S.customer.phone || S.customer.name || !st.fullyPaid ? 'open' : ''}><summary>Customer ${S.customer.name || S.customer.phone ? `&middot; ${esc(S.customer.name || S.customer.phone)}` : st.fullyPaid ? '<span class="mute">(optional)</span>' : '<span class="mute">(required for credit)</span>'}</summary>
+          <label for="cn">${st.fullyPaid ? 'Name' : 'Customer name'}</label><input id="cn" autocomplete="off" maxlength="100" value="${esc(S.customer.name)}" list="custs">
+          <label for="cph">${st.fullyPaid ? 'Phone' : 'Phone <span class="mute">(needed to track what they owe)</span>'}</label><input id="cph" type="tel" inputmode="tel" autocomplete="off" maxlength="20" value="${esc(S.customer.phone)}" list="custph">
           <datalist id="custs">${knownCustomers.map((c) => `<option value="${esc(c.name)}">`).join('')}</datalist>
           <datalist id="custph">${knownCustomers.map((c) => `<option value="${esc(c.phone)}">${esc(c.name)}</option>`).join('')}</datalist>
         </details>
-        <div class="mt">
-          ${st.change > 0 ? `<div class="tot big" style="color:var(--ok)"><span>Change to give</span><span>${inr(st.change)}</span></div>` : ''}
-          ${!st.fullyPaid ? `<div class="tot big" style="color:var(--bad)"><span>Still to pay</span><span>${inr(st.balance)}</span></div>` : ''}
-        </div>
       </div>
-      <footer>${!st.fullyPaid && can('offlineOptions') ? `<button class="btn line" id="later" ${phoneOk(S.customer.phone) ? '' : 'aria-disabled="true"'}>Pay later (${inr(st.balance)} due)</button>` : ''}<button class="btn ${st.fullyPaid ? 'block' : ''}" id="done" ${st.fullyPaid ? '' : 'disabled'}>Complete sale</button></footer>`;
+      <footer>${
+        !st.fullyPaid && can('offlineOptions')
+          ? `<button class="btn block" id="later" ${phoneOk(S.customer.phone) ? '' : 'aria-disabled="true"'}>Save sale &middot; ${inr(st.balance)} on credit</button>`
+          : `<button class="btn block" id="done" ${st.fullyPaid ? '' : 'disabled'}>Complete sale</button>`
+      }</footer>`;
     root.querySelector('[data-close]').onclick = openCart;
     root.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((rows[Number(b.dataset.m.split(':')[0])].method = b.dataset.m.split(':')[1]), draw())));
     root.querySelectorAll('[data-am]').forEach((el) => (el.oninput = () => ((rows[Number(el.dataset.am)].amount = el.value), softRedraw())));
@@ -1387,7 +1392,8 @@ function openPay() {
       rows.push({ method: 'UPI', amount: String(left || '') });
       draw();
     };
-    root.querySelector('#done').onclick = () => complete(st, tenders);
+    const doneBtn = root.querySelector('#done');
+    if (doneBtn) doneBtn.onclick = () => complete(st, tenders);
     const keepCust = () => {
       S.customer = { name: root.querySelector('#cn').value, phone: root.querySelector('#cph').value };
       persistSoon();
@@ -1767,7 +1773,9 @@ async function viewSales() {
 
 // -------------------------------------------------------------- money owed ---
 async function duesSheet() {
-  const owed = dueSales(await sales.all());
+  const allSales = await sales.all();
+  const owed = dueSales(allSales);
+  const aging = agingBuckets(allSales);
   // One customer, one line: the same phone number may owe on several bills.
   const byCust = new Map();
   for (const x of owed) {
@@ -1779,6 +1787,8 @@ async function duesSheet() {
   openSheet(
     `${head('Money owed')}
      <div class="body">
+       ${owed.length ? `<div class="paycard" role="status"><div class="tot big due"><span>Total to collect</span><span>${inr(aging.total)}</span></div>
+         ${[['today', 'Today'], ['d1_30', '1 to 30 days'], ['d31_60', '31 to 60 days'], ['over60', 'Over 60 days']].filter(([k]) => aging[k] > 0).map(([k, l]) => `<div class="tot"><span>${l}</span><span>${inr(aging[k])}</span></div>`).join('')}</div>` : ''}
        ${[...byCust.values()]
          .map(
            (g) => `<h3 style="margin:1rem 0 .2rem">${esc(g.name || g.phone)} <small class="mute">${esc(g.name ? g.phone : '')}</small> <span style="float:right">${inr(g.bills.reduce((n, b) => n + dueOf(b), 0))}</span></h3>
