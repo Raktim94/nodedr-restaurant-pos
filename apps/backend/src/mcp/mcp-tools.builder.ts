@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   ListToolsRequestSchema,
@@ -205,6 +207,17 @@ export class Args {
       };
     });
   }
+
+  rawArg(key: string): unknown {
+    return this.raw[key];
+  }
+
+  optionalArray(key: string): unknown[] | undefined {
+    const value = this.raw[key];
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) throw new Error(`"${key}" must be an array`);
+    return value;
+  }
 }
 
 function json(data: unknown): CallToolResult {
@@ -219,7 +232,7 @@ function errorResult(err: unknown): CallToolResult {
   };
 }
 
-interface ToolDef {
+export interface ToolDef {
   name: string;
   title: string;
   description: string;
@@ -325,7 +338,7 @@ export class McpToolsBuilder {
     await this.branchAccess.assertAccess(actor.restaurantId, branchId);
   }
 
-  private toolDefs(actor: SessionUser): ToolDef[] {
+  toolDefs(actor: SessionUser): ToolDef[] {
     return [
       {
         name: 'list_locations',
@@ -1507,6 +1520,472 @@ export class McpToolsBuilder {
           await this.assertBranch(actor, branchId);
           return json(
             await this.tables.deleteTable(branchId, args.string('tableId')),
+          );
+        },
+      },
+      {
+        name: 'create_staff_member',
+        title: 'Create staff member',
+        description: 'Register a new staff member with name, email, role, and POS PIN.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            name: { type: 'string' },
+            email: { type: 'string' },
+            role: { type: 'string' },
+            pin: { type: 'string', description: '4 to 6 digit quick-login PIN for POS and KDS terminal' },
+            password: { type: 'string', description: 'Web dashboard login password (optional, min 8 chars)' },
+            phone: { type: 'string' },
+          },
+          required: ['name', 'email'],
+        },
+        readOnly: false,
+        requiredPermission: 'users.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const name = args.string('name');
+          const email = args.string('email');
+          const pin = args.optionalString('pin');
+          const rawPassword = args.optionalString('password');
+          const phone = args.optionalString('phone');
+          const roleName = (args.optionalString('role') || 'KITCHEN_STAFF').toUpperCase();
+
+          // Check if email already registered
+          const existing = await this.prisma.user.findFirst({
+            where: { restaurantId: actor.restaurantId, email },
+          });
+          if (existing) {
+            throw new Error(`Staff member with email "${email}" already exists.`);
+          }
+
+          // Strict role resolution — do not fall back to owner or arbitrary first role
+          const role = await this.prisma.role.findFirst({
+            where: {
+              restaurantId: actor.restaurantId,
+              name: { equals: roleName, mode: 'insensitive' },
+            },
+          });
+          if (!role) {
+            const availableRoles = await this.prisma.role.findMany({
+              where: { restaurantId: actor.restaurantId },
+              select: { name: true },
+            });
+            const validNames = availableRoles.map((r) => r.name).join(', ');
+            throw new Error(
+              `Role "${roleName}" not found. Valid roles for this restaurant are: ${validNames || 'none configured'}.`,
+            );
+          }
+
+          // Validate PIN format and uniqueness if provided
+          let pinHash: string | null = null;
+          if (pin) {
+            if (!/^\d{4,6}$/.test(pin)) {
+              throw new Error('PIN must be between 4 and 6 numeric digits.');
+            }
+            // Check PIN collision against active users in the restaurant
+            const activeUsers = await this.prisma.user.findMany({
+              where: { restaurantId: actor.restaurantId, isActive: true, pinHash: { not: null } },
+              select: { id: true, name: true, pinHash: true },
+            });
+            for (const u of activeUsers) {
+              if (u.pinHash && (await bcrypt.compare(pin, u.pinHash))) {
+                throw new Error(`PIN "${pin}" is already in use by another staff member (${u.name}). Please choose a unique PIN.`);
+              }
+            }
+            pinHash = await bcrypt.hash(pin, 10);
+          }
+
+          // Resolve password: use manager-supplied password or generate an explicit temporary password
+          let initialPassword = rawPassword;
+          if (!initialPassword) {
+            // Generate readable, high-entropy temporary password
+            initialPassword = `Pass_${crypto.randomInt(100000, 999999)}!`;
+          } else if (initialPassword.length < 8) {
+            throw new Error('Password must be at least 8 characters long.');
+          }
+
+          const passwordHash = await bcrypt.hash(initialPassword, 10);
+
+          const newUser = await this.prisma.user.create({
+            data: {
+              restaurantId: actor.restaurantId,
+              name,
+              email,
+              phone: phone || null,
+              passwordHash,
+              pinHash,
+              roleId: role.id,
+              isActive: true,
+              branches: {
+                create: {
+                  branchId,
+                },
+              },
+            },
+            select: { id: true, name: true, email: true, role: { select: { name: true } } },
+          });
+
+          return json({
+            success: true,
+            user: newUser,
+            credentials: {
+              email: newUser.email,
+              webPassword: initialPassword,
+              posPin: pin || 'Not set',
+            },
+            message: `Staff member "${name}" registered with role "${newUser.role.name}". Web login password: "${initialPassword}" | POS/KDS PIN: "${pin || 'None'}". Please share these credentials securely with the staff member.`,
+          });
+        },
+      },
+      {
+        name: 'assign_storage_areas',
+        title: 'Assign stock items to storage areas',
+        description: 'Automatically allocate unassigned stockroom ingredients into Dry Store, Walk-in Fridge, and Freezer according to food safety rules.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+          },
+          required: ['branchId'],
+        },
+        readOnly: false,
+        requiredPermission: 'inventory.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+
+          const defaultPresets = [
+            'Dry store',
+            'Walk-in fridge',
+            'Freezer',
+            'Kitchen line',
+            'Bar',
+            'Dessert counter',
+            'Dispatch / packing',
+          ];
+
+          for (let i = 0; i < defaultPresets.length; i++) {
+            const locName = defaultPresets[i];
+            const exists = await this.prisma.stockLocation.findUnique({
+              where: { branchId_name: { branchId, name: locName } },
+            });
+            if (!exists) {
+              await this.prisma.stockLocation.create({
+                data: { branchId, name: locName, sortOrder: i, isActive: true },
+              });
+            }
+          }
+
+          const locations = await this.prisma.stockLocation.findMany({
+            where: { branchId, isActive: true },
+          });
+          const locMap = new Map<string, string>();
+          locations.forEach((l) => locMap.set(l.name.toLowerCase(), l.id));
+
+          const dryStoreId = locMap.get('dry store') || locations[0]?.id;
+          const fridgeId = locMap.get('walk-in fridge') || locations[0]?.id;
+          const freezerId = locMap.get('freezer') || locations[0]?.id;
+          const kitchenLineId = locMap.get('kitchen line') || locations[0]?.id;
+
+          const allIngredients = await this.prisma.ingredient.findMany({
+            where: { branchId },
+          });
+
+          let updatedCount = 0;
+          for (const ing of allIngredients) {
+            const n = ing.name.toLowerCase();
+            let targetArea = 'Dry store';
+            let targetId = dryStoreId;
+
+            if (n.includes('patty') || n.includes('ice') || n.includes('frozen') || n.includes('meat')) {
+              targetArea = 'Freezer';
+              targetId = freezerId;
+            } else if (
+              n.includes('paneer') || n.includes('cheese') || n.includes('milk') ||
+              n.includes('curd') || n.includes('yogurt') || n.includes('sauce') ||
+              n.includes('mayo') || n.includes('lettuce') || n.includes('tomato') ||
+              n.includes('onion') || n.includes('cream') || n.includes('butter') ||
+              n.includes('mint') || n.includes('coriander')
+            ) {
+              targetArea = 'Walk-in fridge';
+              targetId = fridgeId;
+            } else if (
+              n.includes('bun') || n.includes('bread') || n.includes('rice') ||
+              n.includes('flour') || n.includes('atta') || n.includes('oil') ||
+              n.includes('ghee') || n.includes('sugar') || n.includes('salt') ||
+              n.includes('spice') || n.includes('masala') || n.includes('powder')
+            ) {
+              targetArea = 'Dry store';
+              targetId = dryStoreId;
+            } else {
+              targetArea = 'Kitchen line';
+              targetId = kitchenLineId;
+            }
+
+            await this.prisma.ingredient.update({
+              where: { id: ing.id },
+              data: { storageLocation: targetArea },
+            });
+
+            if (targetId && Number(ing.currentStock) > 0) {
+              await this.prisma.stockLevel.upsert({
+                where: {
+                  ingredientId_locationId: {
+                    ingredientId: ing.id,
+                    locationId: targetId,
+                  },
+                },
+                create: {
+                  ingredientId: ing.id,
+                  locationId: targetId,
+                  quantity: ing.currentStock,
+                },
+                update: {
+                  quantity: ing.currentStock,
+                },
+              });
+            }
+            updatedCount++;
+          }
+
+          return json({
+            success: true,
+            updatedCount,
+            message: `Successfully allocated ${updatedCount} stock items across storage locations (Dry store, Walk-in fridge, Freezer, Kitchen line).`,
+          });
+        },
+      },
+      {
+        name: 'clean_menu_and_create_stock',
+        title: 'Clean accidental menu items and register as stock',
+        description: 'Remove accidental raw ingredient items from sales menu and ensure they are recorded in the stockroom inventory.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            itemNames: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['branchId'],
+        },
+        readOnly: false,
+        requiredPermission: 'menu.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const rawItems = (args.optionalArray('itemNames') as string[]) || [];
+
+          return json(
+            await this.prisma.$transaction(async (tx) => {
+              const existingMenuItems = await tx.menuItem.findMany({
+                where: { branchId, name: { in: rawItems } },
+                select: { id: true, name: true },
+              });
+
+              if (existingMenuItems.length > 0) {
+                const ids = existingMenuItems.map((m) => m.id);
+                // Soft-archive menu items: preserve historical orders, receipts and KDS references
+                await tx.menuItem.updateMany({
+                  where: { id: { in: ids } },
+                  data: { isActive: false },
+                });
+              }
+
+              const createdStockItems: string[] = [];
+              for (const name of rawItems) {
+                const existing = await tx.ingredient.findFirst({ where: { branchId, name } });
+                if (!existing) {
+                  // Do not guess inventory quantities or cost values; register with 0 stock/cost
+                  // requiring manager to log an actual purchase invoice or stock count.
+                  await tx.ingredient.create({
+                    data: {
+                      branchId,
+                      name,
+                      unit: 'PIECE',
+                      currentStock: 0,
+                      costPerUnit: 0,
+                      reorderLevel: 0,
+                    },
+                  });
+                  createdStockItems.push(name);
+                }
+              }
+
+              return {
+                success: true,
+                archivedFromMenu: existingMenuItems.map((m) => m.name),
+                newStockIngredients: createdStockItems,
+                message: `Archived ${existingMenuItems.length} accidental item(s) from active sales menu (preserving sales history). Registered ${createdStockItems.length} new inventory item(s) with 0 initial stock/cost pending manager invoice entry.`,
+              };
+            }),
+          );
+        },
+      },
+      {
+        name: 'create_menu_item_with_recipe',
+        title: 'Create menu item with recipe (BOM)',
+        description: 'Create or update a sellable dish on the menu and link all recipe ingredients (Bill of Materials) with automatic stock deduction.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            branchId: { type: 'string' },
+            name: { type: 'string' },
+            category: { type: 'string' },
+            price: { type: 'number' },
+            isVeg: { type: 'boolean' },
+            bomLines: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  ingredientName: { type: 'string' },
+                  quantity: { type: 'number' },
+                  unit: { type: 'string' },
+                },
+                required: ['ingredientName'],
+              },
+            },
+          },
+          required: ['branchId', 'name'],
+        },
+        readOnly: false,
+        requiredPermission: 'menu.manage',
+        handler: async (args) => {
+          const branchId = args.string('branchId');
+          await this.assertBranch(actor, branchId);
+          const name = args.string('name');
+          const categoryName = args.optionalString('category') || 'Specialties';
+          const price = args.optionalNumber('price') || 120;
+          const isVeg = (args.rawArg('isVeg') as boolean) ?? true;
+          const rawBomLines = (args.optionalArray('bomLines') as any[]) || [];
+
+          return json(
+            await this.prisma.$transaction(async (tx) => {
+              // 1. Ensure category exists
+              let category = await tx.menuCategory.findFirst({
+                where: { branchId, name: categoryName },
+              });
+              if (!category) {
+                category = await tx.menuCategory.create({
+                  data: {
+                    branchId,
+                    name: categoryName,
+                    sortOrder: 0,
+                    isActive: true,
+                    showOnWebsite: true,
+                  },
+                });
+              }
+
+              // 2. Upsert menu item
+              let menuItem = await tx.menuItem.findFirst({
+                where: { branchId, name },
+              });
+              if (!menuItem) {
+                menuItem = await tx.menuItem.create({
+                  data: {
+                    branchId,
+                    categoryId: category.id,
+                    name,
+                    price,
+                    taxRatePercent: 5,
+                    isVeg,
+                    isActive: true,
+                    inventoryTracking: 'RECIPE',
+                  },
+                });
+              } else {
+                await tx.menuItem.update({
+                  where: { id: menuItem.id },
+                  data: { inventoryTracking: 'RECIPE', stockIngredientId: null },
+                });
+              }
+
+              // 3. Process raw ingredients with smart deduplication
+              const allBranchIngredients = await tx.ingredient.findMany({
+                where: { branchId },
+              });
+
+              const linkedIngredients: { id: string; name: string; quantity: number }[] = [];
+
+              for (const bom of rawBomLines) {
+                const ingName = (bom.ingredientName || bom.name || '').trim();
+                if (!ingName) continue;
+                const lowerName = ingName.toLowerCase();
+                const singularName = lowerName.replace(/(es|s)$/, '');
+                const coreName = singularName.replace(/^fresh\s+/, '');
+
+                const match = allBranchIngredients.find((existing) => {
+                  const exLower = existing.name.trim().toLowerCase();
+                  const exSingular = exLower.replace(/(es|s)$/, '');
+                  const exCore = exSingular.replace(/^fresh\s+/, '');
+                  return (
+                    exLower === lowerName ||
+                    exSingular === singularName ||
+                    exCore === coreName ||
+                    exLower.includes(coreName) ||
+                    coreName.includes(exLower)
+                  );
+                });
+
+                const portionQty = Number(bom.quantity) > 0 ? Number(bom.quantity) : 1;
+
+                if (match) {
+                  linkedIngredients.push({ id: match.id, name: match.name, quantity: portionQty });
+                } else {
+                  // Do not guess arbitrary stock quantities or unit costs; record with 0 stock/cost
+                  // so accounting and profit margins reflect only verified purchase invoices.
+                  const created = await tx.ingredient.create({
+                    data: {
+                      branchId,
+                      name: ingName,
+                      unit: (bom.unit?.toUpperCase() as any) || 'PIECE',
+                      currentStock: 0,
+                      costPerUnit: 0,
+                      reorderLevel: 0,
+                    },
+                  });
+                  allBranchIngredients.push(created);
+                  linkedIngredients.push({ id: created.id, name: ingName, quantity: portionQty });
+                }
+              }
+
+              // 4. Link recipe ingredient lines
+              for (const ing of linkedIngredients) {
+                const existingLine = await tx.recipeIngredient.findUnique({
+                  where: {
+                    menuItemId_ingredientId: {
+                      menuItemId: menuItem.id,
+                      ingredientId: ing.id,
+                    },
+                  },
+                });
+
+                if (!existingLine) {
+                  await tx.recipeIngredient.create({
+                    data: {
+                      menuItemId: menuItem.id,
+                      ingredientId: ing.id,
+                      quantity: ing.quantity,
+                    },
+                  });
+                } else {
+                  await tx.recipeIngredient.update({
+                    where: { id: existingLine.id },
+                    data: { quantity: ing.quantity },
+                  });
+                }
+              }
+
+              return {
+                success: true,
+                menuItemId: menuItem.id,
+                name: menuItem.name,
+                linkedIngredientsCount: linkedIngredients.length,
+                message: `Configured "${menuItem.name}" on menu and linked ${linkedIngredients.length} recipe ingredient(s) with automatic stock deduction.`,
+              };
+            }),
           );
         },
       },

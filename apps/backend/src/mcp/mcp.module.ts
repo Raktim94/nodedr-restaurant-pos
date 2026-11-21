@@ -33,5 +33,6 @@ import { McpToolsBuilder } from './mcp-tools.builder';
   ],
   controllers: [McpController],
   providers: [McpToolsBuilder, StaffApiKeyGuard, BranchAccessService],
+  exports: [McpToolsBuilder],
 })
 export class McpModule {}

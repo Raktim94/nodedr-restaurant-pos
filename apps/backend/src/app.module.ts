@@ -55,6 +55,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
 import { McpModule } from './mcp/mcp.module';
 import { SystemModule } from './system/system.module';
 import { VerifactuModule } from './modules/verifactu/verifactu.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -94,6 +95,7 @@ import { VerifactuModule } from './modules/verifactu/verifactu.module';
     SettingsModule,
     SyncModule,
     VerifactuModule,
+    AiModule,
     UsersModule,
     PermissionsModule,
     AuditModule,

@@ -122,7 +122,8 @@ async function bootstrap() {
     app.set('trust proxy', hops);
   }
   // Same 100kb as Express's default, stated so it is a decision, not an accident.
-  app.useBodyParser('json', { limit: process.env.BODY_LIMIT ?? '100kb' });
+  // Allow up to 15mb for multimodal AI vision image payloads (receipts, vendor invoices)
+  app.useBodyParser('json', { limit: process.env.BODY_LIMIT ?? '15mb' });
   app.use(cookieParser());
   // Browsers only ever talk to the web container (same origin, /api is proxied),
   // and a website's backend calls the Integration API server-to-server, so the
