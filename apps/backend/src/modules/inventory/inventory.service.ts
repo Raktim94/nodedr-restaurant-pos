@@ -161,9 +161,9 @@ export class InventoryService {
       const current = mergedLinesMap.get(l.ingredientId) ?? 0;
       mergedLinesMap.set(l.ingredientId, current + (Number(l.quantity) || 0));
     }
-    const deduplicatedLines: RecipeLineDto[] = Array.from(mergedLinesMap.entries()).map(
-      ([ingredientId, quantity]) => ({ ingredientId, quantity }),
-    );
+    const deduplicatedLines: RecipeLineDto[] = Array.from(
+      mergedLinesMap.entries(),
+    ).map(([ingredientId, quantity]) => ({ ingredientId, quantity }));
 
     const ingredientIds = deduplicatedLines.map((l) => l.ingredientId);
     if (ingredientIds.length > 0) {
