@@ -154,10 +154,18 @@ export class InventoryService {
   ) {
     await this.assertMenuItemInBranch(branchId, menuItemId);
 
-    const ingredientIds = lines.map((l) => l.ingredientId);
-    if (new Set(ingredientIds).size !== ingredientIds.length) {
-      throw new BadRequestException('Duplicate ingredient in recipe');
+    // Merge duplicate ingredients by summing their quantities rather than hard-failing
+    const mergedLinesMap = new Map<string, number>();
+    for (const l of lines) {
+      if (!l.ingredientId) continue;
+      const current = mergedLinesMap.get(l.ingredientId) ?? 0;
+      mergedLinesMap.set(l.ingredientId, current + (Number(l.quantity) || 0));
     }
+    const deduplicatedLines: RecipeLineDto[] = Array.from(mergedLinesMap.entries()).map(
+      ([ingredientId, quantity]) => ({ ingredientId, quantity }),
+    );
+
+    const ingredientIds = deduplicatedLines.map((l) => l.ingredientId);
     if (ingredientIds.length > 0) {
       const count = await this.prisma.ingredient.count({
         where: { id: { in: ingredientIds }, branchId },
@@ -171,9 +179,9 @@ export class InventoryService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.recipeIngredient.deleteMany({ where: { menuItemId } });
-      if (lines.length > 0) {
+      if (deduplicatedLines.length > 0) {
         await tx.recipeIngredient.createMany({
-          data: lines.map((l) => ({
+          data: deduplicatedLines.map((l) => ({
             menuItemId,
             ingredientId: l.ingredientId,
             quantity: l.quantity,
@@ -188,7 +196,7 @@ export class InventoryService {
       data: { costPrice: recipe.totalCost },
     });
     // Saving recipe lines on an untracked item means "deduct these when sold".
-    if (lines.length > 0) {
+    if (deduplicatedLines.length > 0) {
       await this.prisma.menuItem.updateMany({
         where: { id: menuItemId, inventoryTracking: 'NONE' },
         data: { inventoryTracking: 'RECIPE' },

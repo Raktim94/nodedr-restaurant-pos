@@ -29,7 +29,7 @@ import {
   type MenuItem,
 } from "@/hooks/use-menu";
 import { hasPermission, useCurrentUser } from "@/hooks/use-auth";
-import { StockTrackingSection } from "@/components/menu/stock-tracking-section";
+import { StockTrackingSection, type StockTrackingHandle } from "@/components/menu/stock-tracking-section";
 import { ItemOptionsEditor, draftsFromItem, problemWithDrafts, saveOptionDrafts, type GroupDraft } from "@/components/menu/item-options-editor";
 import { useQueryClient } from "@tanstack/react-query";
 import { useDisplaySettings } from "@/hooks/use-settings";
@@ -57,6 +57,8 @@ export function EditItemDialog({
   const [isVeg, setIsVeg] = useState(item.isVeg);
   const [optionDrafts, setOptionDrafts] = useState<GroupDraft[]>(() => draftsFromItem(item));
   const [savingOptions, setSavingOptions] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const stockTrackingHandleRef = useRef<StockTrackingHandle | null>(null);
   const queryClient = useQueryClient();
   const [imageUrl, setImageUrl] = useState<string | undefined>(item.imageUrl ?? undefined);
   const [imagePreview, setImagePreview] = useState<string | undefined>(item.imageUrl ?? undefined);
@@ -94,6 +96,8 @@ export function EditItemDialog({
       toast.error(problem);
       return;
     }
+    setIsSubmitting(true);
+
     // Option groups are saved first (new ones created, changed ones updated in place), then the item points at them.
     let modifierGroupIds: string[];
     setSavingOptions(true);
@@ -102,10 +106,21 @@ export function EditItemDialog({
       void queryClient.invalidateQueries({ queryKey: ["menu", "modifier-groups", branchId] });
     } catch (err) {
       setSavingOptions(false);
+      setIsSubmitting(false);
       toast.error(err instanceof ApiError ? err.message : "Could not save the options");
       return;
     }
     setSavingOptions(false);
+
+    // Atomically save stock tracking / recipe rules
+    if (stockTrackingHandleRef.current) {
+      const stockSuccess = await stockTrackingHandleRef.current.save();
+      if (!stockSuccess) {
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     updateItem.mutate(
       {
         id: item.id,
@@ -123,171 +138,203 @@ export function EditItemDialog({
       },
       {
         onSuccess: () => {
-          toast.success(`"${name}" updated`);
+          setIsSubmitting(false);
+          toast.success(`"${name}" updated and stock tracking saved`);
           onClose();
         },
-        onError: (err) => toast.error(err instanceof ApiError ? err.message : "Could not update item"),
+        onError: (err) => {
+          setIsSubmitting(false);
+          toast.error(err instanceof ApiError ? err.message : "Could not update item");
+        },
       },
     );
   };
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-md">
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <DialogHeader>
+      <DialogContent className="max-h-[92dvh] flex flex-col p-0 overflow-hidden sm:max-w-xl md:max-w-2xl rounded-2xl border-border/80 shadow-2xl">
+        <form onSubmit={onSubmit} className="flex flex-col flex-1 min-h-0">
+          <DialogHeader className="p-4 sm:p-5 pb-3 shrink-0 border-b border-border/50">
             <DialogTitle>Edit menu item</DialogTitle>
           </DialogHeader>
 
-          <div className="flex flex-col gap-2">
-            <Label>Photo</Label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              className="hidden"
-              onChange={onFileChange}
-            />
-            {imagePreview ? (
-              <div className="relative h-28 w-28 overflow-hidden rounded-lg border border-border">
-                {/* eslint-disable-next-line @next/next/no-img-element -- local blob/uploaded preview, not a Next-optimizable remote asset */}
-                <img src={imagePreview} alt="" className="h-full w-full object-cover" />
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label>Photo</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={onFileChange}
+              />
+              {imagePreview ? (
+                <div className="relative h-28 w-28 overflow-hidden rounded-xl border border-border">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- local blob/uploaded preview, not a Next-optimizable remote asset */}
+                  <img src={imagePreview} alt="" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageUrl(undefined);
+                      setImagePreview(undefined);
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                    className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-background/80 backdrop-blur-xs text-foreground shadow-xs hover:bg-background"
+                    aria-label="Remove photo"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                  {uploadImage.isPending && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/60 text-xs">
+                      Uploading…
+                    </div>
+                  )}
+                </div>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => {
-                    setImageUrl(undefined);
-                    setImagePreview(undefined);
-                    if (fileInputRef.current) fileInputRef.current.value = "";
-                  }}
-                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-background/80 text-foreground"
-                  aria-label="Remove photo"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-24 w-24 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/80 text-muted-foreground hover:border-primary/60 hover:text-primary hover:bg-primary/5 active:scale-95 transition-all"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <ImagePlus className="h-5 w-5" />
+                  <span className="text-xs font-medium">Add photo</span>
                 </button>
-                {uploadImage.isPending && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-background/60 text-xs">
-                    Uploading…
-                  </div>
-                )}
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="item-edit-name">Name</Label>
+              <Input
+                id="item-edit-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Margherita Pizza"
+                required
+                autoFocus
+                className="rounded-xl"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label>Category</Label>
+              <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-price">{priceLabel}</Label>
+                <Input
+                  id="edit-price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  required
+                  className="rounded-xl"
+                />
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex h-28 w-28 flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border text-muted-foreground hover:border-primary hover:text-primary"
-              >
-                <ImagePlus className="h-5 w-5" />
-                <span className="text-xs">Add photo</span>
-              </button>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="edit-tax">Tax rate %</Label>
+                <Input
+                  id="edit-tax"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={taxRatePercent}
+                  onChange={(e) => setTaxRatePercent(e.target.value)}
+                  required
+                  className="rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-half">Half portion price (optional)</Label>
+              <Input
+                id="edit-half"
+                type="number"
+                min="0"
+                step="0.01"
+                value={halfPrice}
+                onChange={(e) => setHalfPrice(e.target.value)}
+                placeholder="Leave empty if there is no half/full choice"
+                className="rounded-xl"
+              />
+              <p className="text-xs text-muted-foreground">
+                When set, the POS asks Half / Full / Custom. The price above is the Full portion.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label>Kitchen station</Label>
+              <Select value={stationId} onValueChange={(v) => setStationId(v ?? "")}>
+                <SelectTrigger className="rounded-xl">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  {stations?.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-border/70 px-3.5 py-2.5">
+              <Label htmlFor="edit-is-veg" className="cursor-pointer font-medium">
+                Vegetarian
+              </Label>
+              <Switch id="edit-is-veg" checked={isVeg} onCheckedChange={setIsVeg} />
+            </div>
+
+            {hasPermission(me?.user, "inventory.manage") && (
+              <StockTrackingSection
+                branchId={branchId}
+                itemId={item.id}
+                itemName={name}
+                isCombo={item.isCombo}
+                onHandleReady={(handle) => {
+                  stockTrackingHandleRef.current = handle;
+                }}
+              />
             )}
+
+            <ItemOptionsEditor branchId={branchId} drafts={optionDrafts} setDrafts={setOptionDrafts} />
           </div>
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="item-edit-name">Name</Label>
-            <Input
-              id="item-edit-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Margherita Pizza"
-              required
-              autoFocus
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label>Category</Label>
-            <Select value={categoryId} onValueChange={(v) => setCategoryId(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select category" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="edit-price">{priceLabel}</Label>
-              <Input
-                id="edit-price"
-                type="number"
-                min="0"
-                step="0.01"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                required
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="edit-tax">Tax rate %</Label>
-              <Input
-                id="edit-tax"
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={taxRatePercent}
-                onChange={(e) => setTaxRatePercent(e.target.value)}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="edit-half">Half portion price (optional)</Label>
-            <Input
-              id="edit-half"
-              type="number"
-              min="0"
-              step="0.01"
-              value={halfPrice}
-              onChange={(e) => setHalfPrice(e.target.value)}
-              placeholder="Leave empty if there is no half/full choice"
-            />
-            <p className="text-xs text-muted-foreground">
-              When set, the POS asks Half / Full / Custom. The price above is the Full portion.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label>Kitchen station</Label>
-            <Select value={stationId} onValueChange={(v) => setStationId(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="None" />
-              </SelectTrigger>
-              <SelectContent>
-                {stations?.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
-            <Label htmlFor="edit-is-veg" className="cursor-pointer">
-              Vegetarian
-            </Label>
-            <Switch id="edit-is-veg" checked={isVeg} onCheckedChange={setIsVeg} />
-          </div>
-
-          <ItemOptionsEditor branchId={branchId} drafts={optionDrafts} setDrafts={setOptionDrafts} />
-
-          <DialogFooter>
-            <Button type="submit" disabled={updateItem.isPending || uploadImage.isPending || savingOptions}>
-              {updateItem.isPending || savingOptions ? "Saving…" : "Save changes"}
+          <DialogFooter className="p-3 sm:p-4 bg-muted/40 border-t border-border/60 shrink-0 m-0 rounded-none sm:rounded-b-xl flex flex-row items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="h-10 px-4 rounded-xl text-xs font-medium cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              className="w-full sm:w-auto h-10 px-6 rounded-xl font-semibold active:scale-95 transition-transform shadow-xs cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={isSubmitting || updateItem.isPending || uploadImage.isPending || savingOptions}
+            >
+              {isSubmitting || updateItem.isPending || savingOptions ? "Saving…" : "Save changes"}
             </Button>
           </DialogFooter>
         </form>
-        {hasPermission(me?.user, "inventory.manage") && (
-          <StockTrackingSection branchId={branchId} itemId={item.id} isCombo={item.isCombo} />
-        )}
       </DialogContent>
     </Dialog>
   );
