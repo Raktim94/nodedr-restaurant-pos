@@ -53,7 +53,7 @@ export function defaultPicks(item) {
 
 /** Exact barcode or SKU match (what a scanner or a typed code gives), or null. */
 export function findByCode(items, code) {
-  const c = String(code || '').trim();
+  const c = String(code || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().toLowerCase();
   if (!c) return null;
-  return items.find((i) => (i.barcode && i.barcode === c) || (i.sku && i.sku.toLowerCase() === c.toLowerCase())) || null;
+  return items.find((i) => (i.barcode && String(i.barcode).trim().toLowerCase() === c) || (i.sku && String(i.sku).trim().toLowerCase() === c)) || null;
 }

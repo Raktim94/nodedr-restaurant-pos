@@ -5,6 +5,7 @@ import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
 import { events, reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
 import { backupJson, buildCollection, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, dueOf, dueSales, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
+import { pushKey } from './lib/scanburst.js';
 import { buildChoice, defaultPicks, findByCode, lineKey, needsChoice } from './lib/options.js';
 import { afterRight, afterWrong, hashPin, lockState, needsManager, pinTaken, validPin, weakPin, whoHasPin } from './lib/staff.js';
 import { KOT_NEXT, dayReport, kotDelta, markSent, minutesSince, newOrder, openOrders, saleNote, tableMap, tableTakenBy } from './lib/orders.js';
@@ -1158,6 +1159,28 @@ function optionsSheet(item, picks = defaultPicks(item), errors = {}, qty = 1) {
     },
   );
 }
+
+// Hardware scanner anywhere on the sell screen: it types a fast burst + Enter, which used to land nowhere unless the
+// search box happened to have focus (and Enter on a focused button even pressed that button). The search box keeps its
+// own Enter handler, so text fields are left alone here.
+let scanBuf = { text: '', last: 0 };
+document.addEventListener(
+  'keydown',
+  (e) => {
+    if (S.view !== 'sell' || !S.snap || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (!$('sheet').hidden || document.querySelector('.pinlayer')) return;
+    const r = pushKey(scanBuf, e.key, e.timeStamp);
+    scanBuf = r.buf;
+    if (!r.code) return;
+    e.preventDefault();
+    const hit = findByCode(S.snap.items, r.code);
+    if (!hit) return toast(`No dish has the barcode ${r.code}. Add it to the dish first.`, 4000);
+    tapDish(hit);
+  },
+  true,
+);
 
 /** Camera barcode scan (the app's ML Kit scanner): the dish with that barcode or SKU goes into the cart. */
 async function scanBarcode() {
