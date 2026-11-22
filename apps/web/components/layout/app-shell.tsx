@@ -8,6 +8,7 @@ import { EntityDialogHost } from "@/components/layout/entity-dialog-host";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useBranch } from "@/hooks/use-branch";
 import { useDisplaySettings } from "@/hooks/use-settings";
+import { setDefaultCurrency } from "@/lib/format";
 import { BrandFooter } from "./brand-footer";
 import { BranchSwitcher } from "./branch-switcher";
 import { LanguageSwitcher } from "./language-switcher";
@@ -77,6 +78,8 @@ export function AppShell({
   const toggle = () => setCollapsed((c) => { const n = !c; try { localStorage.setItem("orderrestro.sidebar.collapsed", n ? "1" : "0"); } catch { /* storage blocked */ } return n; });
   const { branchId: shellBranch } = useBranch();
   const { data: shellDisplay } = useDisplaySettings(shellBranch);
+  const shellCurrency = shellDisplay?.restaurant.currency;
+  setDefaultCurrency(shellCurrency);
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -161,7 +164,7 @@ export function AppShell({
             <UserMenu user={user} />
           </div>
         </header>
-        <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 pb-24 sm:p-6 sm:pb-24 lg:p-6 lg:pb-6">{children}</main>
+        <main key={shellCurrency ?? "default"} id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 pb-24 sm:p-6 sm:pb-24 lg:p-6 lg:pb-6">{children}</main>
         <EntityDialogHost />
       </div>
       <MobileBottomNav user={user} onMore={() => setMobileOpen(true)} />

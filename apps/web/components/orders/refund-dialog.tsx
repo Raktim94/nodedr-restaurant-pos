@@ -38,7 +38,7 @@ export function RefundDialog({
   maxAmount: number;
 }) {
   const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState(String(maxAmount));
+  const [rawAmount, setAmount] = useState(String(maxAmount));
   const [method, setMethod] = useState<PaymentMethodDto>("CASH");
   const [reason, setReason] = useState("");
   const refund = useRefundOrder(branchId);
@@ -49,6 +49,10 @@ export function RefundDialog({
   const [viaGateway, setViaGateway] = useState(true);
   const useGateway = !!online && viaGateway;
   const onlineMax = online ? fromMinorUnits(online.refundableMinor, online.currency) : 0;
+  const effectiveMax = useGateway ? Math.min(maxAmount, onlineMax) : maxAmount;
+  // The prefilled full amount can exceed what the original online payment can still return; clamp it so the
+  // form never starts in a state the browser silently refuses to submit.
+  const amount = Number(rawAmount) > effectiveMax ? String(effectiveMax) : rawAmount;
   const pending = refund.isPending || gatewayRefund.isPending;
   // Units physically handed back; only these go back into stock.
   const [returned, setReturned] = useState<Record<string, number>>({});
@@ -115,12 +119,12 @@ export function RefundDialog({
             <DialogTitle>Refund order #{orderNumber}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="refund-amount">Amount (max {useGateway ? Math.min(maxAmount, onlineMax) : maxAmount})</Label>
+            <Label htmlFor="refund-amount">Amount (max {effectiveMax})</Label>
             <Input
               id="refund-amount"
               type="number"
               min="0"
-              max={useGateway ? Math.min(maxAmount, onlineMax) : maxAmount}
+              max={effectiveMax}
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}

@@ -201,6 +201,9 @@ export function CheckoutPanel({
         return;
       }
       setGiftCardBalance(Number(card.balance));
+    } catch {
+      setGiftCardBalance(null);
+      toast.error("Could not check the gift card. Check the connection and try again.");
     } finally {
       setCheckingGiftCard(false);
     }
@@ -483,7 +486,7 @@ export function CheckoutPanel({
                     discountMode === m ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary",
                   )}
                 >
-                  {m === "PERCENT" ? "%" : "₹ Cash"}
+                  {m === "PERCENT" ? "%" : "Amount"}
                 </button>
               ))}
             </div>
@@ -508,7 +511,7 @@ export function CheckoutPanel({
                   onClick={() => setDiscountValue(String(v))}
                   className="min-h-8 rounded-full border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-secondary"
                 >
-                  {discountMode === "PERCENT" ? `${v}%` : `₹${v}`}
+                  {discountMode === "PERCENT" ? `${v}%` : formatCurrency(v)}
                 </button>
               ))}
             </div>
