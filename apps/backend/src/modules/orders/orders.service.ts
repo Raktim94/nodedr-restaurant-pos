@@ -2470,7 +2470,12 @@ export class OrdersService {
       menuItem: {
         id: menuItem.id,
         name: menuItem.name + portionSuffix,
-        price: unitPriceInclusive - round2(modifierTotal),
+        // This becomes OrderItem.unitPriceSnapshot. It must be the full
+        // inclusive per-unit price (base + modifiers, grossed up for
+        // EXCLUSIVE tax), otherwise the receipt shows a rate that cannot be
+        // multiplied by the quantity to reach its own line total. Modifier
+        // names are printed under the item, so they are not double-counted.
+        price: unitPriceInclusive,
         taxRatePercent,
       },
       selectedModifiers,

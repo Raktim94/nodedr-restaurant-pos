@@ -297,11 +297,18 @@ export class GatewayPaymentsService {
       });
     }
     try {
+      // Zero-decimal currencies (JPY/KRW/VND...) are charged as whole units,
+      // while the books keep two decimals. A 94.50 balance becomes a 95-unit
+      // charge; recording 95 would over-tender and flag a confirmed payment
+      // as NEEDS_REVIEW. Cap the booked amount at what the bill still owes.
+      const bill = await this.orders.previewBill(p.branchId, p.orderId, {});
+      const balanceDue = Number(bill.balanceDue);
+      const booked = Math.min(fromMinor(p.amountMinor, p.currency), balanceDue);
       await this.orders.checkout(p.branchId, p.orderId, p.createdById, {
         payments: [
           {
             method: 'OTHER',
-            amount: fromMinor(p.amountMinor, p.currency),
+            amount: booked,
             reference:
               `${p.provider}:${providerPaymentId ?? p.providerRef}`.slice(
                 0,
