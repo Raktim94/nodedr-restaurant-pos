@@ -223,4 +223,4 @@ const server = http.createServer((req, res) => {
 });
 
 if (require.main === module) server.listen(PORT, () => console.log(`updater listening on :${PORT}, managing ${TARGETS.join(', ')}`));
-module.exports = { splitImage, createBody };
+module.exports = { splitImage, createBody, olderThan };

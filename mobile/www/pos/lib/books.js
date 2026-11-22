@@ -291,5 +291,5 @@ export function parseBackup(text) {
   if (b.version !== 1) throw new Error('This backup was made by a newer version of the app. Update the app first.');
   const arr = (x) => (Array.isArray(x) ? x : []);
   if (!b.snapshot || !Array.isArray(b.snapshot.items)) throw new Error('The backup has no menu in it.');
-  return { snapshot: b.snapshot, sales: arr(b.sales), orders: arr(b.orders), kots: arr(b.kots), refunds: arr(b.refunds), expenses: arr(b.expenses), shifts: arr(b.shifts), savedAt: b.savedAt };
+  return { snapshot: b.snapshot, sales: arr(b.sales), orders: arr(b.orders), kots: arr(b.kots), refunds: arr(b.refunds), expenses: arr(b.expenses), shifts: arr(b.shifts), reservations: arr(b.reservations), events: Array.isArray(b.events) ? b.events : undefined, savedAt: b.savedAt };
 }

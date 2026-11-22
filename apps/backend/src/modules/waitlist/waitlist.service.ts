@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -49,8 +50,27 @@ export class WaitlistService {
     if (!table) {
       throw new BadRequestException('Table is invalid for this branch');
     }
-
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Lock the table, then check it inside the lock: two staff seating different parties at once must not
+      // both succeed, and a table that is held or in use must not take a second party.
+      await tx.$queryRaw`SELECT id FROM "tables" WHERE id = ${tableId} FOR UPDATE`;
+      const fresh = await tx.table.findUniqueOrThrow({
+        where: { id: tableId },
+        select: { status: true },
+      });
+      const liveOrder = await tx.order.findFirst({
+        where: { tableId, status: 'OPEN' },
+        select: { id: true },
+      });
+      if (
+        fresh.status === 'RESERVED' ||
+        fresh.status === 'OCCUPIED' ||
+        liveOrder
+      ) {
+        throw new ConflictException(
+          'That table is held or in use. Choose a free table.',
+        );
+      }
       const result = await tx.waitlistEntry.update({
         where: { id },
         data: { status: 'SEATED', tableId, seatedAt: new Date() },

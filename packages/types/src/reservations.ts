@@ -16,7 +16,7 @@ export const createReservationSchema = z.object({
   email: z.string().email().optional(),
   guestCount: z.number().int().positive(),
   reservedAt: z.coerce.date(),
-  durationMinutes: z.number().int().positive().default(90),
+  durationMinutes: z.number().int().positive().max(24 * 60).default(90),
   tableId: z.string().optional(),
   specialRequests: z.string().optional(),
   deposit: z.coerce.number().nonnegative().optional(),
