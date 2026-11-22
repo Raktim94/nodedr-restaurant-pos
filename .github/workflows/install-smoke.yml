@@ -15,6 +15,13 @@ on:
       - "install.sh"
       - "docker-compose.yml"
       - ".github/workflows/install-smoke.yml"
+  pull_request:
+    paths:
+      - "scripts/quickstart.*"
+      - "install.sh"
+      - "docker-compose.yml"
+      - "apps/**/Dockerfile"
+      - ".github/workflows/install-smoke.yml"
 
 permissions:
   contents: read
@@ -24,9 +31,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
       - name: One-line install (as published)
+        if: github.event_name != 'pull_request'
         working-directory: ${{ runner.temp }}
         run: curl -fsSL https://raw.githubusercontent.com/Raktim94/nodedr-restaurant-pos/master/scripts/quickstart.sh | bash
+      - name: Install from this checkout (PR)
+        if: github.event_name == 'pull_request'
+        run: bash "$GITHUB_WORKSPACE/scripts/quickstart.sh"
 
       - name: App answers on port 1995
         run: |
