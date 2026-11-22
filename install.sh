@@ -62,18 +62,21 @@ if [ ! -f .env ]; then
   if command -v openssl >/dev/null 2>&1; then
     jwt_secret="$(openssl rand -hex 32)"
     pg_password="$(openssl rand -hex 16)"
+    updater_token="$(openssl rand -hex 24)"
   else
     jwt_secret="$(head -c48 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c64)"
     pg_password="$(head -c24 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c32)"
+    updater_token="$(head -c32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c48)"
   fi
   cat > .env <<EOF
 POSTGRES_PASSWORD=${pg_password}
 JWT_SECRET=${jwt_secret}
+UPDATER_TOKEN=${updater_token}
 FRONTEND_ORIGIN=http://localhost:1995
 HOST_PORT=1995
 COOKIE_SECURE=false
 EOF
-  echo ".env created with a generated POSTGRES_PASSWORD and JWT_SECRET."
+  echo ".env created with generated POSTGRES_PASSWORD, JWT_SECRET and UPDATER_TOKEN."
 fi
 
 # --- 3. Build the images and start the stack --------------------------------
