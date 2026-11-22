@@ -40,10 +40,11 @@ import {
   type RestaurantSettings,
 } from "@/hooks/use-settings";
 import { ApiError } from "@/lib/api";
+import { QueryError } from "@/components/ui/query-error";
 
 export default function SettingsPage() {
   const { branchId } = useBranch();
-  const { data, isLoading } = useSettings(branchId);
+  const { data, isLoading, isError, error, refetch, isFetching } = useSettings(branchId);
 
   return (
     <div className="flex flex-col gap-6">
@@ -54,7 +55,9 @@ export default function SettingsPage() {
 
       <SettingsTabs />
 
-      {isLoading || !data ? (
+      {isError ? (
+        <QueryError error={error} what="the settings" onRetry={() => void refetch()} retrying={isFetching} />
+      ) : isLoading || !data ? (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Skeleton className="h-72 rounded-xl" />
           <Skeleton className="h-72 rounded-xl" />

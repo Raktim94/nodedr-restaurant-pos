@@ -84,8 +84,8 @@ export default function ReportsPage() {
 
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2 print:hidden">
-            <Input type="date" className="w-40" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
-            <Input type="date" className="w-40" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+            <Input aria-label="Report from date" type="date" className="w-40" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
+            <Input aria-label="Report to date" type="date" className="w-40" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
             <Button variant="outline" size="sm" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" /> Print
             </Button>

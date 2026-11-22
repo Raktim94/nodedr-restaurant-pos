@@ -18,24 +18,33 @@ function Return() {
     if (!gp) return;
     let stop = false;
     let tries = 0;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       try {
         const r = await fetch(`/api/v1/payment-gateways/return-status/${encodeURIComponent(gp)}`);
         if (!r.ok) throw new Error();
         const j = (await r.json()) as { status: State; test: boolean };
         if (stop) return;
+        failures = 0;
         setState(j.status);
         setTest(j.test);
         if (j.status !== "CREATED" && j.status !== "NEEDS_REVIEW") return;
       } catch {
-        if (!stop) setState("UNKNOWN");
-        return;
+        if (stop) return;
+        // One network blip must not tell a paying customer their payment was
+        // lost while the provider may still be confirming it.
+        if (++failures >= 3) {
+          setState("UNKNOWN");
+          return;
+        }
       }
-      if (++tries < 30 && !stop) setTimeout(tick, 4000);
+      if (++tries < 30 && !stop) timer = setTimeout(tick, 4000);
     };
     void tick();
     return () => {
       stop = true;
+      if (timer) clearTimeout(timer);
     };
   }, [gp]);
 

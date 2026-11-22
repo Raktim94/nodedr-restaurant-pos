@@ -39,9 +39,9 @@ function LeaveRequestCard({ branchId }: { branchId: string | null }) {
           <option value="UNPAID">Unpaid</option>
           <option value="OTHER">Other</option>
         </select>
-        <input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
-        <input type="date" value={f.endDate} onChange={(e) => setF({ ...f, endDate: e.target.value })} className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
-        <input placeholder="Reason (optional)" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} className="min-w-40 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
+        <input aria-label="Leave start date" type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
+        <input aria-label="Leave end date" type="date" value={f.endDate} onChange={(e) => setF({ ...f, endDate: e.target.value })} className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
+        <input aria-label="Reason (optional)" placeholder="Reason (optional)" value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} className="min-w-40 flex-1 rounded-lg border border-border bg-background px-2 py-1.5 text-sm" />
         <Button
           size="sm"
           disabled={!branchId || requestLeave.isPending}

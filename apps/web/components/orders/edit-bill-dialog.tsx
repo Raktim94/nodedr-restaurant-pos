@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { QueryError } from "@/components/ui/query-error";
 import {
   useOrder,
   useRemoveOrderItem,
@@ -40,7 +41,7 @@ export function EditBillDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { data: order, isLoading } = useOrder(branchId, open ? orderId : null);
+  const { data: order, isLoading, isError, error: loadError, refetch, isFetching } = useOrder(branchId, open ? orderId : null);
   const { data: floors } = useFloors(branchId);
   const updateOrder = useUpdateOrder(branchId);
   const updateItem = useUpdateOrderItem(branchId);
@@ -88,7 +89,9 @@ export function EditBillDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {isLoading || !order ? (
+        {isError ? (
+          <QueryError error={loadError} what="this bill" onRetry={() => void refetch()} retrying={isFetching} />
+        ) : isLoading || !order ? (
           <Skeleton className="h-40 rounded-lg" />
         ) : !editable ? (
           <p className="rounded-lg bg-secondary/60 px-3 py-2 text-sm text-muted-foreground">
