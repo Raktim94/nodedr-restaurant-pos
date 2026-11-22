@@ -114,9 +114,16 @@ export type AddOrderItemsDto = z.infer<typeof addOrderItemsSchema>;
 
 // Guest self-order from a table's QR code — no account, so a name is the
 // only way staff can tell whose order this is (shown on KDS/order lists).
+// Portions/custom prices are staff-only: the public menu never publishes
+// halfPrice, so a crafted HALF request would use an unpublished price point.
+export const publicCartItemSchema = cartItemSchema.omit({
+  portion: true,
+  customPrice: true,
+  customLabel: true,
+});
 export const publicOrderSchema = z.object({
   guestName: z.string().trim().min(1, "Please enter your name").max(60),
-  items: z.array(cartItemSchema).min(1),
+  items: z.array(publicCartItemSchema).min(1),
   // How the guest will pay. Omitted = the older behaviour (no payment choice).
   payment: z.enum(["CASH", "ONLINE"]).optional(),
   // Made by the phone for this basket and reused on every retry, so a double tap or a dropped connection
