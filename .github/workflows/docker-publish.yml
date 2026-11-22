@@ -99,10 +99,14 @@ jobs:
         include:
           - image: nodedr-restaurant-pos-backend
             dockerfile: apps/backend/Dockerfile
+            context: .
           - image: nodedr-restaurant-pos-web
             dockerfile: apps/web/Dockerfile
+            context: .
+          # updater/Dockerfile copies server.js relative to its own folder
           - image: nodedr-restaurant-pos-updater
             dockerfile: updater/Dockerfile
+            context: updater
           - platform: linux/amd64
             runner: ubuntu-latest
             slug: amd64
@@ -122,7 +126,7 @@ jobs:
         id: build
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           # web needs the backend URL baked in at build time (Next.js rewrites
           # resolve at build). APP_VERSION is only used by the backend image.
