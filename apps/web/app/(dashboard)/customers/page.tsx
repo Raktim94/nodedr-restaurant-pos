@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useBranch } from "@/hooks/use-branch";
 import { useCustomers, useDeleteCustomer, type Customer } from "@/hooks/use-customers";
 import { ApiError } from "@/lib/api";
+import { formatCurrency } from "@/lib/format";
 
 export default function CustomersPage() {
   const { branchId } = useBranch();
@@ -79,7 +80,7 @@ export default function CustomersPage() {
                 </span>
                 {Number(c.walletBalance) > 0 && (
                   <span className="flex items-center gap-1">
-                    <Gift className="h-3.5 w-3.5" />₹{c.walletBalance}
+                    <Gift className="h-3.5 w-3.5" />{formatCurrency(Number(c.walletBalance))}
                   </span>
                 )}
                 <div className="flex items-center gap-0.5">
