@@ -313,13 +313,22 @@ export class McpToolsBuilder {
     const tools = this.toolDefs(actor);
 
     server.server.setRequestHandler(ListToolsRequestSchema, () => ({
-      tools: tools.map((t) => ({
-        name: t.name,
-        title: t.title,
-        description: t.description,
-        inputSchema: t.inputSchema,
-        annotations: { readOnlyHint: t.readOnly },
-      })),
+      // Don't advertise tools this key cannot call. CallTool still checks
+      // permissions, but listing them to an AI client leaks the internal
+      // tool catalog and invites calls that can only end in an error.
+      tools: tools
+        .filter(
+          (t) =>
+            !t.requiredPermission ||
+            permissionSatisfied(actor.permissions, t.requiredPermission),
+        )
+        .map((t) => ({
+          name: t.name,
+          title: t.title,
+          description: t.description,
+          inputSchema: t.inputSchema,
+          annotations: { readOnlyHint: t.readOnly },
+        })),
     }));
 
     server.server.setRequestHandler(CallToolRequestSchema, async (request) => {

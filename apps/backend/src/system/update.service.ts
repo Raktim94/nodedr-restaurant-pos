@@ -158,9 +158,28 @@ export class UpdateService {
   // window would pull nothing. Anonymous GHCR manifest check — anything other
   // than a clear 404 means "can't tell", and the tag is trusted.
   private async imageTagExists(tag: string): Promise<boolean | null> {
+    // Both containers are replaced by an update, so both tags must exist.
+    const repos = [
+      'raktim94/nodedr-restaurant-pos-backend',
+      'raktim94/nodedr-restaurant-pos-web',
+    ];
+    const version = tag.replace(/^v/i, '');
+    let missing = false;
+    let unknown = false;
+    for (const repo of repos) {
+      const result = await this.repoTagExists(repo, version);
+      if (result === false) missing = true;
+      if (result === null) unknown = true;
+    }
+    if (missing) return false;
+    return unknown ? null : true;
+  }
+
+  private async repoTagExists(
+    repo: string,
+    version: string,
+  ): Promise<boolean | null> {
     try {
-      const repo = 'raktim94/nodedr-restaurant-pos-backend';
-      const version = tag.replace(/^v/i, '');
       const tokRes = await fetch(
         `https://ghcr.io/token?scope=repository:${repo}:pull`,
         { signal: AbortSignal.timeout(6000) },

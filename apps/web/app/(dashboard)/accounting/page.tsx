@@ -68,7 +68,8 @@ function Expenses({ branchId }: { branchId: string | null }) {
   const total = data?.reduce((s, e) => s + Number(e.amount), 0) ?? 0;
   const { note: status, show, clear } = useStatusNote();
 
-  const submit = () => {
+  const submit = (e?: { preventDefault: () => void }) => {
+    e?.preventDefault();
     const amount = Number(f.amount);
     if (!f.category.trim() || !(amount > 0)) return show("error", "Enter a category and an amount");
     addExpense.mutate(
@@ -85,20 +86,20 @@ function Expenses({ branchId }: { branchId: string | null }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Input type="date" value={f.spentOn} onChange={(e) => setF({ ...f, spentOn: e.target.value })} />
-        <Input placeholder="Category (Rent, Supplies…)" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} />
-        <Input placeholder="Amount" inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
-        <Input placeholder="Note" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
+      <form onSubmit={submit} className="grid gap-3 rounded-xl bg-card p-4 ring-1 ring-foreground/10 sm:grid-cols-2 lg:grid-cols-5">
+        <Input aria-label="Expense date" type="date" value={f.spentOn} onChange={(e) => setF({ ...f, spentOn: e.target.value })} />
+        <Input aria-label="Expense category" placeholder="Category (Rent, Supplies…)" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} />
+        <Input aria-label="Expense amount" placeholder="Amount" inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
+        <Input aria-label="Expense note" placeholder="Note" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={f.paidFromCash} onChange={(e) => setF({ ...f, paidFromCash: e.target.checked })} />
           Paid from till
         </label>
         <div className="sm:col-span-2 lg:col-span-5">
-          <Button onClick={submit} disabled={addExpense.isPending}>Add expense</Button>
+          <Button type="submit" disabled={addExpense.isPending}>Add expense</Button>
         </div>
         <div className="sm:col-span-2 lg:col-span-5"><StatusNote note={status} onClear={clear} /></div>
-      </Card>
+      </form>
       <RangePicker range={range} onChange={setRange} />
       <Card className="flex flex-col divide-y divide-border p-2">
         {isLoading ? (

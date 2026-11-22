@@ -29,7 +29,21 @@ export class AccountingService {
     });
   }
 
-  createExpense(branchId: string, userId: string, dto: ExpenseDto) {
+  async createExpense(branchId: string, userId: string, dto: ExpenseDto) {
+    if (dto.paidFromCash) {
+      const closed = await this.prisma.cashClosing.findUnique({
+        where: {
+          branchId_businessDate: {
+            branchId,
+            businessDate: dayStart(dto.spentOn),
+          },
+        },
+      });
+      if (closed)
+        throw new BadRequestException(
+          'That day is already closed - the cash count includes its expenses',
+        );
+    }
     return this.prisma.expense.create({
       data: {
         branchId,
@@ -171,7 +185,9 @@ export class AccountingService {
       this.prisma.payrollRun.findMany({
         where: {
           branchId,
-          status: 'FINALIZED',
+          // A run disappears from the P&L the moment it is paid if only
+          // FINALIZED is selected. Approved runs stay a cost after payment.
+          status: { in: ['FINALIZED', 'PAID'] },
           periodEnd: { gte: f, lt: t },
         },
         include: { lines: true },
@@ -194,7 +210,10 @@ export class AccountingService {
       runs
         .flatMap((r) => r.lines)
         .reduce(
-          (s, l) => s + Number(l.basePay) - Number(l.unpaidLeaveDeduction),
+          // netPay is the authoritative figure after approved allowances,
+          // bonus, late/absence and other deductions. Tips are staff money,
+          // already excluded from revenue above, so exclude them here too.
+          (s, l) => s + Number(l.netPay) - Number(l.tipShare),
           0,
         ),
     );
@@ -214,24 +233,41 @@ export class AccountingService {
   }
 
   async gstReport(branchId: string, from: string, to: string) {
-    const orders = await this.prisma.order.findMany({
-      where: {
-        branchId,
-        status: 'PAID',
-        billedAt: zonedRange(from, to, await this.time.tzForBranch(branchId)),
-      },
-      select: {
-        subtotal: true,
-        discountAmount: true,
-        loyaltyDiscountAmount: true,
-        items: { select: { lineTotal: true, taxRateSnapshot: true } },
-      },
-    });
+    const range = zonedRange(from, to, await this.time.tzForBranch(branchId));
+    const [orders, refunds] = await Promise.all([
+      this.prisma.order.findMany({
+        where: { branchId, status: 'PAID', billedAt: range },
+        select: {
+          id: true,
+          totalAmount: true,
+          subtotal: true,
+          discountAmount: true,
+          loyaltyDiscountAmount: true,
+          items: { select: { lineTotal: true, taxRateSnapshot: true } },
+        },
+      }),
+      this.prisma.refund.groupBy({
+        by: ['orderId'],
+        where: { createdAt: range, order: { branchId } },
+        _sum: { amount: true },
+      }),
+    ]);
+    const refunded = new Map(
+      refunds.map((r) => [r.orderId, Number(r._sum.amount ?? 0)]),
+    );
     const lines = orders.flatMap((o) => {
       const subtotal = Number(o.subtotal);
       const charged =
         subtotal - Number(o.discountAmount) - Number(o.loyaltyDiscountAmount);
-      const factor = subtotal > 0 ? Math.max(0, charged) / subtotal : 1;
+      // A refund reverses the taxable sale for GST purposes just as it does
+      // for P&L. Prorate every line by how much of this bill was refunded.
+      const refundRatio = Math.min(
+        1,
+        (refunded.get(o.id) ?? 0) / Math.max(Number(o.totalAmount), 0.01),
+      );
+      const factor =
+        (subtotal > 0 ? Math.max(0, charged) / subtotal : 1) *
+        (1 - refundRatio);
       return o.items.map((i) => ({
         lineTotal: Number(i.lineTotal),
         taxRatePercent: Number(i.taxRateSnapshot),

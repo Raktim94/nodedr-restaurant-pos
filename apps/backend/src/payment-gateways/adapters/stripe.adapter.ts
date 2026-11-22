@@ -6,6 +6,7 @@ import {
   type GatewayContext,
   type PaymentGatewayAdapter,
   type RefundInput,
+  type RefundRemoteStatus,
   type RefundResult,
   type RemoteStatus,
   type TestOutcome,
@@ -175,6 +176,22 @@ export const stripeAdapter: PaymentGatewayAdapter = {
     return {
       providerRefundId: r.id,
       state: r.status === 'succeeded' ? 'DONE' : 'PENDING',
+    };
+  },
+
+  async fetchRefundStatus(ctx, providerRefundId): Promise<RefundRemoteStatus> {
+    const r = await gatewayFetch<{ id: string; status: string }>(
+      `${API}/v1/refunds/${encodeURIComponent(providerRefundId)}`,
+      { headers: auth(ctx) },
+    );
+    return {
+      providerRefundId: r.id,
+      state:
+        r.status === 'succeeded'
+          ? 'DONE'
+          : ['failed', 'canceled'].includes(r.status)
+            ? 'FAILED'
+            : 'PENDING',
     };
   },
 

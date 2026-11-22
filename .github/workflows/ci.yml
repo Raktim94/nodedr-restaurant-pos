@@ -63,6 +63,8 @@ jobs:
         run: |
           pnpm --filter backend build
           node apps/backend/scripts/check-runtime-deps.cjs
+      - name: Web unit tests
+        run: pnpm --filter ./apps/web test
       - name: Web build
         run: pnpm --filter ./apps/web build
 

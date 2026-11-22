@@ -106,10 +106,12 @@ pnpm typecheck
 pnpm build
 ```
 
-There is no CI workflow wired up yet (tracked in `PROJECT.md`/`ROADMAP.md`
-— a good first contribution if you want one) — until it lands, a green
-local `lint` + `typecheck` + `build` is the actual gate, so run all three
-before requesting review.
+CI is [`.github/workflows/ci.yml`](.github/workflows/ci.yml). It runs on every
+pull request and on pushes to `master`: dependency audit, shared-types build,
+Prisma migrate + seed, typecheck, lint (never autofixes), backend unit and
+e2e tests, a backend build with a runtime-dependency check, web unit tests and
+build, and the mobile/updater tests. A PR must be green there. Run `lint`,
+`typecheck` and `build` locally first to save a round trip.
 
 ## Project structure
 

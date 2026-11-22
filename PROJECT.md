@@ -105,9 +105,8 @@ batch/lot + expiry, FIFO waste logging, stock ledger, and automatic
 ingredient deduction on checkout — see `ROADMAP.md` for exactly what's done
 vs. scope-cut vs. still ahead). Docker Compose stack builds and runs for
 real. Next up: Phase 4's deferred procurement depth (vendor quotations,
-purchase requests, vendor invoices) or Phase 5 (delivery/online ordering) —
-and the CI workflow, which still hasn't made
-it in. This section is updated at the end of every work session; if it
+purchase requests, vendor invoices) or Phase 5 (delivery/online ordering).
+CI is in place: `.github/workflows/ci.yml`. This section is updated at the end of every work session; if it
 looks stale, trust `git log` and `ROADMAP.md`'s checkboxes over prose here.
 
 ## How to resume work on this project

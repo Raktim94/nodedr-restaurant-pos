@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import type { CartItemDto } from '@nodedr-restaurant/types';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -108,6 +109,62 @@ export class PublicMenuService {
     });
   }
 
+  /**
+   * Claim an idempotency key BEFORE creating the order. The row has no FK on
+   * orderId, so a short-lived placeholder marks "in progress"; a retry waits
+   * for the winner to fill the real order id. Stale placeholders are Recycled
+   * so a crash cannot lock a key forever.
+   */
+  private async claimKey(branchId: string, key: string) {
+    const where = { branchId_key: { branchId, key } };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const placeholder = `pending:${randomUUID()}`;
+      try {
+        const claim = await this.prisma.publicOrderKey.create({
+          data: { branchId, key, orderId: placeholder },
+        });
+        return claim.id;
+      } catch (e) {
+        if (!(
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === 'P2002'
+        ))
+          throw e;
+        const seen = await this.prisma.publicOrderKey.findUnique({ where });
+        if (seen && !seen.orderId.startsWith('pending:')) return null;
+        const stale =
+          seen &&
+          seen.createdAt.getTime() < Date.now() - 60_000 &&
+          seen.orderId.startsWith('pending:');
+        if (!stale) {
+          for (let i = 0; i < 20; i++) {
+            await new Promise((r) => setTimeout(r, 50));
+            const now = await this.prisma.publicOrderKey.findUnique({ where });
+            if (now && !now.orderId.startsWith('pending:')) return null;
+          }
+          throw new ConflictException(
+            'A duplicate order is still being created. Try again shortly.',
+          );
+        }
+        await this.prisma.publicOrderKey.delete({ where: { id: seen.id } });
+      }
+    }
+    throw new ConflictException('Could not claim this order request');
+  }
+
+  private async confirmKey(id: string, orderId: string) {
+    await this.prisma.publicOrderKey.update({
+      where: { id },
+      data: { orderId },
+    });
+  }
+
+  private async releaseKey(id: string) {
+    await this.prisma.publicOrderKey
+      .delete({ where: { id } })
+      .catch(() => undefined);
+  }
+
   async createOrder(
     qrToken: string,
     items: CartItemDto[],
@@ -124,47 +181,46 @@ export class PublicMenuService {
     // Dine-in ordering needs a live session grant or a verified tag tap; a photographed or shared static QR is not enough.
     const via = await this.authoriseTable(table, opts);
 
-    // The same basket sent again (double tap, flaky connection) returns the same order.
-    if (opts.idempotencyKey) {
+    // Claim before creating: two concurrent submissions of the same basket
+    // must produce one order (and one kitchen ticket), not two.
+    const claimId = opts.idempotencyKey
+      ? await this.claimKey(branchId, opts.idempotencyKey)
+      : null;
+    if (claimId === null && opts.idempotencyKey) {
       const seen = await this.prisma.publicOrderKey.findUnique({
-        where: { branchId_key: { branchId, key: opts.idempotencyKey } },
+        where: {
+          branchId_key: { branchId, key: opts.idempotencyKey },
+        },
       });
-      if (seen)
-        return {
-          ...(await this.ordersService.getOrder(branchId, seen.orderId)),
-          duplicate: true,
-          ratingToken: this.ratings.issue(seen.orderId),
-        };
+      return {
+        ...(await this.ordersService.getOrder(branchId, seen!.orderId)),
+        duplicate: true,
+        ratingToken: this.ratings.issue(seen!.orderId),
+      };
     }
     if (
       opts.payment === 'ONLINE' &&
       !(await this.gateways.active(table.floor.branch.restaurantId))
     ) {
+      if (claimId) await this.releaseKey(claimId);
       throw new BadRequestException(
         'Paying on your phone is not available here. Please choose cash at the register.',
       );
     }
 
-    const result = await this.createOrAdd(
-      table,
-      branchId,
-      items,
-      guestName,
-      opts.payment,
-    );
-    if (opts.idempotencyKey) {
-      try {
-        await this.prisma.publicOrderKey.create({
-          data: { branchId, key: opts.idempotencyKey, orderId: result.id },
-        });
-      } catch (e) {
-        // Two identical requests raced: the other one already recorded it.
-        if (!(
-          e instanceof Prisma.PrismaClientKnownRequestError &&
-          e.code === 'P2002'
-        ))
-          throw e;
-      }
+    let result: Awaited<ReturnType<PublicMenuService['createOrAdd']>>;
+    try {
+      result = await this.createOrAdd(
+        table,
+        branchId,
+        items,
+        guestName,
+        opts.payment,
+      );
+      if (claimId) await this.confirmKey(claimId, result.id);
+    } catch (e) {
+      if (claimId) await this.releaseKey(claimId);
+      throw e;
     }
     // A guest who got in by tapping the tag has no session yet or is joining one: the first accepted order opens the
     // table (once), and the phone gets a session grant so it can pay and order again without tapping.
@@ -197,7 +253,33 @@ export class PublicMenuService {
     const openOrder = await this.prisma.order.findFirst({
       where: { branchId, tableId: table.id, status: 'OPEN' },
     });
-    if (openOrder) {
+    // Only merge into this guest's own QR tab with a compatible payment choice.
+    // A staff order or an online-held tab must never absorb a cash round (or
+    // vice versa): addItems starts kitchen tickets immediately otherwise.
+    const sameGuest =
+      !openOrder?.guestName || !guestName || openOrder.guestName === guestName;
+    const paymentCompatible = openOrder
+      ? !payment ||
+        (payment === 'ONLINE'
+          ? openOrder.payIntent === 'ONLINE'
+          : openOrder.payIntent !== 'ONLINE')
+      : false;
+    if (
+      openOrder &&
+      openOrder.type === 'QR_ORDER' &&
+      openOrder.channel === 'ONLINE' &&
+      sameGuest &&
+      paymentCompatible
+    ) {
+      if (payment) {
+        await this.prisma.order.update({
+          where: { id: openOrder.id },
+          data: {
+            payIntent: payment,
+            heldForPayment: payment === 'ONLINE',
+          },
+        });
+      }
       return this.ordersService.addItems(branchId, openOrder.id, items, {
         enforceModifierLimits: true,
         websiteOnly: true,
@@ -278,15 +360,21 @@ export class PublicMenuService {
     sessionToken?: string,
   ) {
     const table = await this.resolveTable(qrToken);
-    // Acting on a table's order needs the live session grant, like placing one: the static QR alone (it is printed,
-    // photographed and shared) must not be able to release a held order to the kitchen or open its payment page.
-    if (table.floor.branch.restaurant.requireTableSession)
-      await this.sessions.assertGrant(table.id, sessionToken);
     const order = await this.prisma.order.findFirst({
       where: { id: orderId, tableId: table.id, status: 'OPEN' },
     });
     if (!order)
       throw new NotFoundException('That order is not open at this table');
+    // The static QR is printed, photographed and shared. It must never be
+    // enough to pay for an order or release one the kitchen is waiting to
+    // cook, regardless of whether the restaurant opted into table sessions.
+    if (
+      table.floor.branch.restaurant.requireTableSession ||
+      order.payIntent === 'ONLINE' ||
+      order.heldForPayment
+    ) {
+      await this.sessions.assertGrant(table.id, sessionToken);
+    }
     return { table, order };
   }
 
@@ -365,8 +453,16 @@ export class PublicMenuService {
   }
 
   /** Live status of the table's current tab, for the guest's QR page. */
-  async getStatus(qrToken: string) {
+  async getStatus(qrToken: string, sessionToken?: string) {
     const table = await this.resolveTable(qrToken);
+    let trusted = true;
+    if (table.floor.branch.restaurant.requireTableSession) {
+      try {
+        await this.sessions.assertGrant(table.id, sessionToken);
+      } catch {
+        trusted = false;
+      }
+    }
     const order = await this.prisma.order.findFirst({
       where: {
         tableId: table.id,
@@ -430,6 +526,20 @@ export class PublicMenuService {
       orderBy: { createdAt: 'desc' },
       select: { state: true },
     });
+    // A photographed QR must not expose the live bill to somebody who never
+    // joined this table's session.
+    if (!trusted) {
+      return {
+        order: {
+          id: order.id,
+          status: order.status,
+          paid: order.status === 'PAID',
+          kitchen,
+          paged: !!call && ['PENDING', 'SENT'].includes(call.state),
+        },
+        openRequests: requests.map((r) => r.type),
+      };
+    }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- dropped on purpose: the guest never sees kitchen tickets
     const { kots: _kitchenTickets, ...rest } = order;
     return {

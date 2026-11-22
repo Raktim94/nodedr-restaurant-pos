@@ -7,6 +7,8 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { playPaymentReceived } from "@/lib/celebrate";
 import { subscribeDisplay, type DisplayState } from "@/lib/customer-display";
 import { formatCurrency } from "@/lib/format";
+import { useBranch } from "@/hooks/use-branch";
+import { useDisplaySettings } from "@/hooks/use-settings";
 
 interface View {
   terminal: { id: string; name: string; idleSeconds: number; thankYouSeconds: number; adSlideSeconds: number; adFit: "contain" | "cover" };
@@ -100,6 +102,9 @@ function OrderScreen({ state, currency }: { state: DisplayState; currency: strin
 // ---- same browser as the till ---------------------------------------------------------------------------
 
 function LocalDisplay() {
+  const { branchId } = useBranch();
+  const { data: settings } = useDisplaySettings(branchId);
+  const currency = settings?.restaurant.currency || "INR";
   const [state, setState] = useState<DisplayState>({ kind: "idle" });
   useEffect(() => subscribeDisplay(setState), []);
 
@@ -119,7 +124,7 @@ function LocalDisplay() {
   return (
     <main className="relative flex min-h-screen flex-col bg-background p-10 text-foreground" onClick={() => setSoundOn(true)}>
       {!soundOn && <p className="absolute right-4 top-4 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">Tap anywhere to enable payment sound</p>}
-      <OrderScreen state={state} currency="INR" />
+      <OrderScreen state={state} currency={currency} />
     </main>
   );
 }

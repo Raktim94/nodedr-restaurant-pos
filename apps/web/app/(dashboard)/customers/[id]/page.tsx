@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { QueryError } from "@/components/ui/query-error";
 import { useBranch } from "@/hooks/use-branch";
 import { useCustomer, useDeleteCustomer } from "@/hooks/use-customers";
 import { ApiError } from "@/lib/api";
@@ -20,11 +21,14 @@ import { formatCurrency } from "@/lib/format";
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { branchId } = useBranch();
-  const { data: customer, isLoading } = useCustomer(branchId, id);
+  const { data: customer, isLoading, isError, error, refetch, isFetching } = useCustomer(branchId, id);
   const router = useRouter();
   const deleteCustomer = useDeleteCustomer(branchId);
   const [isEditing, setIsEditing] = useState(false);
 
+  if (isError) {
+    return <QueryError error={error} what="this customer" onRetry={() => void refetch()} retrying={isFetching} />;
+  }
   if (isLoading || !customer) {
     return <Skeleton className="h-96 rounded-2xl" />;
   }

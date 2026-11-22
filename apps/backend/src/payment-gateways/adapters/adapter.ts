@@ -56,6 +56,12 @@ export interface RemoteStatus {
 export interface VerifiedWebhook {
   /** Unique per provider event, for duplicate suppression. */
   eventId: string;
+  /**
+   * A provider-supplied id that older deployments used as the dedup key. It
+   * is untrusted, so it is only used to recognise events recorded before we
+   * switched to signed-body hashes — never as the primary key.
+   */
+  legacyEventId?: string | null;
   /** The hosted checkout this event is about, or null if it is not about one. */
   providerRef: string | null;
 }
@@ -73,6 +79,12 @@ export interface RefundResult {
   providerRefundId: string;
   /** `PENDING` = accepted and still processing at the provider. */
   state: 'DONE' | 'PENDING';
+}
+
+/** Result of asking the provider what actually happened to a refund. */
+export interface RefundRemoteStatus {
+  providerRefundId: string;
+  state: 'DONE' | 'PENDING' | 'FAILED';
 }
 
 export interface TestOutcome {
@@ -97,6 +109,15 @@ export interface PaymentGatewayAdapter {
    * `GatewayError` with no `status` means the outcome is unknown (timeout).
    */
   refund?(ctx: GatewayContext, input: RefundInput): Promise<RefundResult>;
+  /**
+   * Provider-side lookup for a refund whose result we never recorded (e.g. the
+   * process died between the refund call and the follow-up write). Absent =
+   * this adapter cannot verify refunds; stale rows stay in the review list.
+   */
+  fetchRefundStatus?(
+    ctx: GatewayContext,
+    providerRefundId: string,
+  ): Promise<RefundRemoteStatus>;
 
   testConnection(ctx: GatewayContext): Promise<TestOutcome>;
   createPayment(

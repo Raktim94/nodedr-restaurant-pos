@@ -33,6 +33,10 @@ on:
       - "apps/backend/**"
       - "apps/web/**"
       - "packages/types/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
+      - "turbo.json"
       - ".github/workflows/docker-publish.yml"
   workflow_dispatch:
     inputs:
@@ -90,13 +94,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [nodedr-restaurant-pos-backend, nodedr-restaurant-pos-web]
+        image: [nodedr-restaurant-pos-backend, nodedr-restaurant-pos-web, nodedr-restaurant-pos-updater]
         platform: [linux/amd64, linux/arm64]
         include:
           - image: nodedr-restaurant-pos-backend
             dockerfile: apps/backend/Dockerfile
           - image: nodedr-restaurant-pos-web
             dockerfile: apps/web/Dockerfile
+          - image: nodedr-restaurant-pos-updater
+            dockerfile: updater/Dockerfile
           - platform: linux/amd64
             runner: ubuntu-latest
             slug: amd64
@@ -145,7 +151,7 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        image: [nodedr-restaurant-pos-backend, nodedr-restaurant-pos-web]
+        image: [nodedr-restaurant-pos-backend, nodedr-restaurant-pos-web, nodedr-restaurant-pos-updater]
     steps:
       - uses: actions/download-artifact@v4
         with:

@@ -106,11 +106,11 @@ services:
 
   # In-app "Update now" (Settings > Updates): pulls the newer OrderRestro
   # images above and recreates those two containers (nothing else). Needs the
-  # Docker socket to do that; data in /DATA/AppData is untouched. The updater
-  # image is generic (it only manages the containers named below), so the
-  # one published for NodeDR POS is reused.
+  # Docker socket to do that; data in /DATA/AppData is untouched. This repo's
+  # own hardened updater is published by .github/workflows/docker-publish.yml;
+  # :edge tracks master until the next version tag publishes a pinned tag.
   updater:
-    image: ghcr.io/raktim94/nodedr-pos-updater:1.5.1
+    image: ghcr.io/raktim94/nodedr-restaurant-pos-updater:edge
     container_name: nodedr-restaurant-pos-updater
     hostname: nodedr-restaurant-pos-updater
     restart: unless-stopped
@@ -183,10 +183,16 @@ x-casaos:
   index: /
   scheme: http
   port_map: "1995"
-  version: "1.22.1"
-  update_at: "2026-11-06"
+  version: "1.39.2"
+  update_at: "2026-11-18"
   release_notes:
     en_US: |-
+      1.39.2: optional "Show cost today" switch on the POS, and new finished products from the Stock Journal go on the menu by default. No database migration.
+
+      1.39.1: Stock Journal Manager role, and producing menu items directly from the Stock Journal. Database migration applied automatically on update.
+
+      1.39.0: next-generation interface, faster startup and a new mobile release. Database migration applied automatically on update.
+
       1.22.1: the Android app keeps the kitchen board working with no connection. Tickets stay on
       screen, can be moved along, and are sent when the connection is back.
 

@@ -416,7 +416,11 @@ export class LedgerService {
         _sum: { amount: true },
       }),
       this.prisma.payrollRun.findMany({
-        where: { branchId, status: 'FINALIZED', periodEnd: { lte: endDate } },
+        where: {
+          branchId,
+          status: { in: ['FINALIZED', 'PAID'] },
+          periodEnd: { lte: endDate },
+        },
         include: { lines: true },
       }),
       this.prisma.ingredient.findMany({
@@ -435,10 +439,7 @@ export class LedgerService {
     const payrollPaid = round2(
       payroll
         .flatMap((r) => r.lines)
-        .reduce(
-          (s, l) => s + Number(l.basePay) - Number(l.unpaidLeaveDeduction),
-          0,
-        ),
+        .reduce((s, l) => s + Number(l.netPay) - Number(l.tipShare), 0),
     );
     const cash = round2(
       Number(payments._sum.amount ?? 0) -

@@ -93,10 +93,17 @@ function createBody(info, image, imageEnv = []) {
 async function replace(name, newImage) {
   const info = await json('GET', `/containers/${enc(name)}/json`);
   const oldName = `${name}-old`;
+  const wasRunning = !!info.State?.Running;
   await docker('DELETE', `/containers/${enc(oldName)}?force=true`).catch(() => {}); // leftover from a failed run
-  await docker('POST', `/containers/${enc(name)}/stop?t=20`);
-  await docker('POST', `/containers/${enc(name)}/rename?name=${enc(oldName)}`);
+  let stopped = false;
+  let renamed = false;
   try {
+    // stop/rename used to sit outside the try: a rename failure left the app
+    // stopped with no rollback at all.
+    await docker('POST', `/containers/${enc(name)}/stop?t=20`);
+    stopped = true;
+    await docker('POST', `/containers/${enc(name)}/rename?name=${enc(oldName)}`);
+    renamed = true;
     const oldImage = await json('GET', `/images/${enc(info.Image)}/json`).catch(() => null);
     const created = await json(
       'POST',
@@ -105,13 +112,41 @@ async function replace(name, newImage) {
     );
     await docker('POST', `/containers/${enc(created.Id)}/start`);
   } catch (err) {
-    // Roll back: drop whatever was created, restore and restart the old one.
     await docker('DELETE', `/containers/${enc(name)}?force=true`).catch(() => {});
-    await docker('POST', `/containers/${enc(oldName)}/rename?name=${enc(name)}`);
-    if (info.State.Running) await docker('POST', `/containers/${enc(name)}/start`).catch(() => {});
+    if (renamed) {
+      await docker('POST', `/containers/${enc(oldName)}/rename?name=${enc(name)}`).catch(() => {});
+      if (wasRunning) await docker('POST', `/containers/${enc(name)}/start`).catch(() => {});
+    } else if (stopped && wasRunning) {
+      // Nothing was renamed, so the original container is still under `name`.
+      await docker('POST', `/containers/${enc(name)}/start`).catch(() => {});
+    }
     throw err;
   }
   await docker('DELETE', `/containers/${enc(oldName)}`).catch(() => {});
+}
+
+/** Put one already-replaced container back on its previous image. */
+async function rollback(name, oldImage) {
+  const info = await json('GET', `/containers/${enc(name)}/json`);
+  const oldName = `${name}-old`;
+  await docker('DELETE', `/containers/${enc(oldName)}?force=true`).catch(() => {});
+  await docker('POST', `/containers/${enc(name)}/stop?t=20`).catch(() => {});
+  await docker('POST', `/containers/${enc(name)}/rename?name=${enc(oldName)}`);
+  try {
+    // No baked-in env to strip here: the container's Env is compose's, and the
+    // old image supplies its own APP_VERSION when it starts.
+    const created = await json(
+      'POST',
+      `/containers/create?name=${enc(name)}`,
+      createBody(info, oldImage, []),
+    );
+    await docker('POST', `/containers/${enc(created.Id)}/start`);
+    await docker('DELETE', `/containers/${enc(oldName)}`).catch(() => {});
+  } catch (err) {
+    await docker('POST', `/containers/${enc(oldName)}/rename?name=${enc(name)}`).catch(() => {});
+    if (info.State?.Running) await docker('POST', `/containers/${enc(name)}/start`).catch(() => {});
+    throw err;
+  }
 }
 
 async function run(version) {
@@ -129,14 +164,29 @@ async function run(version) {
       const down = plan.find((p) => olderThan(p.to, p.from));
       if (down) throw new Error(`Refusing to move ${down.name} from ${down.from} back to ${down.to}. Set UPDATER_ALLOW_DOWNGRADE=true to allow a rollback.`);
     }
+    // Pull every image BEFORE touching a container. A missing web image must
+    // not leave backend on the new version while web stays on the old one.
     for (const p of plan) await pull(p.repo, p.to);
     status.state = 'restarting';
     const done = [];
-    for (const p of plan) {
-      if (p.from === p.to) continue;
-      status.step = `restarting ${p.name}`;
-      await replace(p.name, `${p.repo}:${p.to}`);
-      done.push(p);
+    try {
+      for (const p of plan) {
+        if (p.from === p.to) continue;
+        status.step = `restarting ${p.name}`;
+        await replace(p.name, `${p.repo}:${p.to}`);
+        done.push(p);
+      }
+    } catch (err) {
+      // Roll back everything already swapped, not just the failing container.
+      for (const p of done.reverse()) {
+        try {
+          status.step = `rolling back ${p.name}`;
+          await rollback(p.name, `${p.repo}:${p.from}`);
+        } catch (rbErr) {
+          console.error(`rollback of ${p.name} failed:`, rbErr.message);
+        }
+      }
+      throw err;
     }
     Object.assign(status, { state: 'done', step: null });
     // Best-effort cleanup of the superseded images so disks don't fill up.

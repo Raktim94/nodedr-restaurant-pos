@@ -191,7 +191,10 @@ run('Table ordering, paging and customer display (e2e)', () => {
     expect(row.status).toBe('OPEN'); // never "paid" by ordering
     expect(await kotCount(a.id)).toBeGreaterThan(0);
     const st = (
-      await guest.get(`/api/v1/public/menu/${tables.A.qr}/status`).expect(200)
+      await guest
+        .get(`/api/v1/public/menu/${tables.A.qr}/status`)
+        .set('x-table-session', tables.A.tok ?? '')
+        .expect(200)
     ).body.order;
     expect(st.paid).toBe(false);
     expect(st.payIntent).toBe('CASH');
@@ -207,7 +210,10 @@ run('Table ordering, paging and customer display (e2e)', () => {
       data: { payIntent: 'ONLINE', heldForPayment: true },
     });
     const st = (
-      await guest.get(`/api/v1/public/menu/${tables.B.qr}/status`).expect(200)
+      await guest
+        .get(`/api/v1/public/menu/${tables.B.qr}/status`)
+        .set('x-table-session', tables.B.tok ?? '')
+        .expect(200)
     ).body.order;
     expect(st.kitchen).toBe('WAITING_PAYMENT');
     expect(st.paid).toBe(false);
@@ -308,7 +314,10 @@ run('Table ordering, paging and customer display (e2e)', () => {
     ).body;
     expect(poll.call.id).toBe(first.call.id);
     const st = (
-      await guest.get(`/api/v1/public/menu/${tables.A.qr}/status`).expect(200)
+      await guest
+        .get(`/api/v1/public/menu/${tables.A.qr}/status`)
+        .set('x-table-session', tables.A.tok ?? '')
+        .expect(200)
     ).body.order;
     expect(st.paged).toBe(true);
     await dev

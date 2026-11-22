@@ -1,6 +1,5 @@
-import { Global, MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
-import { DeviceRevocationMiddleware } from './device-revocation.middleware';
 import { DevicesController } from './devices.controller';
 import { DevicesService } from './devices.service';
 
@@ -8,11 +7,7 @@ import { DevicesService } from './devices.service';
 @Module({
   imports: [AuditModule],
   controllers: [DevicesController],
-  providers: [DevicesService, DeviceRevocationMiddleware],
+  providers: [DevicesService],
   exports: [DevicesService],
 })
-export class DevicesModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(DeviceRevocationMiddleware).forRoutes('*');
-  }
-}
+export class DevicesModule {}

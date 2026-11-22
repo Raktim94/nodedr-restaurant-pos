@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import { NavDot } from "@/components/layout/nav-dot";
 import { SettingsTabs } from "@/components/settings/settings-tabs";
@@ -25,7 +25,10 @@ import { ApiError } from "@/lib/api";
 // backend what the updater is doing: a reported error stops the wait with a
 // real message, "done" reloads, and if the backend has gone away (restart in
 // progress) the unauthenticated health route decides when it is back.
-function pollUntilBackUp(onFailed: () => void) {
+function pollUntilBackUp(onFailed: () => void, onDone: () => void) {
+  // Returned so the page can stop the poller on unmount: otherwise it keeps
+  // polling for up to 10 minutes and reloads whatever page the user opened.
+  let done = false;
   const start = Date.now();
   const timeoutMs = 10 * 60 * 1000;
   let wentDown = false;
@@ -51,8 +54,8 @@ function pollUntilBackUp(onFailed: () => void) {
         }
         if (p.state === "done") {
           clearInterval(interval);
-          toast.success("Update finished — reloading.");
-          window.location.reload();
+          done = true;
+          onDone();
           return;
         }
         return; // pulling / restarting: keep waiting
@@ -65,13 +68,17 @@ function pollUntilBackUp(onFailed: () => void) {
       const res = await fetch("/api/health", { cache: "no-store" });
       if (res.ok && wentDown) {
         clearInterval(interval);
-        toast.success("Update finished — reloading.");
-        window.location.reload();
+        done = true;
+        onDone();
       }
     } catch {
       // still down
     }
   }, 3000);
+  return () => {
+    clearInterval(interval);
+    if (!done) onFailed();
+  };
 }
 
 export default function UpdatesPage() {
@@ -79,14 +86,25 @@ export default function UpdatesPage() {
   const applyUpdate = useApplyUpdate();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [updateDone, setUpdateDone] = useState(false);
+  const pollCleanup = useRef<null | (() => void)>(null);
+  useEffect(() => () => pollCleanup.current?.(), []);
 
   const handleUpdate = () => {
     setConfirmOpen(false);
     setApplying(true);
+    setUpdateDone(false);
     applyUpdate.mutate(undefined, {
       onSuccess: (result) => {
         toast.info(result.message);
-        pollUntilBackUp(() => setApplying(false));
+        pollCleanup.current = pollUntilBackUp(
+          () => setApplying(false),
+          () => {
+            setApplying(false);
+            setUpdateDone(true);
+            toast.success("Update finished. Reload when you are ready.");
+          },
+        );
       },
       onError: (err) => {
         setApplying(false);
@@ -98,6 +116,15 @@ export default function UpdatesPage() {
   return (
     <div className="flex flex-col gap-6">
       <SettingsTabs />
+
+      {updateDone && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
+          <span>The new version is running. Reload when you are ready to pick up the updated code.</span>
+          <Button size="sm" onClick={() => window.location.reload()}>
+            Reload now
+          </Button>
+        </div>
+      )}
 
       <Card className="flex flex-col gap-4 p-6">
         <div className="flex items-center justify-between">

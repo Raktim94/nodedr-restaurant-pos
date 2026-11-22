@@ -62,8 +62,9 @@ remain deliberately deferred — see "Explicitly deferred" for what and why.
       README — both images built and run for real via `docker compose up`,
       not just written and assumed to work (see Session log for the two
       pnpm-monorepo packaging bugs this caught).
-- [ ] Base CI (lint+typecheck+build on push) — `.github/workflows` — not done
-      this session, next up.
+- [x] Base CI — `.github/workflows/ci.yml` runs dependency audit, typecheck,
+      lint, backend unit + e2e tests, web tests and build, and the mobile and
+      updater tests on every PR and on pushes to `master`.
 
 **Permission list (seed data, granular, matches spec):** view_sales,
 create_orders, edit_orders, cancel_orders, apply_discounts, process_refunds,
@@ -336,7 +337,8 @@ containers, not just "it compiles."
       country-filtered setup, encrypted Test/Live credentials, hosted
       checkout with server-side confirmation. Razorpay, Stripe and Cashfree have
       adapters (not yet run against a live provider sandbox); other providers
-      are catalog-only; gateway refunds are made in the provider dashboard.
+      are catalog-only. Razorpay and Stripe refunds are sent from OrderRestro;
+      Cashfree refunds are still made in the provider dashboard.
 - [ ] Not built: direct accounting-software and delivery-platform connectors,
       weighing scale, label printers, barcode scanner, GraphQL API.
 - [ ] Not built: SQLite deployment variant (the schema relies on Postgres

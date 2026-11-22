@@ -121,6 +121,7 @@ export function CartPanel({
       {orderType === "DELIVERY" && (
         <div className="flex flex-col gap-2">
           <Input
+            aria-label="Delivery address"
             placeholder="Delivery address"
             value={delivery.address}
             onChange={(e) => onDeliveryChange({ ...delivery, address: e.target.value })}
@@ -132,18 +133,25 @@ export function CartPanel({
           />
           <div className="grid grid-cols-2 gap-2">
             <Input
+              aria-label="Pincode"
               placeholder="Pincode"
               inputMode="numeric"
               value={delivery.pincode}
               onChange={(e) => onDeliveryChange({ ...delivery, pincode: e.target.value })}
             />
             <Input
+              aria-label="Delivery phone number"
               placeholder="Phone"
               inputMode="tel"
               value={delivery.phone}
               onChange={(e) => onDeliveryChange({ ...delivery, phone: e.target.value })}
             />
           </div>
+          {!deliveryReady && (
+            <p role="alert" className="text-xs text-muted-foreground">
+              Add an address (5+ characters), pincode (3+) and phone number (6+) to send this order.
+            </p>
+          )}
         </div>
       )}
 
