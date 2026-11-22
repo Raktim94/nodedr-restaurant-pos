@@ -19,6 +19,23 @@ import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
 import { addOnsText, addSection, addTable, addTables, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
 
+// Guards shared across sheet instances: closing a sheet must not let a second
+// one start the same money action while the first await is still pending.
+const moneyGuards = new Map();
+const acquireMoneyGuard = (key) => {
+  if (moneyGuards.get(key)) return false;
+  moneyGuards.set(key, true);
+  return true;
+};
+const releaseMoneyGuard = (key) => moneyGuards.delete(key);
+function gatedSync(opts) {
+  if (syncGate) return; // connecting: don't send unmapped sales or overwrite them
+  return syncNow(opts).then(afterSync);
+}
+let checkoutInFlight = false;
+let connectInFlight = false;
+let syncGate = 0; // >0 while connecting: background sync must not touch sales
+
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const plugins = () => (window.Capacitor && window.Capacitor.Plugins) || {};
@@ -702,14 +719,31 @@ function connectSheet(message) {
     (p) => {
       p.querySelector('#cf').onsubmit = async (ev) => {
         ev.preventDefault();
+        if (connectInFlight) return; // an older attempt still owns the connection
+        connectInFlight = true;
         const b = p.querySelector('#cg');
         b.disabled = true;
         b.textContent = 'Connecting…';
         let base = $('cs').value.trim();
         if (base && !/^https?:\/\//i.test(base)) base = (/^[\d.]+(:\d+)?$/.test(base) ? 'http://' : 'https://') + base;
+        let hadBase, hadCaps, hadBranch, keep;
+        try {
+          // Capture everything before login writes anything. A failed read
+          // must not leave the form stuck on "Connecting…".
+          [hadBase, hadCaps, hadBranch, keep] = await Promise.all([
+            kv.get('serverBase'), kv.get('serverCaps'), kv.get('branchId'), kv.get('snapshot'),
+          ]);
+        } catch (e) {
+          connectInFlight = false;
+          b.disabled = false;
+          b.textContent = 'Connect and send my sales';
+          toast(`Could not read the saved settings: ${e.message}`, 4500);
+          return;
+        }
+        syncGate++; // no background sync until we know whether this attempt stuck
+        let restoreFailed = false;
         try {
           if (!base || !(await reachable(base))) throw new Error("Can't reach that server from here. Check the address and that you are online.");
-          const keep = await kv.get('snapshot');
           await login(base, $('ci').value.trim(), $('cp').value);
           const server = await pullSnapshot(base); // replaces the local menu
           const r = await remapSalesToServer(server.items);
@@ -719,12 +753,28 @@ function connectSheet(message) {
           S.view = 'sync';
           S.note = { text: `Connected. ${r.matched} sale${r.matched === 1 ? '' : 's'} ready to send${r.unmatched ? `, ${r.unmatched} with dishes the server does not have (see Sales)` : ''}.` };
           render();
-          syncNow().then(afterSync);
         } catch (e) {
-          await kv.set('snapshot', S.snap); // keep working on this phone
-          await kv.set('branchId', 'local');
-          connectSheet(e.message);
+          let message = e.message;
+          try {
+            // Restore the exact pre-connect snapshot, not one a background
+            // sync might have written while login() was in flight.
+            await kv.set('snapshot', keep);
+            S.snap = keep;
+            await kv.set('branchId', hadBranch || 'local');
+            if (hadBase === undefined) await kv.del('serverBase');
+            else await kv.set('serverBase', hadBase);
+            if (hadCaps === undefined) await kv.del('serverCaps');
+            else await kv.set('serverCaps', hadCaps);
+          } catch (restoreErr) {
+            restoreFailed = true;
+            message = `${message} Restoring the previous settings also failed (${restoreErr.message}). Reconnect to clear this.`;
+          }
+          connectSheet(message);
+        } finally {
+          syncGate--;
+          connectInFlight = false;
         }
+        if (!restoreFailed) gatedSync();
       };
     },
   );
@@ -1339,8 +1389,11 @@ function openCart() {
 function openPay() {
   const bill = billOf();
   let rows = [{ method: 'CASH', amount: String(bill.total) }];
+  let finished = false; // set once the sale commits; stale redraws must not restore Payment
+  let savedSale = null; // survives a partially failed save so retry reuses the same sale
   const METHODS = [['CASH', 'Cash'], ['UPI', 'UPI'], ['CARD', 'Card'], ['OTHER', 'Other']];
   const draw = async () => {
+    if (finished) return;
     const tenders = rows.map((r) => ({ method: r.method, amount: Number(r.amount) || 0, reference: r.reference }));
     const st = settle(bill.total, tenders);
     const upiRow = rows.find((r) => r.method === 'UPI');
@@ -1447,22 +1500,33 @@ function openPay() {
       });
     }, 250);
   };
+  // Shared by every Payment sheet: a second sheet must not save the same cart.
   async function complete(st, tenders, { payLater = false } = {}) {
+    if (checkoutInFlight || finished) return;
     if (!st.fullyPaid && !payLater) return;
     if (payLater && !phoneOk(S.customer.phone)) return;
-    await flushPersist();
-    const number = await nextLocalNumber();
-    const sale = saleFrom(number, bill, st.rows.map((r) => ({ ...r })), st.change);
-    if (payLater) sale.payLater = true;
-    sale.note = saleNote(sale.items);
-    await sales.put(sale);
-    if (S.snap.local) S.snap = await useStock(S.snap, sale.items);
-    const o = S.orderId ? await orders.get(S.orderId) : null;
-    if (o) await orders.put({ ...o, status: 'PAID', saleId: sale.id, paidAt: new Date().toISOString() }); // frees the table
-    resetCart();
-    toast(payLater ? `Saved. ${inr(dueOf(sale))} to collect later.` : 'Sale saved');
-    openDone(sale);
-    syncNow({ refreshMenu: false }).then(afterSync);
+    checkoutInFlight = true;
+    try {
+      await flushPersist();
+      if (!savedSale) {
+        const number = await nextLocalNumber();
+        savedSale = saleFrom(number, bill, st.rows.map((r) => ({ ...r })), st.change);
+        if (payLater) savedSale.payLater = true;
+        savedSale.note = saleNote(savedSale.items);
+        await sales.put(savedSale);
+      }
+      const sale = savedSale;
+      if (S.snap.local) S.snap = await useStock(S.snap, sale.items);
+      const o = S.orderId ? await orders.get(S.orderId) : null;
+      if (o) await orders.put({ ...o, status: 'PAID', saleId: sale.id, paidAt: new Date().toISOString() }); // frees the table
+      resetCart();
+      toast(payLater ? `Saved. ${inr(dueOf(sale))} to collect later.` : 'Sale saved');
+      finished = true;
+      openDone(sale);
+      gatedSync({ refreshMenu: false });
+    } finally {
+      checkoutInFlight = false;
+    }
   }
   openSheet('', () => draw());
   draw();
@@ -1528,7 +1592,7 @@ async function viewBookings() {
         if (!cur) return;
         if (b.dataset.to === 'CANCELLED' && !confirm(`Cancel the booking for ${cur.customerName}?`)) return;
         await reservations.put(setStatus(cur, b.dataset.to));
-        syncNow({ refreshMenu: false }).then(afterSync);
+        gatedSync({ refreshMenu: false });
         viewBookings();
       }),
   );
@@ -1538,7 +1602,7 @@ async function viewBookings() {
         const cur = await reservations.get(b.dataset.seat);
         if (!cur) return;
         await reservations.put(setStatus(cur, 'ARRIVED'));
-        syncNow({ refreshMenu: false }).then(afterSync);
+        gatedSync({ refreshMenu: false });
         if (cur.tableLabel) {
           S.tablesTab = 'floor';
           return switchTo(null, { type: 'DINE_IN', table: cur.tableLabel });
@@ -1574,7 +1638,7 @@ function bookingSheet(tables) {
           await reservations.put(b);
           closeSheet();
           S.note = { text: `Booked ${b.customerName} for ${whenText(b.reservedAt)}.` };
-          syncNow({ refreshMenu: false }).then(afterSync);
+          gatedSync({ refreshMenu: false });
           viewBookings();
         } catch (e) {
           err.textContent = e.message;
@@ -1839,30 +1903,44 @@ async function duesSheet() {
 async function collectSheet(saleId, message, draft = {}) {
   const sale = await sales.get(saleId);
   const due = dueOf(sale);
+  const locked = !!draft.eventId; // a queued event already carries this payload
   const method = draft.method || 'CASH';
   openSheet(
     `${head(`Collect on ${sale.localNumber}`)}
      <div class="body">
        ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       ${locked ? '<p class="note" role="status">Retrying the same payment that was already queued. Its amount and method cannot be changed.</p>' : ''}
        <p>${esc([sale.customer && sale.customer.name, sale.customer && sale.customer.phone].filter(Boolean).join(' · '))}</p>
        <div class="tot big"><span>Owed</span><span>${inr(due)}</span></div>
-       <label>Paid by</label><div class="seg" role="group" aria-label="Paid by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button type="button" data-m="${m}" aria-pressed="${method === m}">${l}</button>`).join('')}</div>
-       <label for="ca">Amount received (₹)</label><input id="ca" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(draft.amount ?? due)}">
-       <label for="cr">Reference <span class="mute">(optional)</span></label><input id="cr" value="${esc(draft.reference || '')}" placeholder="UPI or card transaction id">
+       <label>Paid by</label><div class="seg" role="group" aria-label="Paid by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button type="button" data-m="${m}" aria-pressed="${method === m}"${locked ? ' disabled' : ''}>${l}</button>`).join('')}</div>
+       <label for="ca">Amount received (₹)</label><input id="ca" type="number" inputmode="decimal" min="0" step="0.01" value="${esc(draft.amount ?? due)}"${locked ? ' disabled' : ''}>
+       <label for="cr">Reference <span class="mute">(optional)</span></label><input id="cr" value="${esc(draft.reference || '')}" placeholder="UPI or card transaction id"${locked ? ' disabled' : ''}>
      </div>
      <footer><button class="btn block" id="go">Record payment</button></footer>`,
     (p) => {
       let m = method;
+      const guardKey = `collect:${saleId}`;
       p.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((m = b.dataset.m), p.querySelectorAll('[data-m]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))))));
+      if (moneyGuards.get(guardKey)) {
+        p.querySelector('#go').disabled = true;
+        p.querySelector('footer').insertAdjacentHTML('afterbegin', '<p class="note" role="status">A payment for this bill is still being recorded.</p>');
+      }
       p.querySelector('#go').onclick = async () => {
-        const keep = { method: m, amount: $('ca').value, reference: $('cr').value };
+        if (!acquireMoneyGuard(guardKey)) return;
+        p.querySelector('#go').disabled = true;
+        // Capture submitted values before any await; the sheet may close.
+        const keep = locked
+          ? { method: draft.method, amount: draft.amount, reference: draft.reference, eventId: draft.eventId }
+          : { method: m, amount: $('ca').value, reference: $('cr').value, eventId: draft.eventId };
         try {
           const fresh = await sales.get(saleId); // never collect twice on a stale copy
-          const c = buildCollection({ id: newId(), sale: fresh, method: m, amount: $('ca').value, reference: $('cr').value });
-          if (!S.snap.local && fresh.status === 'synced') {
-            // The server already has the bill: this payment is sent on its own (safe to resend).
+          const c = buildCollection({ id: newId(), sale: fresh, method: keep.method, amount: keep.amount, reference: keep.reference });
+          if (!S.snap.local && fresh.status === 'synced' && !keep.eventId) {
             const ev = await queueEvent('collect', { saleId: fresh.id, payments: [{ method: c.method, amount: c.amount, ...(c.tendered ? { tendered: c.tendered } : {}), ...(c.reference ? { reference: c.reference } : {}) }] }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
             c.eventId = ev.id;
+            keep.eventId = ev.id; // reuse on a retry after a failed local write
+          } else if (keep.eventId) {
+            c.eventId = keep.eventId;
           }
           if (S.who) c.by = S.who.name;
           fresh.collections = [...(fresh.collections || []), c];
@@ -1871,9 +1949,12 @@ async function collectSheet(saleId, message, draft = {}) {
           toast(`${inr(c.amount)} received${c.change ? `, give change ${inr(c.change)}` : ''}.${dueOf(fresh) > 0 ? ` Still owed ${inr(dueOf(fresh))}.` : ' Bill fully paid.'}`, 4500);
           closeSheet();
           render();
-          if (!S.snap.local) syncNow({ refreshMenu: false }).then(afterSync);
+          if (!S.snap.local) gatedSync({ refreshMenu: false });
         } catch (e) {
+          p.querySelector('#go').disabled = false;
           collectSheet(saleId, e.message, keep);
+        } finally {
+          releaseMoneyGuard(guardKey);
         }
       };
     },
@@ -2097,7 +2178,7 @@ async function closeDaySheet(message, draft = {}) {
           const word = rec.difference === 0 ? 'The cash matches.' : rec.difference < 0 ? `Cash is short by ${inr(-rec.difference)}.` : `Cash is over by ${inr(rec.difference)}.`;
           toast(`Day closed. ${word}`, 5000);
           autoBackup(true);
-          if (!S.snap.local) syncNow({ refreshMenu: false }).then(afterSync);
+          if (!S.snap.local) gatedSync({ refreshMenu: false });
           closeDaySheet();
         } catch (e) {
           closeDaySheet(e.message, { float: $('fl').value, counted: $('cc').value });
@@ -2138,21 +2219,27 @@ async function refundSheet(saleId, message, draft = {}) {
   const lines = refundableLines(sale, rs).filter((l) => l.left > 0);
   const method = draft.method || (sale.payments[0] && sale.payments[0].method) || 'CASH';
   const qty = draft.qty || {};
+  const locked = !!draft.eventId; // queued refund: keep its exact payload on retry
   openSheet(
     `${head(`Refund ${sale.localNumber}`)}
      <div class="body">
        ${message ? `<div class="note bad" role="alert">${esc(message)}</div>` : ''}
+       ${locked ? '<p class="note" role="status">Retrying the same refund that was already queued. Its lines and method cannot be changed.</p>' : ''}
        ${lines.length ? lines.map((l) => `<div class="row"><div class="grow"><b>${esc(l.item.name)}</b><br><small>${inr(l.item.price)} &middot; up to ${l.left}</small></div>
-          <input type="number" inputmode="numeric" min="0" max="${l.left}" step="1" data-q="${l.index}" value="${esc(qty[l.index] ?? '')}" placeholder="0" aria-label="How many ${esc(l.item.name)} to refund" style="width:5rem"></div>`).join('') : '<p class="mute center">Everything on this sale is already refunded.</p>'}
-       <label>Paid back by</label><div class="seg" role="group" aria-label="Paid back by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button data-m="${m}" aria-pressed="${method === m}">${l}</button>`).join('')}</div>
-       <label for="rr">Reason <span class="mute">(optional)</span></label><input id="rr" value="${esc(draft.reason || '')}" placeholder="Wrong dish, cold food…">
+          <input type="number" inputmode="numeric" min="0" max="${l.left}" step="1" data-q="${l.index}" value="${esc(qty[l.index] ?? '')}" placeholder="0" aria-label="How many ${esc(l.item.name)} to refund" style="width:5rem"${locked ? ' disabled' : ''}></div>`).join('') : '<p class="mute center">Everything on this sale is already refunded.</p>'}
+       <label>Paid back by</label><div class="seg" role="group" aria-label="Paid back by">${Object.entries(METHOD_LABEL).map(([m, l]) => `<button data-m="${m}" aria-pressed="${method === m}"${locked ? ' disabled' : ''}>${l}</button>`).join('')}</div>
+       <label for="rr">Reason <span class="mute">(optional)</span></label><input id="rr" value="${esc(draft.reason || '')}" placeholder="Wrong dish, cold food…"${locked ? ' disabled' : ''}>
        <div class="tot big mt"><span>Pay back</span><span id="amt">${inr(0)}</span></div>
        <p class="mute">Recorded in this phone's books and taken off the day's sales.${S.snap.local ? ' Dishes are not put back into stock.' : ' It goes to the server too (money only; stock is not put back).'}</p>
      </div>
      <footer><button class="btn block" id="go" ${lines.length ? '' : 'disabled'}>Refund</button></footer>`,
     (p) => {
       let m = method;
-      const picks = () => [...p.querySelectorAll('[data-q]')].map((i) => ({ index: Number(i.dataset.q), qty: Number(i.value) || 0 }));
+      const guardKey = `refund:${saleId}`;
+      const picks = () =>
+        locked
+          ? Object.entries(draft.qty || {}).map(([index, q]) => ({ index: Number(index), qty: Number(q) || 0 }))
+          : [...p.querySelectorAll('[data-q]')].map((i) => ({ index: Number(i.dataset.q), qty: Number(i.value) || 0 }));
       const preview = () => {
         try {
           $('amt').textContent = inr(buildRefund({ id: 'x', sale, refunds: rs, picks: picks() }).amount);
@@ -2162,17 +2249,40 @@ async function refundSheet(saleId, message, draft = {}) {
       };
       p.querySelectorAll('[data-q]').forEach((i) => (i.oninput = preview));
       p.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => ((m = b.dataset.m), p.querySelectorAll('[data-m]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))))));
+      if (moneyGuards.get(guardKey)) {
+        p.querySelector('#go').disabled = true;
+        p.querySelector('footer').insertAdjacentHTML('afterbegin', '<p class="note" role="status">A refund for this bill is still being recorded.</p>');
+      }
       p.querySelector('#go').onclick = async () => {
-        const keep = () => ({ method: m, reason: $('rr').value, qty: Object.fromEntries(picks().map((x) => [x.index, x.qty || ''])) });
+        if (!acquireMoneyGuard(guardKey)) return;
+        p.querySelector('#go').disabled = true;
+        const keep = () => locked
+          ? { ...draft }
+          : { method: m, reason: $('rr').value, qty: Object.fromEntries(picks().map((x) => [x.index, x.qty || ''])), eventId: draft.eventId };
+        const submitted = keep();
         try {
-          const r = buildRefund({ id: newId(), sale, refunds: rs, picks: picks(), method: m, reason: $('rr').value });
-          if (!confirm(`Pay back ${inr(r.amount)} by ${METHOD_LABEL[m]}?`)) return;
-          if (!(await managerOK(`Refund ${inr(r.amount)} on ${sale.localNumber}.`))) return;
+          const latest = await refunds.all(); // read under the guard
+          const r = buildRefund({ id: newId(), sale, refunds: latest, picks: picks(), method: submitted.method, reason: submitted.reason });
+          const cancel = () => {
+            const b = p.querySelector('#go');
+            if (b) b.disabled = false;
+          };
+          if (!confirm(`Pay back ${inr(r.amount)} by ${METHOD_LABEL[m]}?`)) {
+            cancel();
+            return releaseMoneyGuard(guardKey);
+          }
+          if (!(await managerOK(`Refund ${inr(r.amount)} on ${sale.localNumber}.`))) {
+            cancel();
+            return releaseMoneyGuard(guardKey);
+          }
           if (S.who) r.by = S.who.name;
-          if (!S.snap.local) {
+          if (!S.snap.local && !submitted.eventId) {
             // Sent to the server as a money-only refund once the server has the sale (see sync.js).
             const ev = await queueEvent('refund', { saleId: sale.id, amount: r.amount, method: r.method, reason: r.reason || undefined }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
             r.eventId = ev.id;
+            submitted.eventId = ev.id; // reuse if the local write fails
+          } else if (submitted.eventId) {
+            r.eventId = submitted.eventId;
           }
           await refunds.put(r);
           booksDirty = true;
@@ -2180,7 +2290,12 @@ async function refundSheet(saleId, message, draft = {}) {
           closeSheet();
           render();
         } catch (e) {
-          refundSheet(saleId, e.message, keep());
+          const b = p.querySelector('#go');
+          if (b) b.disabled = false;
+          if (p.isConnected) refundSheet(saleId, e.message, submitted);
+          else toast(`Refund could not be saved: ${e.message}`, 5000);
+        } finally {
+          releaseMoneyGuard(guardKey);
         }
       };
       preview();
@@ -2258,7 +2373,7 @@ function bindSettings(redraw) {
       toast(v ? `Service charge ${v}% will be offered at the till.` : 'Service charge switched off.');
     };
   if ($('st-bk')) $('st-bk').onclick = async () => ((await autoBackup(true)) ? toast('Backup saved') : null, redraw());
-  document.querySelectorAll('[data-evretry]').forEach((b) => (b.onclick = async () => (await retryEvent(b.dataset.evretry), syncNow({ refreshMenu: false }).then(afterSync), redraw())));
+  document.querySelectorAll('[data-evretry]').forEach((b) => (b.onclick = async () => (await retryEvent(b.dataset.evretry), gatedSync({ refreshMenu: false }), redraw())));
   document.querySelectorAll('[data-evaside]').forEach(
     (b) =>
       (b.onclick = async () => {
@@ -2457,7 +2572,7 @@ async function viewKitchen() {
   if ($('k-recv')) $('k-recv').onclick = openReceive;
   if ($('k-move')) $('k-move').onclick = openMove;
   if ($('k-fix')) $('k-fix').onclick = openCorrect;
-  document.querySelectorAll('[data-retry]').forEach((b) => (b.onclick = async () => (await retryEvent(b.dataset.retry), syncNow({ refreshMenu: false }).then(afterSync), viewKitchen())));
+  document.querySelectorAll('[data-retry]').forEach((b) => (b.onclick = async () => (await retryEvent(b.dataset.retry), gatedSync({ refreshMenu: false }), viewKitchen())));
   document.querySelectorAll('[data-dismiss]').forEach((b) => (b.onclick = async () => { if (!confirm('Set this record aside? It stays on the phone for reference but will not be sent to the server.')) return; await dismissEvent(b.dataset.dismiss); await refreshPending(); viewKitchen(); }));
 }
 
@@ -2909,7 +3024,7 @@ function openWaste() {
         if (!(await saveKitchenEvent(p.querySelector('#w-save'), p.querySelector('#w-err'), 'waste', { ingredientId: it.value, quantity: qty, unit: p.querySelector('#w-u').value, reason, note: note || undefined, occurredAt: new Date().toISOString() }))) return;
         closeSheet();
         S.note = { text: 'Saved on this phone. It will be sent when there is a connection.' };
-        syncNow({ refreshMenu: false }).then(afterSync);
+        gatedSync({ refreshMenu: false });
         viewKitchen();
       };
     },
@@ -2937,7 +3052,7 @@ function openReceive() {
         if (!(await saveKitchenEvent(p.querySelector('#rc-save'), p.querySelector('#rc-err'), 'receipt', { ingredientId: it.value, quantity: qty, unit: p.querySelector('#rc-u').value, reference: p.querySelector('#rc-r').value.trim() || undefined, expiryDate: x ? new Date(`${x}T00:00:00`).toISOString() : undefined, receivedAt: new Date().toISOString() }))) return;
         closeSheet();
         S.note = { text: 'Saved on this phone. It will be sent when there is a connection.' };
-        syncNow({ refreshMenu: false }).then(afterSync);
+        gatedSync({ refreshMenu: false });
         viewKitchen();
       };
     },
@@ -2991,7 +3106,7 @@ function openMove() {
         if (!(await saveKitchenEvent(p.querySelector('#mv-save'), p.querySelector('#mv-err'), 'transfer', { occurredAt: new Date().toISOString(), lines: [{ ingredientId: it.value, quantity: qty, unit: p.querySelector('#mv-u').value, direction: 'OUT', ...(from ? { fromLocationId: from } : {}), toLocationId: to }] }))) return;
         closeSheet();
         savedNote();
-        syncNow({ refreshMenu: false }).then(afterSync);
+        gatedSync({ refreshMenu: false });
         viewKitchen();
       };
     },
@@ -3021,7 +3136,7 @@ function openCorrect() {
         if (!(await saveKitchenEvent(p.querySelector('#cr-save'), p.querySelector('#cr-err'), 'correction', { occurredAt: new Date().toISOString(), reason: why, lines: [{ ingredientId: it.value, quantity: qty, unit: p.querySelector('#cr-u').value, direction: p.querySelector('#cr-d').value }] }))) return;
         closeSheet();
         savedNote();
-        syncNow({ refreshMenu: false }).then(afterSync);
+        gatedSync({ refreshMenu: false });
         viewKitchen();
       };
     },
@@ -3046,12 +3161,12 @@ async function viewShift() {
     </div>
     <h2 class="mt">Recent</h2>
     ${all.length ? all.slice(0, 20).map((e) => `<div class="card mt"><b>${e.payload.type === 'IN' ? 'Clocked in' : 'Clocked out'}</b> ${esc(fmt(e.payload.at || e.createdAt))}<div class="mute">${EV_LABEL[e.status]}${e.payload.breakMinutes ? ` &middot; ${e.payload.breakMinutes} min break` : ''}</div>${e.status === 'failed' ? `<div class="note bad mt">${esc(e.error || 'Refused')}</div><button class="btn ghost mt" data-retry="${esc(e.id)}">Try again</button>` : ''}</div>`).join('') : '<p class="mute center mt">Nothing recorded on this phone yet.</p>'}`;
-  document.querySelectorAll('[data-retry]').forEach((b) => (b.onclick = async () => (await retryEvent(b.dataset.retry), syncNow({ refreshMenu: false }).then(afterSync), viewShift())));
+  document.querySelectorAll('[data-retry]').forEach((b) => (b.onclick = async () => (await retryEvent(b.dataset.retry), gatedSync({ refreshMenu: false }), viewShift())));
   $('sh-btn').onclick = () => {
     const record = async (extra = {}) => {
       await queueEvent('attendance', { type: st.on ? 'OUT' : 'IN', at: new Date().toISOString(), ...extra }, { userId: S.snap.user.id, deviceId: await kv.get('deviceId') });
       closeSheet();
-      syncNow({ refreshMenu: false }).then(afterSync);
+      gatedSync({ refreshMenu: false });
       viewShift();
     };
     if (!st.on) return record();
@@ -3077,7 +3192,7 @@ async function start() {
   S.online = !!(await pickServer(await kv.get('serverBase')));
   await syncStaffFromServer();
   render();
-  if (S.online) syncNow().then(afterSync);
+  if (S.online) gatedSync();
   setTimeout(() => autoBackup(), 5000);
 }
 
@@ -3090,9 +3205,9 @@ try {
 }
 
 // Quietly try again when the phone is back online or the app is reopened.
-window.addEventListener('online', () => syncNow().then(afterSync));
-document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && S.snap && syncNow().then(afterSync));
-setInterval(() => S.snap && document.visibilityState === 'visible' && $('sheet').hidden && syncNow({ refreshMenu: false }).then(afterSync), 60000);
+window.addEventListener('online', () => gatedSync());
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && S.snap && gatedSync());
+setInterval(() => S.snap && document.visibilityState === 'visible' && $('sheet').hidden && gatedSync({ refreshMenu: false }), 60000);
 
 
 start().catch((e) => {
