@@ -15,7 +15,7 @@
 | Tables | TanStack Table | Sorting/filtering/virtualization for 10,000+ menu items / 500+ tables / millions of orders — a plain `<table>` map does not scale to the stated performance targets. |
 | Charts | Recharts | Proven in `nodedr-pos` already (theme-aware via CSS vars). |
 | Drag & drop | dnd-kit | Floor designer (drag/resize/rotate tables) and KDS column drag. |
-| i18n | next-intl | Multi-language requirement. |
+| i18n | Lightweight client-side context (`apps/web/lib/i18n`) | en/es/fr, no locale routing or middleware. Deliberately not `next-intl` (see [ROADMAP](./ROADMAP.md)). |
 | Auth | JWT (httpOnly cookie) + PIN quick-switch | Session cookie for a logged-in device/terminal; PIN re-auth for fast staff handoff on a shared till, same UX restaurants actually use. 2FA (TOTP) optional per user, per spec. |
 | Containerization | Docker + Docker Compose | Matches `nodedr-pos`; `postgres`, `backend`, `web` services. |
 

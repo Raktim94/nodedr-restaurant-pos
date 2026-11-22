@@ -35,6 +35,7 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 </p>
 
 
+[Install](#install-orderrestro) ·
 [Quick Start](#quick-start) ·
 [How to use](#how-to-use-orderrestro) ·
 [Full tutorial](./TUTORIAL.md) ·
@@ -47,6 +48,21 @@ Developed by [NodeDR Infotech Private Limited](https://www.nodedr.com/)
 </div>
 
 ---
+
+## Install OrderRestro
+
+Pick the one that fits. The server (back office, tills, kitchen display) runs on a PC, mini PC, NAS or VPS; the phone app connects to it or works offline on its own.
+
+| Where | Install |
+| --- | --- |
+| **Android phone / tablet** | [Get it on Google Play](https://play.google.com/store/apps/details?id=com.nodedr.orderrestro&pcampaignid=web_share) (package `com.nodedr.orderrestro`) |
+| **Ubuntu / Debian server** (amd64, arm64) | `curl -fsSL https://orderrestro.nodedr.com/install-linux.sh \| sudo bash`, then open `http://<server>:1995` |
+| **Any Linux / macOS / WSL2 with Docker** | `git clone https://github.com/Raktim94/nodedr-restaurant-pos.git && cd nodedr-restaurant-pos && ./install.sh` |
+| **CasaOS / ZimaOS** | App Store, then **Install a customized app**, and paste `https://raw.githubusercontent.com/Raktim94/nodedr-restaurant-pos/master/casaos/docker-compose.yml` ([steps](casaos/README.md)) |
+| **Windows 10/11 desktop client** | MSIX package, built and tested by CI ([`windows/msix/README.md`](windows/msix/README.md)). A Microsoft Store listing is not live yet. |
+| **Downloads and checksums** | [Latest release](https://github.com/Raktim94/nodedr-restaurant-pos/releases/latest) (`.deb` for amd64 and arm64, with `.sha256` files) |
+
+After the server is up, open it in a browser and create your restaurant at `/signup`. Details, Docker setup and manual install are in [Quick start](#quick-start).
 
 ## Integrate with AI Coding Agents
 
@@ -291,9 +307,11 @@ Yes — every report exports to Excel, PDF or CSV, and can be emailed on a
 daily, weekly or monthly schedule through your own SMTP server.
 
 **What is not built yet?** Gateways beyond Razorpay, Stripe and Cashfree
-(and refunds from inside OrderRestro), direct
-accounting-software and delivery-platform connectors, weighing-scale and
-label printers, a SQLite edition and native installers. The
+(Cashfree refunds are made in the Cashfree dashboard; Razorpay and Stripe
+refunds are sent from OrderRestro), direct accounting-software and
+delivery-platform connectors, weighing-scale and label printers, and a SQLite
+edition. Linux (`.deb`), Android and Windows (MSIX) installers exist; see
+[Install](#install-orderrestro). The
 [roadmap](./ROADMAP.md) is explicit about what is done and what is not.
 
 ## Tech stack

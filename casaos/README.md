@@ -24,11 +24,11 @@ don't need to wait for this to land in the official app store:
    https://raw.githubusercontent.com/Raktim94/nodedr-restaurant-pos/master/casaos/docker-compose.yml
    ```
 
-3. **Before starting the app**, change the two placeholder secrets in the
-   install form: `JWT_SECRET` (any long random string) and the Postgres
-   password (must match identically between the `postgres` service's
-   `POSTGRES_PASSWORD` and the `backend` service's `DATABASE_URL`). Leaving
-   the shipped placeholders is not safe beyond a quick local trial.
+3. **Before starting the app**, change the placeholder Postgres password in
+   the install form (it must match identically between the `postgres`
+   service's `POSTGRES_PASSWORD` and the `backend` service's `DATABASE_URL`).
+   Leaving the shipped placeholder is not safe beyond a quick local trial.
+   There is no `JWT_SECRET` field: the app generates one itself on first boot.
 4. Install. CasaOS pulls the pre-built
    `ghcr.io/raktim94/nodedr-restaurant-pos-backend` and `...-web` images —
    there is no build step, so it works even though CasaOS never touches
@@ -49,13 +49,13 @@ Unlike sibling project [nodedr-pos](https://github.com/Raktim94/nodedr-pos)
 The manifest declares `main: web` since that's the browsable service;
 `postgres` and `backend` are helper containers CasaOS never opens directly.
 
-Unlike nodedr-pos, this app has **no built-in secret auto-generation** —
-`JWT_SECRET` and the Postgres password must be set explicitly (the
-repo-root `docker-compose.yml` enforces this the same way, via a hard
-`:?required` failure if unset). The CasaOS manifest ships obvious
-placeholder values instead, called out loudly in `tips.before_install` and
-in each env's `description`, since a static compose file has no equivalent
-of `install.sh`'s `openssl rand -hex` generation step.
+The backend **generates a random `JWT_SECRET` on first boot and persists it**
+to the `/data/state` volume, so the manifest does not expose one. The Postgres
+password is the only secret you set: the manifest ships an obvious placeholder
+(called out in `tips.before_install` and the env's `description`) because a
+static compose file has no equivalent of `install.sh`'s `openssl rand -hex`
+step. The repo-root `docker-compose.yml` still requires `JWT_SECRET` explicitly
+(hard `:?required` failure if unset).
 
 ## Publishing new image versions
 
