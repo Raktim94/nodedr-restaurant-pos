@@ -6,6 +6,7 @@ import {
   type GatewayContext,
   type PaymentGatewayAdapter,
   type RefundInput,
+  type RefundRemoteStatus,
   type RefundResult,
   type RemoteStatus,
   type TestOutcome,
@@ -160,6 +161,25 @@ export const razorpayAdapter: PaymentGatewayAdapter = {
     return {
       providerRefundId: r.id,
       state: r.status === 'processed' ? 'DONE' : 'PENDING',
+    };
+  },
+
+  async fetchRefundStatus(
+    ctx,
+    providerRefundId,
+  ): Promise<RefundRemoteStatus> {
+    const r = await gatewayFetch<{ id: string; status: string }>(
+      `${API}/api/v1/refunds/${encodeURIComponent(providerRefundId)}`,
+      { headers: { Authorization: auth(ctx) } },
+    );
+    return {
+      providerRefundId: r.id,
+      state:
+        r.status === 'processed'
+          ? 'DONE'
+          : ['failed', 'reversed'].includes(r.status)
+            ? 'FAILED'
+            : 'PENDING',
     };
   },
 

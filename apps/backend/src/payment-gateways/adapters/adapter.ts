@@ -75,6 +75,12 @@ export interface RefundResult {
   state: 'DONE' | 'PENDING';
 }
 
+/** Result of asking the provider what actually happened to a refund. */
+export interface RefundRemoteStatus {
+  providerRefundId: string;
+  state: 'DONE' | 'PENDING' | 'FAILED';
+}
+
 export interface TestOutcome {
   ok: boolean;
   message: string;
@@ -97,6 +103,15 @@ export interface PaymentGatewayAdapter {
    * `GatewayError` with no `status` means the outcome is unknown (timeout).
    */
   refund?(ctx: GatewayContext, input: RefundInput): Promise<RefundResult>;
+  /**
+   * Provider-side lookup for a refund whose result we never recorded (e.g. the
+   * process died between the refund call and the follow-up write). Absent =
+   * this adapter cannot verify refunds; stale rows stay in the review list.
+   */
+  fetchRefundStatus?(
+    ctx: GatewayContext,
+    providerRefundId: string,
+  ): Promise<RefundRemoteStatus>;
 
   testConnection(ctx: GatewayContext): Promise<TestOutcome>;
   createPayment(

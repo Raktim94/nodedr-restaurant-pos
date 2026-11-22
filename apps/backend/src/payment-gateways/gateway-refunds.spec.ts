@@ -16,6 +16,7 @@ function setup(
   held = 0,
   priorRefunded = 0,
   orderTotal = 123.45,
+  heldForOrderMinor = 0,
 ) {
   const pay: Row = {
     id: 'gp1',
@@ -34,8 +35,30 @@ function setup(
   };
   const refunds: Row[] = [];
   const tx: any = {
+    order: {
+      updateMany: jest.fn(async () => ({ count: 1 })),
+      findFirst: jest.fn(async () => ({
+        totalAmount: orderTotal,
+        status: 'PAID',
+      })),
+    },
     gatewayPayment: { update: jest.fn(async () => pay) },
+    refund: {
+      aggregate: jest.fn(async () => ({ _sum: { amount: priorRefunded } })),
+    },
     gatewayRefund: {
+      findMany: jest.fn(async () =>
+        heldForOrderMinor
+          ? [
+              {
+                gatewayPaymentId: 'gp2', // a different payment on the same order
+                refundId: null,
+                amountMinor: heldForOrderMinor,
+                currency: 'INR',
+              },
+            ]
+          : [],
+      ),
       aggregate: jest.fn(async () => ({ _sum: { amountMinor: held } })),
       create: jest.fn(async ({ data }: Row) => {
         const r = { id: 'gr1', ...data };
@@ -100,10 +123,14 @@ describe('refunding through the gateway', () => {
       'o1',
       'u2',
       expect.objectContaining({ amount: 50, method: 'OTHER' }),
+      undefined,
+      'gr1',
     );
+    // The refund link is committed by OrdersService in the same transaction
+    // as the local Refund; this update only records the provider result.
     expect(
       s.prisma.gatewayRefund.update.mock.calls.at(-1)[0].data,
-    ).toMatchObject({ status: 'SUCCEEDED', refundId: 'ref_local' });
+    ).toMatchObject({ status: 'SUCCEEDED', providerRefundId: 're_1' });
   });
 
   it('a definite provider rejection records nothing locally', async () => {
@@ -170,6 +197,14 @@ describe('refunding through the gateway', () => {
   it('cannot refund more than the order still allows, before touching the provider', async () => {
     const s = setup({}, 0, 100); // only 23.45 left on the order
     await expect(go(s, 50)).rejects.toThrow(/remains refundable/);
+    expect(fake.refund).not.toHaveBeenCalled();
+  });
+
+  it('counts an in-flight refund on another payment of the same order', async () => {
+    // 60 already recorded locally + 50 held at a provider on another payment:
+    // 20 would fit the unreserved 63.45 but not the 13.45 actually available.
+    const s = setup({}, 0, 60, 123.45, 5000);
+    await expect(go(s, 20)).rejects.toThrow(/remains refundable/);
     expect(fake.refund).not.toHaveBeenCalled();
   });
 });
