@@ -63,7 +63,9 @@ function setup(over: Partial<Row> = {}) {
         events.has(where.provider_mode_eventId.eventId) ? {} : null,
       ),
       findMany: jest.fn(async ({ where }: Row) =>
-        (where.eventId?.in ?? []).filter((e: string) => events.has(e)).map((eventId: string) => ({ eventId })),
+        (where.eventId?.in ?? [])
+          .filter((e: string) => events.has(e))
+          .map((eventId: string) => ({ eventId })),
       ),
       create: jest.fn(async ({ data }: Row) => {
         events.add(data.eventId);

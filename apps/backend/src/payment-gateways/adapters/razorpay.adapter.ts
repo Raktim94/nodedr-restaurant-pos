@@ -139,9 +139,8 @@ export const razorpayAdapter: PaymentGatewayAdapter = {
         state === 'PAID'
           ? (l.payments?.find((p) => p.status === 'captured' && p.payment_id)
               ?.payment_id ??
-            l.payments?.find(
-              (p) => p.payment_id && p.amount === l.amount_paid,
-            )?.payment_id ??
+            l.payments?.find((p) => p.payment_id && p.amount === l.amount_paid)
+              ?.payment_id ??
             null)
           : null,
     };
@@ -173,10 +172,7 @@ export const razorpayAdapter: PaymentGatewayAdapter = {
     };
   },
 
-  async fetchRefundStatus(
-    ctx,
-    providerRefundId,
-  ): Promise<RefundRemoteStatus> {
+  async fetchRefundStatus(ctx, providerRefundId): Promise<RefundRemoteStatus> {
     const r = await gatewayFetch<{ id: string; status: string }>(
       `${API}/api/v1/refunds/${encodeURIComponent(providerRefundId)}`,
       { headers: { Authorization: auth(ctx) } },

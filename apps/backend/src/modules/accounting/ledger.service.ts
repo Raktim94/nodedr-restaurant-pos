@@ -439,10 +439,7 @@ export class LedgerService {
     const payrollPaid = round2(
       payroll
         .flatMap((r) => r.lines)
-        .reduce(
-          (s, l) => s + Number(l.netPay) - Number(l.tipShare),
-          0,
-        ),
+        .reduce((s, l) => s + Number(l.netPay) - Number(l.tipShare), 0),
     );
     const cash = round2(
       Number(payments._sum.amount ?? 0) -

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access -- hand-built Prisma/jest mocks */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call -- hand-built Prisma rows */
 import { OrdersService } from './orders.service';
 
@@ -29,9 +30,7 @@ const modifier = {
 } as never;
 
 const lineFor = (taxMode: 'INCLUSIVE' | 'EXCLUSIVE') =>
-  (
-    svc() as any
-  ).buildLine(
+  (svc() as any).buildLine(
     { menuItemId: 'm1', quantity: 1, modifierIds: ['x1'] },
     new Map([['m1', menuItem]]),
     new Map([['x1', modifier]]),

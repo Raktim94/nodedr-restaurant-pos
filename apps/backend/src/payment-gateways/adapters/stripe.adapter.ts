@@ -179,10 +179,7 @@ export const stripeAdapter: PaymentGatewayAdapter = {
     };
   },
 
-  async fetchRefundStatus(
-    ctx,
-    providerRefundId,
-  ): Promise<RefundRemoteStatus> {
+  async fetchRefundStatus(ctx, providerRefundId): Promise<RefundRemoteStatus> {
     const r = await gatewayFetch<{ id: string; status: string }>(
       `${API}/v1/refunds/${encodeURIComponent(providerRefundId)}`,
       { headers: auth(ctx) },

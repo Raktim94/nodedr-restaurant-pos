@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call -- hand-built Prisma fakes */
+/* eslint-disable @typescript-eslint/require-await, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call -- hand-built Prisma fakes */
 import { OrdersService } from './orders.service';
 
 const svc = () =>
@@ -41,7 +41,9 @@ function tx(over: {
           : null;
       }),
       findMany: jest.fn(async () => over.prior ?? []),
-      createMany: jest.fn(async (a: any) => (ledger.push(a), { count: a.data.length })),
+      createMany: jest.fn(
+        async (a: any) => (ledger.push(a), { count: a.data.length }),
+      ),
     },
   };
   return { db, updates, ledger };
@@ -132,15 +134,24 @@ describe('refund loyalty reversal', () => {
       { increment: 40 },
       { decrement: 10 },
     ]);
-    expect(t.ledger[0].data.some((r: any) => r.reason === 'REFUND_EARN_REVERSAL_PENDING')).toBe(false);
+    expect(
+      t.ledger[0].data.some(
+        (r: any) => r.reason === 'REFUND_EARN_REVERSAL_PENDING',
+      ),
+    ).toBe(false);
   });
 
   it('records an uncollectable reversal instead of failing the refund', async () => {
     const t = tx({ earn: 100, balance: 0 });
-    await expect(run(t, { refundAmount: 200, totalAmount: 200, pointsRedeemed: 0 })).resolves.toBeUndefined();
+    await expect(
+      run(t, { refundAmount: 200, totalAmount: 200, pointsRedeemed: 0 }),
+    ).resolves.toBeUndefined();
     expect(t.updates).toHaveLength(0);
     expect(t.ledger[0].data).toEqual([
-      expect.objectContaining({ reason: 'REFUND_EARN_REVERSAL_PENDING', delta: -100 }),
+      expect.objectContaining({
+        reason: 'REFUND_EARN_REVERSAL_PENDING',
+        delta: -100,
+      }),
     ]);
   });
 

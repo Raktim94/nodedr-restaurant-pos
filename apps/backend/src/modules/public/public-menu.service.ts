@@ -125,12 +125,10 @@ export class PublicMenuService {
         });
         return claim.id;
       } catch (e) {
-        if (
-          !(
-            e instanceof Prisma.PrismaClientKnownRequestError &&
-            e.code === 'P2002'
-          )
-        )
+        if (!(
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === 'P2002'
+        ))
           throw e;
         const seen = await this.prisma.publicOrderKey.findUnique({ where });
         if (seen && !seen.orderId.startsWith('pending:')) return null;
@@ -162,7 +160,9 @@ export class PublicMenuService {
   }
 
   private async releaseKey(id: string) {
-    await this.prisma.publicOrderKey.delete({ where: { id } }).catch(() => undefined);
+    await this.prisma.publicOrderKey
+      .delete({ where: { id } })
+      .catch(() => undefined);
   }
 
   async createOrder(
@@ -208,7 +208,7 @@ export class PublicMenuService {
       );
     }
 
-    let result;
+    let result: Awaited<ReturnType<PublicMenuService['createOrAdd']>>;
     try {
       result = await this.createOrAdd(
         table,
@@ -257,9 +257,7 @@ export class PublicMenuService {
     // A staff order or an online-held tab must never absorb a cash round (or
     // vice versa): addItems starts kitchen tickets immediately otherwise.
     const sameGuest =
-      !openOrder?.guestName ||
-      !guestName ||
-      openOrder.guestName === guestName;
+      !openOrder?.guestName || !guestName || openOrder.guestName === guestName;
     const paymentCompatible = openOrder
       ? payment === 'ONLINE'
         ? openOrder.payIntent === 'ONLINE'

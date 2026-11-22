@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access -- hand-built Prisma/jest mocks */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call */
 import { AccountingService } from './accounting.service';
 
@@ -56,9 +57,9 @@ describe('AccountingService reports', () => {
       },
       refund: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
-        groupBy: jest.fn().mockResolvedValue([
-          { orderId: 'o1', _sum: { amount: 50 } },
-        ]),
+        groupBy: jest
+          .fn()
+          .mockResolvedValue([{ orderId: 'o1', _sum: { amount: 50 } }]),
       },
       expense: {
         groupBy: jest.fn().mockResolvedValue([]),

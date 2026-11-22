@@ -1,17 +1,33 @@
+/* eslint-disable @typescript-eslint/require-await, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access -- hand-built Prisma/jest mocks */
 import { LedgerService, parseStatement } from './ledger.service';
 
 describe('LedgerService balance sheet', () => {
   it('includes paid payroll at net pay and excludes tips', async () => {
     const prisma: any = {
-      payment: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 1000 } }) },
-      refund: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }) },
-      expense: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }) },
+      payment: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 1000 } }),
+      },
+      refund: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
+      },
+      expense: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
+      },
       supplierPayment: {
         aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 0 } }),
       },
       payrollRun: {
         findMany: jest.fn().mockResolvedValue([
-          { lines: [{ netPay: 100, tipShare: 10, basePay: 80, unpaidLeaveDeduction: 0 }] },
+          {
+            lines: [
+              {
+                netPay: 100,
+                tipShare: 10,
+                basePay: 80,
+                unpaidLeaveDeduction: 0,
+              },
+            ],
+          },
         ]),
       },
       ingredient: { findMany: jest.fn().mockResolvedValue([]) },

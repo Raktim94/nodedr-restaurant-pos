@@ -5,7 +5,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, type GatewayPayment, type GatewayRefund } from '@prisma/client';
+import {
+  Prisma,
+  type GatewayPayment,
+  type GatewayRefund,
+} from '@prisma/client';
 import { round2 } from '../modules/orders/pricing';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdersService } from '../modules/orders/orders.service';
@@ -586,9 +590,7 @@ export class GatewayPaymentsService {
         ),
       );
       const localLeft = round2(
-        Number(order.totalAmount) -
-          Number(prior._sum.amount ?? 0) -
-          heldLocal,
+        Number(order.totalAmount) - Number(prior._sum.amount ?? 0) - heldLocal,
       );
       if (input.amount > localLeft) {
         throw new BadRequestException(

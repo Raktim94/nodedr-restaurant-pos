@@ -2044,8 +2044,7 @@ export class OrdersService {
     const refundedCents = Math.round(
       (a.alreadyRefunded + a.refundAmount) * 100,
     );
-    const share =
-      totalCents <= 0 ? 1 : Math.min(1, refundedCents / totalCents);
+    const share = totalCents <= 0 ? 1 : Math.min(1, refundedCents / totalCents);
     const reverseEarn = Math.max(
       0,
       Math.floor(earned * share) - priorReversedEarn,

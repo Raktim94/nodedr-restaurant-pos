@@ -1,4 +1,5 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call -- hand-built transaction fakes */
+/* eslint-disable @typescript-eslint/require-await, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access -- hand-built Prisma/jest mocks */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call -- hand-built transaction fakes */
 import { Prisma } from '@prisma/client';
 import { GoodsReceiptsService } from './goods-receipts.service';
 import { ProductionService } from './production.service';
@@ -17,11 +18,7 @@ describe('inventory integrity', () => {
   });
 
   it('rebuilds weighted-average cost from surviving batches on void', async () => {
-    const svc = new ProductionService(
-      {} as never,
-      {} as never,
-      {} as never,
-    );
+    const svc = new ProductionService({} as never, {} as never, {} as never);
     const update = jest.fn(async () => ({}));
     const tx: any = {
       ingredient: {
@@ -50,11 +47,7 @@ describe('inventory integrity', () => {
   });
 
   it('keeps the existing cost when no stock remains', async () => {
-    const svc = new ProductionService(
-      {} as never,
-      {} as never,
-      {} as never,
-    );
+    const svc = new ProductionService({} as never, {} as never, {} as never);
     const update = jest.fn(async () => ({}));
     const tx: any = {
       ingredient: {

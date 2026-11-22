@@ -52,94 +52,94 @@ export class StockJournalService {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM ingredients WHERE id = ${dto.ingredientId} FOR UPDATE`;
-      const ing = await tx.ingredient.findFirst({
-        where: { id: dto.ingredientId, branchId },
-      });
-      if (!ing) throw new NotFoundException('Stock item not found');
-      const qty = toBaseQuantity(
-        dto.quantity,
-        dto.unit,
-        ing.unit,
-        ing.conversions,
-        ing.name,
-      );
-      const supplier = dto.supplierId
-        ? await tx.supplier.findFirst({
-            where: { id: dto.supplierId, branchId },
-            select: { name: true },
-          })
-        : null;
-      if (dto.supplierId && !supplier)
-        throw new BadRequestException('Supplier not found');
-      const rate =
-        dto.unitCost !== undefined && dto.unitCost !== ''
-          ? Dec(dto.unitCost)
+        const ing = await tx.ingredient.findFirst({
+          where: { id: dto.ingredientId, branchId },
+        });
+        if (!ing) throw new NotFoundException('Stock item not found');
+        const qty = toBaseQuantity(
+          dto.quantity,
+          dto.unit,
+          ing.unit,
+          ing.conversions,
+          ing.name,
+        );
+        const supplier = dto.supplierId
+          ? await tx.supplier.findFirst({
+              where: { id: dto.supplierId, branchId },
+              select: { name: true },
+            })
           : null;
-      if (rate && (!rate.isFinite() || rate.isNegative()))
-        throw new BadRequestException('The cost must be zero or more');
-      const batch = await tx.stockBatch.create({
-        data: {
-          branchId,
-          ingredientId: ing.id,
-          batchNumber: dto.idempotencyKey
-            ? `K:${dto.idempotencyKey}`
-            : dto.reference || 'RCV',
-          idempotencyKey: dto.idempotencyKey || null,
-          quantityReceived: qty,
-          quantityRemaining: qty,
-          unitCost: rate ?? 0,
-          expiryDate: dto.expiryDate,
-          receivedAt: dto.receivedAt ?? new Date(),
-        },
-      });
-      const note = [
-        supplier?.name && `From ${supplier.name}`,
-        dto.reference && `Ref ${dto.reference}`,
-        dto.location && `At ${dto.location}`,
-        dto.note,
-      ]
-        .filter(Boolean)
-        .join(' · ');
-      await tx.stockMovement.create({
-        data: {
-          branchId,
-          ingredientId: ing.id,
-          batchId: batch.id,
-          type: 'RECEIPT',
-          quantity: qty,
-          note: note || 'Stock received',
-          createdById: userId,
-          deviceId: dto.deviceId,
-        },
-      });
-      const oldStock = Dec(ing.currentStock);
-      const avg = rate
-        ? oldStock.lte(0)
-          ? rate
-          : oldStock
-              .mul(ing.costPerUnit)
-              .plus(qty.mul(rate))
-              .div(oldStock.plus(qty))
-              .toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP)
-        : null;
-      await tx.ingredient.update({
-        where: { id: ing.id },
-        data: {
-          currentStock: oldStock.plus(qty),
-          ...(avg ? { costPerUnit: avg } : {}),
-        },
-      });
-      await this.audit.record({
-        userId,
-        action: 'stock.receive',
-        entity: 'Ingredient',
-        entityId: ing.id,
-        metadata: { qty: qty.toString(), reference: dto.reference },
-      });
-      return tx.stockBatch.findUniqueOrThrow({
-        where: { id: batch.id },
-        include: { stockMovements: true },
-      });
+        if (dto.supplierId && !supplier)
+          throw new BadRequestException('Supplier not found');
+        const rate =
+          dto.unitCost !== undefined && dto.unitCost !== ''
+            ? Dec(dto.unitCost)
+            : null;
+        if (rate && (!rate.isFinite() || rate.isNegative()))
+          throw new BadRequestException('The cost must be zero or more');
+        const batch = await tx.stockBatch.create({
+          data: {
+            branchId,
+            ingredientId: ing.id,
+            batchNumber: dto.idempotencyKey
+              ? `K:${dto.idempotencyKey}`
+              : dto.reference || 'RCV',
+            idempotencyKey: dto.idempotencyKey || null,
+            quantityReceived: qty,
+            quantityRemaining: qty,
+            unitCost: rate ?? 0,
+            expiryDate: dto.expiryDate,
+            receivedAt: dto.receivedAt ?? new Date(),
+          },
+        });
+        const note = [
+          supplier?.name && `From ${supplier.name}`,
+          dto.reference && `Ref ${dto.reference}`,
+          dto.location && `At ${dto.location}`,
+          dto.note,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        await tx.stockMovement.create({
+          data: {
+            branchId,
+            ingredientId: ing.id,
+            batchId: batch.id,
+            type: 'RECEIPT',
+            quantity: qty,
+            note: note || 'Stock received',
+            createdById: userId,
+            deviceId: dto.deviceId,
+          },
+        });
+        const oldStock = Dec(ing.currentStock);
+        const avg = rate
+          ? oldStock.lte(0)
+            ? rate
+            : oldStock
+                .mul(ing.costPerUnit)
+                .plus(qty.mul(rate))
+                .div(oldStock.plus(qty))
+                .toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP)
+          : null;
+        await tx.ingredient.update({
+          where: { id: ing.id },
+          data: {
+            currentStock: oldStock.plus(qty),
+            ...(avg ? { costPerUnit: avg } : {}),
+          },
+        });
+        await this.audit.record({
+          userId,
+          action: 'stock.receive',
+          entity: 'Ingredient',
+          entityId: ing.id,
+          metadata: { qty: qty.toString(), reference: dto.reference },
+        });
+        return tx.stockBatch.findUniqueOrThrow({
+          where: { id: batch.id },
+          include: { stockMovements: true },
+        });
       });
     } catch (e) {
       if (
