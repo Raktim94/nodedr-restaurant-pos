@@ -109,7 +109,9 @@ export const expenses = plain('expenses');
 export const shifts = plain('shifts');
 export const reservations = plain('reservations');
 
-const BACKUP_STORES = ['sales', 'orders', 'kots', 'refunds', 'expenses', 'shifts', 'reservations'];
+// `events` is the outbox of unsent money/kitchen records (expenses, refunds, collections, till closes). A backup
+// without it restores local rows whose server-side record was never sent.
+const BACKUP_STORES = ['sales', 'orders', 'kots', 'refunds', 'expenses', 'shifts', 'reservations', 'events'];
 
 /** Everything on the phone except the account password, read in one consistent transaction. */
 export async function readEverything() {
@@ -138,6 +140,8 @@ export async function replaceEverything(b) {
   await new Promise((resolve, reject) => {
     const t = db.transaction([...BACKUP_STORES, 'kv'], 'readwrite');
     for (const n of BACKUP_STORES) {
+      // A backup made before the outbox was included has no events: keep this phone's queue rather than wiping it.
+      if (n === 'events' && !Array.isArray(b.events)) continue;
       const st = t.objectStore(n);
       st.clear();
       for (const row of b[n] || []) st.put(row);

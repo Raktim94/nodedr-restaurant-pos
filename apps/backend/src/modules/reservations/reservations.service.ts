@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type {
   CreateReservationDto,
   ReservationStatusDto,
@@ -20,6 +22,19 @@ export interface CreateReservationOptions {
   // always merge tables or make a judgment call the online flow can't.
   fromWebsite?: boolean;
 }
+
+// A reservation only moves forward. Terminal states (COMPLETED, CANCELLED, NO_SHOW) are final, so a stale tab or a
+// replayed request can never reopen a booking and flip the floor view.
+const TRANSITIONS: Record<ReservationStatusDto, ReservationStatusDto[]> = {
+  RESERVED: ['CONFIRMED', 'ARRIVED', 'CANCELLED', 'NO_SHOW'],
+  CONFIRMED: ['ARRIVED', 'CANCELLED', 'NO_SHOW'],
+  ARRIVED: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: [],
+  NO_SHOW: [],
+};
+// Bookings that still hold their table.
+const ACTIVE: ReservationStatusDto[] = ['RESERVED', 'CONFIRMED', 'ARRIVED'];
 
 @Injectable()
 export class ReservationsService {
@@ -82,6 +97,16 @@ export class ReservationsService {
       : false;
 
     const created = await this.prisma.$transaction(async (tx) => {
+      if (dto.tableId) {
+        // Serialise bookings for one table: without the row lock two simultaneous requests both see it free.
+        await tx.$queryRaw`SELECT id FROM "tables" WHERE id = ${dto.tableId} FOR UPDATE`;
+        await this.assertTableFree(
+          tx,
+          dto.tableId,
+          dto.reservedAt,
+          dto.durationMinutes,
+        );
+      }
       const reservation = await tx.reservation.create({
         data: {
           ...dto,
@@ -177,6 +202,83 @@ export class ReservationsService {
     }
   }
 
+  /** 409 when another active booking on this table overlaps [at, at + minutes). */
+  private async assertTableFree(
+    tx: Prisma.TransactionClient,
+    tableId: string,
+    at: Date,
+    minutes: number,
+    exceptId?: string,
+  ) {
+    const start = new Date(at).getTime();
+    const end = start + minutes * 60_000;
+    // Bookings are at most a day or so long; fetch a generous window and compare exact overlap in code.
+    const near = await tx.reservation.findMany({
+      where: {
+        tableId,
+        status: { in: ACTIVE },
+        ...(exceptId ? { id: { not: exceptId } } : {}),
+        reservedAt: {
+          gte: new Date(start - 24 * 3_600_000),
+          lt: new Date(end),
+        },
+      },
+      select: { reservedAt: true, durationMinutes: true },
+    });
+    const clash = near.some((r) => {
+      const rs = r.reservedAt.getTime();
+      return rs < end && rs + r.durationMinutes * 60_000 > start;
+    });
+    if (clash) {
+      throw new ConflictException(
+        'That table is already booked for an overlapping time. Choose another table or time.',
+      );
+    }
+  }
+
+  /**
+   * The floor status of a table, worked out from what is actually true (a live order, a seated booking, a held
+   * booking) rather than from whichever status change happened last. CLEANING / OUT_OF_SERVICE are staff decisions
+   * and are never overridden here.
+   */
+  private async syncTableStatus(tx: Prisma.TransactionClient, tableId: string) {
+    const table = await tx.table.findUnique({
+      where: { id: tableId },
+      select: { status: true },
+    });
+    if (
+      !table ||
+      table.status === 'CLEANING' ||
+      table.status === 'OUT_OF_SERVICE'
+    )
+      return;
+    const liveOrder = await tx.order.findFirst({
+      where: { tableId, status: 'OPEN' },
+      select: { id: true },
+    });
+    const seated = liveOrder
+      ? null
+      : await tx.reservation.findFirst({
+          where: { tableId, status: 'ARRIVED' },
+          select: { id: true },
+        });
+    const held =
+      liveOrder || seated
+        ? null
+        : await tx.reservation.findFirst({
+            where: { tableId, status: { in: ['RESERVED', 'CONFIRMED'] } },
+            select: { id: true },
+          });
+    const next =
+      liveOrder || seated ? 'OCCUPIED' : held ? 'RESERVED' : 'AVAILABLE';
+    if (next !== table.status) {
+      await tx.table.update({
+        where: { id: tableId },
+        data: { status: next, statusSince: new Date() },
+      });
+    }
+  }
+
   async updateStatus(
     branchId: string,
     id: string,
@@ -187,35 +289,20 @@ export class ReservationsService {
     });
     if (!reservation) throw new NotFoundException('Reservation not found');
 
+    // Re-sending the status it already has (a double tap, a retry) changes nothing.
+    if (reservation.status === status) return reservation;
+    if (!TRANSITIONS[reservation.status].includes(status)) {
+      throw new BadRequestException(
+        `A ${reservation.status.toLowerCase().replace('_', ' ')} reservation cannot be changed to ${status.toLowerCase().replace('_', ' ')}.`,
+      );
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
       const result = await tx.reservation.update({
         where: { id },
         data: { status },
       });
-
-      // Arriving a reservation with an assigned table occupies it; completing
-      // or cancelling releases it back to available. Mirrors the same
-      // table-status side effect checkout() already applies for dine-in
-      // orders, kept consistent rather than leaving reservations silently
-      // out of sync with the floor view.
-      if (result.tableId) {
-        if (status === 'ARRIVED') {
-          await tx.table.update({
-            where: { id: result.tableId },
-            data: { status: 'OCCUPIED', statusSince: new Date() },
-          });
-        } else if (
-          status === 'COMPLETED' ||
-          status === 'CANCELLED' ||
-          status === 'NO_SHOW'
-        ) {
-          await tx.table.update({
-            where: { id: result.tableId },
-            data: { status: 'AVAILABLE', statusSince: new Date() },
-          });
-        }
-      }
-
+      if (result.tableId) await this.syncTableStatus(tx, result.tableId);
       return result;
     });
 

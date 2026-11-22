@@ -139,3 +139,19 @@ test('a 500 bill with 100 paid leaves 400 owed, and aging groups it by how old t
   assert.equal(dueOf(a), 400);
   assert.deepEqual(agingBuckets([a, b, c, sale()], NOW), { total: 900, today: 400, d1_30: 300, d31_60: 0, over60: 200 });
 });
+
+test('a backup carries the unsent events outbox and reservations through save and restore', () => {
+  const snap = { local: true, items: [] };
+  const ev = [{ id: 'e1', status: 'pending', type: 'EXPENSE' }];
+  const rs = [{ id: 'r1', name: 'Asha' }];
+  const back = parseBackup(backupJson({ snapshot: snap, events: ev, reservations: rs }, NOW));
+  assert.deepEqual(back.events, ev);
+  assert.deepEqual(back.reservations, rs);
+});
+
+test('an older backup without events leaves events undefined so a restore keeps the phone\'s own outbox', () => {
+  const snap = { local: true, items: [] };
+  const back = parseBackup(backupJson({ snapshot: snap }, NOW));
+  assert.equal(back.events, undefined);
+  assert.deepEqual(back.reservations, []);
+});

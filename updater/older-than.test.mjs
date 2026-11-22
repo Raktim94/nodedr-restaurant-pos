@@ -1,10 +1,8 @@
-// The updater is a script that starts a server on load, so the comparison is read out of the source and tested alone.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 
-const src = readFileSync(new URL('./server.js', import.meta.url), 'utf8');
-const olderThan = new Function(src.match(/const VERSION_RE[\s\S]*?\n}\n/)[0] + '; return olderThan;')();
+const { olderThan } = createRequire(import.meta.url)('./server.js');
 
 test('compares x.y.z numerically, not as text', () => {
   assert.equal(olderThan('1.9.2', '1.10.0'), true);
