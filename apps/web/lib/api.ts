@@ -1,5 +1,16 @@
 const API_BASE = "/api/v1";
 
+// Calls made by signed-out pages. A 401 there is expected (login form, public
+// menu/kiosk), so it must never bounce the user to /login.
+const PUBLIC_PREFIXES = ["/auth/", "/public/", "/display/", "/setup"];
+const isPublicCall = (path: string) => PUBLIC_PREFIXES.some((p) => path.startsWith(p));
+
+let onUnauthorized: (() => void) | null = null;
+/** Lets the app shell override the fallback (e.g. React Query cache cleanup). */
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -27,6 +38,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ message: res.statusText }));
+    if (res.status === 401 && !isPublicCall(path) && typeof window !== "undefined") {
+      // The JWT can expire mid-shift. Without this, every query fails 401 but
+      // the shell keeps rendering the last cached user and the operator is
+      // stuck in error states until they manually navigate to sign-in.
+      if (onUnauthorized) onUnauthorized();
+      else window.location.replace("/login");
+    }
     throw new ApiError(body.message ?? "Request failed", res.status, body.issues, body.code);
   }
 

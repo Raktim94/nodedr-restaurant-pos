@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { QueryError } from "@/components/ui/query-error";
 import { useCurrentUser } from "@/hooks/use-auth";
 import { useBranch } from "@/hooks/use-branch";
 import { useManagedOrders } from "@/hooks/use-orders";
@@ -127,7 +128,7 @@ function TableStatusRow({
 export default function DashboardPage() {
   const realtime = useRealtimeState();
   const { branchId } = useBranch();
-  const { data, isLoading } = useDashboardSummary(branchId);
+  const { data, isLoading, isError, error, refetch, isFetching } = useDashboardSummary(branchId);
   const { data: prefsData } = useDashboardPrefs();
   const prefs = prefsData ?? DEFAULT_DASHBOARD_PREFS;
   const savePrefs = useSaveDashboardPrefs();
@@ -208,7 +209,9 @@ export default function DashboardPage() {
       <QuickActions />
 
       <div {...slot("top", "kpis")}>
-      {isLoading || !data ? (
+      {isError ? (
+        <QueryError error={error} what="the dashboard" onRetry={() => void refetch()} retrying={isFetching} />
+      ) : isLoading || !data ? (
         <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5 [&>a:last-child:nth-child(odd)]:col-span-2 xl:[&>a:last-child:nth-child(odd)]:col-span-1">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className={cn("h-[120px] rounded-2xl", i === 0 && "col-span-2 xl:col-span-2")} />
