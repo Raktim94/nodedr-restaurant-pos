@@ -164,8 +164,14 @@ export class StockService {
       (sum, bt) => sum.plus(bt.quantityRemaining),
       Dec(0),
     );
+    // Manual adjustments (`adjustStock`) change currentStock without touching
+    // batches, so the two can disagree. With batches present, only the amount
+    // that BOTH sources agree is safe to consume with allowNegative=false;
+    // using the batch sum alone can drive currentStock below zero.
     const available =
-      batches.length > 0 ? availableFromBatches : Dec(ingredient.currentStock);
+      batches.length > 0
+        ? Prisma.Decimal.min(Dec(ingredient.currentStock), availableFromBatches)
+        : Dec(ingredient.currentStock);
 
     if (wanted.gt(available) && !opts.allowNegative) {
       throw new BadRequestException(
