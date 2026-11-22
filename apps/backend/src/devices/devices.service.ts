@@ -21,8 +21,8 @@ export const heartbeatSchema = z.object({
 export type Heartbeat = z.infer<typeof heartbeatSchema>;
 
 // Phones that take orders are listed here so an owner can see when each last synced, how many sales are
-// stuck on it, and switch one off (a lost or stolen phone). A revoked phone is refused on every request
-// (see DeviceRevocationMiddleware), and cannot enrol again until the owner restores it.
+// stuck on it, and switch one off (a lost or stolen phone). Revocation is checked per restaurant in
+// JwtStrategy (and at login/heartbeat), and cannot be undone by the phone until the owner restores it.
 @Injectable()
 export class DevicesService {
   constructor(
@@ -106,15 +106,5 @@ export class DevicesService {
       metadata: { name: d.name, deviceId: d.deviceId },
     });
     return out;
-  }
-
-  /** Used by the middleware: is this device id switched off on any restaurant? */
-  isRevoked(deviceId: string) {
-    return this.prisma.posDevice
-      .findFirst({
-        where: { deviceId, revokedAt: { not: null } },
-        select: { id: true },
-      })
-      .then((r) => !!r);
   }
 }
