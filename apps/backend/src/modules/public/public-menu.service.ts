@@ -259,9 +259,10 @@ export class PublicMenuService {
     const sameGuest =
       !openOrder?.guestName || !guestName || openOrder.guestName === guestName;
     const paymentCompatible = openOrder
-      ? payment === 'ONLINE'
-        ? openOrder.payIntent === 'ONLINE'
-        : openOrder.payIntent !== 'ONLINE'
+      ? !payment ||
+        (payment === 'ONLINE'
+          ? openOrder.payIntent === 'ONLINE'
+          : openOrder.payIntent !== 'ONLINE')
       : false;
     if (
       openOrder &&
