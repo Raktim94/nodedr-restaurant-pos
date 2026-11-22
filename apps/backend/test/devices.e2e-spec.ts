@@ -101,11 +101,8 @@ run('Enrolled phones (e2e)', () => {
 
   it('revoking switches that phone off at once, but not the same user on another device or the web', async () => {
     await owner.post(`/api/v1/pos-devices/${id}/revoke`).expect(201);
-    const blocked = await cashier
-      .get(`/api/v1/menu/items${q}`)
-      .set('X-Device-Id', deviceId);
-    expect(blocked.status).toBe(401);
-    expect(blocked.body.code).toBe('DEVICE_REVOKED');
+    // The header alone no longer decides: a revoked phone is cut off through its own session (see the
+    // next-but-one test), at login and at heartbeat. A web session that merely sends the id is not a phone.
     expect(
       (
         await cashier
@@ -113,7 +110,7 @@ run('Enrolled phones (e2e)', () => {
           .set('X-Device-Id', deviceId)
           .send({ deviceId, name: 'x' })
       ).status,
-    ).toBe(401);
+    ).toBe(403);
     expect(
       (
         await cashier
