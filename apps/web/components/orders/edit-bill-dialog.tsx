@@ -77,6 +77,11 @@ export function EditBillDialog({
         if (!next) {
           setError(null);
           setRemoving(null);
+          // Discard an unsaved draft when the dialog closes, otherwise the
+          // next bill opens with the previous guest name/notes and saving
+          // writes the stale values.
+          setNotes(null);
+          setGuestName(null);
         }
         onOpenChange(next);
       }}

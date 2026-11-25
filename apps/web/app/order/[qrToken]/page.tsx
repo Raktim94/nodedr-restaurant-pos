@@ -196,9 +196,14 @@ export default function PublicMenuPage({
   }, []);
 
   useEffect(() => {
-    const saved = sessionStorage.getItem(nameStorageKey);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (saved) setGuestName(saved);
+    try {
+      const saved = sessionStorage.getItem(nameStorageKey);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved) setGuestName(saved);
+    } catch {
+      // Storage can be blocked (private mode / embedded webview); the menu
+      // still works with in-memory state only.
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -276,7 +281,11 @@ export default function PublicMenuPage({
   const confirmName = () => {
     const trimmed = nameDraft.trim();
     if (!trimmed) return;
-    sessionStorage.setItem(nameStorageKey, trimmed);
+    try {
+      sessionStorage.setItem(nameStorageKey, trimmed);
+    } catch {
+      // Keep the name for this visit even when persistence is unavailable.
+    }
     setGuestName(trimmed);
   };
 

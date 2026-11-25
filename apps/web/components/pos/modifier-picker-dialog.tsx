@@ -180,7 +180,12 @@ function ModifierPickerBody({
           </div>
         )}
         {groups.map((group) => (
-          <div key={group.id} className="flex flex-col gap-2">
+          <div
+            key={group.id}
+            role="group"
+            aria-label={group.name}
+            className="flex flex-col gap-2"
+          >
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium text-foreground">{group.name}</h3>
               <span className="text-xs text-muted-foreground">
@@ -194,6 +199,7 @@ function ModifierPickerBody({
                   <button
                     key={mod.id}
                     type="button"
+                    aria-pressed={isSelected}
                     onClick={() => toggle(group.id, mod.id, group.maxSelect)}
                     className={cn(
                       "flex items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors",
