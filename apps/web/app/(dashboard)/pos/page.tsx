@@ -16,7 +16,9 @@ import { PosTablePicker } from "@/components/pos/pos-table-picker";
 import { ProductGrid } from "@/components/pos/product-grid";
 import { Card } from "@/components/ui/card";
 import { useBranch } from "@/hooks/use-branch";
+import { useDisplaySettings } from "@/hooks/use-settings";
 import { useMenuItems, type MenuItem } from "@/hooks/use-menu";
+import { toInclusivePrice } from "@/lib/pricing-preview";
 import { findItemByCode, pushKey, type ScanBuffer } from "@/lib/pos-scan";
 import {
   useAddOrderItems,
@@ -41,6 +43,8 @@ export default function PosPage() {
 
 function PosPageInner() {
   const { branchId, isLoading: branchLoading } = useBranch();
+  const { data: settings } = useDisplaySettings(branchId);
+  const taxMode = settings?.branch.taxMode ?? "INCLUSIVE";
   const { note, clear: clearNote, toast } = useNoteToast();
   const floorsQuery = useFloors(branchId);
   const floors = floorsQuery.data;
@@ -137,7 +141,13 @@ function PosPageInner() {
       setPickerItem(item);
       return;
     }
-    addLine(item.id, item.name, Number(item.price), [], "");
+    addLine(
+      item.id,
+      item.name,
+      toInclusivePrice(Number(item.price), Number(item.taxRatePercent ?? 0), taxMode),
+      [],
+      "",
+    );
   };
 
   // Keyboard-wedge barcode scanner: it types the code as a fast burst + Enter. Listen anywhere on the page except
@@ -181,7 +191,11 @@ function PosPageInner() {
     addLine(
       pickerItem.id,
       portion ? `${pickerItem.name} (${portionText(portion)})` : pickerItem.name,
-      base + modifierTotal,
+      toInclusivePrice(
+        base + modifierTotal,
+        Number(pickerItem.taxRatePercent ?? 0),
+        taxMode,
+      ),
       modifierIds,
       modifierLabel,
       portion,
@@ -345,7 +359,12 @@ function PosPageInner() {
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 overflow-hidden lg:grid-cols-[1fr_360px]">
           <div className="flex min-h-0 flex-col gap-3">
             <Card className="min-h-0 flex-1 overflow-hidden p-3 sm:p-5">
-              <ProductGrid branchId={branchId} onSelect={handleSelect} allItems={allItems} />
+              <ProductGrid
+                branchId={branchId}
+                onSelect={handleSelect}
+                allItems={allItems}
+                taxMode={taxMode}
+              />
             </Card>
           </div>
 
@@ -423,6 +442,7 @@ function PosPageInner() {
                 scheduledFor={scheduledFor}
                 onScheduledForChange={setScheduledFor}
                 branchId={branchId}
+                taxMode={taxMode}
               />
             )}
           </Card>

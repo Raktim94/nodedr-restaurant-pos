@@ -47,6 +47,7 @@ export function CartPanel({
   scheduledFor,
   onScheduledForChange,
   branchId = null,
+  taxMode = "INCLUSIVE",
 }: {
   lines: CartLine[];
   orderType: PosOrderType;
@@ -73,6 +74,8 @@ export function CartPanel({
   onScheduledForChange: (v: string) => void;
   /** Used to look up a returning customer's saved addresses by phone. */
   branchId?: string | null;
+  /** EXCLUSIVE branches show a pre-tax-free subtotal: prices are grossed up in addLine. */
+  taxMode?: "INCLUSIVE" | "EXCLUSIVE";
 }) {
   const subtotal = subtotalOf(lines.map((l) => l.unitPrice * l.quantity));
   const deliveryReady =
@@ -256,7 +259,9 @@ export function CartPanel({
 
       <div className="flex flex-col gap-3 border-t border-border pt-4">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">Subtotal (incl. tax)</span>
+          <span className="text-muted-foreground">
+            {taxMode === "EXCLUSIVE" ? "Subtotal (tax added on bill)" : "Subtotal (incl. tax)"}
+          </span>
           <span className="font-semibold tabular-nums text-foreground">
             {formatCurrency(subtotal)}
           </span>
