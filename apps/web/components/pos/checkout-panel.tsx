@@ -232,6 +232,11 @@ export function CheckoutPanel({
     if (completed) return;
     if (upiUri) {
       publishDisplay({ kind: "upi", total: upiAmount, uri: upiUri, payee: upiName || "" });
+    } else {
+      // Switching to cash (or covering the balance with a gift card) must
+      // remove the QR from the customer screen, not leave the last amount
+      // showing while the cashier takes a different tender.
+      publishDisplay({ kind: "idle" });
     }
   }, [upiUri, upiAmount, upiName, completed]);
 
@@ -247,7 +252,9 @@ export function CheckoutPanel({
   };
 
   const handleCheckout = () => {
-    if (!bill || repricing) return;
+    // placeholderData keeps the previous bill on screen while the preview
+    // refetches. Never charge against those stale figures.
+    if (!bill || repricing || billQuery.isFetching) return;
     const payments =
       plan.applied > 0
         ? [
@@ -766,7 +773,9 @@ export function CheckoutPanel({
       <div className="sticky bottom-0 z-10 -mx-1 bg-card px-1 pb-1 pt-2 max-lg:border-t max-lg:border-border max-lg:shadow-[0_-8px_12px_-10px_rgba(0,0,0,0.25)]">
         <Button
           className="h-12 w-full text-base"
-          disabled={checkout.isPending || !bill || repricing || !plan.valid}
+          disabled={
+            checkout.isPending || !bill || repricing || billQuery.isFetching || !plan.valid
+          }
           onClick={handleCheckout}
         >
           {checkout.isPending
