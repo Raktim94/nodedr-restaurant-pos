@@ -139,6 +139,18 @@ export class IntegrationApiKeysService {
         where: { integrationKeyId: old.id },
         data: { integrationKeyId: next.id },
       });
+      // createOrder() embeds the key id in clientRequestId to scope a raw
+      // Idempotency-Key. Moving the orders without rewriting that prefix means
+      // a retry with the new token computes a different id and creates a
+      // second paid-capable order for the same checkout.
+      const oldPrefix = `int:${old.id}:`;
+      const nextPrefix = `int:${next.id}:`;
+      await tx.$executeRaw`
+        UPDATE orders
+        SET "clientRequestId" = ${nextPrefix} || substring("clientRequestId" from length(${oldPrefix}) + 1)
+        WHERE "integrationKeyId" = ${next.id}
+          AND "clientRequestId" LIKE ${`${oldPrefix}%`}
+      `;
       await tx.integrationApiKey.update({
         where: { id: old.id },
         data: { revokedAt: new Date() },
