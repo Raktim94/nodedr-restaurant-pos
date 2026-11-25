@@ -134,7 +134,9 @@ export const createIntegrationReservationSchema = z.object({
   email: z.string().email().optional(),
   guestCount: z.number().int().positive(),
   reservedAt: z.coerce.date(),
-  durationMinutes: z.number().int().positive().default(90),
+  // Same ceiling as the staff reservation schema: an unbounded duration would
+  // make assertTableFree treat a booking as occupying a table for centuries.
+  durationMinutes: z.number().int().positive().max(24 * 60).default(90),
   specialRequests: z.string().optional(),
 });
 export type CreateIntegrationReservationDto = z.infer<typeof createIntegrationReservationSchema>;

@@ -70,6 +70,8 @@ export interface EscposReceiptOrder {
   discountAmount: number;
   taxAmount: number;
   tipAmount: number;
+  /** Included in totalAmount; older callers may not supply it. */
+  deliveryFee?: number;
   loyaltyPointsRedeemed: number;
   loyaltyDiscountAmount: number;
   totalAmount: number;
@@ -213,6 +215,9 @@ export function buildReceiptEscPosJob({
       `Loyalty (${order.loyaltyPointsRedeemed} pts)`,
       `-${money(order.loyaltyDiscountAmount)}`,
     );
+  }
+  if ((order.deliveryFee ?? 0) > 0) {
+    w.row('Delivery', money(order.deliveryFee ?? 0));
   }
   if (order.tipAmount > 0) w.row('Tip', money(order.tipAmount));
   w.rule();

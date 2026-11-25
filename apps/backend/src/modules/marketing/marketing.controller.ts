@@ -26,6 +26,9 @@ import { AuditAction } from '../../audit/audit-action';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuditService } from '../../audit/audit.service';
+import { z } from 'zod';
+
+const activeSchema = z.object({ isActive: z.boolean() });
 import { BranchAccessService } from '../../common/services/branch-access.service';
 import { toCsv } from '../reports/csv';
 import { MarketingService } from './marketing.service';
@@ -69,14 +72,15 @@ export class MarketingController {
   @Auth('marketing.manage')
   @AuditAction('coupon.toggled', 'Coupon')
   @Patch('coupons/:id/active')
+  @UsePipes(new ZodValidationPipe(activeSchema))
   async couponActive(
     @CurrentUser() u: SessionUser,
     @Query('branchId') branchId: string,
     @Param('id') id: string,
-    @Body() body: { isActive: boolean },
+    @Body() body: z.infer<typeof activeSchema>,
   ) {
     await this.access(u, branchId);
-    return this.marketing.setCouponActive(branchId, id, !!body.isActive);
+    return this.marketing.setCouponActive(branchId, id, body.isActive);
   }
 
   @Auth('marketing.manage')
@@ -117,14 +121,15 @@ export class MarketingController {
   @Auth('marketing.manage')
   @AuditAction('promotion.toggled', 'Promotion')
   @Patch('promotions/:id/active')
+  @UsePipes(new ZodValidationPipe(activeSchema))
   async promotionActive(
     @CurrentUser() u: SessionUser,
     @Query('branchId') branchId: string,
     @Param('id') id: string,
-    @Body() body: { isActive: boolean },
+    @Body() body: z.infer<typeof activeSchema>,
   ) {
     await this.access(u, branchId);
-    return this.marketing.setPromotionActive(branchId, id, !!body.isActive);
+    return this.marketing.setPromotionActive(branchId, id, body.isActive);
   }
 
   @Auth('marketing.manage')

@@ -1602,6 +1602,7 @@ export class OrdersService {
         discountPercent: view.discountPercent,
         taxAmount: view.taxAmount,
         tipAmount: view.tipAmount,
+        deliveryFee: view.deliveryFee,
         loyaltyPointsRedeemed: view.loyaltyPointsRedeemed,
         loyaltyDiscountAmount: view.loyaltyDiscountAmount,
         totalAmount: view.totalDue,

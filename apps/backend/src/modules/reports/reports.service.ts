@@ -449,11 +449,13 @@ export class ReportsService {
       case 'peak-hours': {
         const orders = await this.prisma.order.findMany({
           where: { branchId, status: 'PAID', billedAt: range },
-          select: { createdAt: true, totalAmount: true },
+          select: { billedAt: true, totalAmount: true },
         });
         const cell = new Map<string, { n: number; sales: number }>();
         for (const o of orders) {
-          const { day, minute } = localMinuteAndDay(o.createdAt, tz);
+          // The range is filtered on billedAt; bucket on the same field so
+          // cross-midnight orders land in the day the report is asking about.
+          const { day, minute } = localMinuteAndDay(o.billedAt!, tz);
           const k = `${day}-${Math.floor(minute / 60)}`;
           const c = cell.get(k) ?? { n: 0, sales: 0 };
           c.n++;
