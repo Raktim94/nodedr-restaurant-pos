@@ -8,17 +8,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useMenuCosts, useMfgSettings } from "@/hooks/use-manufacturing";
 import { useCategories, useMenuItems, type MenuItem } from "@/hooks/use-menu";
 import { formatCurrency } from "@/lib/format";
+import { toInclusivePrice } from "@/lib/pricing-preview";
 import { findItemByCode } from "@/lib/pos-scan";
 
 export function ProductGrid({
   branchId,
   onSelect,
   allItems,
+  taxMode = "INCLUSIVE",
 }: {
   branchId: string | null;
   onSelect: (item: MenuItem) => void;
   /** Full unfiltered menu, used for barcode lookup only (scans ignore category filters). */
   allItems?: MenuItem[];
+  taxMode?: "INCLUSIVE" | "EXCLUSIVE";
 }) {
   const { data: categories } = useCategories(branchId);
   const [activeCategoryId, setActiveCategoryId] = useState<string | undefined>(undefined);
@@ -128,11 +131,24 @@ export function ProductGrid({
             </span>
             <span className="flex w-full items-baseline justify-between gap-2">
               <span className="text-sm font-semibold tabular-nums text-foreground lg:text-base">
-                {formatCurrency(item.price)}
+                {formatCurrency(
+                  toInclusivePrice(
+                    Number(item.price),
+                    Number(item.taxRatePercent ?? 0),
+                    taxMode,
+                  ),
+                )}
               </span>
               {item.halfPrice != null && (
                 <span className="hidden text-[11px] tabular-nums text-muted-foreground lg:inline">
-                  Half {formatCurrency(item.halfPrice)}
+                  Half{" "}
+                  {formatCurrency(
+                    toInclusivePrice(
+                      Number(item.halfPrice),
+                      Number(item.taxRatePercent ?? 0),
+                      taxMode,
+                    ),
+                  )}
                 </span>
               )}
             </span>

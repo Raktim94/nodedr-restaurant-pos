@@ -37,6 +37,7 @@
   "order.items": "articles",
   "order.couldNotPlace": "Impossible de passer la commande — demandez de l'aide à un membre du personnel.",
   "order.pricesIncludeTax": "Les prix incluent les taxes. Le personnel confirmera votre commande sous peu.",
+  "order.taxAddedAtBill": "Les taxes sont ajoutées sur votre facture. Le personnel confirmera votre commande sous peu.",
   "nav.myDeliveries": "Mes livraisons",
   "nav.group.sales": "Ventes",
   "nav.group.kitchen": "Cuisine et menu",

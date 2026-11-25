@@ -37,6 +37,7 @@
   "order.items": "itens",
   "order.couldNotPlace": "Não foi possível enviar seu pedido. Peça ajuda à equipe do restaurante.",
   "order.pricesIncludeTax": "Os preços já incluem os impostos. A equipe vai confirmar seu pedido em instantes.",
+  "order.taxAddedAtBill": "Os impostos serão adicionados à sua conta. A equipe vai confirmar seu pedido em instantes.",
   "kiosk.welcome.title": "Faça seu pedido aqui",
   "kiosk.welcome.touch": "Toque na tela para começar",
   "kiosk.service.title": "Onde você vai comer?",

@@ -170,6 +170,17 @@ export function CheckoutPanel({
   const bill: BillPreview | undefined = billQuery.data;
   const locked = (bill?.locked ?? false) || hasPayments;
   const repricing = adjustments !== settled;
+  // The preview already includes the current redemption, so add it back to get
+  // the amount available to redeem against. A point's value is configured per
+  // restaurant; using 1 here silently over-redeems when it is set to e.g. 2.
+  const pointValue = Number(settings?.restaurant.loyaltyPointValue ?? 0);
+  const preLoyaltyTotal = round2(
+    (bill?.totalDue ?? 0) + (bill?.loyaltyDiscountAmount ?? 0),
+  );
+  const maxRedeemablePoints =
+    pointValue > 0
+      ? Math.max(0, Math.floor(preLoyaltyTotal / pointValue))
+      : 0;
 
   // A coupon is checked when applied, so the bill above only ever sees a valid
   // code (or none) and never drops the happy-hour discount on an error.
@@ -232,6 +243,11 @@ export function CheckoutPanel({
     if (completed) return;
     if (upiUri) {
       publishDisplay({ kind: "upi", total: upiAmount, uri: upiUri, payee: upiName || "" });
+    } else {
+      // Switching to cash (or covering the balance with a gift card) must
+      // remove the QR from the customer screen, not leave the last amount
+      // showing while the cashier takes a different tender.
+      publishDisplay({ kind: "idle" });
     }
   }, [upiUri, upiAmount, upiName, completed]);
 
@@ -247,7 +263,9 @@ export function CheckoutPanel({
   };
 
   const handleCheckout = () => {
-    if (!bill || repricing) return;
+    // placeholderData keeps the previous bill on screen while the preview
+    // refetches. Never charge against those stale figures.
+    if (!bill || repricing || billQuery.isFetching) return;
     const payments =
       plan.applied > 0
         ? [
@@ -565,7 +583,9 @@ export function CheckoutPanel({
               type="button"
               className="text-xs font-medium text-primary hover:underline"
               onClick={() =>
-                setPointsToRedeem(String(Math.min(customer.loyaltyPoints, Math.floor(bill?.totalDue ?? 0))))
+                setPointsToRedeem(
+                  String(Math.min(customer.loyaltyPoints, maxRedeemablePoints)),
+                )
               }
             >
               Max ({customer.loyaltyPoints} available)
@@ -575,7 +595,7 @@ export function CheckoutPanel({
             id="points"
             type="number"
             min="0"
-            max={customer.loyaltyPoints}
+            max={Math.min(customer.loyaltyPoints, maxRedeemablePoints)}
             className="h-11"
             value={pointsToRedeem}
             onChange={(e) => setPointsToRedeem(e.target.value)}
@@ -766,7 +786,9 @@ export function CheckoutPanel({
       <div className="sticky bottom-0 z-10 -mx-1 bg-card px-1 pb-1 pt-2 max-lg:border-t max-lg:border-border max-lg:shadow-[0_-8px_12px_-10px_rgba(0,0,0,0.25)]">
         <Button
           className="h-12 w-full text-base"
-          disabled={checkout.isPending || !bill || repricing || !plan.valid}
+          disabled={
+            checkout.isPending || !bill || repricing || billQuery.isFetching || !plan.valid
+          }
           onClick={handleCheckout}
         >
           {checkout.isPending

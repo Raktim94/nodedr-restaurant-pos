@@ -42,6 +42,7 @@ export class PublicBillService {
         discountAmount: Number(overrides.discountAmount),
         taxAmount: Number(overrides.taxAmount),
         tipAmount: Number(overrides.tipAmount),
+        deliveryFee: Number(overrides.deliveryFee),
         loyaltyDiscountAmount: Number(overrides.loyaltyDiscountAmount),
         totalAmount: Number(overrides.totalAmount),
         isProvisional: overrides.isProvisional,

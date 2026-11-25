@@ -76,6 +76,24 @@ export function computeBill(input: BillInput): Bill {
   };
 }
 
+/**
+ * How many points a bill of `amount` can actually absorb at `pointValue` per
+ * point. computeBill caps the currency discount, but the point *count* is what
+ * gets debited from the customer — cap that too or a small bill can burn a
+ * large balance for no extra discount.
+ */
+export function affordableLoyaltyPoints(
+  amount: number,
+  pointValue: number,
+  requested: number,
+): number {
+  if (!(amount > 0) || !(pointValue > 0)) return 0;
+  return Math.max(
+    0,
+    Math.min(Math.floor(requested), Math.floor(amount / pointValue)),
+  );
+}
+
 /** The percentage equivalent of a currency discount, to 2 decimals. */
 export function discountPercentOf(
   subtotal: number,

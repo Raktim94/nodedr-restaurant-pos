@@ -24,6 +24,7 @@ function build(found: unknown) {
       update: jest.fn(async () => ({})),
     },
     order: { updateMany: jest.fn(async () => ({ count: 3 })) },
+    $executeRaw: jest.fn(async () => 3),
   };
   const prisma: any = {
     integrationApiKey: { findFirst: jest.fn(async () => found) },
@@ -47,6 +48,20 @@ describe('IntegrationApiKeysService.rotate', () => {
       where: { integrationKeyId: 'k1' },
       data: { integrationKeyId: 'k2' },
     });
+    // The idempotency prefix must move with the order or a retry creates a
+    // second order under the rotated key.
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    const args = (tx.$executeRaw as jest.Mock).mock.calls[0];
+    expect(args[0]).toEqual([
+      '\n        UPDATE orders\n        SET "clientRequestId" = ',
+      ' || substring("clientRequestId" from length(',
+      ') + 1)\n        WHERE "integrationKeyId" = ',
+      '\n          AND "clientRequestId" LIKE ',
+      '\n      ',
+    ]);
+    expect(args).toContain('int:k1:');
+    expect(args).toContain('int:k2:');
+    expect(args).toContain('int:k1:%');
     expect(tx.integrationApiKey.update).toHaveBeenCalledWith({
       where: { id: 'k1' },
       data: { revokedAt: expect.any(Date) },

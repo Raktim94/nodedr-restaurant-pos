@@ -16,6 +16,7 @@ import { LOCALE_TAGS } from "@/lib/i18n/locales";
 import { api, ApiError } from "@/lib/api";
 import { playSuccessChime, vibrateSuccess } from "@/lib/celebrate";
 import { formatCurrency } from "@/lib/format";
+import { toInclusivePrice } from "@/lib/pricing-preview";
 import { uuid } from "@/lib/uuid";
 
 interface PublicMenuItem {
@@ -23,6 +24,7 @@ interface PublicMenuItem {
   name: string;
   description: string | null;
   price: string;
+  taxRatePercent: string;
   isVeg: boolean;
   modifierGroups: {
     modifierGroup: {
@@ -82,6 +84,7 @@ interface PublicMenuCategory {
 interface PublicMenuResponse {
   branchName: string;
   currency: string;
+  taxMode: "INCLUSIVE" | "EXCLUSIVE";
   tableName: string;
   categories: PublicMenuCategory[];
   payments?: { cash: boolean; online: boolean };
@@ -220,6 +223,12 @@ export default function PublicMenuPage({
     retry: false,
   });
   const formatPrice = (amount: number | string) => formatCurrency(amount, data?.currency, LOCALE_TAGS[locale]);
+  const displayPrice = (item: PublicMenuItem, extra = 0) =>
+    toInclusivePrice(
+      Number(item.price) + extra,
+      Number(item.taxRatePercent ?? 0),
+      data?.taxMode ?? "INCLUSIVE",
+    );
 
   // Live status of the table's tab and any pending waiter/bill request.
   const { data: status } = useQuery({
@@ -301,7 +310,7 @@ export default function PublicMenuPage({
       if (existing) return prev.map((l) => (l.key === key ? { ...l, quantity: l.quantity + 1 } : l));
       return [
         ...prev,
-        { key, menuItemId: item.id, modifierIds, label, unitPrice: Number(item.price) + extra, quantity: 1 },
+        { key, menuItemId: item.id, modifierIds, label, unitPrice: displayPrice(item, extra), quantity: 1 },
       ];
     });
   };
@@ -446,7 +455,7 @@ export default function PublicMenuPage({
                               </p>
                             )}
                             <span className="mt-1 block text-sm font-medium tabular-nums text-foreground">
-                              {formatPrice(item.price)}
+                              {formatPrice(displayPrice(item))}
                             </span>
                           </div>
                         </div>
@@ -601,7 +610,9 @@ export default function PublicMenuPage({
       />
 
       <footer className="border-t border-border px-5 py-6 text-center text-xs text-muted-foreground">
-        {t("order.pricesIncludeTax")}
+        {data?.taxMode === "EXCLUSIVE"
+          ? t("order.taxAddedAtBill")
+          : t("order.pricesIncludeTax")}
       </footer>
 
       {cartCount > 0 && (

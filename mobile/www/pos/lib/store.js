@@ -192,7 +192,12 @@ export async function replaceEverything(b) {
     const kvs = t.objectStore('kv');
     if (b.counters) {
       for (const [key, value] of Object.entries(b.counters)) {
-        if (/^(seq|ordseq|kotseq):/.test(key)) kvs.put(value, key);
+        if (!/^(seq|ordseq|kotseq):/.test(key)) continue;
+        // The backup's number is a floor, not an overwrite: sales taken after
+        // the backup may already have issued a higher number (and may have
+        // reached the server). Rewinding here reprints duplicate bills.
+        const g = kvs.get(key);
+        g.onsuccess = () => kvs.put(Math.max(Number(g.result) || 0, Number(value) || 0), key);
       }
     } else {
       // A backup made before counters were included: never reissue a number that is in the restored data.
@@ -206,6 +211,36 @@ export async function replaceEverything(b) {
     t.oncomplete = resolve;
     t.onerror = t.onabort = () => reject(t.error);
   });
+}
+
+/**
+ * Finalise a checkout: mark the linked order PAID and consume the resume
+ * marker in ONE transaction. Killing the app between those two writes used to
+ * leave a stale marker whose signature matched the next identical purchase —
+ * the already-paid sale was reused and the new sale never recorded.
+ */
+export function completeCheckout(orderId, saleId, paidAt) {
+  return open().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const stores = orderId ? ['orders', 'kv'] : ['kv'];
+        const t = db.transaction(stores, 'readwrite');
+        if (orderId) {
+          const os = t.objectStore('orders');
+          const req = os.get(orderId);
+          req.onsuccess = () => {
+            const current = req.result;
+            if (current) {
+              os.put({ ...current, status: 'PAID', saleId, paidAt });
+            }
+          };
+        }
+        t.objectStore('kv').delete('pendingSale');
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+        t.onabort = () => reject(t.error);
+      }),
+  );
 }
 
 /**

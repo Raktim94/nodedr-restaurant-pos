@@ -3,7 +3,7 @@
 // whenever it can. Plain DOM + modules: nothing here needs a build step.
 import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
-import { events, reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
+import { completeCheckout, events, reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
 import { agingBuckets, backupJson, buildCollection, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, dueOf, dueSales, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
 import { planTables } from './lib/tables.js';
 import { pushKey } from './lib/scanburst.js';
@@ -1503,9 +1503,35 @@ function openPay() {
         const draft = saleFrom('', bill, st.rows.map((r) => ({ ...r })), st.change);
         const sig = checkoutSig(draft);
         const pending = await kv.get('pendingSale');
-        const existing = pending && pending.sig === sig ? await sales.get(pending.saleId) : null;
+        let existing = pending && pending.sig === sig ? await sales.get(pending.saleId) : null;
+        if (existing?.orderId) {
+          const linked = await orders.get(existing.orderId);
+          if (linked?.status === 'PAID') {
+            // The previous attempt already finished; its marker is stale.
+            // Reusing it would silently drop this sale and its stock move.
+            await kv.del('pendingSale');
+            existing = null;
+          }
+        }
         if (existing) {
-          savedSale = existing;
+          // Keep the id, number and stock marker from the interrupted attempt,
+          // but record the tender/customer/staff the cashier entered *this*
+          // time. A retry may change payment method or pay-later state.
+          savedSale = {
+            ...existing,
+            bill: draft.bill,
+            payments: draft.payments,
+            change: draft.change,
+            customer: draft.customer,
+            staffId: draft.staffId,
+            staffName: draft.staffName,
+            staffServerId: draft.staffServerId,
+            discountPercent: draft.discountPercent,
+            discountReason: draft.discountReason,
+          };
+          if (payLater) savedSale.payLater = true;
+          else delete savedSale.payLater;
+          await sales.put(savedSale);
           pendingStock = !!pending.stockApplied;
         } else {
           const number = await nextLocalNumber();
@@ -1526,10 +1552,11 @@ function openPay() {
         ]);
         pendingStock = true; // the marker committed in the same transaction as the new stock levels
       }
-      const o = S.orderId ? await orders.get(S.orderId) : null;
-      if (o) await orders.put({ ...o, status: 'PAID', saleId: sale.id, paidAt: new Date().toISOString() }); // frees the table
+      // Mark the order PAID and remove the resume marker in ONE transaction.
+      // A crash between the two used to leave a stale marker that made the
+      // next identical cart reuse this already-paid sale.
+      await completeCheckout(S.orderId || null, sale.id, new Date().toISOString());
       resetCart();
-      await kv.del('pendingSale'); // the checkout is complete: nothing left to resume
       toast(payLater ? `Saved. ${inr(dueOf(sale))} to collect later.` : 'Sale saved');
       finished = true;
       openDone(sale);

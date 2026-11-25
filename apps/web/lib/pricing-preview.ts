@@ -8,6 +8,22 @@ export function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Mirror of backend toEffectiveInclusiveUnitPrice. An EXCLUSIVE menu stores
+ * pre-tax prices, so every preview must gross them up before showing them or
+ * the screen disagrees with the bill the server produces.
+ */
+export function toInclusivePrice(
+  rawPrice: number,
+  taxRatePercent: number,
+  taxMode: "INCLUSIVE" | "EXCLUSIVE",
+): number {
+  if (taxMode === "EXCLUSIVE" && taxRatePercent > 0) {
+    return round2(rawPrice * (1 + taxRatePercent / 100));
+  }
+  return round2(rawPrice);
+}
+
 export function lineTotal(unitPriceInclusive: number, quantity: number): number {
   return round2(unitPriceInclusive * quantity);
 }

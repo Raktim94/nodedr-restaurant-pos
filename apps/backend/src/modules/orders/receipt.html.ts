@@ -54,6 +54,8 @@ interface ReceiptOrder {
   discountAmount: number;
   taxAmount: number;
   tipAmount: number;
+  /** Included in totalAmount; older callers may not supply it. */
+  deliveryFee?: number;
   loyaltyPointsRedeemed: number;
   loyaltyDiscountAmount: number;
   totalAmount: number;
@@ -178,6 +180,9 @@ export function buildReceiptHtml({
       `Loyalty (${order.loyaltyPointsRedeemed} pts)`,
       `- ${money(order.loyaltyDiscountAmount)}`,
     ]);
+  }
+  if ((order.deliveryFee ?? 0) > 0) {
+    totalRows.push(['Delivery', money(order.deliveryFee ?? 0)]);
   }
   if (order.tipAmount > 0) {
     totalRows.push(['Tip', money(order.tipAmount)]);

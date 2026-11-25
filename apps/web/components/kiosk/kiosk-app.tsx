@@ -104,7 +104,10 @@ export function KioskApp({ token }: { token: string }) {
 
   const interacting =
     state.step === "service" || state.step === "menu" || state.step === "review";
-  useIdle(interacting && state.submit.status !== "pending" && idleWarn === null, IDLE_MS, () =>
+  // An ambiguous submit outcome is deliberately locked until the guest chooses
+  // Retry (same requestId) or Start over. Auto-resetting here would discard the
+  // idempotency key and let a retry create a second paid order.
+  useIdle(interacting && !isBasketLocked(state) && idleWarn === null, IDLE_MS, () =>
     setIdleWarn(IDLE_WARN_SECONDS),
   );
   useEffect(() => {

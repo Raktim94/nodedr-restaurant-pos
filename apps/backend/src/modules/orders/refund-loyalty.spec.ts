@@ -56,6 +56,7 @@ const base = {
   refundId: 'r1',
   refundAmount: 200,
   totalAmount: 200,
+  moneyPaid: 200,
   alreadyRefunded: 0,
   pointsRedeemed: 40,
 };
@@ -121,6 +122,21 @@ describe('refund loyalty reversal', () => {
       pointsRedeemed: 0,
     });
     expect(t.updates[0].data.loyaltyPoints).toEqual({ decrement: 9 });
+  });
+
+  it('returns all redeemed points when the money portion is fully refunded', async () => {
+    // 100 bill = 60 money + 40 points. A full money refund of 60 must return
+    // all 40 points, not 24 (the old totalAmount-based share).
+    const t = tx({ earn: 0, redeem: 40, balance: 0 });
+    await run(t, {
+      refundAmount: 60,
+      totalAmount: 100,
+      moneyPaid: 60,
+      pointsRedeemed: 40,
+    });
+    expect(t.updates.map((u) => u.data.loyaltyPoints)).toEqual([
+      { increment: 40 },
+    ]);
   });
 
   it('lets restored points cover an earn reversal on the same customer', async () => {

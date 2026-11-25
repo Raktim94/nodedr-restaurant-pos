@@ -760,7 +760,8 @@ export class HrService {
   // --- Performance ---------------------------------------------------------
 
   async performance(branchId: string, from: string, to: string) {
-    const range = zonedRange(from, to, await this.time.tzForBranch(branchId));
+    const tz = await this.time.tzForBranch(branchId);
+    const range = zonedRange(from, to, tz);
     const f = range.gte;
     const t = range.lt;
     const [orders, attendance, links] = await Promise.all([
@@ -782,18 +783,30 @@ export class HrService {
         include: { user: USER },
       }),
     ]);
-    const hours = new Map<string, number>();
-    for (const r of attendance) {
-      const s = Math.max(r.clockInAt.getTime(), f.getTime());
-      const e = Math.min(r.clockOutAt!.getTime(), t.getTime());
-      if (e > s)
-        hours.set(r.userId, (hours.get(r.userId) ?? 0) + (e - s) / 3_600_000);
+    // Use the same merge/break logic as payroll. A naive clip-and-sum double
+    // counts overlapping taps and ignores unpaid breaks, so KPI hours do not
+    // reconcile with what the staff member was actually paid for.
+    const hoursByUser = new Map<string, number>();
+    for (const userId of new Set(attendance.map((r) => r.userId))) {
+      const shifts = attendance
+        .filter((r) => r.userId === userId && r.clockOutAt)
+        .map((r) => ({
+          start: r.clockInAt.getTime(),
+          end: r.clockOutAt!.getTime(),
+          breakMinutes: Number(r.breakMinutes ?? 0),
+        }));
+      hoursByUser.set(
+        userId,
+        workedByDay(shifts, f.getTime(), t.getTime(), (ms) =>
+          localDate(new Date(ms), tz),
+        ).hours,
+      );
     }
     const byUser = new Map(orders.map((o) => [o.createdById, o]));
     return links
       .map((l) => {
         const o = byUser.get(l.user.id);
-        const h = hours.get(l.user.id) ?? 0;
+        const h = hoursByUser.get(l.user.id) ?? 0;
         const sales = Number(o?._sum.totalAmount ?? 0);
         return {
           userId: l.user.id,

@@ -76,6 +76,19 @@ const srv = http.createServer((q, r) => {
     await store.kv.set('seq:261124', 50);
     await store.replaceEverything(old);
     out.aheadNext = await store.nextLocalNumber(new Date(2026, 10, 24));
+
+    // 4. a backup WITH counters is also a floor, not an overwrite
+    const withCounters = await store.readEverything();
+    await store.kv.set('seq:261124', 80);
+    await store.replaceEverything(withCounters);
+    out.aheadWithCounters = await store.nextLocalNumber(new Date(2026, 10, 24));
+
+    // 5. finishing a checkout marks the order PAID and consumes the marker together
+    await store.orders.put({ id: 'o_done', status: 'OPEN', number: 'ORD-261124-099' });
+    await store.kv.set('pendingSale', { saleId: 's_done', sig: 'x', stockApplied: true });
+    await store.completeCheckout('o_done', 's_done', '2026-11-24T00:00:00.000Z');
+    const done = await store.orders.get('o_done');
+    out.finalized = [done.status, done.saleId, await store.kv.get('pendingSale')];
     return out;
   });
   console.log(JSON.stringify(res));
@@ -92,6 +105,8 @@ const srv = http.createServer((q, r) => {
   eq('restore resumes numbering', res.nextAfterRestore, 'OFF-261124-003');
   eq('old backup numbering', res.oldBackupNext, ['OFF-261124-008', 'ORD-261124-005', 7]);
   eq('phone ahead keeps higher counter', res.aheadNext, 'OFF-261124-051');
+  eq('with-counters restore keeps higher counter', res.aheadWithCounters, 'OFF-261124-081');
+  eq('checkout finalises order and clears marker', res.finalized, ['PAID', 's_done', undefined]);
   if (fail.length) { console.error('FAIL\n' + fail.join('\n')); process.exitCode = 1; } else console.log('OK');
   await b.close(); srv.close();
 });

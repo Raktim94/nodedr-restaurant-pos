@@ -439,9 +439,11 @@ export class VerifactuService {
       data: { nextNumber: { increment: 1 } },
     });
     const number = `${s.seriesPrefix}-${String(bumped.nextNumber - 1).padStart(6, '0')}`;
-    // Tips are voluntary and outside the taxable operation; everything else the guest paid is invoiced.
-    const target =
-      this.toCents(order.totalAmount) - this.toCents(order.tipAmount);
+    // Tips are voluntary and outside the taxable operation. Loyalty points are
+    // tender, not a price reduction, so they must NOT reduce the taxable base
+    // either: totalAmount already has the loyalty deduction applied. Build the
+    // base from the stored pre-tender figures instead.
+    const target = this.taxableBaseCents(order);
     return this.append(tx, {
       restaurantId: order.branch.restaurantId,
       branchId: order.branchId,
@@ -462,6 +464,22 @@ export class VerifactuService {
       orderId,
       now: new Date(),
     });
+  }
+
+  /** Taxable base of a sale: tips and loyalty tender are outside it. */
+  private taxableBaseCents(order: {
+    subtotal: Prisma.Decimal | number;
+    discountAmount: Prisma.Decimal | number;
+    deliveryFee: Prisma.Decimal | number;
+  }): number {
+    const taxable =
+      Math.round(
+        (Number(order.subtotal) -
+          Number(order.discountAmount) +
+          Number(order.deliveryFee)) *
+          100,
+      ) / 100;
+    return this.toCents(taxable);
   }
 
   /** Records a refund as a corrective simplified invoice (R5, by difference) of the original sale. */
@@ -494,6 +512,16 @@ export class VerifactuService {
       );
       return null;
     }
+    // A retried/direct service call must not append a second corrective
+    // invoice for the same refund.
+    const duplicate = await tx.verifactuRecord.findFirst({
+      where: {
+        refundId,
+        invoiceType: 'R5',
+        environment: s.environment,
+      },
+    });
+    if (duplicate) return duplicate;
     const bumped = await tx.verifactuSettings.update({
       where: { branchId: s.branchId },
       data: { nextRefundNumber: { increment: 1 } },
@@ -515,7 +543,20 @@ export class VerifactuService {
         grossCents: this.toCents(i.lineTotal),
         ratePercent: Number(i.taxRateSnapshot),
       })),
-      targetCents: -this.toCents(amount),
+      // Reverse the same taxable base the F2 used, in proportion to the money
+      // portion actually refunded. Tips never entered the F2 and loyalty is
+      // returned as points, so neither should shrink the corrective invoice.
+      targetCents: -Math.round(
+        this.taxableBaseCents(order) *
+          Math.min(
+            1,
+            Number(amount) /
+              Math.max(
+                0.01,
+                Number(order.totalAmount) - Number(order.loyaltyDiscountAmount),
+              ),
+          ),
+      ),
       orderId,
       refundId,
       rectified: [
