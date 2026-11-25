@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { priceLine } from './pricing';
 import {
+  affordableLoyaltyPoints,
   assertManualDiscountAllowed,
   computeBill,
   discountPercentOf,
@@ -10,6 +11,15 @@ import {
 
 const line = (price: number, qty = 1, tax = 0) =>
   priceLine({ quantity: qty, unitPriceInclusive: price, taxRatePercent: tax });
+
+describe('affordableLoyaltyPoints', () => {
+  it('caps the debited points to the value the bill can absorb', () => {
+    expect(affordableLoyaltyPoints(100, 1, 1000)).toBe(100);
+    expect(affordableLoyaltyPoints(100, 2, 100)).toBe(50);
+    expect(affordableLoyaltyPoints(100, 0, 100)).toBe(0);
+    expect(affordableLoyaltyPoints(100, 1, 40)).toBe(40);
+  });
+});
 
 describe('computeBill', () => {
   it('has no discount, tax-inclusive total equals subtotal', () => {

@@ -37,6 +37,7 @@ import {
   toEffectiveInclusiveUnitPrice,
 } from './pricing';
 import {
+  affordableLoyaltyPoints,
   computeBill,
   assertManualDiscountAllowed,
   discountPercentOf,
@@ -1491,21 +1492,38 @@ export class OrdersService {
     // Points a guest asked to use when ordering online apply here unless staff
     // choose otherwise; they are capped at the balance so an out-of-date
     // request can never block taking payment.
-    const pointsToRedeem =
+    const requestedPoints =
       adj.loyaltyPointsToRedeem ??
       Math.min(order.requestedRedeemPoints, order.customer?.loyaltyPoints ?? 0);
-    if (pointsToRedeem > 0 && !customerId) {
+    if (requestedPoints > 0 && !customerId) {
       throw new BadRequestException(
         'Cannot redeem loyalty points without a customer on the order',
       );
     }
+    const pointValue = Number(branch.restaurant.loyaltyPointValue);
+    const beforeLoyalty = computeBill({
+      lines,
+      discountPercent: adj.discountPercent,
+      discountFlat: adj.discountFlat,
+      autoDiscount: auto.amount,
+      loyaltyDiscountRequested: 0,
+      tip: adj.tipAmount,
+      deliveryFee: Number(order.deliveryFee),
+    });
+    // computeBill caps the *currency* discount, but the caller then debits the
+    // raw point count. Cap the points themselves to what the bill is worth so
+    // a ₹100 bill cannot burn 1,000 points for a ₹100 discount.
+    const pointsToRedeem = affordableLoyaltyPoints(
+      beforeLoyalty.totalDue,
+      pointValue,
+      requestedPoints,
+    );
     const bill = computeBill({
       lines,
       discountPercent: adj.discountPercent,
       discountFlat: adj.discountFlat,
       autoDiscount: auto.amount,
-      loyaltyDiscountRequested:
-        pointsToRedeem * Number(branch.restaurant.loyaltyPointValue),
+      loyaltyDiscountRequested: pointsToRedeem * pointValue,
       tip: adj.tipAmount,
       deliveryFee: Number(order.deliveryFee),
     });
@@ -2117,6 +2135,8 @@ export class OrdersService {
       refundId: string;
       refundAmount: number;
       totalAmount: number;
+      /** Portion of the bill paid with money (total minus loyalty tender). */
+      moneyPaid: number;
       alreadyRefunded: number;
       pointsRedeemed: number;
     },
@@ -2166,13 +2186,20 @@ export class OrdersService {
       (a.alreadyRefunded + a.refundAmount) * 100,
     );
     const share = totalCents <= 0 ? 1 : Math.min(1, refundedCents / totalCents);
+    // Redeemed points are returned in proportion to the money actually
+    // refunded, relative to the money originally paid. Using totalAmount here
+    // would leave some points unreturned after the money portion is fully
+    // refunded (e.g. 60 money + 40 points on a 100 bill).
+    const moneyCents = Math.round(Math.max(0, a.moneyPaid) * 100);
+    const redeemShare =
+      moneyCents <= 0 ? 0 : Math.min(1, refundedCents / moneyCents);
     const reverseEarn = Math.max(
       0,
       Math.floor(earned * share) - priorReversedEarn,
     );
     const restoreRedeem = Math.max(
       0,
-      Math.floor(redeemed * share) - priorRestoredRedeem,
+      Math.floor(redeemed * redeemShare) - priorRestoredRedeem,
     );
     if (!reverseEarn && !restoreRedeem) return;
 
@@ -2391,12 +2418,16 @@ export class OrdersService {
           0,
         ),
       );
-      const refundable = round2(
-        Number(order.totalAmount) - alreadyRefunded - held,
+      // Loyalty points are tender, not a price reduction: that part of the
+      // bill was never paid in money and is restored as points below. Capping
+      // money refunds to the cash/card/UPI portion prevents paying it twice.
+      const moneyPaid = round2(
+        Number(order.totalAmount) - Number(order.loyaltyDiscountAmount),
       );
+      const refundable = round2(moneyPaid - alreadyRefunded - held);
       if (dto.amount > refundable) {
         throw new BadRequestException(
-          `Cannot refund ${dto.amount} — only ${refundable} remains refundable on this order`,
+          `Cannot refund ${dto.amount} — only ${refundable} can be refunded in money on this order (loyalty points are returned as points)`,
         );
       }
 
@@ -2443,6 +2474,7 @@ export class OrdersService {
         refundId: created.id,
         refundAmount: dto.amount,
         totalAmount: Number(order.totalAmount),
+        moneyPaid,
         alreadyRefunded,
         pointsRedeemed: order.loyaltyPointsRedeemed,
       });
