@@ -106,7 +106,8 @@ export class ReportSchedulesService {
     return { ok: true };
   }
 
-  private async get(branchId: string, id: string) {
+  /** Branch-scoped lookup, also used by the controller for report-level RBAC. */
+  async get(branchId: string, id: string) {
     const s = await this.prisma.reportSchedule.findFirst({
       where: { id, branchId },
     });

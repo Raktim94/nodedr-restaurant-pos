@@ -65,6 +65,20 @@ export class ReportSchedulesController {
     return this.schedules.create(branchId, body);
   }
 
+  /**
+   * Creating a schedule is guarded by the report key; the other operations
+   * load the schedule and must apply the same check or a user with only
+   * generic report/export access can email themselves a sales report.
+   */
+  private async assertScheduleReportAccess(
+    u: SessionUser,
+    branchId: string,
+    id: string,
+  ) {
+    const schedule = await this.schedules.get(branchId, id);
+    assertCanViewReport(u.permissions, schedule.reportKey);
+  }
+
   @Auth('reports.access', 'data.export')
   @Patch(':id')
   @UsePipes(new ZodValidationPipe(activeSchema))
@@ -75,6 +89,7 @@ export class ReportSchedulesController {
     @Body() body: z.infer<typeof activeSchema>,
   ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
+    await this.assertScheduleReportAccess(u, branchId, id);
     return this.schedules.setActive(branchId, id, body.isActive);
   }
 
@@ -86,6 +101,7 @@ export class ReportSchedulesController {
     @Param('id') id: string,
   ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
+    await this.assertScheduleReportAccess(u, branchId, id);
     return this.schedules.sendNow(branchId, id);
   }
 
@@ -98,6 +114,7 @@ export class ReportSchedulesController {
     @Param('id') id: string,
   ) {
     await this.branchAccess.assertAccess(u.restaurantId, branchId);
+    await this.assertScheduleReportAccess(u, branchId, id);
     return this.schedules.remove(branchId, id);
   }
 }
