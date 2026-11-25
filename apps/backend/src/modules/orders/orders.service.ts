@@ -1854,6 +1854,23 @@ export class OrdersService {
           allowPartial: dto.allowPartial,
         });
 
+        // Store credit is tender just like a gift card: debit the wallet for
+        // the amount actually applied (after cash over-tender is normalised)
+        // inside this same transaction. Without this the order went PAID with
+        // a STORE_CREDIT row while the customer kept their money.
+        const storeCreditAmount = round2(
+          settlement.payments
+            .filter((p) => p.method === 'STORE_CREDIT')
+            .reduce((sum, p) => sum + p.amount, 0),
+        );
+        if (storeCreditAmount > 0) {
+          await this.debitStoreCredit(tx, {
+            branchId,
+            customerId: freshOrder.customerId ?? effectiveCustomerId,
+            amount: storeCreditAmount,
+          });
+        }
+
         const paymentRows = settlement.payments.map((p, i) => ({
           method: p.method as never,
           amount: p.amount,
@@ -2256,6 +2273,51 @@ export class OrdersService {
   }
 
   /**
+   * Store credit is real tender: accepting it must take the money out of the
+   * customer's wallet in the same transaction that records the payment. A
+   * guarded updateMany closes the same race as loyalty/gift-card redemption —
+   * two concurrent checkouts must not both spend the same balance.
+   */
+  private async debitStoreCredit(
+    tx: Prisma.TransactionClient,
+    args: { branchId: string; customerId: string | null; amount: number },
+  ): Promise<void> {
+    const amount = round2(args.amount);
+    if (amount <= 0) return;
+    if (!args.customerId) {
+      throw new BadRequestException(
+        'Store credit requires a customer on the bill',
+      );
+    }
+    const customer = await tx.customer.findFirst({
+      where: { id: args.customerId, branchId: args.branchId },
+      select: { walletBalance: true },
+    });
+    if (!customer) {
+      throw new BadRequestException('Customer not found for this branch');
+    }
+    const available = Number(customer.walletBalance);
+    if (available < amount) {
+      throw new BadRequestException(
+        `Customer only has ${available} in store credit`,
+      );
+    }
+    const result = await tx.customer.updateMany({
+      where: {
+        id: args.customerId,
+        branchId: args.branchId,
+        walletBalance: { gte: amount },
+      },
+      data: { walletBalance: { decrement: amount } },
+    });
+    if (result.count === 0) {
+      throw new BadRequestException(
+        'Store-credit balance changed — please retry checkout',
+      );
+    }
+  }
+
+  /**
    * A refund issued back to a gift card must credit EXACTLY the amount the
    * refund record says, so the books and the card balance never disagree.
    *
@@ -2350,6 +2412,15 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
     if (order.status !== 'PAID') {
       throw new BadRequestException('Only a paid order can be refunded');
+    }
+    // There is no wallet to credit on a walk-in bill. Refusing here is
+    // essential: otherwise the Refund row is created, the refundable balance
+    // drops to zero, and the guest receives nothing but can never be paid by
+    // another method.
+    if (dto.method === 'STORE_CREDIT' && !order.customerId) {
+      throw new BadRequestException(
+        'This bill has no customer wallet to refund store credit to. Refund it by cash instead.',
+      );
     }
 
     const refund = await this.prisma.$transaction(async (tx) => {
@@ -2498,10 +2569,15 @@ export class OrdersService {
         // STORE_CREDIT refunds for the same customer (from different
         // orders) could otherwise both read the same stale walletBalance
         // and one credit would be silently lost.
-        await tx.customer.update({
-          where: { id: order.customerId },
+        const credited = await tx.customer.updateMany({
+          where: { id: order.customerId, branchId },
           data: { walletBalance: { increment: dto.amount } },
         });
+        if (credited.count === 0) {
+          throw new BadRequestException(
+            'Customer no longer exists — cannot credit store credit',
+          );
+        }
       }
 
       return created;
