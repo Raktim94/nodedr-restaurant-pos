@@ -193,12 +193,11 @@ export async function replaceEverything(b) {
     if (b.counters) {
       for (const [key, value] of Object.entries(b.counters)) {
         if (!/^(seq|ordseq|kotseq):/.test(key)) continue;
-        // Restore counters exactly to the backup value. The backup includes
-        // all sales up to that point, so restoring the counter rewinds numbering
-        // to where the backup left off. Keeping a higher counter (from sales
-        // taken after the backup) would reissue duplicate bill numbers.
+        // The backup's number is a floor, not an overwrite: sales taken after
+        // the backup may already have issued a higher number (and may have
+        // reached the server). Rewinding here reprints duplicate bills.
         const g = kvs.get(key);
-        g.onsuccess = () => kvs.put(Number(value) || 0, key);
+        g.onsuccess = () => kvs.put(Math.max(Number(g.result) || 0, Number(value) || 0), key);
       }
     } else {
       // A backup made before counters were included: never reissue a number that is in the restored data.
