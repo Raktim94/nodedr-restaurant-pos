@@ -615,10 +615,12 @@ export class BackupService {
       );
 
       let uploadsKey: string | undefined;
+      let uploadsSha256: string | undefined;
       let totalSize = dbBuffer.length;
       if (uploadsExist) {
         uploadsKey = `${timestamp}/uploads.tar.gz`;
         const uploadsBuffer = await fs.readFile(uploadsArchivePath);
+        uploadsSha256 = createHash('sha256').update(uploadsBuffer).digest('hex');
         await s3.send(
           new PutObjectCommand({
             Bucket: config.bucket,
@@ -644,15 +646,16 @@ export class BackupService {
         );
       }
       if (uploadsKey) {
-        const uploadsBuffer = await fs.readFile(uploadsArchivePath);
+        const uploadedSha256 = uploadsSha256!;
         const downloadedUploads = await this.downloadBuffer(
           s3,
           config.bucket,
           uploadsKey,
         );
-        if (downloadedUploads.length !== uploadsBuffer.length) {
+        const downloadedSha256 = createHash('sha256').update(downloadedUploads).digest('hex');
+        if (downloadedSha256 !== uploadedSha256) {
           throw new Error(
-            'Verification failed: downloaded uploads archive size does not match the local file',
+            'Verification failed: downloaded uploads archive does not match the uploaded content',
           );
         }
       }
@@ -666,6 +669,7 @@ export class BackupService {
           s3KeyUploads: uploadsKey,
           sizeBytes: totalSize,
           sha256,
+          sha256Uploads: uploadsSha256 ?? undefined,
           verifiedAt: new Date(),
         },
       });
@@ -917,6 +921,17 @@ export class BackupService {
           record.s3KeyUploads,
           uploadsArchivePath,
         );
+        // Verify uploads archive integrity against the stored hash (see
+        // runBackup for where it is computed and stored).
+        if (record.sha256Uploads) {
+          const downloadedUploads = await fs.readFile(uploadsArchivePath);
+          const downloadedSha256 = createHash('sha256').update(downloadedUploads).digest('hex');
+          if (downloadedSha256 !== record.sha256Uploads) {
+            throw new BadRequestException(
+              'The stored uploads archive failed its checksum. Nothing was restored.',
+            );
+          }
+        }
         await assertSafeUploadsArchive(
           uploadsArchivePath,
           path.basename(uploadRoot),

@@ -533,6 +533,7 @@ model Backup {
   s3KeyDb      String?
   s3KeyUploads String?
   sha256       String?
+  sha256Uploads String?
 
   // Null for scheduled/cron-triggered runs (see backup.service.ts's
   // @Cron job) — only manual triggers have an actor.
