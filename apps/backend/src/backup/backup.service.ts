@@ -620,7 +620,9 @@ export class BackupService {
       if (uploadsExist) {
         uploadsKey = `${timestamp}/uploads.tar.gz`;
         const uploadsBuffer = await fs.readFile(uploadsArchivePath);
-        uploadsSha256 = createHash('sha256').update(uploadsBuffer).digest('hex');
+        uploadsSha256 = createHash('sha256')
+          .update(uploadsBuffer)
+          .digest('hex');
         await s3.send(
           new PutObjectCommand({
             Bucket: config.bucket,
@@ -652,7 +654,9 @@ export class BackupService {
           config.bucket,
           uploadsKey,
         );
-        const downloadedSha256 = createHash('sha256').update(downloadedUploads).digest('hex');
+        const downloadedSha256 = createHash('sha256')
+          .update(downloadedUploads)
+          .digest('hex');
         if (downloadedSha256 !== uploadedSha256) {
           throw new Error(
             'Verification failed: downloaded uploads archive does not match the uploaded content',
@@ -925,7 +929,9 @@ export class BackupService {
         // runBackup for where it is computed and stored).
         if (record.sha256Uploads) {
           const downloadedUploads = await fs.readFile(uploadsArchivePath);
-          const downloadedSha256 = createHash('sha256').update(downloadedUploads).digest('hex');
+          const downloadedSha256 = createHash('sha256')
+            .update(downloadedUploads)
+            .digest('hex');
           if (downloadedSha256 !== record.sha256Uploads) {
             throw new BadRequestException(
               'The stored uploads archive failed its checksum. Nothing was restored.',
