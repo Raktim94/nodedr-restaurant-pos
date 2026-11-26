@@ -1,5 +1,13 @@
-import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { AiService, ChatMessage } from './ai.service';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request';
 
@@ -18,7 +26,7 @@ export class ExecuteActionDto {
   actionPayload: ExecuteActionPayload;
 }
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('v1/ai')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
