@@ -28,6 +28,7 @@ import { MarketingService } from '../marketing/marketing.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { resolveProfile } from './escpos/encoder';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertMenuItemsAvailable } from '../menu/item-availability';
 import { zonedRange } from '../../common/time';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import {
@@ -153,6 +154,22 @@ export class OrdersService {
         `${hidden.map((h) => `"${h.name}"`).join(', ')} is not available for online ordering`,
       );
     }
+  }
+
+  /** Serialize a new sale with a staff pause; concurrent sales can share these locks. */
+  private async assertItemsForSale(
+    tx: Prisma.TransactionClient,
+    branchId: string,
+    ids: string[],
+  ) {
+    const items = await tx.$queryRaw<
+      { id: string; isActive: boolean; pausedUntil: Date | null }[]
+    >`
+      SELECT id, "isActive", "pausedUntil" FROM menu_items
+      WHERE "branchId" = ${branchId} AND id IN (${Prisma.join(ids)})
+      ORDER BY id FOR SHARE
+    `;
+    assertMenuItemsAvailable(ids, items);
   }
 
   private async getBranchTaxMode(branchId: string): Promise<TaxMode> {
@@ -368,6 +385,9 @@ export class OrdersService {
     }
 
     const order = await this.prisma.$transaction(async (tx) => {
+      // An offline sale already happened. A later pause cannot invalidate it on sync.
+      if (!options.historical)
+        await this.assertItemsForSale(tx, branchId, menuItemIds);
       // The number is chosen inside the transaction under a per-branch, per-day lock. Choosing it before (read the latest,
       // add one) let simultaneous orders pick the same number, and all but one were refused with a conflict.
       const orderNumber = await this.nextOrderNumber(branchId, tx);
@@ -576,6 +596,7 @@ export class OrdersService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.assertOrderEditableInTx(tx, orderId);
+      await this.assertItemsForSale(tx, branchId, menuItemIds);
       const newItems = await Promise.all(
         lineInputs.map((line) =>
           tx.orderItem.create({

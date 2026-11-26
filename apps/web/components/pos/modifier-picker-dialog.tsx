@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
+import { PauseBadge } from "@/components/menu/pause-badge";
 import {
   Dialog,
   DialogContent,
@@ -51,11 +52,13 @@ function defaultSelection(item: PickerItem): Record<string, Set<string>> {
 // lint rules flag as an avoidable derived-state effect.
 function ModifierPickerBody({
   item,
+  pauseLabel,
   formatPrice,
   allowCustom,
   onConfirm,
 }: {
   item: PickerItem;
+  pauseLabel?: string;
   formatPrice: (amount: number | string) => string;
   allowCustom: boolean;
   onConfirm: (modifierIds: string[], modifierLabel: string, portion?: Portion) => void;
@@ -223,7 +226,8 @@ function ModifierPickerBody({
       </div>
 
       <DialogFooter>
-        <Button onClick={handleConfirm}>Add to cart</Button>
+        <PauseBadge label={pauseLabel} />
+        <Button disabled={!!pauseLabel} onClick={handleConfirm}>Add to cart</Button>
       </DialogFooter>
     </>
   );
@@ -231,6 +235,7 @@ function ModifierPickerBody({
 
 export function ModifierPickerDialog({
   item,
+  pauseLabel,
   formatPrice = formatCurrency,
   open,
   onOpenChange,
@@ -238,6 +243,7 @@ export function ModifierPickerDialog({
   allowCustom = false,
 }: {
   item: PickerItem | null;
+  pauseLabel?: string;
   formatPrice?: (amount: number | string) => string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -251,6 +257,7 @@ export function ModifierPickerDialog({
           <ModifierPickerBody
             key={item.id}
             item={item}
+            pauseLabel={pauseLabel}
             formatPrice={formatPrice}
             allowCustom={allowCustom}
             onConfirm={(modifierIds, label, portion) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import type { MenuCategoryDto, MenuItemDto } from "@nodedr-restaurant/types";
+import type { MenuCategoryDto, MenuItemDto, MenuItemPauseDto } from "@nodedr-restaurant/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -48,6 +48,7 @@ export interface MenuItem {
   taxRatePercent: string;
   isVeg: boolean;
   isActive: boolean;
+  pausedUntil?: string | null;
   isCombo: boolean;
   barcode: string | null;
   sku: string | null;
@@ -133,6 +134,21 @@ export function useUpdateMenuItem(branchId: string | null) {
     mutationFn: ({ id, dto }: { id: string; dto: Partial<MenuItemDto> }) =>
       api.patch(`/menu/items/${id}?branchId=${branchId}`, dto),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["menu", "items", branchId] }),
+  });
+}
+
+export function useSetMenuItemPause(branchId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, change }: { id: string; change: MenuItemPauseDto }) =>
+      api.patch<{ id: string; pausedUntil: string | null }>(`/menu/items/${id}/pause?branchId=${branchId}`, change),
+    onSuccess: ({ id, pausedUntil }) => {
+      const queryKey = ["menu", "items", branchId];
+      queryClient.setQueriesData<MenuItem[]>({ queryKey }, (items) =>
+        items?.map((item) => item.id === id ? { ...item, pausedUntil } : item),
+      );
+      return queryClient.invalidateQueries({ queryKey });
+    },
   });
 }
 

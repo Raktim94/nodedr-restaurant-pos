@@ -43,6 +43,31 @@ export function MessageScrollerProvider({
     }
   }, []);
 
+  const followMessages = React.useEffectEvent(() => {
+    if (autoScroll && isAtBottom) scrollToBottom("instant");
+  });
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const updatePosition = () => {
+      setIsAtBottom(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 1);
+    };
+
+    const observer = new ResizeObserver(() => {
+      followMessages();
+      updatePosition();
+    });
+    observer.observe(viewport);
+    const content = viewport.firstElementChild;
+    if (content) observer.observe(content);
+    viewport.addEventListener("scroll", updatePosition);
+    return () => {
+      observer.disconnect();
+      viewport.removeEventListener("scroll", updatePosition);
+    };
+  }, []);
+
   return (
     <MessageScrollerContext.Provider value={{ viewportRef, isAtBottom, scrollToBottom }}>
       {children}
@@ -70,12 +95,8 @@ MessageScroller.displayName = "MessageScroller";
 export type MessageScrollerViewportProps = React.HTMLAttributes<HTMLDivElement>;
 
 export const MessageScrollerViewport = React.forwardRef<HTMLDivElement, MessageScrollerViewportProps>(
-  ({ className, children, onScroll, ...props }, ref) => {
+  ({ className, children, ...props }, ref) => {
     const { viewportRef } = useMessageScroller();
-
-    const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-      onScroll?.(e);
-    };
 
     // Hands the element to both the scroller's own ref and any ref the caller passed.
     const setRefs = (node: HTMLDivElement | null) => {
@@ -90,7 +111,6 @@ export const MessageScrollerViewport = React.forwardRef<HTMLDivElement, MessageS
         tabIndex={0}
         role="region"
         aria-label="Message transcript"
-        onScroll={handleScroll}
         className={cn(
           "flex-1 overflow-y-auto focus-visible:outline-none scroll-smooth",
           className

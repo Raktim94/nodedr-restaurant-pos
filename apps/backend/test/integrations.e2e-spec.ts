@@ -1,20 +1,20 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return -- supertest bodies are untyped by design */
 // Integration API end-to-end against a REAL, migrated + seeded Postgres.
 //   INTEGRATIONS_E2E=1 DATABASE_URL=... JWT_SECRET=x npx jest --config ./test/jest-e2e.json --runInBand integrations
-import { INestApplication } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
-import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { configureJsonBodyParsers } from '../src/common/json-body-parsers';
 
 const run = process.env.INTEGRATIONS_E2E ? describe : describe.skip;
 const BRANCH = 'demo-branch';
 const API = '/api/v1/integrations';
 
 run('Integration API (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: NestExpressApplication;
   let owner: ReturnType<typeof request.agent>;
   const keys: Record<string, string> = {};
 
@@ -48,7 +48,8 @@ run('Integration API (e2e)', () => {
     const mod = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = mod.createNestApplication();
+    app = mod.createNestApplication<NestExpressApplication>({ rawBody: true });
+    configureJsonBodyParsers(app);
     app.use(cookieParser());
     app.setGlobalPrefix('api');
     await app.init();
@@ -184,7 +185,11 @@ run('Integration API (e2e)', () => {
     await place('full', { delivery: undefined }).expect(400);
     await place('full', { customerPhone: 'abc' }).expect(400);
     await place('full', {}, 'short').expect(400);
-    await place('full', { notes: 'x'.repeat(200_000) }).expect(413);
+    await place('full', { notes: 'x'.repeat(200_000) }).expect(413, {
+      statusCode: 413,
+      error: 'Payload Too Large',
+      message: 'request entity too large',
+    });
   });
 
   it('rotation keeps order access and kills the old secret', async () => {

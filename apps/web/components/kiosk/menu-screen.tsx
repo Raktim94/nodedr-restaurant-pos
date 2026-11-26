@@ -1,6 +1,7 @@
 "use client";
 
 import { UploadImage } from "@/components/ui/upload-image";
+import { PauseBadge } from "@/components/menu/pause-badge";
 import { Plus, Search, ShoppingBag, X } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
@@ -13,6 +14,7 @@ import { ModifierSheet, type ModifierChoice } from "./modifier-sheet";
 
 export function MenuScreen({
   menu,
+  pauseLabels,
   basket,
   unavailableNames,
   fmt,
@@ -22,6 +24,7 @@ export function MenuScreen({
   header,
 }: {
   menu: KioskMenu;
+  pauseLabels: ReadonlyMap<string, string>;
   basket: BasketLine[];
   unavailableNames: string[];
   fmt: (n: number) => string;
@@ -158,12 +161,13 @@ export function MenuScreen({
                       )}
                       <div className="flex flex-1 flex-col gap-1 p-4">
                         <h3 className="text-[1.3rem] font-bold leading-tight">{item.name}</h3>
+                        <PauseBadge label={pauseLabels.get(item.id)} />
                         {item.description && (
                           <p className="line-clamp-2 text-[0.95rem] leading-snug text-muted-foreground">{item.description}</p>
                         )}
                         <div className="mt-auto flex items-center justify-between gap-3 pt-3">
                           <span className="text-[1.35rem] font-bold tabular-nums">{fmt(unit(item))}</span>
-                          <KButton onClick={() => add(item)} aria-label={`${t("kiosk.menu.add")} ${item.name}`}>
+                          <KButton disabled={pauseLabels.has(item.id)} onClick={() => add(item)} aria-label={`${t("kiosk.menu.add")} ${item.name}`}>
                             <Plus className="h-5 w-5" aria-hidden />
                             {t("kiosk.menu.add")}
                             {qty > 0 && (
@@ -190,7 +194,7 @@ export function MenuScreen({
             {basket.length === 0 ? (
               <p className="py-12 text-center text-[1.15rem] text-muted-foreground">{t("kiosk.basket.empty")}</p>
             ) : (
-              <BasketLines lines={basket} fmt={fmt} locked={false} onChange={onChange} />
+              <BasketLines lines={basket} pauseLabels={pauseLabels} fmt={fmt} locked={false} onChange={onChange} />
             )}
           </div>
           <div className="space-y-3 border-t border-border p-4">
@@ -222,6 +226,7 @@ export function MenuScreen({
         <ModifierSheet
           key={picking.id}
           item={picking}
+          pauseLabel={pauseLabels.get(picking.id)}
           priceText={fmt}
           onCancel={() => setPicking(null)}
           onConfirm={(c) => addWithChoice(picking, c)}

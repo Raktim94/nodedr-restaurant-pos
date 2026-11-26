@@ -262,7 +262,7 @@ Copy-Item -Path (Join-Path $RepoRoot 'apps\backend\dist') -Destination (Join-Pat
 # README.md, .env.example, eslint config, tsconfig, etc.) — legitimate
 # for a real deploy, but bloat/leak risk for a shipped MSIX and would trip
 # validate-msix.ps1's dev-artifact checks. Keep only what's needed to run.
-$keepTopLevel = @('node_modules', 'dist', 'prisma', 'package.json')
+$keepTopLevel = @('node_modules', 'dist', 'prisma', 'prisma.config.ts', 'package.json')
 Get-ChildItem -Path $backendDeployTemp | Where-Object { $keepTopLevel -notcontains $_.Name } |
     Remove-Item -Recurse -Force
 
@@ -475,5 +475,14 @@ if ($LASTEXITCODE -ne 0) { throw "finalize-server-payload.js failed with exit co
 # Pruning must not have removed anything migrations need.
 & node $prismaCliPath --version | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "The staged prisma CLI no longer starts after pruning (exit $LASTEXITCODE)." }
+
+# Pruning must not have removed anything the web app needs either. The earlier smoke test (before pruning) only
+# proves the server survives 5 seconds; this loads the login page from the FINAL payload with the staged Node and
+# fetches every script/style/font file it references - what a browser does, and what a damaged payload fails.
+Write-Host "-- Smoke-testing the pruned web payload (login page + every file it loads)" -ForegroundColor Yellow
+& node (Join-Path $PSScriptRoot 'smoke-web-payload.js') $serverDir (Join-Path $nodeStage 'node.exe')
+if ($LASTEXITCODE -ne 0) { throw "The pruned web payload cannot serve its login page and files (exit $LASTEXITCODE)." }
+# The smoke test lets Next write its caches next to the build output; none of that belongs in the package.
+Remove-Item -Recurse -Force (Join-Path $webStage 'apps\web\.next\cache'), (Join-Path $webStage 'apps\web\.next\server\route-cache') -ErrorAction SilentlyContinue
 
 Write-Host "Done staging server assets at $serverDir" -ForegroundColor Green

@@ -29,6 +29,14 @@ Rules that hold everywhere:
 | Notification **delayed** or app **force-stopped** | FCM delivery is not guaranteed: Android can delay it in Doze, and a force-stopped app gets nothing until opened. The Orders and Kitchen screens remain the source of truth. | Nothing, or a late notification. | Open the app; the bell and screens are always current. |
 | Notification **tapped while signed out or app closed** | The tap is held until the app has a listener after sign-in, then opens the path (in-app paths only) and the exact order/booking when the alert carries one. | Sign-in screen first, then the order. | — |
 
+## Recover a payment on the phone POS
+
+Reopen the same order and go to checkout. If the phone recorded the payment before the app closed, **Finish saved sale** completes the original bill. For example, if the bill was 30 and the customer handed over 50, the receipt still shows 20 in change. The phone keeps any stock deduction that was already saved.
+
+Choose **Edit payment details** if the recorded method, amount, reference or customer needs correcting. Enter what the customer actually paid and confirm once. The phone keeps the original bill number and records the cashier completing the sale. During recovery it does not display another UPI payment QR.
+
+If the previous order was already paid, the next identical basket starts a new sale. A paused dish can then block unsent quantities. Remove those quantities or wait until the dish returns. Portions already sent to the kitchen can still be settled.
+
 ## Alerts
 
 | Event | Channel | Who | Notes |

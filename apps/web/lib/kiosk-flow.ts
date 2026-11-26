@@ -71,7 +71,7 @@ export type KioskAction =
   | { type: "SUBMIT_START"; newRequestId: string }
   | { type: "SUBMIT_OK"; confirmation: Omit<KioskConfirmation, "serviceType"> }
   | { type: "SUBMIT_FAIL"; kind: SubmitFailure; message?: string }
-  | { type: "ITEMS_UNAVAILABLE"; ids: string[]; names: string[] }
+  | { type: "ITEMS_UNAVAILABLE"; ids: string[]; pausedIds: string[] }
   | { type: "RESET" };
 
 /** The server may have created the order even though we saw an error. */
@@ -151,14 +151,17 @@ export function kioskReducer(state: KioskState, action: KioskAction): KioskState
       if (state.submit.status !== "pending") return state;
       return { ...state, submit: { status: "error", kind: action.kind, message: action.message } };
     case "ITEMS_UNAVAILABLE": {
-      const basket = removeItems(state.basket, action.ids);
+      const removedIds = action.ids.filter((id) => !action.pausedIds.includes(id));
+      // Temporarily paused choices can be edited, or submitted intact after they return.
+      if (!removedIds.length) return { ...state, submit: { status: "idle" } };
+      const removedNames = state.basket.filter((line) => removedIds.includes(line.menuItemId)).map((line) => line.name);
       return {
         ...state,
-        basket,
+        basket: removeItems(state.basket, removedIds),
         requestId: null,
         submit: { status: "idle" },
         step: "menu",
-        unavailableNames: action.names,
+        unavailableNames: [...new Set(removedNames)],
       };
     }
     case "RESET":

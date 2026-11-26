@@ -109,6 +109,7 @@ export class IntegrationsService {
             // "HH:mm" window the item can be ordered in, if the owner set one.
             availableFrom: true,
             availableTo: true,
+            pausedUntil: true,
             modifierGroups: {
               orderBy: { sortOrder: 'asc' },
               select: {
@@ -137,13 +138,17 @@ export class IntegrationsService {
         },
       },
     });
-    const adjust = onlinePriceAdjustOf(
-      await this.prisma.restaurant.findUniqueOrThrow({
-        where: { id: ctx.restaurantId },
-        select: { onlinePriceAdjustKind: true, onlinePriceAdjustValue: true },
-      }),
-    );
+    const settings = await this.prisma.restaurant.findUniqueOrThrow({
+      where: { id: ctx.restaurantId },
+      select: {
+        onlinePriceAdjustKind: true,
+        onlinePriceAdjustValue: true,
+        timezone: true,
+      },
+    });
+    const adjust = onlinePriceAdjustOf(settings);
     return {
+      timezone: settings.timezone,
       locationId: branch.id,
       locationName: branch.name,
       categories: categories.map((category) => ({

@@ -252,6 +252,16 @@ export async function pushSales(base) {
   return { done, refused, reviewed };
 }
 
+// The last reachable address can be the linked restaurant's LAN or external address.
+let connection;
+export async function fetchMenuPauses(branchId) {
+  const preferred = await kv.get('serverBase');
+  if (!preferred) return null;
+  const base = connection?.preferred === preferred ? connection.base : preferred;
+  const res = await request(base, 'GET', `/api/v1/mobile/standalone/menu-pauses?branchId=${encodeURIComponent(branchId)}`);
+  return res.status === 200 && Array.isArray(res.data) ? res.data : null;
+}
+
 let running = null;
 /** One sync at a time: push the waiting sales, then refresh the menu. Quietly does nothing when offline. */
 export function syncNow({ refreshMenu = true } = {}) {
@@ -261,8 +271,10 @@ export function syncNow({ refreshMenu = true } = {}) {
     try {
       const snap = await kv.get('snapshot');
       if (snap && snap.local) return out; // on-this-phone mode: nothing to sync until a server is connected
-      const base = await pickServer(await kv.get('serverBase'));
+      const preferred = await kv.get('serverBase');
+      const base = await pickServer(preferred);
       if (!base) return out;
+      connection = { preferred, base };
       out.online = true;
       // Each part is tried on its own: a sales upload that fails must not stop the kitchen records or bookings from
       // being sent, and a refusal in one never hides what happened to the others.

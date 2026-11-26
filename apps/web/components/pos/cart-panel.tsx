@@ -1,6 +1,8 @@
 "use client";
 
 import { Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
+import { PauseBadge } from "@/components/menu/pause-badge";
+import { useI18n } from "@/lib/i18n/context";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -26,6 +28,7 @@ export interface DeliveryDetails {
 
 export function CartPanel({
   lines,
+  pauseLabels,
   orderType,
   onOrderTypeChange,
   tables,
@@ -50,6 +53,7 @@ export function CartPanel({
   taxMode = "INCLUSIVE",
 }: {
   lines: CartLine[];
+  pauseLabels: ReadonlyMap<string, string>;
   orderType: PosOrderType;
   onOrderTypeChange: (type: PosOrderType) => void;
   tables: RestaurantTable[];
@@ -77,12 +81,14 @@ export function CartPanel({
   /** EXCLUSIVE branches show a pre-tax-free subtotal: prices are grossed up in addLine. */
   taxMode?: "INCLUSIVE" | "EXCLUSIVE";
 }) {
+  const { t } = useI18n();
+  const hasPaused = lines.some((line) => pauseLabels.has(line.menuItemId));
   const subtotal = subtotalOf(lines.map((l) => l.unitPrice * l.quantity));
   const deliveryReady =
     orderType !== "DELIVERY" ||
     (delivery.address.trim().length >= 5 && delivery.pincode.trim().length >= 3 && delivery.phone.trim().length >= 6);
   const canSubmit =
-    lines.length > 0 && (orderType !== "DINE_IN" || !!tableId) && deliveryReady && !isSubmitting && !checkingTable;
+    lines.length > 0 && !hasPaused && (orderType !== "DINE_IN" || !!tableId) && deliveryReady && !isSubmitting && !checkingTable;
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -214,6 +220,7 @@ export function CartPanel({
               <div key={line.key} className="flex items-start justify-between gap-3 py-3">
                 <div className="flex-1">
                   <p className="text-sm font-medium text-foreground">{line.name}</p>
+                  <PauseBadge label={pauseLabels.get(line.menuItemId)} />
                   {line.modifierLabel && (
                     <p className="text-xs text-muted-foreground">{line.modifierLabel}</p>
                   )}
@@ -237,6 +244,7 @@ export function CartPanel({
                     size="icon"
                     className="h-9 w-9"
                     aria-label={`Add one ${line.name}`}
+                    disabled={pauseLabels.has(line.menuItemId)}
                     onClick={() => onIncrement(line.key)}
                   >
                     <Plus className="h-3 w-3" />
@@ -266,6 +274,7 @@ export function CartPanel({
             {formatCurrency(subtotal)}
           </span>
         </div>
+        {hasPaused && <p role="status" className="text-sm text-warning">{t("menu.removePaused")}</p>}
         <Button className="h-11 w-full" disabled={!canSubmit} onClick={onSubmit}>
           {isSubmitting
             ? "Sending to kitchen…"

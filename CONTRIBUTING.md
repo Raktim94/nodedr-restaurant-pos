@@ -94,7 +94,7 @@ pnpm install
 docker compose up -d postgres                               # just the DB
 cp apps/backend/.env.example apps/backend/.env               # point DATABASE_URL at your Postgres
 pnpm --filter @nodedr-restaurant/types build
-cd apps/backend && npx prisma migrate dev && npx ts-node prisma/seed.ts && cd ../..
+(cd apps/backend && pnpm exec prisma migrate dev && pnpm exec prisma db seed)
 pnpm dev   # runs backend (:4001) and web (:1995) together via Turborepo
 ```
 

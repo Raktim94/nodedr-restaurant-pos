@@ -1,12 +1,12 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { resolveTaxLabel, type KioskOrderDto } from '@nodedr-restaurant/types';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertMenuItemsAvailable } from '../menu/item-availability';
 import { OrdersService } from '../orders/orders.service';
 import { PublicMenuService } from './public-menu.service';
 
@@ -51,6 +51,7 @@ export class PublicKioskService {
       branchName: branch.name,
       logoUrl: branch.restaurant.logoUrl ?? null,
       currency: branch.restaurant.currency,
+      timezone: branch.restaurant.timezone,
       country: branch.country,
       taxMode: branch.taxMode,
       taxLabel: resolveTaxLabel(branch.taxRegime, branch.taxLabel),
@@ -134,22 +135,11 @@ export class PublicKioskService {
       select: {
         id: true,
         isActive: true,
+        pausedUntil: true,
         category: { select: { isActive: true } },
       },
     });
-    const byId = new Map(found.map((m) => [m.id, m]));
-    const unavailable = ids.filter((id) => {
-      const m = byId.get(id);
-      return !m || !m.isActive || !m.category.isActive;
-    });
-    if (unavailable.length > 0) {
-      throw new ConflictException({
-        statusCode: 409,
-        code: 'ITEM_UNAVAILABLE',
-        message: 'Some items are no longer available',
-        unavailableItemIds: unavailable,
-      });
-    }
+    assertMenuItemsAvailable(ids, found);
   }
 
   // Order.createdById is a required FK and a kiosk has no staff login:

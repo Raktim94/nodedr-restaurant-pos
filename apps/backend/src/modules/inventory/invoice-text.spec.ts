@@ -52,6 +52,25 @@ describe('gstinChecksumOk', () => {
 });
 
 describe('parseInvoiceText', () => {
+  it.each(['Subtotal', 'SUB-TOTAL', 'Sub Total', 'Subtotal Amount'])(
+    'requests a total for review when the invoice only gives a %s',
+    (label) => {
+      const r = parseInvoiceText(
+        `Central Foods\nInvoice No: CF-100\nDate: 26/11/2026\n${label}: INR 1,000\nCGST: 90\nSGST: 90`,
+      );
+      expect(r.totalAmount).toBeNull();
+      expect(r.taxAmount).toBe(180);
+      expect(r.requiresReview).toBe(true);
+      expect(r.warnings).toContain('Total amount not found.');
+    },
+  );
+  it.each(['Total', 'Total Amount', 'Grand Total', 'Amount Due'])(
+    'keeps the explicit %s even when a subtotal follows it',
+    (label) => {
+      const r = parseInvoiceText(`${label}: INR 1,180\nSubtotal: INR 1,000`);
+      expect(r.totalAmount).toBe(1180);
+    },
+  );
   it('extracts all header fields from a typical Indian invoice', () => {
     const r = parseInvoiceText(SAMPLE);
     expect(r.invoiceNumber).toBe('FF/2026/0457');

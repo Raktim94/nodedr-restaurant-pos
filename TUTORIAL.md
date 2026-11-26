@@ -74,6 +74,14 @@ Open each from the sidebar and press **Add**.
 | **Customers**: name, phone, allergies, birthday | Loyalty points, gift cards and repeat-visit history | ![Customers](docs/screenshots/tutorial/customers.png) |
 | **Reservations**: bookings and a waitlist | Know who is coming, and when | ![Reservations](docs/screenshots/tutorial/reservations.png) |
 
+### Pause a dish during service
+
+If the next tray of lasagna will be ready in half an hour, open **Menu** for the selling branch, find the dish and choose **Pause sales → For 30 minutes**. You can also choose **Until a specific time** and enter the return time on the restaurant's clock. A time that has already passed means the next occurrence.
+
+The POS, table QR menu and kiosk show when the dish returns. It becomes available automatically at that time. If the kitchen is ready sooner, choose **Resume sales** in Menu. Staff can still settle orders that already include the dish.
+
+See the [manager's pause dialog](docs/screenshots/menu-pause-editor-en.png), the [cashier's screen](docs/screenshots/menu-pause-pos-en.png) and the [guest's QR menu](docs/screenshots/menu-pause-qr-en.png).
+
 ## 4. Take an order
 
 1. Open **Point of Sale**, pick a table (or choose **Takeaway** / **Delivery**).

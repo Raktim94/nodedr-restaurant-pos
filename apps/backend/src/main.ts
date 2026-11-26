@@ -1,5 +1,4 @@
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { json } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
@@ -8,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { AppModule } from './app.module';
+import { configureJsonBodyParsers } from './common/json-body-parsers';
 import { uploadsDir } from './common/upload/image-upload.config';
 
 // Known example/placeholder secrets that appear verbatim in this repo's own
@@ -122,11 +122,7 @@ async function bootstrap() {
     }
     app.set('trust proxy', hops);
   }
-  // Same 100kb as Express's default, stated so it is a decision, not an accident.
-  // Only the AI assistant takes images (receipts, vendor invoices as base64), so only that route gets the larger
-  // limit. It is registered first, so it parses those bodies before the default parser below sees them.
-  app.use('/api/v1/ai', json({ limit: process.env.AI_BODY_LIMIT ?? '12mb' }));
-  app.useBodyParser('json', { limit: process.env.BODY_LIMIT ?? '100kb' });
+  configureJsonBodyParsers(app);
   app.use(cookieParser());
   // Browsers only ever talk to the web container (same origin, /api is proxied),
   // and a website's backend calls the Integration API server-to-server, so the

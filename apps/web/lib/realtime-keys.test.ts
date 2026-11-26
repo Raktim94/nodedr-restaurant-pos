@@ -22,6 +22,11 @@ test("kitchen pushes refresh the kitchen screen", () => {
   assert.ok(keys("kot.reprinted").includes("kds"));
 });
 
+test("a staff menu pause or early return refreshes the affected branch's item queries", () => {
+  assert.ok(REALTIME_EVENTS.includes("menu.updated"));
+  assert.deepEqual(keys("menu.updated"), ["menu/items/b1"]);
+});
+
 test("every subscribed event maps to at least one cache", () => {
   for (const e of REALTIME_EVENTS) assert.ok(keys(e).length > 0, e);
   assert.deepEqual(keys("something.else"), []);

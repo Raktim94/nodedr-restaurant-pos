@@ -3,11 +3,12 @@
 // whenever it can. Plain DOM + modules: nothing here needs a build step.
 import { computeBill, round2, settle, upiLink } from './lib/bill.js';
 import { escposReceipt, htmlReceipt, toBase64 } from './lib/receipt.js';
-import { completeCheckout, events, reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, shifts } from './lib/store.js';
+import { completeCheckout, events, reservations, expenses, kots, kv, newId, nextKotNumber, nextLocalNumber, nextOrderNumber, orders, readEverything, refunds, replaceEverything, sales, saveKotWithOrder, savePendingSale, shifts } from './lib/store.js';
 import { agingBuckets, backupJson, buildCollection, buildExpense, buildRefund, closeDay, dayBooks, daysAgo, dueOf, dueSales, expensesCsv, parseBackup, rangeBooks, refundableLines, refundedTotal, salesCsv, today } from './lib/books.js';
 import { planTables } from './lib/tables.js';
 import { pushKey } from './lib/scanburst.js';
 import { buildChoice, defaultPicks, findByCode, lineKey, needsChoice } from './lib/options.js';
+import { activePauseUntil, mergeMenuPauses, pausedAddition } from './lib/menu-pause.js';
 import { afterRight, afterWrong, hashPin, lockState, needsManager, pinTaken, validPin, weakPin, whoHasPin } from './lib/staff.js';
 import { KOT_NEXT, dayReport, kotDelta, markSent, minutesSince, newOrder, openOrders, saleNote, tableMap, tableTakenBy } from './lib/orders.js';
 import { escposKot, htmlKot } from './lib/kot.js';
@@ -15,7 +16,7 @@ import { STATUS_LABEL, clashes, grouped, heldSoon, newBooking, setStatus } from 
 import { native, pickServer, reachable, request, savedServers, setDeviceId } from './lib/net.js';
 import { dismissEvent, queueEvent, retryEvent, shiftState } from './lib/journal.js';
 import { NO_RECIPES_FOR_PRODUCT, capsFrom, createInventoryItem, loadCosting, createMenuItem, deleteDraft, emptyForm, fillFromRecipe, formFromDraft, formProblem, friendlyError, loadRecipes, loadStockItems, postDraft, postNew, recipeProblem, saveDraft, saveRecipe, shortRows, voucherBody } from './lib/stockjournal.js';
-import { login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
+import { fetchMenuPauses, login, pullSnapshot, syncNow, retrySale } from './lib/sync.js';
 import { checkAll } from './lib/net.js';
 import { addOnsText, addSection, addTable, addTables, removeSection, removeTable, changeLocalPassword, checkLocalPassword, createLocalAccount, eraseLocalAccount, hasLocalAccount, remapSalesToServer, removeDish, setSoldOut, upsertDish, useStock } from './lib/local.js';
 
@@ -30,7 +31,7 @@ const acquireMoneyGuard = (key) => {
 const releaseMoneyGuard = (key) => moneyGuards.delete(key);
 function gatedSync(opts) {
   if (syncGate) return; // connecting: don't send unmapped sales or overwrite them
-  return syncNow(opts).then(afterSync);
+  return syncNow(opts).then((result) => afterSync(result, opts));
 }
 let checkoutInFlight = false;
 let connectInFlight = false;
@@ -113,7 +114,9 @@ const histBackIf = (test) =>
       }),
   );
 
+let checkPaymentPause;
 function openSheet(html, onMount) {
+  checkPaymentPause = undefined;
   const s = $('sheet');
   if (s.hidden) histPush({ sheet: true });
   s.innerHTML = `<div class="panel" role="dialog" aria-modal="true">${html}</div>`;
@@ -126,6 +129,7 @@ function openSheet(html, onMount) {
 }
 let booksDirty = false; // a books sheet changed something: redraw the screen behind it when it closes
 function closeSheet(fromBack = false) {
+  checkPaymentPause = undefined;
   const s = $('sheet');
   const wasOpen = !s.hidden;
   s.hidden = true;
@@ -316,6 +320,8 @@ async function sendToKitchen(mode = 'bt') {
   if (!S.orderId) return toast('Add something to the order first.');
   const o = await orders.get(S.orderId);
   const d = kotDelta(o);
+  const paused = pausedAddition(S.snap.items, S.cart.values());
+  if (paused) return toast(`${paused.name}: ${pauseLabel(paused)}. Remove the unsent quantity to continue.`);
   if (d.empty) return toast('Everything on this order is already on a KOT. Use Reprint to print the last one again.');
   const tables = S.snap.floors.flatMap((f) => f.tables);
   if (o.type === 'DINE_IN' && tables.length && !o.tableLabel) return toast('Choose the table first.');
@@ -462,10 +468,11 @@ const printActions = (sale, provisional) => `
     <button class="btn ghost" data-pr="pdf">Print / Save PDF</button>
   </div>`;
 function bindPrint(root, sale, provisional) {
+  const upi = () => provisional && !pausedAddition(S.snap.items, S.cart.values()) ? upiUriFor(sale) : null;
   root.querySelector('[data-pr=bt]')?.addEventListener('click', () =>
-    printBluetooth(escposReceipt(sale, S.snap, { provisional, upiUri: provisional ? upiUriFor(sale) : null })),
+    printBluetooth(escposReceipt(sale, S.snap, { provisional, upiUri: upi() })),
   );
-  root.querySelector('[data-pr=pdf]')?.addEventListener('click', () => printPdf(sale, { provisional, upiUri: provisional ? upiUriFor(sale) : null }));
+  root.querySelector('[data-pr=pdf]')?.addEventListener('click', () => printPdf(sale, { provisional, upiUri: upi() }));
 }
 
 // -------------------------------------------------------------- sign in ----
@@ -1091,6 +1098,58 @@ function bindSetup() {
   if (h) h.onclick = async () => ((S.setupDismissed = true), await kv.set('setupDismissed', 1), viewSell());
 }
 
+function pauseLabel(item) {
+  const options = { hour: '2-digit', minute: '2-digit', timeZone: S.snap.restaurant.timezone || 'UTC', timeZoneName: 'short' };
+  try {
+    return 'Paused until ' + new Date(item.pausedUntil).toLocaleTimeString('en', options);
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return 'Paused until ' + new Date(item.pausedUntil).toUTCString();
+  }
+}
+
+let pauseTimer;
+function refreshDishButtons() {
+  clearTimeout(pauseTimer);
+  if (!S.snap) return;
+  let next = Infinity;
+  const now = Date.now();
+  const menu = new Map(S.snap.items.map((item) => [item.id, item]));
+  for (const button of document.querySelectorAll('[data-add]')) {
+    const item = menu.get(button.dataset.add);
+    if (!item) continue;
+    const until = activePauseUntil(item, now);
+    button.disabled = !item.sellOffline || !!item.soldOut || !!until;
+    const label = button.querySelector('[data-pause-label]');
+    label.hidden = !until;
+    label.textContent = until ? pauseLabel(item) : '';
+    if (until) next = Math.min(next, until);
+  }
+  if (Number.isFinite(next)) pauseTimer = setTimeout(refreshDishButtons, Math.min(2_147_483_647, Math.max(0, next - Date.now())));
+}
+
+let refreshingPauses = false;
+async function refreshLinkedPauses() {
+  const snap = S.snap;
+  // Older servers and phone-only menus have no sales pauses.
+  if (refreshingPauses || syncGate || !snap || snap.local || !snap.items.some((i) => 'pausedUntil' in i)) return;
+  refreshingPauses = true;
+  try {
+    const rows = await fetchMenuPauses(snap.branch.id);
+    if (!rows) return;
+    const updated = mergeMenuPauses(S.snap, snap, rows);
+    if (updated === S.snap) return;
+    S.snap = updated;
+    refreshDishButtons();
+    checkPaymentPause?.();
+    await kv.update('snapshot', (current) => mergeMenuPauses(current, snap, rows));
+  } catch {
+    // Unreachable servers leave the last known deadlines available offline.
+  } finally {
+    refreshingPauses = false;
+  }
+}
+
 function viewSell() {
   const { categories, items } = S.snap;
   const q = S.q.trim().toLowerCase();
@@ -1108,6 +1167,7 @@ function viewSell() {
           <b><span class="veg ${i.isVeg ? '' : 'nv'}"></span>${esc(i.name)}</b>
           <span>${inr(i.price)}${i.halfPrice != null ? ` <small>/ half ${inr(i.halfPrice)}</small>` : ''}</span>${qtyOf(i.id) ? `<strong class="cnt"><span class="sr">In cart: </span>&times;${qtyOf(i.id)}</strong>` : ''}
           ${i.soldOut ? '<small>Sold out</small>' : i.sellOffline ? (i.stock != null && i.stock <= 5 ? `<small>${i.stock} left</small>` : needsChoice(i) ? '<small>Choose options</small>' : '') : '<small>Combo: use the full app</small>'}
+          <small data-pause-label hidden></small>
         </button>`).join('') || (S.snap.local && !S.snap.items.length ? '<div class="empty"><b>Your menu is empty</b><p class="mute">Add your first dish to start selling.</p><button class="btn" data-setup="menu">Add a dish</button></div>' : '<p class="mute center mt empty">Nothing matches.</p>')}
     </div>`;
   bindSetup();
@@ -1131,12 +1191,14 @@ function viewSell() {
   if ($('scan')) $('scan').onclick = scanBarcode;
   document.querySelectorAll('[data-cat]').forEach((b) => (b.onclick = () => ((S.category = b.dataset.cat), viewSell())));
   document.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => tapDish(S.snap.items.find((i) => i.id === b.dataset.add))));
+  refreshDishButtons();
   renderBar();
 }
 
 /** A dish was tapped (or scanned): straight into the cart, or the options sheet first. */
 function tapDish(item) {
   if (!item) return;
+  if (activePauseUntil(item)) return toast(pauseLabel(item));
   if (!item.sellOffline) return toast(`${item.name} is a combo: sell it from the full app.`);
   if (item.soldOut) return toast(`${item.name} is sold out.`);
   if (needsChoice(item)) return optionsSheet(item);
@@ -1144,6 +1206,8 @@ function tapDish(item) {
 }
 
 function addLine(item, line, qty = 1) {
+  const latest = S.snap.items.find((dish) => dish.id === item.id);
+  if (activePauseUntil(latest)) return toast(pauseLabel(latest));
   if (item.stock != null && qtyOf(item.id) + qty > item.stock) return toast(`Only ${item.stock} left in stock`);
   const cur = S.cart.get(line.key) || { ...line, baseName: item.name, qty: 0 };
   cur.qty += qty;
@@ -1325,6 +1389,7 @@ function openCart() {
         (b.onclick = () => {
           const l = S.cart.get(b.dataset.inc);
           const item = S.snap.items.find((i) => i.id === l.item.id);
+          if (activePauseUntil(item)) return toast(pauseLabel(item));
           if (item && item.stock != null && qtyOf(item.id) >= item.stock) return toast(`Only ${item.stock} left in stock`);
           l.qty++;
           draw();
@@ -1373,25 +1438,63 @@ function openCart() {
 }
 
 // ------------------------------------------------------------------ payment ---
-function openPay() {
+async function openPay() {
+  if (checkoutInFlight) return;
+  const cartPanel = $('sheet').firstElementChild;
   const bill = billOf();
-  let rows = [{ method: 'CASH', amount: String(bill.total) }];
+  const sig = checkoutSig(saleFrom('', bill, [], 0));
+  const pending = await kv.get('pendingSale');
+  let savedSale = pending?.sig === sig ? await sales.get(pending.saleId) : null;
+  const linkedOrder = savedSale?.orderId ? await orders.get(savedSale.orderId) : null;
+  if (!cartPanel.isConnected || checkoutInFlight) return;
+  if (linkedOrder?.status === 'PAID') {
+    // Older builds could leave a marker for the previous, identical purchase.
+    await kv.del('pendingSale');
+    savedSale = null;
+    if (!cartPanel.isConnected || checkoutInFlight) return;
+  }
+  let pendingStock = !!(savedSale && pending.stockApplied);
+  let editingSavedPayment = false;
+  let panel;
+  function stopPausedPayment() {
+    const paused = !savedSale && pausedAddition(S.snap.items, S.cart.values());
+    if (!paused) return false;
+    if (panel?.isConnected) openCart();
+    toast(`${paused.name}: ${pauseLabel(paused)}. Remove the unsent quantity to continue.`, 5000);
+    return true;
+  }
+  if (stopPausedPayment()) return;
+  const rows = savedSale?.payments.length
+    ? savedSale.payments.map((p) => ({ ...p, amount: String(p.tendered ?? p.amount) }))
+    : [{ method: 'CASH', amount: String(savedSale?.payLater ? 0 : bill.total) }];
+  const currentPayment = () => settle(bill.total, rows.map((r) => ({ ...r, amount: Number(r.amount) || 0 })));
   let finished = false; // set once the sale commits; stale redraws must not restore Payment
-  let savedSale = null; // survives a partially failed save so retry reuses the same sale
-  let pendingStock = false; // true once this sale's stock deduction has committed (also kept on disk)
   const METHODS = [['CASH', 'Cash'], ['UPI', 'UPI'], ['CARD', 'Card'], ['OTHER', 'Other']];
   const draw = async () => {
-    if (finished) return;
-    const tenders = rows.map((r) => ({ method: r.method, amount: Number(r.amount) || 0, reference: r.reference }));
-    const st = settle(bill.total, tenders);
-    const upiRow = rows.find((r) => r.method === 'UPI');
+    if (finished || !panel.isConnected || stopPausedPayment()) return;
+    if (savedSale && !editingSavedPayment) {
+      panel.innerHTML = `<header><h2>Finish saved sale</h2><button class="x" data-close aria-label="Close">&times;</button></header>
+        <div class="body"><p class="note" role="status">Payment for bill ${esc(savedSale.localNumber)} is already recorded. Finish saving it on this phone.</p></div>
+        <footer><button class="btn line" id="editpay">Edit payment details</button><button class="btn block" id="finish">Finish saved sale</button></footer>`;
+      panel.querySelector('[data-close]').onclick = openCart;
+      panel.querySelector('#editpay').onclick = () => { editingSavedPayment = true; draw(); };
+      panel.querySelector('#finish').onclick = () => complete(
+        { rows: savedSale.payments, change: savedSale.change, fullyPaid: !savedSale.payLater },
+        { payLater: !!savedSale.payLater },
+      );
+      return;
+    }
+    const st = currentPayment();
+    // A retry corrects the saved record. Never prompt the guest to pay a second time.
+    const upiRow = !savedSale && rows.find((r) => r.method === 'UPI');
     let qr = '';
     if (upiRow && S.snap.restaurant.upiVpa && window.OrderRestroQR) {
       const amt = Number(upiRow.amount) || bill.total;
       const svg = await window.OrderRestroQR.svg(upiLink({ vpa: S.snap.restaurant.upiVpa, name: S.snap.restaurant.upiPayeeName, amount: amt }), 240);
       qr = `<div class="qr" aria-label="UPI QR code">${svg}</div><p class="center mute">Ask the guest to scan, then confirm below when the payment shows on your phone.</p>`;
     } else if (upiRow) qr = '<div class="note">No UPI id is set for this restaurant. Take the UPI payment on your own phone and note the reference.</div>';
-    const root = $('sheet').firstElementChild;
+    if (finished || !panel.isConnected || stopPausedPayment()) return;
+    const root = panel;
     root.innerHTML = `
       <header><h2>Payment</h2><button class="x" data-close aria-label="Close">&times;</button></header>
       <div class="body">
@@ -1430,12 +1533,12 @@ function openPay() {
     root.querySelectorAll('[data-rf]').forEach((el) => (el.oninput = () => (rows[Number(el.dataset.rf)].reference = el.value)));
     root.querySelectorAll('[data-q]').forEach((b) => (b.onclick = () => ((rows[Number(b.dataset.q.split(':')[0])].amount = b.dataset.q.split(':')[1]), draw())));
     root.querySelector('#split').onclick = () => {
-      const left = round2(Math.max(bill.total - tenders.reduce((s, t) => s + t.amount, 0), 0));
+      const left = currentPayment().balance;
       rows.push({ method: 'UPI', amount: String(left || '') });
       draw();
     };
     const doneBtn = root.querySelector('#done');
-    if (doneBtn) doneBtn.onclick = () => complete(st, tenders);
+    if (doneBtn) doneBtn.onclick = () => complete(currentPayment());
     const keepCust = () => {
       S.customer = { name: root.querySelector('#cn').value, phone: root.querySelector('#cph').value };
       persistSoon();
@@ -1457,7 +1560,7 @@ function openPay() {
           return root.querySelector('#cph').focus();
         }
         if (!(await managerOK(`Let ${S.customer.name || S.customer.phone} pay ${inr(st.balance)} later.`))) return;
-        complete(st, tenders, { payLater: true });
+        complete(currentPayment(), { payLater: true });
       };
   };
   const phoneOk = (v) => String(v || '').replace(/\D/g, '').length >= 10;
@@ -1489,59 +1592,42 @@ function openPay() {
     }, 250);
   };
   // Shared by every Payment sheet: a second sheet must not save the same cart.
-  async function complete(st, tenders, { payLater = false } = {}) {
-    if (checkoutInFlight || finished) return;
-    if (!st.fullyPaid && !payLater) return;
-    if (payLater && !phoneOk(S.customer.phone)) return;
+  async function complete(st, { payLater = false } = {}) {
+    if (checkoutInFlight || finished || !panel.isConnected) return;
+    if ((!st.fullyPaid && !payLater) || (payLater && !phoneOk(S.customer.phone))) return;
     checkoutInFlight = true;
     try {
       await flushPersist();
       // The unfinished checkout is remembered on disk (not only in this closure) so killing the app between
       // "sale saved" and "stock deducted" cannot produce a second sale or a second deduction on retry: the same
       // cart reuses the saved sale and skips a deduction that already committed.
-      if (!savedSale) {
-        const draft = saleFrom('', bill, st.rows.map((r) => ({ ...r })), st.change);
-        const sig = checkoutSig(draft);
-        const pending = await kv.get('pendingSale');
-        let existing = pending && pending.sig === sig ? await sales.get(pending.saleId) : null;
-        if (existing?.orderId) {
-          const linked = await orders.get(existing.orderId);
-          if (linked?.status === 'PAID') {
-            // The previous attempt already finished; its marker is stale.
-            // Reusing it would silently drop this sale and its stock move.
-            await kv.del('pendingSale');
-            existing = null;
-          }
-        }
-        if (existing) {
-          // Keep the id, number and stock marker from the interrupted attempt,
-          // but record the tender/customer/staff the cashier entered *this*
-          // time. A retry may change payment method or pay-later state.
-          savedSale = {
-            ...existing,
-            bill: draft.bill,
-            payments: draft.payments,
-            change: draft.change,
-            customer: draft.customer,
-            staffId: draft.staffId,
-            staffName: draft.staffName,
-            staffServerId: draft.staffServerId,
-            discountPercent: draft.discountPercent,
-            discountReason: draft.discountReason,
-          };
-          if (payLater) savedSale.payLater = true;
-          else delete savedSale.payLater;
-          await sales.put(savedSale);
-          pendingStock = !!pending.stockApplied;
-        } else {
-          const number = await nextLocalNumber();
-          savedSale = saleFrom(number, bill, st.rows.map((r) => ({ ...r })), st.change);
-          if (payLater) savedSale.payLater = true;
-          savedSale.note = saleNote(savedSale.items);
-          await sales.put(savedSale);
-          await kv.set('pendingSale', { saleId: savedSale.id, sig, stockApplied: false });
-          pendingStock = false;
-        }
+      if (savedSale) {
+        const draft = saleFrom(savedSale.localNumber, bill, st.rows, st.change);
+        const updated = {
+          ...savedSale,
+          bill: draft.bill,
+          payments: draft.payments,
+          change: draft.change,
+          customer: draft.customer,
+          staffId: draft.staffId,
+          staffName: draft.staffName,
+          staffServerId: draft.staffServerId,
+          discountPercent: draft.discountPercent,
+          discountReason: draft.discountReason,
+        };
+        if (payLater) updated.payLater = true;
+        else delete updated.payLater;
+        // Keep the marker and any stock deduction that already committed.
+        await sales.put(updated);
+        savedSale = updated;
+      } else {
+        const number = await nextLocalNumber();
+        if (stopPausedPayment()) return;
+        const nextSale = saleFrom(number, bill, st.rows.map((r) => ({ ...r })), st.change);
+        if (payLater) nextSale.payLater = true;
+        nextSale.note = saleNote(nextSale.items);
+        await savePendingSale(nextSale, sig);
+        savedSale = nextSale;
       }
       const sale = savedSale;
       if (S.snap.local && !pendingStock) {
@@ -1562,13 +1648,17 @@ function openPay() {
       openDone(sale);
       gatedSync({ refreshMenu: false });
     } catch (e) {
-      toast(`Could not finish the sale: ${e.message}. Tap Complete sale to retry.`, 6000);
+      if (savedSale) draw();
+      toast(`Could not finish the sale: ${e.message}. Try again.`, 6000);
     } finally {
       checkoutInFlight = false;
     }
   }
-  openSheet('', () => draw());
-  draw();
+  openSheet('', (root) => {
+    panel = root;
+    checkPaymentPause = () => !checkoutInFlight && stopPausedPayment();
+    draw();
+  });
 }
 
 function openDone(sale) {
@@ -2549,7 +2639,7 @@ async function viewSync() {
   };
 }
 
-function afterSync(r) {
+function afterSync(r, opts) {
   S.syncing = false;
   S.online = r.online;
   if (r.revoked) S.note = { kind: 'bad', text: 'The owner removed this phone from the restaurant. Sales and kitchen records stay on this phone but cannot be sent until the owner allows it again.' };
@@ -2567,8 +2657,13 @@ function afterSync(r) {
       S.snap = snap;
       await syncStaffFromServer();
     }
+    if (!$('sheet').hidden || (opts?.refreshMenu === false && S.view === 'sell' && $('view')?.contains(document.activeElement))) {
+      refreshDishButtons();
+      checkPaymentPause?.();
+    } else {
+      render();
+    }
   });
-  if ($('sheet').hidden) render();
 }
 async function doSync() {
   S.syncing = true;
@@ -3253,6 +3348,7 @@ try {
 // Quietly try again when the phone is back online or the app is reopened.
 window.addEventListener('online', () => gatedSync());
 document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && S.snap && gatedSync());
+setInterval(() => document.visibilityState === 'visible' && S.view === 'sell' && refreshLinkedPauses(), 15000);
 setInterval(() => S.snap && document.visibilityState === 'visible' && $('sheet').hidden && gatedSync({ refreshMenu: false }), 60000);
 
 

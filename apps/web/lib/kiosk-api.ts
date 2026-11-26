@@ -4,6 +4,7 @@
 // leave a customer staring at a spinner forever.
 
 import type { KioskServiceType } from "@nodedr-restaurant/types";
+import type { ReportedPause } from "./menu-pauses";
 
 export interface KioskModifier {
   id: string;
@@ -21,6 +22,7 @@ export interface KioskModifierGroup {
 }
 export interface KioskMenuItem {
   id: string;
+  pausedUntil: string | null;
   name: string;
   description: string | null;
   imageUrl: string | null;
@@ -36,6 +38,7 @@ export interface KioskMenuCategory {
 }
 export interface KioskMenu {
   restaurantName: string;
+  timezone: string;
   branchName: string;
   logoUrl: string | null;
   currency: string;
@@ -63,6 +66,7 @@ export class KioskApiError extends Error {
     public kind: KioskErrorKind,
     message: string,
     public unavailableItemIds: string[] = [],
+    public pausedItems: ReportedPause[] = [],
   ) {
     super(message);
   }
@@ -95,12 +99,13 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     message?: string;
     code?: string;
     unavailableItemIds?: string[];
+    pausedItems?: ReportedPause[];
   };
   const message = typeof body.message === "string" ? body.message : "Request failed";
   if (res.status === 404) throw new KioskApiError("notFound", message);
   if (res.status === 429) throw new KioskApiError("rate", message);
   if (res.status === 409 && body.code === "ITEM_UNAVAILABLE") {
-    throw new KioskApiError("unavailable", message, body.unavailableItemIds ?? []);
+    throw new KioskApiError("unavailable", message, body.unavailableItemIds ?? [], body.pausedItems);
   }
   if (res.status >= 500 || res.status === 502 || res.status === 503 || res.status === 504) {
     throw new KioskApiError("server", message);

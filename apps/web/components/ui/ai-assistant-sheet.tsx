@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Sparkles, Trash2, Bot, CornerDownLeft, Volume2, Maximize2 } from "lucide-react";
+import { Sparkles, Trash2, Maximize2 } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -17,7 +17,6 @@ import { Confirmation } from "@/components/ui/confirmation";
 import { Reasoning } from "@/components/ui/reasoning";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useBranch } from "@/hooks/use-branch";
 
 interface ChatItem {
   id: string;
@@ -45,7 +44,6 @@ export function AiAssistantSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { branchId } = useBranch();
   const [input, setInput] = React.useState("");
   const [isTyping, setIsTyping] = React.useState(false);
   const [messages, setMessages] = React.useState<ChatItem[]>([

@@ -104,6 +104,7 @@ describe('waiter menu and tables access', () => {
       'deleteCategory',
       'createItem',
       'updateItem',
+      'setItemPause',
       'deleteItem',
     ]) {
       expect(allowed('WAITER', MenuController, m)).toBe(false);

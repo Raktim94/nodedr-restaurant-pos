@@ -14,6 +14,8 @@ import { printTicket } from "./kiosk-print";
 
 export function ReviewScreen({
   menu,
+  pauseLabels,
+  blockedByPause,
   basket,
   submit,
   locked,
@@ -27,6 +29,8 @@ export function ReviewScreen({
   onStartOver,
 }: {
   menu: KioskMenu;
+  pauseLabels: ReadonlyMap<string, string>;
+  blockedByPause: boolean;
   basket: BasketLine[];
   submit: SubmitState;
   locked: boolean;
@@ -58,7 +62,7 @@ export function ReviewScreen({
             <span className="rounded-full bg-secondary px-4 py-1 text-[1.1rem] font-semibold">{serviceLabel}</span>
           </h1>
           <div className="min-h-0 flex-1 overflow-y-auto px-5">
-            <BasketLines lines={basket} fmt={fmt} locked={locked} onChange={onChange} />
+            <BasketLines lines={basket} pauseLabels={pauseLabels} fmt={fmt} locked={locked} onChange={onChange} />
           </div>
         </section>
 
@@ -77,6 +81,7 @@ export function ReviewScreen({
           </div>
 
           <div className="space-y-3">
+            {blockedByPause && <Banner tone="warning" title={t("menu.removePaused")} />}
             {!online && (
               <Banner tone="error" title={t("kiosk.offline.title")}>
                 {t("kiosk.offline.body")}
@@ -94,7 +99,7 @@ export function ReviewScreen({
               large
               className="w-full"
               loading={pending}
-              disabled={!online || basket.length === 0}
+              disabled={!online || blockedByPause || basket.length === 0}
               onClick={onConfirm}
             >
               {pending ? (

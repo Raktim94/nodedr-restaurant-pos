@@ -84,10 +84,57 @@ internal static class ServerPaths
     // machine is not assumed to have Node.js installed.
     public static string NodeExePath => Path.Combine(RuntimeServerDir, "node", "node.exe");
 
-    public static void EnsureDirectoriesExist()
+    /// <summary>
+    /// Creates the writable folders and returns a note for each one that could not be created in the real file system
+    /// (empty when all is well).
+    ///
+    /// Why this does not simply call Directory.CreateDirectory: an MSIX app's own writes under %LOCALAPPDATA% are
+    /// redirected into %LOCALAPPDATA%\Packages\&lt;package&gt;\LocalCache\Local, but the programs this app starts
+    /// (robocopy, initdb, node, and the cmd.exe that pg_ctl uses to open its log file) are not. A folder the
+    /// launcher itself creates can therefore be invisible to them: on a fresh install pg_ctl failed within 0.2 s with
+    /// "The system cannot find the path specified" because logs\ existed only in the redirected store, and the window
+    /// stayed on "Starting the backend". A child process creates the folder in the real file system, where every
+    /// process sees it.
+    /// </summary>
+    public static List<string> EnsureDirectoriesExist()
     {
-        Directory.CreateDirectory(DataDir);
-        Directory.CreateDirectory(UploadsDir);
-        Directory.CreateDirectory(ServerLogDir);
+        var problems = new List<string>();
+        foreach (var dir in new[] { DataDir, UploadsDir, ServerLogDir })
+        {
+            if (!TryCreateRealDirectory(dir))
+            {
+                problems.Add($"could not create {dir} outside the package's redirected storage");
+                // Old behaviour as a fallback (unpackaged runs, or cmd.exe blocked): at least the launcher can use it.
+                try { Directory.CreateDirectory(dir); } catch { }
+            }
+        }
+        return problems;
+    }
+
+    private static bool TryCreateRealDirectory(string dir)
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+                Arguments = $"/d /e:on /c if not exist \"{dir}\" mkdir \"{dir}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc is null) return false;
+            if (!proc.WaitForExit(20_000))
+            {
+                try { proc.Kill(); } catch { }
+                return false;
+            }
+            return proc.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

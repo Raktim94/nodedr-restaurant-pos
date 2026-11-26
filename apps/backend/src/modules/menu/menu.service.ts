@@ -7,9 +7,13 @@ import {
 import type {
   MenuCategoryDto,
   MenuItemDto,
+  MenuItemPauseDto,
   ModifierGroupDto,
 } from '@nodedr-restaurant/types';
 import { AuditService } from '../../audit/audit.service';
+import { BranchTimeService } from '../../common/services/branch-time.service';
+import { nextLocalTime } from '../../common/time';
+import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { PrismaService } from '../../prisma/prisma.service';
 
 // Options that are still on the menu. A removed option that past orders used is kept (hidden), not deleted.
@@ -27,6 +31,8 @@ export class MenuService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly branchTime: BranchTimeService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   // --- Categories ---------------------------------------------------------
@@ -130,10 +136,11 @@ export class MenuService {
     branchId: string,
     id: string,
     userId: string,
-    dto: Partial<MenuItemDto>,
+    dto: Partial<MenuItemDto> & { pausedUntil?: unknown },
   ) {
     const existing = await this.getItem(branchId, id);
-    const { modifierGroupIds, ...rest } = dto;
+    // Editors may send an entire cached item. Only the pause endpoint changes the pause.
+    const { modifierGroupIds, pausedUntil: _pause, ...rest } = dto; // eslint-disable-line @typescript-eslint/no-unused-vars
     if (modifierGroupIds) {
       await this.assertModifierGroupsInBranch(branchId, modifierGroupIds);
     }
@@ -172,6 +179,47 @@ export class MenuService {
     });
 
     return updated;
+  }
+
+  async setItemPause(
+    branchId: string,
+    id: string,
+    userId: string,
+    dto: MenuItemPauseDto,
+  ) {
+    let pausedUntil: Date | null = null;
+    if ('minutes' in dto) {
+      pausedUntil = new Date(Date.now() + dto.minutes * 60_000);
+    } else if ('localTime' in dto) {
+      const timezone = await this.branchTime.tzForBranch(branchId);
+      pausedUntil = nextLocalTime(new Date(), timezone, dto.localTime);
+    }
+
+    const item = await this.prisma.$transaction(async (tx) => {
+      const [updated] = await tx.menuItem.updateManyAndReturn({
+        where: { id, branchId, ...(pausedUntil && { isActive: true }) },
+        data: { pausedUntil },
+      });
+      if (!updated)
+        throw new NotFoundException('Menu item unavailable in this branch');
+      await this.audit.record(
+        {
+          userId,
+          action: pausedUntil ? 'menu_item.paused' : 'menu_item.resumed',
+          entity: 'MenuItem',
+          entityId: id,
+          metadata: {
+            branchId,
+            name: updated.name,
+            pausedUntil: pausedUntil?.toISOString() ?? null,
+          },
+        },
+        tx,
+      );
+      return updated;
+    });
+    this.realtime.emitToBranch(branchId, 'menu.updated', { id });
+    return item;
   }
 
   /**

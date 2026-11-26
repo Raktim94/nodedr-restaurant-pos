@@ -381,6 +381,26 @@ jobs:
           }
           Write-Host "First-run secret generation and Postgres initdb both verified." -ForegroundColor Green
 
+      - name: Web app serves its login page and every file the page loads
+        shell: pwsh
+        timeout-minutes: 5
+        # /api/health is proxied to the backend, so it passes even when the web app cannot serve its own page or
+        # JavaScript - the customer report of a blank window with "Starting the backend" behind it. Load the
+        # page the way a browser does, then every script/style/font file it points at.
+        run: |
+          $html = (Invoke-WebRequest 'http://localhost:1995/login' -UseBasicParsing -TimeoutSec 30).Content
+          $urls = [regex]::Matches($html, '/_next/static/[^"''\\\s<>)]+') | ForEach-Object { $_.Value.Replace('&amp;', '&') } | Sort-Object -Unique
+          if ($urls.Count -lt 3) { throw "/login references only $($urls.Count) static files - the page would be blank" }
+          foreach ($u in $urls) {
+              $r = Invoke-WebRequest "http://localhost:1995$u" -UseBasicParsing -TimeoutSec 30
+              if ($r.StatusCode -ne 200) { throw "HTTP $($r.StatusCode) for $u" }
+          }
+          Write-Host "/login and its $($urls.Count) static files are all served." -ForegroundColor Green
+          $serverRuntime = Join-Path $env:LOCALAPPDATA 'OrderRestro\server\server-runtime'
+          $longest = (Get-Content (Join-Path $serverRuntime 'runtime-manifest.tsv') | ForEach-Object { $_.Split("`t")[0].Length } | Measure-Object -Maximum).Maximum
+          Write-Host "Longest relative path in the runtime: $longest characters (limit 170)."
+          if ($longest -gt 170) { throw "Runtime path too long: $longest" }
+
       - name: Single-instance guard — relaunch while still running must not crash
         shell: pwsh
         timeout-minutes: 5
@@ -561,6 +581,56 @@ jobs:
           if (-not (Test-Path (Join-Path $runtime 'backend\dist\src\main.js'))) { throw "main.js was not restored" }
           Write-Host "Incremental update and migration skip both verified." -ForegroundColor Green
 
+      - name: Repair path - a deleted web file is restored on the next start
+        shell: pwsh
+        timeout-minutes: 10
+        # A damaged working copy (antivirus quarantine, an interrupted copy) used to start "healthy" and then show a
+        # blank window. The launcher now checks every runtime file against the package on each start.
+        run: |
+          [xml]$manifest = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'windows\msix\AppxManifest.xml')
+          $pkg = Get-AppxPackage -Name $manifest.Package.Identity.Name
+          $exePath = Join-Path $pkg.InstallLocation 'OrderRestro.exe'
+          $serverDir = Join-Path $env:LOCALAPPDATA 'OrderRestro\server'
+          $runtime = Join-Path $serverDir 'server-runtime'
+          $startupLog = Join-Path $serverDir 'logs\startup.log'
+          $supervisorErrorLog = Join-Path $serverDir 'logs\supervisor-error.log'
+
+          Get-Process -Name 'OrderRestro' -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep -Seconds 2
+          $pgCtlStop = Join-Path $runtime 'postgres\bin\pg_ctl.exe'
+          $pgDataStop = Join-Path $serverDir 'pgdata'
+          if ((Test-Path $pgCtlStop) -and (Test-Path $pgDataStop)) { & $pgCtlStop stop -D $pgDataStop -m immediate -w 2>&1 | Out-Null }
+          Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($runtime, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue
+          $down = $false
+          for ($i = 0; $i -lt 30; $i++) {
+              try { Invoke-WebRequest 'http://localhost:1995/api/health' -UseBasicParsing -TimeoutSec 2 | Out-Null } catch { $down = $true; break }
+              Start-Sleep -Seconds 1
+          }
+          if (-not $down) { throw "The old server is still answering on port 1995 after it was stopped" }
+
+          $victim = Get-ChildItem (Join-Path $runtime 'web\apps\web\.next\static\chunks') -Filter '*.js' | Select-Object -First 1
+          if (-not $victim) { throw "No web chunk found to delete" }
+          Write-Host "Deleting $($victim.FullName)" -ForegroundColor Cyan
+          Remove-Item $victim.FullName -Force
+          if (Test-Path $supervisorErrorLog) { Remove-Item $supervisorErrorLog -Force }
+          $before = (Get-Content $startupLog).Count
+
+          Start-Process -FilePath $exePath
+          $ok = $false
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          while ($sw.Elapsed.TotalSeconds -lt 300) {
+              try { if ((Invoke-WebRequest 'http://localhost:1995/api/health' -UseBasicParsing -TimeoutSec 5).StatusCode -eq 200) { $ok = $true; break } } catch { }
+              if (Test-Path $supervisorErrorLog) { Write-Host (Get-Content $supervisorErrorLog -Raw) -ForegroundColor Red; break }
+              Start-Sleep -Seconds 2
+          }
+          for ($i = 0; $i -lt 30 -and -not ((Get-Content $startupLog | Select-Object -Skip $before) -match 'web check'); $i++) { Start-Sleep -Seconds 2 }
+          $newLines = (Get-Content $startupLog) | Select-Object -Skip $before
+          Write-Host "---- startup.log (this launch) ----"; $newLines | ForEach-Object { Write-Host $_ }
+          if (-not $ok) { throw "App did not come back healthy after a web file was deleted" }
+          if (-not (Test-Path $victim.FullName)) { throw "The deleted web file was not restored" }
+          if (($newLines -join "`n") -notmatch 'restoring 1 program files') { throw "Expected the launcher to report restoring exactly 1 program file" }
+          Write-Host "Deleted web file restored by the launcher's start-up check." -ForegroundColor Green
+
       - name: Stop embedded server and app (cleanup)
         if: always()
         shell: pwsh
@@ -597,7 +667,7 @@ jobs:
           foreach ($store in 'Cert:\LocalMachine\Root','Cert:\LocalMachine\TrustedPeople','Cert:\CurrentUser\Root','Cert:\CurrentUser\TrustedPeople') {
               Get-ChildItem $store -ErrorAction SilentlyContinue | Where-Object { $_.Subject -eq $subject } | Remove-Item -Force -ErrorAction SilentlyContinue
           }
-          Copy-Item windows\msix\Install-OrderRestro.ps1, windows\msix\Install-OrderRestro.cmd, windows\msix\INSTALL-README.txt windows\msix\out\ -Force
+          Copy-Item windows\msix\Install-OrderRestro.ps1, windows\msix\Install-OrderRestro.cmd, windows\msix\Repair-OrderRestro.ps1, windows\msix\Repair-OrderRestro.cmd, windows\msix\INSTALL-README.txt windows\msix\out\ -Force
 
           # Without the installer, Windows must refuse the package (proves the test is real).
           $plain = $true
@@ -635,5 +705,7 @@ jobs:
             windows/msix/out/*.msixupload
             windows/msix/out/Install-OrderRestro.ps1
             windows/msix/out/Install-OrderRestro.cmd
+            windows/msix/out/Repair-OrderRestro.ps1
+            windows/msix/out/Repair-OrderRestro.cmd
             windows/msix/out/INSTALL-README.txt
           if-no-files-found: warn

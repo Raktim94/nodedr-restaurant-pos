@@ -1,25 +1,16 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
+import Image from "next/image";
 import {
-  ArrowLeft,
   ArrowUpIcon,
-  CircleCheckIcon,
-  GlobeIcon,
   LoaderCircleIcon,
-  PaperclipIcon,
   PlusIcon,
   RotateCwIcon,
-  TelescopeIcon,
-  TerminalIcon,
   MessageSquare,
   Search,
   Plus,
   Trash2,
-  PanelLeftClose,
-  PanelLeftOpen,
-  ChefHat,
   CheckCircle2,
   Sparkles,
   TrendingUp,
@@ -29,7 +20,6 @@ import {
   FileTextIcon,
   XIcon,
   ChevronDownIcon,
-  Check,
   UtensilsCrossed,
   Cpu,
 } from "lucide-react";
@@ -53,15 +43,6 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import {
-  Trace,
-  TraceCollapsible,
-  TraceCollapsibleContent,
-  TraceCollapsibleTrigger,
-  TraceIcon,
-  TraceLine,
-  TraceTitle,
-} from "@/components/ui/trace";
-import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
@@ -71,11 +52,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -90,7 +69,7 @@ import { cn } from "@/lib/utils";
 import { MarkdownRenderer } from "@/components/ai-elements/markdown-renderer";
 import { useBranch } from "@/hooks/use-branch";
 import { useQueryClient } from "@tanstack/react-query";
-import { QuestionCard, type QuestionCardData, type QuestionOption } from "@/components/ui/question-card";
+import { QuestionCard, type QuestionCardData } from "@/components/ui/question-card";
 import { ApprovalReviewDeck, type ProposalData } from "@/components/ui/approval-review-deck";
 import { ThinkingStepsDisplay } from "@/components/ui/thinking-steps";
 
@@ -172,7 +151,6 @@ export default function AskAssistantPage() {
 
   const formRef = React.useRef<HTMLFormElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const messagesEndRef = React.useRef<HTMLDivElement>(null);
 
   const currentModel = allModels.find((m) => m.id === model) ?? allModels[0];
   const currentEffort = efforts.find((e) => e.id === effort) ?? efforts[1];
@@ -188,11 +166,6 @@ export default function AskAssistantPage() {
     activeThreadIdRef.current = activeThreadId;
   }, [activeThreadId]);
   React.useEffect(() => () => chatAbortRef.current?.abort(), []);
-
-  // Auto-scroll to bottom whenever messages or status changes
-  React.useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, status]);
 
   // Load saved state from LocalStorage on mount
   // localStorage only exists in the browser, so this has to run after mount (reading it during render would break hydration).
@@ -861,8 +834,10 @@ export default function AskAssistantPage() {
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col items-center justify-center max-w-xl mx-auto w-full select-none text-center animate-in fade-in-50 duration-300">
             <div className="relative mb-4 group cursor-pointer">
               <div className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl overflow-hidden border border-primary/30 bg-primary/5 p-1 shadow-sm transition-transform group-hover:scale-105">
-                <img
+                <Image
                   src="/ai-mascot.png"
+                  width={80}
+                  height={53}
                   alt="OrderRestro Chef Robot"
                   className="w-full h-full object-contain pixelated"
                 />
@@ -931,7 +906,7 @@ export default function AskAssistantPage() {
             </div>
           </div>
         ) : (
-          <MessageScrollerProvider>
+          <MessageScrollerProvider key={activeThreadId}>
             <MessageScroller className="flex-1">
               <MessageScrollerViewport>
                 {/* Changed: Align content cleanly to the left, full available width with max-w-4xl */}
@@ -953,6 +928,7 @@ export default function AskAssistantPage() {
                                     key={i}
                                     className="overflow-hidden rounded-xl border border-primary/30 bg-card shadow-sm max-w-[240px] sm:max-w-[280px] ml-auto"
                                   >
+                                    {/* eslint-disable-next-line @next/next/no-img-element -- FileReader data URL with unknown intrinsic dimensions. */}
                                     <img
                                       src={p.imageData}
                                       alt="Uploaded file"
@@ -988,8 +964,10 @@ export default function AskAssistantPage() {
                       >
                         {/* Assistant Header matching prcrm */}
                         <div className="flex items-center gap-2 mb-1">
-                          <img
+                          <Image
                             src="/ai-mascot.png"
+                            width={32}
+                            height={21}
                             alt="OrderRestro Assistant"
                             className="h-8 w-8 object-contain pixelated shrink-0"
                           />
@@ -1147,7 +1125,6 @@ export default function AskAssistantPage() {
                       </MessageScrollerItem>
                     );
                   })}
-                  <div ref={messagesEndRef} aria-hidden="true" className="h-0 w-0" />
                 </MessageScrollerContent>
               </MessageScrollerViewport>
               <MessageScrollerButton />
@@ -1324,29 +1301,5 @@ export default function AskAssistantPage() {
         </div>
       </main>
     </div>
-  );
-}
-
-function ReasoningRow({ text, running }: { text: string; running: boolean }) {
-  const [open, setOpen] = React.useState<boolean>(true);
-
-  return (
-    <TraceCollapsible open={open ?? running} onOpenChange={setOpen}>
-      <TraceCollapsibleTrigger>
-        <TraceLine status={running ? "running" : undefined}>
-          <TraceIcon>
-            {running ? (
-              <LoaderCircleIcon className="animate-spin text-primary" />
-            ) : (
-              <CircleCheckIcon className="text-emerald-500" />
-            )}
-          </TraceIcon>
-          <TraceTitle>{running ? "Thinking" : "Thought"}</TraceTitle>
-        </TraceLine>
-      </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent className="whitespace-pre-wrap pl-6 py-1 text-xs text-muted-foreground">
-        {text}
-      </TraceCollapsibleContent>
-    </TraceCollapsible>
   );
 }

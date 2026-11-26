@@ -123,8 +123,8 @@ pnpm install && pnpm --filter @nodedr-restaurant/types build
 (cd apps/backend && npx tsc --noEmit && npx jest)                        # unit incl. kiosk service
 (cd apps/web && npx tsc --noEmit && npx eslint . && npm test)            # node:test: basket, flow reducer, scan, ticket
 # API integration against a real, migrated + seeded Postgres:
-cd apps/backend && npx prisma migrate deploy && npx ts-node prisma/seed.ts
-KIOSK_E2E=1 npx jest --config ./test/jest-e2e.json kiosk --forceExit
+(cd apps/backend && pnpm exec prisma migrate deploy && pnpm exec prisma db seed)
+(cd apps/backend && KIOSK_E2E=1 pnpm exec jest --config ./test/jest-e2e.json --runInBand kiosk)
 # Browser flow (Playwright, Python): kiosk 1920x1080 + 1280x720, tablet/portrait/phone widths, KDS handoff, scanner fallback
 KIOSK_URL=https://<host>/kiosk/<token> SHOTS=./shots python3 apps/web/e2e/kiosk_flow.py
 ```

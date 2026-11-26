@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Query, UsePipes } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  UsePipes,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { SessionUser } from '@nodedr-restaurant/types';
 import { Auth } from '../common/decorators/auth.decorator';
@@ -49,6 +57,18 @@ export class StandaloneController {
   ) {
     await this.branchAccess.assertAccess(user.restaurantId, branchId);
     return this.standalone.snapshot(user, branchId);
+  }
+
+  @Auth('orders.create')
+  @Get('menu-pauses')
+  async menuPauses(
+    @CurrentUser() user: SessionUser,
+    @Query('branchId') branchId: string,
+  ) {
+    if (typeof branchId !== 'string' || !branchId)
+      throw new BadRequestException('branchId is required');
+    await this.branchAccess.assertAccess(user.restaurantId, branchId);
+    return this.standalone.menuPauses(branchId);
   }
 
   // Sales taken offline. One result per sale: created, duplicate or refused.

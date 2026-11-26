@@ -16,13 +16,30 @@ run('instance backup scheduling (PostgreSQL)', () => {
   let clean = false;
   let previousEnv: NodeJS.ProcessEnv;
   const user = { id: 'test-operator' } as SessionUser;
+  const notifications: Pick<NotificationsService, 'notifyUser'> = {
+    notifyUser: () => Promise.resolve(),
+  };
   function worker() {
     return new BackupService(
       prisma,
       { record: jest.fn() } as unknown as AuditService,
-      {} as NotificationsService,
+      notifications as NotificationsService,
     );
   }
+  const scheduleError = jest.fn<void, [string]>();
+  function failingWorker() {
+    const service = worker();
+    jest.spyOn(service['logger'], 'error').mockImplementation(scheduleError);
+    return service;
+  }
+  function expectScheduleError(expected: string | RegExp) {
+    expect(scheduleError).toHaveBeenCalledTimes(1);
+    expect(scheduleError.mock.calls[0][0]).toMatch(expected);
+  }
+  const dumpFailure = /^Scheduled backup failed: .*pg_dump/;
+  beforeEach(() => {
+    scheduleError.mockClear();
+  });
   const calendar = { mode: 'daily', time: '07:15', timeZone: 'UTC' } as const;
   beforeAll(async () => {
     previousEnv = process.env;
@@ -139,7 +156,7 @@ run('instance backup scheduling (PostgreSQL)', () => {
   );
 
   it('preserves live claims across edits and reaps an abandoned run before retrying the legacy interval', async () => {
-    const service = worker();
+    const service = failingWorker();
     const attempt = await prisma.backup.create({
       data: { status: 'PENDING', createdAt: new Date('2000-01-01') },
     });
@@ -162,11 +179,15 @@ run('instance backup scheduling (PostgreSQL)', () => {
       where: { id: 'singleton' },
       data: { leaseUntil: new Date(0) },
     });
-    await Promise.all([service.checkSchedule(), worker().checkSchedule()]);
+    await Promise.all([
+      service.checkSchedule(),
+      failingWorker().checkSchedule(),
+    ]);
     expect(
       await prisma.backup.findUnique({ where: { id: attempt.id } }),
     ).toMatchObject({ status: 'FAILED' });
     expect(await prisma.backup.count()).toBe(2);
+    expectScheduleError(dumpFailure);
   });
 
   it('renews the lease during a slow dump so a second worker cannot reclaim it', async () => {
@@ -190,7 +211,7 @@ run('instance backup scheduling (PostgreSQL)', () => {
       .mockImplementation((fn: () => void, delay: number) =>
         realInterval(fn, delay === 60000 ? 10 : delay),
       );
-    const running = worker().checkSchedule();
+    const running = failingWorker().checkSchedule();
     try {
       await entered;
       const nearExpiry = new Date(Date.now() + 1_000);
@@ -216,6 +237,7 @@ run('instance backup scheduling (PostgreSQL)', () => {
       temp.mockRestore();
       ticks.mockRestore();
     }
+    expectScheduleError('Scheduled backup failed: end test dump');
   });
 
   it('inherits environment defaults, keeps overdue work on a retention edit, and replaces it on a schedule edit', async () => {
@@ -258,7 +280,10 @@ run('instance backup scheduling (PostgreSQL)', () => {
       where: { id: 'singleton' },
       data: { nextScheduledAt: new Date('2000-01-01T07:15:00Z') },
     });
-    await Promise.all([worker().checkSchedule(), worker().checkSchedule()]);
+    await Promise.all([
+      failingWorker().checkSchedule(),
+      failingWorker().checkSchedule(),
+    ]);
     await worker().checkSchedule();
     expect(await prisma.backup.findMany()).toMatchObject([
       { status: 'FAILED', triggeredById: null },
@@ -266,6 +291,7 @@ run('instance backup scheduling (PostgreSQL)', () => {
     const status = await worker().status();
     expect(status.nextScheduledAt!.getTime()).toBeGreaterThan(Date.now());
     expect(status.nextScheduledAt!.getUTCHours()).toBe(7);
+    expectScheduleError(dumpFailure);
   });
 
   it('keeps the interval anchored to a verified backup when falling back from an invalid environment value', async () => {
@@ -287,10 +313,11 @@ run('instance backup scheduling (PostgreSQL)', () => {
       .spyOn(fs, 'mkdtemp')
       .mockRejectedValueOnce(new Error('storage full'));
     try {
-      await worker().checkSchedule();
+      await failingWorker().checkSchedule();
       expect(await prisma.backup.findMany()).toMatchObject([
         { status: 'FAILED', failureReason: 'storage full' },
       ]);
+      expectScheduleError('Scheduled backup failed: storage full');
     } finally {
       temp.mockRestore();
     }
@@ -301,7 +328,7 @@ run('instance backup scheduling (PostgreSQL)', () => {
       .spyOn(prisma.backup, 'updateMany')
       .mockRejectedValueOnce(new Error('database unavailable'));
     try {
-      await worker().checkSchedule();
+      await failingWorker().checkSchedule();
       expect(await prisma.backup.findMany()).toMatchObject([
         { status: 'PENDING' },
       ]);
@@ -312,17 +339,22 @@ run('instance backup scheduling (PostgreSQL)', () => {
           })
         ).leaseUntil,
       ).toBeInstanceOf(Date);
+      expectScheduleError('Scheduled backup failed: database unavailable');
     } finally {
       statusWrite.mockRestore();
     }
   });
 
   it('guards the first legacy interval run and backs off for an hour after failure', async () => {
-    await Promise.all([worker().checkSchedule(), worker().checkSchedule()]);
+    await Promise.all([
+      failingWorker().checkSchedule(),
+      failingWorker().checkSchedule(),
+    ]);
     await worker().checkSchedule();
     const [attempt] = await prisma.backup.findMany();
     expect(await prisma.backup.count()).toBe(1);
     expect(attempt.status).toBe('FAILED');
+    expectScheduleError(dumpFailure);
     expect((await worker().status()).nextScheduledAt).toEqual(
       new Date(attempt.createdAt.getTime() + 3600000),
     );

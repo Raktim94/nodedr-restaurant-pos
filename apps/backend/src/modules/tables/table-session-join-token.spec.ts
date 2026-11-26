@@ -57,16 +57,23 @@ describe('rotating join QR token', () => {
   it('an old photo of the QR stops working after two windows', async () => {
     const { svc } = setup();
     const { token } = await svc.currentJoinToken('b1', 't1');
+    const warn = jest
+      .spyOn(svc['logger'], 'warn')
+      .mockReturnValueOnce(undefined);
     const now = Date.now();
     jest.spyOn(Date, 'now').mockReturnValue(now + 100_000);
     await expect(svc.joinWithToken('t1', token, 'p')).rejects.toMatchObject({
       response: { code: 'TABLE_SESSION_BAD_CODE' },
     });
+    expect(warn).toHaveBeenCalledWith(
+      'Table session s1: invalid or expired join QR (table t1)',
+    );
   });
 
   it('a forged or tampered token is refused', async () => {
     const { svc } = setup();
     const { token } = await svc.currentJoinToken('b1', 't1');
+    const warn = jest.spyOn(svc['logger'], 'warn').mockReturnValue(undefined);
     const [w] = token.split('.');
     await expect(
       svc.joinWithToken('t1', `${w}.AAAAAAAAAAAAAAAAAAAAAA`, 'p'),
@@ -74,6 +81,8 @@ describe('rotating join QR token', () => {
     await expect(
       svc.joinWithToken('t1', 'nonsense', 'p'),
     ).rejects.toBeDefined();
+    const message = 'Table session s1: invalid or expired join QR (table t1)';
+    expect(warn.mock.calls).toEqual([[message], [message]]);
   });
 
   it('a closed table has no token and its old token joins nothing', async () => {
@@ -98,17 +107,29 @@ describe('rotating join QR token', () => {
       tableId: 't2',
       joinSecret: 'b'.repeat(64),
     });
+    const warn = jest
+      .spyOn(other.svc['logger'], 'warn')
+      .mockReturnValueOnce(undefined);
     await expect(
       other.svc.joinWithToken('t2', token, 'p'),
     ).rejects.toBeDefined();
+    expect(warn).toHaveBeenCalledWith(
+      'Table session s2: invalid or expired join QR (table t2)',
+    );
   });
 
   it('stops handing out grants once a session has too many', async () => {
     const { svc, prisma } = setup();
+    const warn = jest
+      .spyOn(svc['logger'], 'warn')
+      .mockReturnValueOnce(undefined);
     prisma.tableSessionGrant.count.mockResolvedValue(60);
     const { token } = await svc.currentJoinToken('b1', 't1');
     await expect(svc.joinWithToken('t1', token, 'p')).rejects.toMatchObject({
       response: { code: 'TABLE_SESSION_LOCKED' },
     });
+    expect(warn).toHaveBeenCalledWith(
+      'Table session s1: grant limit reached, refusing another join',
+    );
   });
 });

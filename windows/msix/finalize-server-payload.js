@@ -17,6 +17,14 @@
 //    with the manifest of the copy it already has, so an update copies only
 //    the files that changed instead of the whole runtime.
 //
+// 3. Verify the result (fails the build, never ships a payload that cannot start): the files the web app and
+//    backend need at start-up are present, and no file path is deep enough to break on a PC with a long Windows
+//    user name. The runtime copy lives under %LOCALAPPDATA%\OrderRestro\server\server-runtime (about 56 characters
+//    plus the user name), and Windows programs (node.exe included) fail to open paths past 260 characters unless
+//    the PC has long paths switched on, which most do not. Next's standalone output used to leave a second,
+//    complete copy of `next` under web/node_modules/.pnpm/next@<version>_<hash>/ (1,297 files, paths up to 191
+//    characters) that nothing loads, since apps/web/node_modules/next is the real one.
+//
 // Usage: node finalize-server-payload.js <serverDir>
 
 const fs = require('fs');
@@ -32,8 +40,18 @@ if (!root || !fs.existsSync(root)) {
 const MANIFEST = 'runtime-manifest.tsv';
 const rel = (p) => path.relative(root, p).split(path.sep).join('/');
 
+// Longest relative path (from the server dir) allowed in the payload. The runtime base path is ~56 chars + the
+// Windows user name, so 170 leaves room for user names up to ~30 characters before reaching 260.
+const MAX_REL_PATH = 170;
+
+// Next's standalone tracer leaves a full second copy of `next` in web/node_modules/.pnpm/next@... . It is only safe
+// to drop when the real one the server resolves (apps/web/node_modules/next) is there.
+const realNext = path.join(root, 'web', 'apps', 'web', 'node_modules', 'next', 'package.json');
+const dropDuplicateNext = fs.existsSync(realNext);
+
 // Directories removed wholesale (matched against the path relative to root).
 const dropDir = (r, name) =>
+  (dropDuplicateNext && /^web\/node_modules\/\.pnpm\/next@[^/]+$/.test(r)) ||
   /(^|\/)node_modules\/@next\/swc-[^/]+$/.test(r) ||
   /(^|\/)node_modules\/\.cache$/.test(r) ||
   /(^|\/)node_modules\/typescript$/.test(r) ||
@@ -114,3 +132,33 @@ console.log(
   `Pruned ${removedFiles} files (${(removedBytes / 1048576).toFixed(0)} MB); ` +
     `payload is now ${files.length} files (${(keptBytes / 1048576).toFixed(0)} MB); wrote ${MANIFEST}`,
 );
+
+// --- Verify -----------------------------------------------------------------
+const problems = [];
+for (const required of [
+  'node/node.exe',
+  'postgres/bin/pg_ctl.exe',
+  'backend/dist/src/main.js',
+  'backend/node_modules/prisma/build/index.js',
+  'web/apps/web/server.js',
+  'web/apps/web/.next/BUILD_ID',
+  'web/apps/web/.next/required-server-files.json',
+  'web/apps/web/.next/routes-manifest.json',
+  'web/apps/web/node_modules/next/package.json',
+]) {
+  // node.exe / pg_ctl.exe only exist once the Windows runtimes are staged; skip them for a Linux dry run.
+  if (/\.exe$/.test(required) && !fs.existsSync(path.join(root, required.split('/')[0]))) continue;
+  if (!fs.existsSync(path.join(root, required))) problems.push(`missing required file: ${required}`);
+}
+if (!files.some(([r]) => r.startsWith('web/apps/web/.next/static/chunks/'))) {
+  problems.push('web/apps/web/.next/static/chunks has no files (the browser could not load any JavaScript)');
+}
+const longest = files.reduce((m, f) => (f[0].length > m[0].length ? f : m), ['', '', 0]);
+console.log(`Longest path: ${longest[0].length} chars (${longest[0]}); limit ${MAX_REL_PATH}`);
+for (const [r] of files) {
+  if (r.length > MAX_REL_PATH) problems.push(`path too long (${r.length} > ${MAX_REL_PATH}): ${r}`);
+}
+if (problems.length) {
+  console.error('Payload verification FAILED:\n  ' + problems.slice(0, 20).join('\n  '));
+  process.exit(1);
+}

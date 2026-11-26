@@ -31,6 +31,7 @@ Without a server the phone keeps its own account, menu and sales (`www/pos/`). I
 
 - **Tables**: sections and tables (add/remove), free/occupied tiles with running total and minutes, open and held orders, one open order per table (a second order on a taken table is refused, never merged).
 - **Orders saved as you go**: the cart is an order saved to the phone after every change; a crash or restart brings it back. Hold, resume, per-dish notes, cancel with a reason (kept as a record).
+- **Interrupted checkout**. Reopen the order and choose **Finish saved sale** to complete the original bill. Choose **Edit payment details** to correct the recorded tender or customer. [Phone payment recovery](../docs/MOBILE-FAILURE-MODES.md#recover-a-payment-on-the-phone-pos)
 - **KOT**: "Send to kitchen" prints only what is new since the last ticket, and a CANCEL ticket if a sent dish was removed. The ticket and the order's "sent" state are saved in one transaction. Print failure is shown honestly and the ticket stays on the Kitchen screen for a retry; reprints are marked REPRINT.
 - **Kitchen screen** for this phone: New, Preparing, Ready, Served, with minutes waiting.
 - **Today** report on the Sales tab (sales, cash/UPI/card, tax, discounts, top dishes, cancelled orders).

@@ -2,23 +2,15 @@
 
 import * as React from "react";
 import {
-  Cpu,
   Sparkles,
-  Zap,
   Gauge,
   Key,
-  Check,
   ChevronDown,
-  Info,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";

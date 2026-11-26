@@ -1,3 +1,5 @@
+import type { ReportedPause } from "./menu-pauses";
+
 const API_BASE = "/api/v1";
 
 // Calls made by signed-out pages. A 401 there is expected (login form, public
@@ -17,6 +19,7 @@ export class ApiError extends Error {
     public status: number,
     public issues?: unknown,
     public code?: string,
+    public pausedItems: ReportedPause[] = [],
   ) {
     super(message);
   }
@@ -45,7 +48,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       if (onUnauthorized) onUnauthorized();
       else window.location.replace("/login");
     }
-    throw new ApiError(body.message ?? "Request failed", res.status, body.issues, body.code);
+    throw new ApiError(body.message ?? "Request failed", res.status, body.issues, body.code, body.pausedItems);
   }
 
   if (res.status === 204) return undefined as T;

@@ -10,10 +10,14 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
+import { BranchTimeService } from './../src/common/services/branch-time.service';
+import { localDate } from './../src/common/time';
 import { PrismaService } from './../src/prisma/prisma.service';
 
 const run = process.env.LEDGER_E2E ? describe : describe.skip;
 const BRANCH = 'demo-branch';
+// February 1 in the seeded restaurant (Asia/Kolkata), January 31 in UTC.
+const GST_BILLED_AT = new Date('2026-01-31T19:15:00Z');
 const q = `?branchId=${BRANCH}`;
 const tag = randomUUID().slice(0, 6);
 
@@ -24,10 +28,10 @@ run('GST report and bank matching (e2e)', () => {
   let ownerId: string;
   let floorId: string;
   let categoryId: string;
+  let gstDay: string;
   let seq = 0;
 
   const post = (p: string, b?: object) => owner.post(`/api/v1${p}`).send(b);
-  const today = () => new Date().toISOString().slice(0, 10);
   const money = (n: number) => Math.round(n * 100) / 100;
 
   /** Pays a one-line bill; returns the order as stored. */
@@ -59,12 +63,16 @@ run('GST report and bank matching (e2e)', () => {
       ...(discountFlat ? { discountFlat } : {}),
       payments: [{ method: 'CASH', amount: price - discountFlat }],
     }).expect(201);
-    return prisma.order.findUniqueOrThrow({ where: { id: o.body.id } });
+    // Checkout must set billedAt. Pin that timestamp for the report snapshots.
+    return prisma.order.update({
+      where: { id: o.body.id, billedAt: { not: null } },
+      data: { billedAt: GST_BILLED_AT },
+    });
   };
   const gst = async () =>
     (
       await owner
-        .get(`/api/v1/accounting/gst${q}&from=${today()}&to=${today()}`)
+        .get(`/api/v1/accounting/gst${q}&from=${gstDay}&to=${gstDay}`)
         .expect(200)
     ).body;
 
@@ -77,6 +85,8 @@ run('GST report and bank matching (e2e)', () => {
     app.setGlobalPrefix('api', { exclude: [] });
     await app.init();
     prisma = app.get(PrismaService);
+    const timezone = await app.get(BranchTimeService).tzForBranch(BRANCH);
+    gstDay = localDate(GST_BILLED_AT, timezone);
     owner = request.agent(app.getHttpServer());
     await owner
       .post('/api/v1/auth/login')

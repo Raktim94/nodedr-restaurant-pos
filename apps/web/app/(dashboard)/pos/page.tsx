@@ -20,6 +20,10 @@ import { useDisplaySettings } from "@/hooks/use-settings";
 import { useMenuItems, type MenuItem } from "@/hooks/use-menu";
 import { toInclusivePrice } from "@/lib/pricing-preview";
 import { findItemByCode, pushKey, SCAN_MAX_GAP_MS, type ScanBuffer } from "@/lib/pos-scan";
+import { useMenuPauseLabels } from "@/hooks/use-menu-pauses";
+import { withReportedPauses } from "@/lib/menu-pauses";
+import { useQueryClient } from "@tanstack/react-query";
+import { useI18n } from "@/lib/i18n/context";
 import {
   useAddOrderItems,
   useCreateOrder,
@@ -43,7 +47,12 @@ export default function PosPage() {
 
 function PosPageInner() {
   const { branchId, isLoading: branchLoading } = useBranch();
+  const menu = useMenuItems(branchId);
+  const queryClient = useQueryClient();
+  const { t } = useI18n();
+  const allItems = menu.data;
   const { data: settings } = useDisplaySettings(branchId);
+  const pauseLabels = useMenuPauseLabels(allItems, settings?.restaurant.timezone);
   const taxMode = settings?.branch.taxMode ?? "INCLUSIVE";
   const { note, clear: clearNote, toast } = useNoteToast();
   const floorsQuery = useFloors(branchId);
@@ -137,6 +146,11 @@ function PosPageInner() {
   };
 
   const handleSelect = (item: MenuItem) => {
+    const pause = pauseLabels.get(item.id);
+    if (pause) {
+      toast.warning(`${item.name} · ${pause}`);
+      return;
+    }
     if (item.modifierGroups.length > 0 || item.halfPrice != null) {
       setPickerItem(item);
       return;
@@ -152,7 +166,6 @@ function PosPageInner() {
 
   // Keyboard-wedge barcode scanner: it types the code as a fast burst + Enter. Listen anywhere on the page except
   // inside a text field (the search box handles its own Enter), look the code up across all categories and add it.
-  const { data: allItems } = useMenuItems(branchId);
   const scanRef = useRef({ buf: { text: "", last: 0 } as ScanBuffer, items: allItems, select: handleSelect, toast });
   useEffect(() => {
     scanRef.current.items = allItems;
@@ -186,7 +199,7 @@ function PosPageInner() {
   }, []);
 
   const handleModifierConfirm = (modifierIds: string[], modifierLabel: string, portion?: Portion) => {
-    if (!pickerItem) return;
+    if (!pickerItem || pauseLabels.has(pickerItem.id)) return;
     const modifierTotal = modifierIds.reduce((sum, id) => {
       const mod = pickerItem.modifierGroups
         .flatMap((g) => g.modifierGroup.modifiers)
@@ -220,8 +233,22 @@ function PosPageInner() {
 
   const removeLine = (key: string) => setLines((prev) => prev.filter((l) => l.key !== key));
 
+  const handleOrderError = (err: unknown, fallback: string) => {
+    if (err instanceof ApiError && err.code === "ITEM_UNAVAILABLE") {
+      if (err.pausedItems.length) {
+        queryClient.setQueriesData<MenuItem[]>({ queryKey: ["menu", "items", branchId] },
+          (items) => items && withReportedPauses(items, err.pausedItems));
+        void menu.refetch();
+        toast.warning(t("menu.removePaused"));
+        return;
+      }
+      void menu.refetch();
+    }
+    toast.error(err instanceof ApiError ? err.message : fallback);
+  };
+
   const handleSubmit = () => {
-    if (checkingTable) return;
+    if (checkingTable || lines.some((line) => pauseLabels.has(line.menuItemId))) return;
     const sentTableId = tableId;
     const items = lines.map((l) => ({
       menuItemId: l.menuItemId,
@@ -248,7 +275,7 @@ function PosPageInner() {
             setCartOpen(true);
             toast.success(`Added to order #${order.orderNumber} — sent to kitchen`);
           },
-          onError: (err) => toast.error(err instanceof ApiError ? err.message : "Could not add items"),
+          onError: (err) => handleOrderError(err, "Could not add items"),
         },
       );
       return;
@@ -273,7 +300,7 @@ function PosPageInner() {
           setCartOpen(true);
           toast.success(`Order #${order.orderNumber} sent to kitchen`);
         },
-        onError: (err) => toast.error(err instanceof ApiError ? err.message : "Could not create order"),
+        onError: (err) => handleOrderError(err, "Could not create order"),
       },
     );
   };
@@ -370,7 +397,8 @@ function PosPageInner() {
               <ProductGrid
                 branchId={branchId}
                 onSelect={handleSelect}
-                allItems={allItems}
+                menu={menu}
+                pauseLabels={pauseLabels}
                 taxMode={taxMode}
               />
             </Card>
@@ -429,6 +457,7 @@ function PosPageInner() {
             ) : (
               <CartPanel
                 lines={lines}
+                pauseLabels={pauseLabels}
                 orderType={orderType}
                 onOrderTypeChange={setOrderType}
                 tables={tables}
@@ -482,6 +511,7 @@ function PosPageInner() {
 
       <ModifierPickerDialog
         item={pickerItem}
+        pauseLabel={pickerItem ? pauseLabels.get(pickerItem.id) : undefined}
         open={!!pickerItem}
         onOpenChange={(open) => !open && setPickerItem(null)}
         onConfirm={handleModifierConfirm}

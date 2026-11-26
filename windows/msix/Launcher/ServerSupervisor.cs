@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
 using System.Net.Http;
@@ -6,6 +7,15 @@ using System.Text;
 using System.Text.RegularExpressions;
 
 namespace OrderRestro.Launcher;
+
+/// <summary>
+/// The program files in the working copy are damaged or missing and could not be restored. Distinct from a database
+/// problem so the window can say so (and say the data is untouched) instead of blaming the database.
+/// </summary>
+internal sealed class AppFilesException : InvalidOperationException
+{
+    public AppFilesException(string message) : base(message) { }
+}
 
 /// <summary>
 /// Owns the lifecycle of the embedded server: Postgres, the NestJS
@@ -32,10 +42,11 @@ internal sealed class ServerSupervisor : IDisposable
 
     public async Task StartAsync(CancellationToken ct)
     {
-        ServerPaths.EnsureDirectoriesExist();
+        var folderProblems = ServerPaths.EnsureDirectoriesExist();
 
         var firstRun = !File.Exists(ServerPaths.BackendEnvPath);
 
+        foreach (var problem in folderProblems) LogStartup($"WARNING: {problem}");
         LogStartup($"postgres bin dir: {ServerPaths.PostgresBinDir}");
         LogStartup($"postgres data dir: {ServerPaths.PgDataDir}");
         LogStartup($"postgres port: {ServerPaths.PostgresPort}");
@@ -80,6 +91,11 @@ internal sealed class ServerSupervisor : IDisposable
         Report("Starting the web app…");
         await WaitForHttpHealthAsync($"http://127.0.0.1:{ServerPaths.WebPort}/api/health", TimeSpan.FromMinutes(5), _web, "web", ct);
         LogStartup("web health check: OK");
+
+        // /api/health is proxied to the backend, so it says nothing about whether the web app can actually serve its
+        // pages and JavaScript. A damaged working copy answered it fine and then showed a blank window.
+        Report("Checking the app files…");
+        await VerifyWebAppAsync(ct);
 
         Report("Ready.");
     }
@@ -131,7 +147,16 @@ internal sealed class ServerSupervisor : IDisposable
         var stamp = Path.Combine(ServerPaths.DataDir, "runtime.version");
         var pkgVersion = typeof(ServerSupervisor).Assembly.GetName().Version?.ToString() ?? "0";
         var stampOk = File.Exists(stamp) && File.ReadAllText(stamp).Trim() == pkgVersion;
-        if (File.Exists(ServerPaths.NodeExePath) && stampOk) return;
+        if (File.Exists(ServerPaths.NodeExePath) && stampOk)
+        {
+            // Same version, copy already made: confirm every file is still there at the right size (antivirus
+            // quarantine, a cleanup tool or an interrupted copy can leave holes), and put back whatever is not.
+            // A previous blank window asks for a full hash check this time.
+            var deep = File.Exists(RepairFlagPath);
+            await RepairRuntimeAsync(deep, ct, stopDatabase: true);
+            if (deep) { try { File.Delete(RepairFlagPath); } catch { } }
+            return;
+        }
         LogStartup($"runtime copy needed (package {pkgVersion}, stamp ok: {stampOk})");
         await StopStaleRuntimeAsync();
 
@@ -155,7 +180,8 @@ internal sealed class ServerSupervisor : IDisposable
 
         Directory.CreateDirectory(ServerPaths.RuntimeServerDir);
         var copyWatch = Stopwatch.StartNew();
-        if (!await TrySyncChangedFilesAsync(ct))
+        var incremental = await TrySyncChangedFilesAsync(ct);
+        if (!incremental)
         {
             Report("Setting up (first launch only — this can take a minute)…");
             // robocopy, not a hand-rolled copy loop: this source tree is the final packaged/dereferenced output (see
@@ -177,7 +203,215 @@ internal sealed class ServerSupervisor : IDisposable
             }
         }
         LogStartup($"runtime copy done in {copyWatch.Elapsed.TotalSeconds:0.0}s");
+        // robocopy exit codes 0-7 all count as success, including "some files skipped"; do not trust it blindly.
+        // Size check only: hashing all ~28,000 files took 107 s on a PC with real-time antivirus, which is a long time to
+        // add to every update. A missing or cut-short file is what actually happens; the full hash is kept for when it
+        // is asked for (Repair-OrderRestro, the blank-page watchdog) and when the page check below fails.
+        await RepairRuntimeAsync(deep: false, ct, stopDatabase: true);
         File.WriteAllText(stamp, pkgVersion);
+        try { File.Delete(RepairFlagPath); } catch { }
+    }
+
+    /// <summary>Dropped by the window when a page loaded but stayed blank; the next start then hashes every file.</summary>
+    internal static string RepairFlagPath => Path.Combine(ServerPaths.DataDir, "repair-requested.flag");
+
+    /// <summary>
+    /// Checks the working copy against the package's runtime-manifest.tsv (every file's size, and with
+    /// <paramref name="deep"/> its SHA-1) and copies back what is missing or different. Only touches the program
+    /// files under server-runtime; the database (pgdata), uploads and settings are never read or written here.
+    /// Throws <see cref="AppFilesException"/> if something cannot be restored.
+    /// </summary>
+    private async Task RepairRuntimeAsync(bool deep, CancellationToken ct, bool stopDatabase = false)
+    {
+        var manifestPath = Path.Combine(ServerPaths.InstallServerDir, ManifestName);
+        if (!File.Exists(manifestPath)) return;
+        var watch = Stopwatch.StartNew();
+        var entries = ReadManifest(manifestPath);
+        var bad = new ConcurrentBag<string>();
+        await Parallel.ForEachAsync(entries, new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = ct }, (e, _) =>
+        {
+            if (!RuntimeFileMatches(e.Key, e.Value, deep)) bad.Add(e.Key);
+            return ValueTask.CompletedTask;
+        });
+        LogStartup($"runtime check ({(deep ? "full hash" : "size")}): {entries.Count} files, {bad.Count} missing or different, {watch.Elapsed.TotalSeconds:0.0}s");
+        if (bad.IsEmpty) return;
+
+        var sample = string.Join(", ", bad.Take(5));
+        LogStartup($"restoring {bad.Count} program files, e.g. {sample}");
+        Report($"Repairing program files… ({bad.Count})");
+        if (stopDatabase) await StopStaleRuntimeAsync(); else KillStrayWorkingProcesses();
+        var failed = new ConcurrentBag<string>();
+        await Parallel.ForEachAsync(bad, new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = ct }, async (relPath, innerCt) =>
+        {
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    var dst = RuntimePath(relPath);
+                    Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+                    File.Copy(InstallPath(relPath), dst, overwrite: true);
+                    if (RuntimeFileMatches(relPath, entries[relPath], deep: true)) return;
+                    throw new IOException("copy does not match the package");
+                }
+                catch (Exception ex) when (attempt < 3 && ex is IOException or UnauthorizedAccessException)
+                {
+                    await Task.Delay(500, innerCt);
+                }
+                catch (Exception ex)
+                {
+                    LogStartup($"could not restore {relPath}: {ex.Message}");
+                    failed.Add(relPath);
+                    return;
+                }
+            }
+        });
+        if (failed.IsEmpty)
+        {
+            LogStartup($"restored {bad.Count} program files");
+            return;
+        }
+        throw new AppFilesException(
+            $"{failed.Count} of OrderRestro's program files are missing or damaged and could not be restored " +
+            $"(for example {string.Join(", ", failed.Take(3))}).\n\n" +
+            "This is usually antivirus software blocking or removing files, or a very long Windows user name " +
+            $"(longest file path here: {LongestPathHint()}). Your restaurant data has not been touched.\n\n" +
+            $"Details: {Path.Combine(ServerPaths.ServerLogDir, "startup.log")}");
+    }
+
+    private bool RuntimeFileMatches(string relPath, string sizeAndHash, bool deep)
+    {
+        try
+        {
+            var sep = sizeAndHash.IndexOf(':');
+            var size = long.Parse(sizeAndHash[..sep]);
+            var info = new FileInfo(RuntimePath(relPath));
+            if (!info.Exists || info.Length != size) return false;
+            if (!deep) return true;
+            using var fs = new FileStream(info.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return Convert.ToHexString(SHA1.HashData(fs)).Equals(sizeAndHash[(sep + 1)..], StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string LongestPathHint()
+    {
+        try
+        {
+            var longest = File.ReadLines(Path.Combine(ServerPaths.InstallServerDir, ManifestName))
+                .Select(l => l.Split('\t')[0])
+                .OrderByDescending(p => p.Length)
+                .FirstOrDefault() ?? "";
+            var total = ServerPaths.RuntimeServerDir.Length + 1 + longest.Length;
+            var longPaths = Microsoft.Win32.Registry.GetValue(
+                @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem", "LongPathsEnabled", 0);
+            return $"{total} characters, Windows long paths {(Equals(longPaths, 1) ? "on" : "off")}, limit 260 when off";
+        }
+        catch { return "unknown"; }
+    }
+
+    /// <summary>Stops the web/backend processes that run from the working copy (not the database) so files can be replaced.</summary>
+    private void KillStrayWorkingProcesses()
+    {
+        StopProcess(ref _web, "web");
+        StopProcess(ref _backend, "backend");
+        KillRuntimeNodeProcesses();
+    }
+
+    private static void KillRuntimeNodeProcesses()
+    {
+        foreach (var proc in Process.GetProcessesByName("node"))
+        {
+            try
+            {
+                if (proc.MainModule?.FileName?.StartsWith(ServerPaths.RuntimeServerDir, StringComparison.OrdinalIgnoreCase) == true)
+                    proc.Kill(entireProcessTree: true);
+            }
+            catch { }
+        }
+    }
+
+    // --- Web app check ------------------------------------------------------
+
+    private static readonly Regex StaticAssetUrl = new(@"/_next/static/[^""'\\\s<>)]+", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Loads the login page like a browser would, then every script/style/font file it points at. Returns what
+    /// failed (empty = the web app can really serve itself).
+    /// </summary>
+    private async Task<List<string>> CheckWebAssetsAsync(CancellationToken ct)
+    {
+        var problems = new List<string>();
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        var baseUrl = $"http://127.0.0.1:{ServerPaths.WebPort}";
+        string html = "";
+        string? pageError = null;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                using var response = await client.GetAsync(baseUrl + "/login", ct);
+                if (response.IsSuccessStatusCode) { html = await response.Content.ReadAsStringAsync(ct); pageError = null; break; }
+                pageError = $"/login answered HTTP {(int)response.StatusCode}";
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                pageError = $"/login failed: {ex.Message}";
+            }
+            await Task.Delay(1000, ct);
+        }
+        if (pageError is not null) { problems.Add(pageError); return problems; }
+
+        var urls = StaticAssetUrl.Matches(html).Select(m => m.Value.Replace("&amp;", "&")).Distinct().Take(80).ToList();
+        if (urls.Count == 0) { problems.Add("/login has no script or style files to load"); return problems; }
+        var failures = new ConcurrentBag<string>();
+        await Parallel.ForEachAsync(urls, new ParallelOptions { MaxDegreeOfParallelism = 6, CancellationToken = ct }, async (url, innerCt) =>
+        {
+            try
+            {
+                using var response = await client.GetAsync(baseUrl + url, HttpCompletionOption.ResponseHeadersRead, innerCt);
+                if (!response.IsSuccessStatusCode) failures.Add($"HTTP {(int)response.StatusCode} {url}");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !innerCt.IsCancellationRequested)
+            {
+                failures.Add($"{ex.Message} {url}");
+            }
+        });
+        problems.AddRange(failures);
+        LogStartup($"web check: /login and {urls.Count} files, {failures.Count} failed");
+        return problems;
+    }
+
+    /// <summary>
+    /// If the web app cannot serve its own page or files, hashes the whole working copy against the package,
+    /// restores whatever differs, restarts the web app and checks again. Throws <see cref="AppFilesException"/>
+    /// (with the web log's tail) if it still cannot - a clear message instead of a blank window.
+    /// </summary>
+    private async Task VerifyWebAppAsync(CancellationToken ct)
+    {
+        var problems = await CheckWebAssetsAsync(ct);
+        if (problems.Count == 0) return;
+        LogStartup($"web check FAILED: {string.Join(" | ", problems.Take(5))}");
+
+        Report("Repairing program files…");
+        KillStrayWorkingProcesses();
+        await RepairRuntimeAsync(deep: true, ct);
+        var healthUrl = $"http://127.0.0.1:{ServerPaths.WebPort}/api/health";
+        StartBackend();
+        StartWeb();
+        await WaitForHttpHealthAsync($"http://127.0.0.1:{ServerPaths.BackendPort}/api/health", TimeSpan.FromMinutes(10), _backend, "backend", ct);
+        await WaitForHttpHealthAsync(healthUrl, TimeSpan.FromMinutes(5), _web, "web", ct);
+
+        problems = await CheckWebAssetsAsync(ct);
+        if (problems.Count == 0) { LogStartup("web check: OK after repair"); return; }
+        LogStartup($"web check still FAILED after repair: {string.Join(" | ", problems.Take(5))}");
+        throw new AppFilesException(
+            "OrderRestro's web app starts but cannot show its pages:\n" +
+            string.Join("\n", problems.Take(5)) +
+            $"\n\n{LogTail(Path.Combine(ServerPaths.ServerLogDir, "web.log"), 12)}\n\n" +
+            $"Your restaurant data has not been touched. Details: {Path.Combine(ServerPaths.ServerLogDir, "startup.log")}");
     }
 
     private const string ManifestName = "runtime-manifest.tsv";
@@ -273,15 +507,7 @@ internal sealed class ServerSupervisor : IDisposable
             }
         }
         catch (Exception ex) { LogStartup($"stale postgres stop failed (ignored): {ex.Message}"); }
-        foreach (var proc in Process.GetProcessesByName("node"))
-        {
-            try
-            {
-                if (proc.MainModule?.FileName?.StartsWith(ServerPaths.RuntimeServerDir, StringComparison.OrdinalIgnoreCase) == true)
-                    proc.Kill(entireProcessTree: true);
-            }
-            catch { }
-        }
+        KillRuntimeNodeProcesses();
     }
 
     // --- Postgres ---------------------------------------------------------

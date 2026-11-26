@@ -30,5 +30,9 @@ If something goes wrong
 "Windows does not trust ..."   Right-click Install-OrderRestro.cmd and choose "Run as administrator".
 "A different version is installed"   Uninstall OrderRestro from Settings > Apps, then run the installer again.
 "OrderRestro is running"       Close it, also from the system tray (near the clock), then run the installer again.
-A blank window                 Install the Microsoft Edge WebView2 Runtime: https://go.microsoft.com/fwlink/p/?LinkId=2124703
+A blank window                 1. Update to the newest OrderRestro.msix (run Install-OrderRestro.cmd again): it checks and repairs its own
+                               program files on every start.
+                               2. Still blank: double-click Repair-OrderRestro.cmd, then open OrderRestro. This rebuilds only the program
+                               files; your database, restaurant records and uploaded files are not touched.
+                               3. Still blank: install the Microsoft Edge WebView2 Runtime: https://go.microsoft.com/fwlink/p/?LinkId=2124703
 Anything else                  Send the red error text and the "Error code" line shown in the installer window to support.

@@ -55,6 +55,7 @@ export class PublicMenuService {
       // The guest page previews prices. EXCLUSIVE branches store pre-tax
       // prices, so the page must know to gross them up before displaying them.
       taxMode: branch.taxMode,
+      timezone: branch.restaurant.timezone,
       tableName: table.name ?? `Table ${table.number}`,
       categories,
       payments: { cash: true, online },
@@ -78,6 +79,7 @@ export class PublicMenuService {
             description: true,
             imageUrl: true,
             price: true,
+            pausedUntil: true,
             taxRatePercent: true,
             isVeg: true,
             isVegan: true,

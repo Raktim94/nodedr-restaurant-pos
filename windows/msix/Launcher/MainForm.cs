@@ -187,6 +187,8 @@ internal sealed class MainForm : Form
             return;
         }
 
+        await ClearStaleWebCacheAsync();
+
         // Minimum-privilege WebView2 settings: no dev tools / no default
         // context menu with "Inspect" for end users, no crash-reporting
         // status page noise. Printing stays enabled — window.print() must
@@ -217,10 +219,90 @@ internal sealed class MainForm : Form
             {
                 _errorLabel.Visible = false;
                 _webView.Visible = true;
+                if (_supervisor is not null) _ = WatchForBlankPageAsync();
             }
         };
 
         Navigate();
+    }
+
+    /// <summary>
+    /// A new package version has new JavaScript file names; a page or script cached by the embedded browser from the
+    /// old version points at files that no longer exist, which shows as a blank window with failed chunk requests.
+    /// Clears only the browser's caches (and service workers), once per version. Sign-in cookies and the app's saved
+    /// settings are kept.
+    /// </summary>
+    private async Task ClearStaleWebCacheAsync()
+    {
+        try
+        {
+            var version = typeof(MainForm).Assembly.GetName().Version?.ToString() ?? "0";
+            var stamp = Path.Combine(AppConfig.WebView2UserDataFolder, "cache.version");
+            if (File.Exists(stamp) && File.ReadAllText(stamp).Trim() == version) return;
+            await _webView.CoreWebView2.Profile.ClearBrowsingDataAsync(
+                CoreWebView2BrowsingDataKinds.DiskCache |
+                CoreWebView2BrowsingDataKinds.CacheStorage |
+                CoreWebView2BrowsingDataKinds.ServiceWorkers);
+            File.WriteAllText(stamp, version);
+        }
+        catch (Exception ex)
+        {
+            LogWindow($"could not clear the browser cache: {ex.Message}");
+        }
+    }
+
+    private bool _blankWatchRunning;
+
+    /// <summary>
+    /// The server answering is not the same as the page drawing. If the page shows nothing 12 s after it loaded,
+    /// reload once; if it is still empty, say so (with where the logs are) and ask for a full file check on the next
+    /// start, instead of leaving the user with a blank window.
+    /// </summary>
+    private async Task WatchForBlankPageAsync()
+    {
+        if (_blankWatchRunning) return;
+        _blankWatchRunning = true;
+        try
+        {
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                await Task.Delay(attempt == 0 ? 12000 : 10000);
+                if (IsDisposed || _webView.CoreWebView2 is null) return;
+                var result = await _webView.CoreWebView2.ExecuteScriptAsync(
+                    "(document.body ? (document.body.innerText || '').trim().length + " +
+                    "document.querySelectorAll('img,svg,canvas,input,button').length : 0)");
+                if (int.TryParse(result, out var visible) && visible > 0) return;
+                LogWindow($"page looks blank after load (attempt {attempt + 1})");
+                if (attempt == 0) _webView.Reload();
+            }
+            try { File.WriteAllText(ServerSupervisor.RepairFlagPath, DateTime.UtcNow.ToString("O")); } catch { }
+            _webView.Visible = false;
+            _errorLabel.Text =
+                "OrderRestro started but its page stayed blank.\n\n" +
+                "Close OrderRestro completely (also from the tray icon) and open it again: it will check and\n" +
+                "repair its program files on the next start. Your restaurant data is not touched.\n\n" +
+                $"If it happens again, send us the folder {ServerPaths.ServerLogDir}";
+            _errorLabel.Visible = true;
+        }
+        catch (Exception ex)
+        {
+            LogWindow($"blank-page check failed: {ex.Message}");
+        }
+        finally
+        {
+            _blankWatchRunning = false;
+        }
+    }
+
+    private static void LogWindow(string message)
+    {
+        try
+        {
+            File.AppendAllText(
+                Path.Combine(ServerPaths.ServerLogDir, "startup.log"),
+                $"{DateTime.UtcNow:O} window: {message}{Environment.NewLine}");
+        }
+        catch { /* best-effort */ }
     }
 
     private async Task<bool> StartEmbeddedServerAsync()
@@ -268,6 +350,18 @@ internal sealed class MainForm : Form
                     $"{DateTime.UtcNow:O} {ex}\n");
             }
             catch { /* best-effort */ }
+
+            if (ex is AppFilesException)
+            {
+                // Stop what is already running so Retry starts clean instead of colliding on the ports.
+                try { await _supervisor.StopAsync(); } catch { }
+                ShowFatalError(
+                    technicalMessage: $"{ex.Message}\n\nLogs: {ServerPaths.ServerLogDir}",
+                    friendlyHeadline: "OrderRestro's program files are damaged",
+                    friendlyBody: "Your restaurant data has not been deleted. OrderRestro tried to repair its own program files and could not.",
+                    retry: async () => { Controls.Remove(_fatalErrorPanel); _fatalErrorPanel = null; await InitializeAsync(); });
+                return false;
+            }
 
             ShowFatalError(
                 technicalMessage: $"Could not start the embedded server.\n\n{ex.Message}\n\nLogs: {ServerPaths.ServerLogDir}",

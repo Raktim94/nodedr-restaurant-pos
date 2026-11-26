@@ -166,6 +166,9 @@ describe('confirming a payment', () => {
 
   it('keeps a received payment visible when the bill will not accept it', async () => {
     const { svc, orders, pay } = setup();
+    const error = jest
+      .spyOn(svc['logger'], 'error')
+      .mockReturnValueOnce(undefined);
     orders.checkout.mockRejectedValue(
       new Error('Order is not open for checkout'),
     );
@@ -174,6 +177,9 @@ describe('confirming a payment', () => {
     expect(pay.status).toBe('NEEDS_REVIEW');
     expect(pay.appliedAt).toBeNull();
     expect(pay.note).toMatch(/could not be settled/);
+    expect(error).toHaveBeenCalledWith(
+      'Could not settle order o1 for gp1: Order is not open for checkout',
+    );
   });
 
   it('a TEST payment never marks the order paid and says so', async () => {
@@ -187,11 +193,15 @@ describe('confirming a payment', () => {
 
   it('survives the provider being unreachable', async () => {
     const { svc, pay } = setup();
+    const warn = jest
+      .spyOn(svc['logger'], 'warn')
+      .mockReturnValueOnce(undefined);
     fake.fetchStatus.mockRejectedValue(new Error('boom'));
     await expect(svc.refresh('gp1')).resolves.toMatchObject({
       status: 'CREATED',
     });
     expect(pay.status).toBe('CREATED');
+    expect(warn).toHaveBeenCalledWith('Status lookup failed for gp1: boom');
   });
 });
 
@@ -346,11 +356,17 @@ describe('redirect target', () => {
 describe('releasing a held table order', () => {
   it('is asked once the payment settles, and a failure there never downgrades the confirmed payment', async () => {
     const { svc, orders, pay } = setup();
+    const error = jest
+      .spyOn(svc['logger'], 'error')
+      .mockReturnValueOnce(undefined);
     orders.releaseHeldOrder.mockRejectedValue(new Error('kitchen unavailable'));
     fake.fetchStatus.mockResolvedValue(paid());
     await svc.refresh('gp1');
     expect(orders.releaseHeldOrder).toHaveBeenCalledTimes(1);
     expect(pay.status).toBe('SUCCEEDED');
+    expect(error).toHaveBeenCalledWith(
+      'Could not release order o1 after payment: kitchen unavailable',
+    );
   });
 });
 

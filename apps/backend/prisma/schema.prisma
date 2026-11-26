@@ -1375,6 +1375,7 @@ model MenuItem {
 
   availableFrom String? // "HH:mm" — availability window
   availableTo   String?
+  pausedUntil   DateTime? // Instant when a temporary sales pause ends, independent of the recurring window.
   isSeasonal    Boolean   @default(false)
   seasonStart   DateTime?
   seasonEnd     DateTime?

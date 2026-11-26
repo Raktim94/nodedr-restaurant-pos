@@ -108,3 +108,30 @@ export function localMinuteAndDay(instant: Date, tz: string) {
     day: days.indexOf(get('weekday')),
   };
 }
+
+/** First instant strictly after now whose restaurant clock reads the requested HH:mm. */
+export function nextLocalTime(now: Date, tz: string, time: string): Date {
+  let clock: Intl.DateTimeFormat;
+  try {
+    clock = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      hourCycle: 'h23',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    throw new BadRequestException(
+      'Set a valid restaurant time zone in Settings, or pause for a duration.',
+    );
+  }
+  // Walk real minutes so a backward clock change offers both occurrences and a
+  // nonexistent spring-forward time resolves to its next actual occurrence.
+  const minute = 60_000;
+  const first = Math.floor(now.getTime() / minute) * minute + minute;
+  const limit = first + 48 * 60 * minute;
+  for (let instant = first; instant <= limit; instant += minute) {
+    if (clock.format(instant) === time) return new Date(instant);
+  }
+  throw new BadRequestException('Invalid local time');
+}

@@ -1,7 +1,10 @@
 "use client";
 
 import { BellRing, CheckCircle2, Leaf, Minus, Plus, Receipt, UtensilsCrossed } from "lucide-react";
-import { use, useEffect, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
+import { PauseBadge } from "@/components/menu/pause-badge";
+import { useMenuPauseLabels } from "@/hooks/use-menu-pauses";
+import { withReportedMenuPauses } from "@/lib/menu-pauses";
 import { RatingCard } from "@/components/order/rating-card";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LanguageSwitcher } from "@/components/layout/language-switcher";
@@ -25,6 +28,7 @@ interface PublicMenuItem {
   description: string | null;
   price: string;
   taxRatePercent: string;
+  pausedUntil: string | null;
   isVeg: boolean;
   modifierGroups: {
     modifierGroup: {
@@ -83,6 +87,7 @@ interface PublicMenuCategory {
 
 interface PublicMenuResponse {
   branchName: string;
+  timezone: string;
   currency: string;
   taxMode: "INCLUSIVE" | "EXCLUSIVE";
   tableName: string;
@@ -221,7 +226,11 @@ export default function PublicMenuPage({
     queryKey: ["public-menu", qrToken],
     queryFn: () => api.get<PublicMenuResponse>(`/public/menu/${qrToken}`),
     retry: false,
+    refetchInterval: (query) => query.state.data && !placed ? 15_000 : false,
   });
+  const menuItems = useMemo(() => data?.categories.flatMap((category) => category.items), [data]);
+  const pauseLabels = useMenuPauseLabels(menuItems, data?.timezone);
+  const hasPaused = cart.some((line) => pauseLabels.has(line.menuItemId));
   const formatPrice = (amount: number | string) => formatCurrency(amount, data?.currency, LOCALE_TAGS[locale]);
   const displayPrice = (item: PublicMenuItem, extra = 0) =>
     toInclusivePrice(
@@ -262,15 +271,22 @@ export default function PublicMenuPage({
     onError: (e) => setPayError(e instanceof ApiError ? e.message : "Could not change that. Please ask the staff."),
   });
 
+  const items = cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds }));
+  const orderRequest = { items, payment: payChoice, guestName };
   const placeOrder = useMutation({
-    mutationFn: () => {
-      const items = cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds }));
-      const sig = JSON.stringify([items, payChoice, guestName]);
+    mutationFn: (body: typeof orderRequest) => {
+      const sig = JSON.stringify(body);
       if (!attempt.current || attempt.current.sig !== sig) attempt.current = { sig, key: uuid() };
-      return api.post<{ id: string; orderNumber: string; ratingToken?: string; sessionGrant?: string }>(`/public/menu/${qrToken}/order`, { guestName, items, payment: payChoice, idempotencyKey: attempt.current.key }, hdr());
+      return api.post<{ id: string; orderNumber: string; ratingToken?: string; sessionGrant?: string }>(`/public/menu/${qrToken}/order`, { ...body, idempotencyKey: attempt.current.key }, hdr());
     },
-    onError: (e) => { lostSession(e); },
-    onSuccess: async (order) => {
+    onError: (e) => {
+      lostSession(e);
+      if (e instanceof ApiError && e.code === "ITEM_UNAVAILABLE") {
+        queryClient.setQueryData<PublicMenuResponse>(["public-menu", qrToken], (current) => withReportedMenuPauses(current, e.pausedItems));
+        void queryClient.invalidateQueries({ queryKey: ["public-menu", qrToken] });
+      }
+    },
+    onSuccess: async (order, request) => {
       attempt.current = null;
       if (order.sessionGrant) {
         // The order opened (or joined) the table: from now on this phone holds an ordinary session grant.
@@ -283,9 +299,14 @@ export default function PublicMenuPage({
       setPlaced(order);
       setCart([]);
       queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] });
-      if (payChoice === "ONLINE") await startOnlinePayment(order.id);
+      if (request.payment === "ONLINE") await startOnlinePayment(order.id);
     },
   });
+  // The previous attempt may already be on the table's tab. Retrying the same
+  // basket and payment choice recovers its receipt with the same idempotency key.
+  const retryUnknownOrder = placeOrder.isError && JSON.stringify(placeOrder.variables) === JSON.stringify(orderRequest) &&
+    (!(placeOrder.error instanceof ApiError) || placeOrder.error.status >= 500);
+  const blockedByPause = hasPaused && !retryUnknownOrder;
 
   const confirmName = () => {
     const trimmed = nameDraft.trim();
@@ -304,6 +325,7 @@ export default function PublicMenuPage({
     cart.filter((l) => l.menuItemId === itemId).reduce((sum, l) => sum + l.quantity, 0);
 
   const addLine = (item: PublicMenuItem, modifierIds: string[], label: string, extra: number) => {
+    if (pauseLabels.has(item.id)) return;
     const key = `${item.id}:${[...modifierIds].sort().join(",")}`;
     setCart((prev) => {
       const existing = prev.find((l) => l.key === key);
@@ -328,7 +350,7 @@ export default function PublicMenuPage({
         .filter((l) => l.quantity > 0);
     });
 
-  if (error) {
+  if (error && (!data || (error instanceof ApiError && error.status === 404))) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
         <UtensilsCrossed className="h-10 w-10 text-muted-foreground" />
@@ -449,6 +471,7 @@ export default function PublicMenuPage({
                           />
                           <div>
                             <p className="text-sm font-medium text-foreground">{item.name}</p>
+                            <PauseBadge label={pauseLabels.get(item.id)} />
                             {item.description && (
                               <p className="mt-0.5 text-xs text-muted-foreground">
                                 {item.description}
@@ -475,6 +498,7 @@ export default function PublicMenuPage({
                               size="icon"
                               className="h-7 w-7"
                               onClick={() => handleAdd(item)}
+                              disabled={pauseLabels.has(item.id)}
                             >
                               <Plus className="h-3 w-3" />
                             </Button>
@@ -485,6 +509,7 @@ export default function PublicMenuPage({
                             size="sm"
                             className="shrink-0"
                             onClick={() => handleAdd(item)}
+                            disabled={pauseLabels.has(item.id)}
                           >
                             {t("order.add")}
                           </Button>
@@ -596,6 +621,7 @@ export default function PublicMenuPage({
 
       <ModifierPickerDialog
         item={pickerItem}
+        pauseLabel={pickerItem ? pauseLabels.get(pickerItem.id) : undefined}
         formatPrice={formatPrice}
         open={!!pickerItem}
         onOpenChange={(open) => !open && setPickerItem(null)}
@@ -628,18 +654,19 @@ export default function PublicMenuPage({
             </fieldset>
           )}
           {!data?.payments?.online && <p className="mx-auto mb-2 max-w-lg text-center text-xs text-muted-foreground">You will pay at the register.</p>}
+          {blockedByPause && <p role="status" className="mx-auto mb-2 max-w-lg text-center text-sm text-warning">{t("menu.removePaused")}</p>}
           <div className="mx-auto flex max-w-lg items-center gap-3">
             <Button
               className="h-12 flex-1"
-              disabled={placeOrder.isPending || (!!data?.session?.required && !grant && !access)}
-              onClick={() => placeOrder.mutate()}
+              disabled={blockedByPause || placeOrder.isPending || (!!data?.session?.required && !grant && !access)}
+              onClick={() => placeOrder.mutate(orderRequest)}
             >
               {placeOrder.isPending
                 ? t("order.placingOrder")
                 : `${t("order.placeOrder")} — ${cartCount} ${cartCount > 1 ? t("order.items") : t("order.item")} · ${formatPrice(cartTotal)}`}
             </Button>
           </div>
-          {placeOrder.isError && (
+          {placeOrder.isError && !(placeOrder.error instanceof ApiError && placeOrder.error.pausedItems.length && blockedByPause) && (
             <p className="mx-auto mt-2 max-w-lg text-center text-xs text-destructive">
               {placeOrder.error instanceof ApiError
                 ? placeOrder.error.message

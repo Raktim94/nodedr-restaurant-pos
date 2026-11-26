@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { PauseBadge } from "@/components/menu/pause-badge";
 import { Input } from "@/components/ui/input";
 import { QueryError } from "@/components/ui/query-error";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useMenuCosts, useMfgSettings } from "@/hooks/use-manufacturing";
-import { useCategories, useMenuItems, type MenuItem } from "@/hooks/use-menu";
+import { useCategories, type useMenuItems, type MenuItem } from "@/hooks/use-menu";
 import { formatCurrency } from "@/lib/format";
 import { toInclusivePrice } from "@/lib/pricing-preview";
 import { findItemByCode } from "@/lib/pos-scan";
@@ -14,19 +15,20 @@ import { findItemByCode } from "@/lib/pos-scan";
 export function ProductGrid({
   branchId,
   onSelect,
-  allItems,
+  menu,
+  pauseLabels,
   taxMode = "INCLUSIVE",
 }: {
   branchId: string | null;
   onSelect: (item: MenuItem) => void;
-  /** Full unfiltered menu, used for barcode lookup only (scans ignore category filters). */
-  allItems?: MenuItem[];
+  menu: ReturnType<typeof useMenuItems>;
+  pauseLabels: ReadonlyMap<string, string>;
   taxMode?: "INCLUSIVE" | "EXCLUSIVE";
 }) {
   const { data: categories } = useCategories(branchId);
   const [activeCategoryId, setActiveCategoryId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
-  const { data: items, isLoading, isError, error, refetch, isFetching } = useMenuItems(branchId, activeCategoryId);
+  const { data: items, isLoading, isError, error, refetch, isFetching } = menu;
 
   // Optional line under each price: the posted production cost (today's when there was a batch today). Off until someone
   // switches it on here, remembered on this device. Only shown to people allowed to see cost reports, and only when costing is on.
@@ -44,7 +46,7 @@ export function ProductGrid({
   const costOf = new Map((costs?.items ?? []).map((c) => [c.menuItemId, c]));
 
   // Archived items (deleted but kept for old orders) are not for sale. A typed/scanned barcode or SKU also finds its item.
-  const sellable = items?.filter((i) => i.isActive);
+  const sellable = items?.filter((i) => i.isActive && (!activeCategoryId || i.categoryId === activeCategoryId));
   const needle = search.toLowerCase();
   const filtered = sellable?.filter(
     (i) => i.name.toLowerCase().includes(needle) || (!!needle && findItemByCode([i], search) === i),
@@ -61,7 +63,7 @@ export function ProductGrid({
           onKeyDown={(e) => {
             // A scanner focused in this box ends with Enter: add the exact barcode/SKU match and clear the box.
             if (e.key !== "Enter") return;
-            const hit = findItemByCode((allItems ?? items ?? []).filter((i) => i.isActive), search);
+            const hit = findItemByCode(items, search);
             if (!hit) return;
             e.preventDefault();
             onSelect(hit);
@@ -120,8 +122,9 @@ export function ProductGrid({
             key={item.id}
             type="button"
             title={item.name}
+            disabled={pauseLabels.has(item.id)}
             onClick={() => onSelect(item)}
-            className="flex min-h-24 min-w-0 flex-col items-start gap-2 rounded-2xl border border-border bg-card p-3 text-left sm:p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md active:scale-[0.97] active:translate-y-0 lg:min-h-32 lg:justify-between lg:p-4 lg:hover:border-primary/50"
+            className="flex min-h-24 min-w-0 flex-col items-start gap-2 rounded-2xl border border-border bg-card p-3 text-left sm:p-4 shadow-sm transition-all enabled:hover:-translate-y-0.5 enabled:hover:shadow-md enabled:active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-muted/30 lg:min-h-32 lg:justify-between lg:p-4 lg:enabled:hover:border-primary/50"
           >
             <span
               className={`h-2.5 w-2.5 rounded-full ${item.isVeg ? "bg-success" : "bg-destructive"}`}
@@ -129,6 +132,7 @@ export function ProductGrid({
             <span className="line-clamp-3 w-full min-w-0 [overflow-wrap:anywhere] text-sm font-medium leading-tight text-foreground lg:text-[15px]">
               {item.name}
             </span>
+            <PauseBadge label={pauseLabels.get(item.id)} />
             <span className="flex w-full items-baseline justify-between gap-2">
               <span className="text-sm font-semibold tabular-nums text-foreground lg:text-base">
                 {formatCurrency(

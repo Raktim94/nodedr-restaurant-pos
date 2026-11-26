@@ -1,7 +1,7 @@
 "use client";
 
 import { kitchenProgress, type PaymentMethodDto } from "@nodedr-restaurant/types";
-import { ArrowLeft, CheckCircle2, ChefHat, Pencil, Printer, QrCode } from "lucide-react";
+import { CheckCircle2, ChefHat, Pencil, Printer, QrCode } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { StatusNote, useNoteToast } from "@/components/ui/status-note";

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Sparkles, CheckCircle2 } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface ThinkingStepsDisplayProps {

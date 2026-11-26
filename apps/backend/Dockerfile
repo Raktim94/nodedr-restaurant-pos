@@ -91,6 +91,7 @@ COPY --from=builder /repo/node_modules ./node_modules
 COPY --from=builder /repo/apps/backend/node_modules ./apps/backend/node_modules
 COPY --from=builder /repo/apps/backend/dist ./apps/backend/dist
 COPY --from=builder /repo/apps/backend/prisma ./apps/backend/prisma
+COPY --from=builder /repo/apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
 COPY --from=builder /repo/apps/backend/package.json ./apps/backend/package.json
 COPY --from=builder /repo/packages/types/dist ./packages/types/dist
 COPY --from=builder /repo/packages/types/package.json ./packages/types/package.json

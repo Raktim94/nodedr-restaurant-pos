@@ -102,7 +102,7 @@ function lastAmount(text: string, labels: string[]): number | null {
   let found: number | null = null;
   for (const label of labels) {
     const re = new RegExp(
-      String.raw`${label}[^\S\n]*[:=-]?[^\S\n]*${AMOUNT}`,
+      String.raw`\b${label}[^\S\n]*[:=-]?[^\S\n]*${AMOUNT}`,
       'gi',
     );
     for (const m of text.matchAll(re)) {
@@ -151,7 +151,9 @@ export function parseInvoiceText(input: string): ParsedInvoice {
   if (gstin && !gstinValid)
     warnings.push('GSTIN found but its check character is wrong - verify it.');
 
-  const totalAmount = lastAmount(text, [
+  // Keep "Sub Total" and "Sub-Total" together so their second word cannot match "Total".
+  const totalsText = text.replace(/\bsub[ \t\u00a0-]+total\b/gi, 'subtotal');
+  const totalAmount = lastAmount(totalsText, [
     'grand\\s*total',
     'net\\s*payable',
     'amount\\s*payable',

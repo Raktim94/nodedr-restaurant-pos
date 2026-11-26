@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Bot, Check, Copy, Sparkles, User } from "lucide-react";
+import { Check, Copy, Sparkles, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 

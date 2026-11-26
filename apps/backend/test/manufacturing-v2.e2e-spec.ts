@@ -16,6 +16,26 @@ const BRANCH = 'demo-branch';
 const q = `?branchId=${BRANCH}`;
 const tag = randomUUID().slice(0, 5);
 
+interface ProductionLine {
+  role: 'INPUT' | 'OUTPUT';
+  ingredientId: string;
+  expectedQuantity: string | null;
+  rejectedQuantity: string;
+  allocatedCost: string | null;
+  goodUnitCost: string | null;
+}
+
+interface ProductionEntry {
+  lines: ProductionLine[];
+  ingredientCost: string | null;
+  totalCost: string | null;
+  unitCost: string | null;
+  recipeName: string | null;
+  recipeSnapshot: { baseOutputQty: string; lines: unknown[] } | null;
+  sourcePoNumber: string | null;
+  sourceSupplier: string | null;
+}
+
 run('Manufacturing journal (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -68,7 +88,7 @@ run('Manufacturing journal (e2e)', () => {
   });
   const entryOf = async (eid: string) =>
     (await owner.get(`/api/v1/inventory/production/${eid}${q}`).expect(200))
-      .body;
+      .body as ProductionEntry;
   const daily = async (extra = '') =>
     (
       await owner
@@ -206,12 +226,11 @@ run('Manufacturing journal (e2e)', () => {
           `/api/v1/inventory/recipes/fill${q}&kind=RECIPE&id=${id.recipe}&quantity=200`,
         )
         .expect(200)
-    ).body;
+    ).body as { lines: { name: string; quantity: string }[] };
     const by = Object.fromEntries(
-      fill.lines.map((l: { name: string; quantity: string }) => [
-        l.name.replace(`-${tag}`, ''),
-        l.quantity,
-      ]),
+      fill.lines.map(
+        (l) => [l.name.replace(`-${tag}`, ''), l.quantity] as const,
+      ),
     );
     expect(by).toMatchObject({ Maida: '20', Chicken: '16', Veg: '10' }); // 200 planned = 2 x the 100 base
     await post(owner, 'recipes', {
@@ -275,11 +294,9 @@ run('Manufacturing journal (e2e)', () => {
     expect(Number(e.totalCost)).toBe(4480); // + 300 labour
     expect(Number(e.unitCost)).toBe(22.4);
     expect(e.recipeName).toContain('Chicken momo (v1)');
-    expect(e.recipeSnapshot.baseOutputQty).toBe('100');
-    const chicken = e.lines.find(
-      (l: { ingredientId: string }) => l.ingredientId === id.chicken,
-    );
-    expect(Number(chicken.expectedQuantity)).toBe(16);
+    expect(e.recipeSnapshot?.baseOutputQty).toBe('100');
+    const chicken = e.lines.find((l) => l.ingredientId === id.chicken);
+    expect(Number(chicken?.expectedQuantity)).toBe(16);
     expect(await stock(id.maida)).toBe(before.maida - 20);
     expect(await stock(id.momo)).toBe(before.momo + 200);
   });
@@ -324,9 +341,9 @@ run('Manufacturing journal (e2e)', () => {
     batchB = r.body.id;
     const e = await entryOf(batchB);
     expect(Number(e.totalCost)).toBe(4950); // 800 + 3520 + 330 + 300
-    const out = e.lines.find((l: { role: string }) => l.role === 'OUTPUT');
-    expect(Number(out.goodUnitCost)).toBeCloseTo(4950 / 230, 3);
-    expect(Number(out.rejectedQuantity)).toBe(12);
+    const out = e.lines.find((l) => l.role === 'OUTPUT');
+    expect(Number(out?.goodUnitCost)).toBeCloseTo(4950 / 230, 3);
+    expect(Number(out?.rejectedQuantity)).toBe(12);
     expect(await stock(id.momo)).toBe(momoBefore + 230); // 230, not 242
     const mv = await prisma.stockMovement.findMany({
       where: { productionEntryId: batchB, type: 'PRODUCTION' },
@@ -350,7 +367,7 @@ run('Manufacturing journal (e2e)', () => {
     expect(r.body.version).toBe(2);
     const e = await entryOf(batchA);
     expect(e.recipeName).toContain('(v1)');
-    expect(e.recipeSnapshot.lines).toHaveLength(3);
+    expect(e.recipeSnapshot?.lines).toHaveLength(3);
     expect(Number(e.totalCost)).toBe(4480);
   });
 
@@ -360,12 +377,13 @@ run('Manufacturing journal (e2e)', () => {
     );
     const block = d.days.find((x: { date: string }) => x.date === localToday);
     expect(block).toBeDefined();
-    const nums = block.vouchers.map((v: { entryNo: string }) => v.entryNo);
+    const vouchers = block.vouchers as {
+      entryNo: string;
+      totalCost: string | null;
+    }[];
+    const nums = vouchers.map((v) => v.entryNo);
     expect(nums.length).toBeGreaterThanOrEqual(2);
-    const sumCost = block.vouchers.reduce(
-      (s: number, v: { totalCost: string }) => s + Number(v.totalCost),
-      0,
-    );
+    const sumCost = vouchers.reduce((s, v) => s + Number(v.totalCost), 0);
     expect(Number(block.totalCost)).toBeCloseTo(sumCost, 2);
     const momo = block.produced.find(
       (p: { ingredientId: string }) => p.ingredientId === id.momo,
@@ -414,7 +432,7 @@ run('Manufacturing journal (e2e)', () => {
     ).body;
     const p = a.products[0];
     const bA = p.batches.find(
-      (b: { entryNo: string }) => b.entryNo === nums_of(p, batchA),
+      (b: { voucherId: string }) => b.voucherId === batchA,
     );
     expect(bA).toBeDefined();
     const chickenA = bA.ingredients.find((i: { name: string }) =>
@@ -424,12 +442,6 @@ run('Manufacturing journal (e2e)', () => {
     expect(Number(chickenA.variancePercent)).toBeCloseTo(-12.5, 1); // 14 vs 16 expected
     expect(Number(bA.unitCost)).toBe(22.4);
     expect(a.note).toMatch(/not an improvement by itself/);
-    function nums_of(
-      pr: { batches: { voucherId: string; entryNo: string }[] },
-      vid: string,
-    ) {
-      return pr.batches.find((b) => b.voucherId === vid)!.entryNo;
-    }
   });
 
   it('stock shortage on any row refuses the whole voucher and leaves every stock untouched', async () => {
@@ -510,17 +522,11 @@ run('Manufacturing journal (e2e)', () => {
     const q1 = await make(
       voucher({ inputs, outputs: outs(), allocationMethod: 'QUANTITY' }),
     ).expect(201);
-    const e1 = await entryOf(q1.body.id);
-    const o1 = e1.lines.filter((l: { role: string }) => l.role === 'OUTPUT');
+    const e1 = await entryOf(q1.body.id as string);
+    const o1 = e1.lines.filter((l) => l.role === 'OUTPUT');
     // shared cost = 400 + 1100 + 300 labour = 1800, split 150:50
-    const cost = (
-      rows: {
-        ingredientId: string;
-        allocatedCost: string;
-        goodUnitCost: string;
-      }[],
-      iid: string,
-    ) => rows.find((l) => l.ingredientId === iid)!;
+    const cost = (rows: ProductionLine[], iid: string) =>
+      rows.find((l) => l.ingredientId === iid)!;
     expect(Number(cost(o1, id.momo).allocatedCost)).toBe(1350);
     expect(Number(cost(o1, id.big).allocatedCost)).toBe(450);
     expect(Number(cost(o1, id.momo).goodUnitCost)).toBe(9); // 1350 / 150
@@ -545,8 +551,8 @@ run('Manufacturing journal (e2e)', () => {
         allocationMethod: 'MANUAL',
       }),
     ).expect(201);
-    const o2 = (await entryOf(m1.body.id)).lines.filter(
-      (l: { role: string }) => l.role === 'OUTPUT',
+    const o2 = (await entryOf(m1.body.id as string)).lines.filter(
+      (l) => l.role === 'OUTPUT',
     );
     expect(Number(cost(o2, id.momo).allocatedCost)).toBe(840);
     expect(Number(cost(o2, id.big).allocatedCost)).toBe(960); // 400 direct + 560
@@ -733,7 +739,7 @@ run('Manufacturing journal (e2e)', () => {
           outputs: [{ ingredientId: id.momo, quantity: '20', unit: 'PIECE' }],
         }),
       ).expect(201);
-      const e = await entryOf(r.body.id);
+      const e = await entryOf(r.body.id as string);
       expect(e.sourcePoNumber).toBe(po.poNumber);
       expect(e.sourceSupplier).toBe(`Sup ${tag}`);
     }

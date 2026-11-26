@@ -65,6 +65,13 @@ export class StandaloneService {
     private readonly bookings: StandaloneReservationsService,
   ) {}
 
+  menuPauses(branchId: string) {
+    return this.prisma.menuItem.findMany({
+      where: { branchId, isActive: true, pausedUntil: { gt: new Date() } },
+      select: { id: true, pausedUntil: true },
+    });
+  }
+
   /** The menu, tables and settings a phone needs to sell with no connection. */
   async snapshot(user: SessionUser, branchId: string) {
     const branch = await this.prisma.branch.findUniqueOrThrow({
@@ -86,6 +93,7 @@ export class StandaloneService {
           name: true,
           price: true,
           halfPrice: true,
+          pausedUntil: true,
           taxRatePercent: true,
           isVeg: true,
           isCombo: true,
@@ -257,6 +265,7 @@ export class StandaloneService {
         categoryId: i.categoryId,
         name: i.name,
         price: Number(i.price),
+        pausedUntil: i.pausedUntil,
         halfPrice: i.halfPrice == null ? null : Number(i.halfPrice),
         taxRate: Number(i.taxRatePercent),
         isVeg: i.isVeg,

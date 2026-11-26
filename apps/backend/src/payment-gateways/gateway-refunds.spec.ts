@@ -196,11 +196,17 @@ describe('refunding through the gateway', () => {
       providerRefundId: 're_2',
       state: 'PENDING',
     });
+    const error = jest
+      .spyOn(s.svc['logger'], 'error')
+      .mockReturnValueOnce(undefined);
     s.orders.refund.mockRejectedValue(new Error('db down'));
     await expect(go(s)).rejects.toBeInstanceOf(ConflictException);
     expect(
       s.prisma.gatewayRefund.update.mock.calls.at(-1)[0].data,
     ).toMatchObject({ status: 'NEEDS_REVIEW', providerRefundId: 're_2' });
+    expect(error).toHaveBeenCalledWith(
+      'Refund gr1 sent to fake but not recorded: db down',
+    );
   });
 
   it('refuses a test payment, an unsettled payment and a gateway without refund support', async () => {

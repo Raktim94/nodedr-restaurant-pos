@@ -25,7 +25,7 @@ const KEY: IntegrationKeyContext = {
   scopes: ['orders:write', 'orders:read', 'orders:read_customer', 'menu:read'],
 };
 
-function build(opts: { zones?: boolean } = {}) {
+function build(opts: { zones?: boolean; pausedUntil?: Date } = {}) {
   const orders: any[] = [];
   const menuItem = {
     id: 'm1',
@@ -35,12 +35,14 @@ function build(opts: { zones?: boolean } = {}) {
     halfPrice: null,
     taxRatePercent: dec(5),
     isActive: true,
+    pausedUntil: opts.pausedUntil ?? null,
   };
   const customers: any[] = [];
 
   const tx = {
     // The real service takes a per-branch advisory lock when numbering an order; the fake has nothing to lock.
     $executeRaw: jest.fn(async () => 0),
+    $queryRaw: jest.fn(async () => [menuItem]),
     order: {
       // Numbering looks up the latest order number inside the transaction: none yet in this fake.
       findFirst: jest.fn(async () => null),
@@ -186,6 +188,25 @@ const body = (over: Record<string, unknown> = {}) =>
   });
 
 describe('Integration API order flow', () => {
+  it('refuses a currently paused dish before writing an order, and accepts an expired pause', async () => {
+    const until = new Date(Date.now() + 60_000);
+    const paused = build({ pausedUntil: until });
+    await expect(
+      paused.service.createOrder(KEY, BRANCH, body()),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'ITEM_UNAVAILABLE',
+        unavailableItemIds: ['m1'],
+        pausedItems: [{ id: 'm1', pausedUntil: until.toISOString() }],
+      },
+    });
+    expect(paused.orders).toHaveLength(0);
+
+    const expired = build({ pausedUntil: new Date(Date.now() - 1) });
+    await expired.service.createOrder(KEY, BRANCH, body());
+    expect(expired.orders).toHaveLength(1);
+  });
+
   it('persists the delivery address and phone, and the customer email', async () => {
     const { service, orders, customers } = build();
     await service.createOrder(KEY, BRANCH, body());

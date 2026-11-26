@@ -29,11 +29,14 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:ci@localhost:5432/orr
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+        env:
+          # The backend step generates the client from its workspace schema below.
+          PRISMA_SKIP_POSTINSTALL_GENERATE: '1'
       - name: Dependency audit (production)
         run: pnpm audit --prod --audit-level moderate
       - name: Build shared types
@@ -58,7 +61,7 @@ jobs:
         run: |
           for f in $(grep -rhoE 'process\.env\.[A-Z0-9_]+_E2E' test src | sed 's/process.env.//' | sort -u); do export "$f=1"; done
           export JWT_SECRET="$(openssl rand -hex 32)"
-          pnpm exec jest --config ./test/jest-e2e.json --runInBand --forceExit --testTimeout=60000
+          pnpm exec jest --config ./test/jest-e2e.json --runInBand --testTimeout=60000
       - name: Backend build + runtime dependency check
         run: |
           pnpm --filter backend build
@@ -72,8 +75,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 22 }
       - run: node --test mobile/www/pos/lib/*.test.mjs updater/*.test.mjs
       # Real-IndexedDB regressions (numbering counters, retry-safe stock, backups) run in the runner's Chrome.
@@ -84,3 +87,4 @@ jobs:
           export NODE_PATH="$RUNNER_TEMP/pw/node_modules" CHROME="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
           node mobile/test/idb-counters.chrome.cjs
           node mobile/test/stock-and-backup.chrome.cjs
+          node mobile/test/menu-pause.chrome.cjs

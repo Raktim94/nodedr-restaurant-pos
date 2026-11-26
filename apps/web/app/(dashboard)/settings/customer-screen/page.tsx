@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UploadImage } from "@/components/ui/upload-image";
 import { useBranch } from "@/hooks/use-branch";
 import { useAds, useDisplayActions, useTerminals, type Terminal } from "@/hooks/use-display";
 import { ApiError } from "@/lib/api";
@@ -130,7 +131,18 @@ export default function CustomerScreenSettings() {
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {ads.map((a) => (
               <li key={a.id}><Card className="flex flex-col gap-2 p-3">
-                {a.kind === "IMAGE" ? <img src={a.url} alt={a.title ?? "Advert"} className="aspect-video w-full rounded-lg bg-black object-contain" /> : <video src={a.url} className="aspect-video w-full rounded-lg bg-black" muted controls />}
+                {a.kind === "IMAGE" ? (
+                  <UploadImage
+                    src={a.url}
+                    alt={a.title ?? "Advert"}
+                    width={480}
+                    height={270}
+                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                    className="aspect-video w-full rounded-lg bg-black object-contain"
+                  />
+                ) : (
+                  <video src={a.url} className="aspect-video w-full rounded-lg bg-black" muted controls />
+                )}
                 <div className="flex items-center justify-between gap-2 text-sm"><span className="truncate font-medium">{a.title || (a.kind === "IMAGE" ? "Picture" : "Video")}</span><Badge variant="outline">{a.terminalId ? terminals?.find((t) => t.id === a.terminalId)?.name ?? "One screen" : "All screens"}</Badge></div>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={a.isActive} onChange={(e) => act.updateAd.mutate({ id: a.id, data: { isActive: e.target.checked } }, { onError: fail })} /> Playing</label>

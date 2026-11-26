@@ -102,12 +102,39 @@ test("success shows the confirmation, clears the basket, and keeps no key", () =
 test("unavailable items are removed, the customer is told, and the flow returns to the menu", () => {
   let s = run([{ type: "ADD", line: { ...line, menuItemId: "cola", name: "Cola" } }], atReview());
   s = kioskReducer(s, { type: "SUBMIT_START", newRequestId: "k1" });
-  s = kioskReducer(s, { type: "ITEMS_UNAVAILABLE", ids: ["pizza"], names: ["Pizza"] });
+  s = kioskReducer(s, { type: "ITEMS_UNAVAILABLE", ids: ["pizza"], pausedIds: [] });
   assert.equal(s.step, "menu");
   assert.deepEqual(s.basket.map((l) => l.menuItemId), ["cola"]);
   assert.deepEqual(s.unavailableNames, ["Pizza"]);
   assert.equal(s.submit.status, "idle");
   assert.equal(s.requestId, null);
+});
+
+test("a pause reported at checkout preserves every selected option and unlocks basket edits", () => {
+  const withExtra = { ...line, modifierIds: ["cheese"], modifierLabel: "Cheese", unitPrice: 10 };
+  const cart = run([{ type: "ADD", line: withExtra }, { type: "ADD", line: withExtra }], atReview());
+  const rejected = run([
+    { type: "SUBMIT_START", newRequestId: "before-pause" },
+    { type: "ITEMS_UNAVAILABLE", ids: ["pizza"], pausedIds: ["pizza"] },
+  ], cart);
+  assert.equal(rejected.step, "review");
+  assert.deepEqual(rejected.basket, cart.basket);
+  assert.equal(rejected.requestId, "before-pause");
+  assert.equal(isBasketLocked(rejected), false);
+  const edited = kioskReducer(rejected, { type: "REMOVE", key: rejected.basket[1].key });
+  assert.deepEqual(edited.basket, [cart.basket[0]]);
+  assert.equal(edited.requestId, null);
+});
+
+test("a mixed checkout rejection removes only the permanently unavailable dishes", () => {
+  const cart = run([{ type: "ADD", line: { ...line, menuItemId: "cola", name: "Cola" } }], atReview());
+  const rejected = run([
+    { type: "SUBMIT_START", newRequestId: "before-pause" },
+    { type: "ITEMS_UNAVAILABLE", ids: ["cola", "pizza"], pausedIds: ["pizza"] },
+  ], cart);
+  assert.deepEqual(rejected.basket, [cart.basket[0]]);
+  assert.deepEqual(rejected.unavailableNames, ["Cola"]);
+  assert.equal(rejected.requestId, null);
 });
 
 test("RESET leaves nothing of the previous guest behind", () => {

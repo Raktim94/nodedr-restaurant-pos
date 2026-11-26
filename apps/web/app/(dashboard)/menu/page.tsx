@@ -1,7 +1,7 @@
 "use client";
 
-import { EyeOff, Layers, Leaf, Pencil, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { EyeOff, Layers, Leaf, Pause, Pencil, Play, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import { AddCategoryDialog } from "@/components/menu/add-category-dialog";
 import { ImportCsvDialog } from "@/components/imports/import-csv-dialog";
@@ -10,6 +10,9 @@ import { AddItemDialog } from "@/components/menu/add-item-dialog";
 import { ComboComponentsDialog } from "@/components/menu/combo-components-dialog";
 import { EditCategoryDialog } from "@/components/menu/edit-category-dialog";
 import { EditItemDialog } from "@/components/menu/edit-item-dialog";
+import { PauseBadge } from "@/components/menu/pause-badge";
+import { PauseSalesDialog } from "@/components/menu/pause-sales-dialog";
+import { StatusNote, useStatusNote } from "@/components/ui/status-note";
 import { Badge } from "@/components/ui/badge";
 import { UploadImage } from "@/components/ui/upload-image";
 import { Button } from "@/components/ui/button";
@@ -31,15 +34,26 @@ import {
   useDeleteCategory,
   useDeleteMenuItem,
   useMenuItems,
+  useSetMenuItemPause,
   type MenuCategory,
   type MenuItem,
 } from "@/hooks/use-menu";
+import { useMenuPauseLabels } from "@/hooks/use-menu-pauses";
+import { useDisplaySettings } from "@/hooks/use-settings";
+import { useI18n } from "@/lib/i18n/context";
 import { ApiError } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export default function MenuPage() {
   const { branchId } = useBranch();
+  return <BranchMenu key={branchId} branchId={branchId} />;
+}
+
+function BranchMenu({ branchId }: { branchId: string | null }) {
+  const { t } = useI18n();
+  const { data: settings } = useDisplaySettings(branchId);
+  const timezone = settings?.restaurant.timezone;
   const { data: me } = useCurrentUser();
   // menu.view alone is read-only; every edit control needs menu.manage.
   const canManage = hasPermission(me?.user, "menu.manage");
@@ -48,6 +62,7 @@ export default function MenuPage() {
   // Deleting an item that appears in past orders archives it (isActive false) instead of removing it, so hide those here.
   const { data: rawItems, isLoading: itemsLoading } = useMenuItems(branchId, selectedCategoryId);
   const { data: rawAllItems } = useMenuItems(branchId);
+  const pauseLabels = useMenuPauseLabels(rawItems, timezone);
   const items = rawItems?.filter((i) => i.isActive);
   const allItems = rawAllItems?.filter((i) => i.isActive);
   const deleteItem = useDeleteMenuItem(branchId);
@@ -55,6 +70,38 @@ export default function MenuPage() {
   const [comboItem, setComboItem] = useState<MenuItem | null>(null);
   const [editingCategory, setEditingCategory] = useState<MenuCategory | null>(null);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+
+  const pause = useSetMenuItemPause(branchId);
+  const [pausingItem, setPausingItem] = useState<MenuItem | null>(null);
+  const pauseTrigger = useRef<HTMLButtonElement>(null);
+  const { note, show, clear } = useStatusNote();
+  const pauseError = (error: unknown) => error instanceof ApiError ? error.message : t("menu.pauseFailed");
+
+  function pauseButton(item: MenuItem) {
+    const paused = pauseLabels.has(item.id);
+    const label = t(paused ? "menu.resumeTitle" : "menu.pauseTitle", { name: item.name });
+    const Icon = paused ? Play : Pause;
+    return (
+      <Button variant="outline" size="sm" className="h-8 gap-1 rounded-lg px-2.5 text-xs"
+        title={label} aria-label={label} disabled={pause.isPending}
+        onClick={(event) => {
+          clear();
+          if (paused) {
+            pause.mutate({ id: item.id, change: { resume: true } }, {
+              onSuccess: () => show("success", t("menu.resumed", { name: item.name })),
+              onError: (error) => show("error", pauseError(error)),
+            });
+          } else {
+            pause.reset();
+            pauseTrigger.current = event.currentTarget;
+            setPausingItem(item);
+          }
+        }}>
+        <Icon className="size-3.5" aria-hidden />
+        <span>{t(paused ? "menu.resumeSales" : "menu.pauseSales")}</span>
+      </Button>
+    );
+  }
 
   const selectedCategory = categories?.find((c) => c.id === selectedCategoryId);
 
@@ -245,6 +292,7 @@ export default function MenuPage() {
             )}
           </div>
 
+          <StatusNote note={note} onClear={clear} />
           {itemsLoading ? (
             <div className="flex flex-col gap-2.5">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -280,6 +328,7 @@ export default function MenuPage() {
                         {item.station && <span>· {item.station.name}</span>}
                         <span>· {Number(item.taxRatePercent)}% tax</span>
                       </p>
+                      {pauseLabels.has(item.id) && <div className="mt-1.5"><PauseBadge label={pauseLabels.get(item.id)} /></div>}
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="text-sm font-bold tabular-nums text-foreground">{formatCurrency(item.price)}</p>
@@ -287,7 +336,8 @@ export default function MenuPage() {
                   </div>
 
                   {canManage && (
-                    <div className="flex items-center justify-end gap-1.5 pt-1">
+                    <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1">
+                      {pauseButton(item)}
                       <Button
                         variant="outline"
                         size="sm"
@@ -359,9 +409,10 @@ export default function MenuPage() {
                             </div>
                           )}
                           {item.isVeg && <Leaf className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />}
-                          <span className="min-w-0 max-w-[28ch] [overflow-wrap:anywhere]" title={item.name}>
-                            {item.name}
-                          </span>
+                          <div className="flex min-w-0 flex-col items-start gap-1">
+                            <span className="max-w-[28ch] [overflow-wrap:anywhere]" title={item.name}>{item.name}</span>
+                            <PauseBadge label={pauseLabels.get(item.id)} />
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground font-medium py-2.5">{item.category.name}</TableCell>
@@ -383,6 +434,7 @@ export default function MenuPage() {
                       <TableCell className="py-2.5">
                         {canManage && (
                           <div className="flex items-center justify-end gap-1">
+                            {pauseButton(item)}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -438,6 +490,23 @@ export default function MenuPage() {
           )}
         </Card>
       </div>
+
+      {canManage && pausingItem && (
+        <PauseSalesDialog
+          itemName={pausingItem.name}
+          timezone={timezone}
+          pending={pause.isPending}
+          error={pause.isError ? pauseError(pause.error) : undefined}
+          triggerRef={pauseTrigger}
+          onClose={() => setPausingItem(null)}
+          onPause={(change) => pause.mutate({ id: pausingItem.id, change }, {
+            onSuccess: () => {
+              show("success", t("menu.paused", { name: pausingItem.name }));
+              setPausingItem(null);
+            },
+          })}
+        />
+      )}
 
       <ComboComponentsDialog
         branchId={branchId}

@@ -49,6 +49,14 @@ export const kv = {
   get: (k) => tx('kv', 'readonly', (s) => s.get(k)),
   set: (k, v) => tx('kv', 'readwrite', (s) => s.put(v, k)),
   del: (k) => tx('kv', 'readwrite', (s) => s.delete(k)),
+  /** Apply a change to the latest value, leaving newer or deleted snapshots intact. */
+  update: (k, change) => tx('kv', 'readwrite', (store) => {
+    const read = store.get(k);
+    read.onsuccess = () => {
+      const next = change(read.result);
+      if (next !== read.result) store.put(next, k);
+    };
+  }),
   /** Several keys in ONE transaction: all land or none do. */
   setMany: (entries) =>
     tx('kv', 'readwrite', (s) => {
@@ -86,6 +94,18 @@ export const sales = {
   clear: () => tx('sales', 'readwrite', (s) => s.clear()),
   pending: () => sales.all().then((a) => a.filter((s) => s.status === 'pending')),
 };
+
+/** A checkout is durable together with the marker that lets the same cart finish it after a restart. */
+export async function savePendingSale(sale, sig) {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(['sales', 'kv'], 'readwrite');
+    t.objectStore('sales').put(sale);
+    t.objectStore('kv').put({ saleId: sale.id, sig, stockApplied: false }, 'pendingSale');
+    t.oncomplete = () => resolve();
+    t.onabort = () => reject(t.error ?? new Error('Saving the sale was interrupted.'));
+  });
+}
 
 export const orders = {
   put: (o) => tx('orders', 'readwrite', (s) => s.put(o)),
@@ -237,8 +257,8 @@ export function completeCheckout(orderId, saleId, paidAt) {
         }
         t.objectStore('kv').delete('pendingSale');
         t.oncomplete = () => resolve();
-        t.onerror = () => reject(t.error);
-        t.onabort = () => reject(t.error);
+        // A request error bubbles before the transaction finishes rolling back.
+        t.onabort = () => reject(t.error ?? new Error('Finishing the sale was interrupted.'));
       }),
   );
 }

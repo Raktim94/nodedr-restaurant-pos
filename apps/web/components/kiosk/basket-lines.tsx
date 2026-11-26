@@ -1,6 +1,7 @@
 "use client";
 
 import { Minus, Plus, Trash2 } from "lucide-react";
+import { PauseBadge } from "@/components/menu/pause-badge";
 import { useI18n } from "@/lib/i18n/context";
 import type { BasketLine } from "@/lib/kiosk-basket";
 import { IconButton } from "./kiosk-ui";
@@ -8,11 +9,13 @@ import { IconButton } from "./kiosk-ui";
 /** Basket rows with quantity steppers; `locked` freezes edits (submit in flight / outcome unknown). */
 export function BasketLines({
   lines,
+  pauseLabels,
   fmt,
   locked,
   onChange,
 }: {
   lines: BasketLine[];
+  pauseLabels: ReadonlyMap<string, string>;
   fmt: (n: number) => string;
   locked: boolean;
   onChange: (key: string, delta: number) => void;
@@ -24,6 +27,7 @@ export function BasketLines({
         <li key={l.key} className="flex items-center gap-3 py-3">
           <div className="min-w-0 flex-1">
             <p className="text-[1.15rem] font-semibold leading-snug">{l.name}</p>
+            <PauseBadge label={pauseLabels.get(l.menuItemId)} />
             {l.modifierLabel && (
               <p className="text-[0.95rem] leading-snug text-muted-foreground">{l.modifierLabel}</p>
             )}
@@ -40,7 +44,7 @@ export function BasketLines({
             <span className="w-8 text-center text-[1.35rem] font-bold tabular-nums" aria-live="polite">
               {l.quantity}
             </span>
-            <IconButton label={t("kiosk.basket.more", { name: l.name })} disabled={locked} onClick={() => onChange(l.key, 1)}>
+            <IconButton label={t("kiosk.basket.more", { name: l.name })} disabled={locked || pauseLabels.has(l.menuItemId)} onClick={() => onChange(l.key, 1)}>
               <Plus className="h-5 w-5" aria-hidden />
             </IconButton>
           </div>

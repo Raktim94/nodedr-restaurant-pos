@@ -59,3 +59,10 @@ export const menuItemSchema = z.object({
   modifierGroupIds: z.array(z.string()).default([]),
 });
 export type MenuItemDto = z.infer<typeof menuItemSchema>;
+
+export const menuItemPauseSchema = z.union([
+  z.strictObject({ minutes: z.number().int().min(1).max(1440) }),
+  z.strictObject({ localTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/) }),
+  z.strictObject({ resume: z.literal(true) }),
+]);
+export type MenuItemPauseDto = z.infer<typeof menuItemPauseSchema>;
