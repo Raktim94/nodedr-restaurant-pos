@@ -354,13 +354,17 @@ export class MarketingService {
       let sent = 0;
       let failed = 0;
       for (const r of recipients) {
-        const ok = await this.webhooks.emitForBranch(branchId, 'campaign.message', {
-          campaignId: campaign.id,
-          channel: campaign.channel,
-          to: r.contact,
-          name: r.name,
-          message: campaign.message,
-        });
+        const ok = await this.webhooks.emitForBranch(
+          branchId,
+          'campaign.message',
+          {
+            campaignId: campaign.id,
+            channel: campaign.channel,
+            to: r.contact,
+            name: r.name,
+            message: campaign.message,
+          },
+        );
         if (ok) sent++;
         else failed++;
       }

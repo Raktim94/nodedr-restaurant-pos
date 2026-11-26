@@ -57,7 +57,11 @@ export class WebhooksService {
    * triggered it. Returns false if the branch has no subscribers or the
    * emit itself failed.
    */
-  async emitForBranch(branchId: string, event: WebhookEvent, data: unknown): Promise<boolean> {
+  async emitForBranch(
+    branchId: string,
+    event: WebhookEvent,
+    data: unknown,
+  ): Promise<boolean> {
     try {
       const branch = await this.prisma.branch.findUnique({
         where: { id: branchId },
