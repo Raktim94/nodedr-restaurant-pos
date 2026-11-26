@@ -2087,6 +2087,13 @@ function restoreSheet(message) {
           const b = parseBackup(await f.text());
           if (!confirm(`Replace everything on this phone with the backup from ${new Date(b.savedAt).toLocaleString()}? It has ${b.sales.length} sale${b.sales.length === 1 ? '' : 's'}.`)) return;
           if (!(await managerOK('Restore a backup (replaces everything on this phone).'))) return;
+          // Refuse to restore a backup from a different restaurant/branch onto this phone.
+          if (b.snapshot && S.snap &&
+              (b.snapshot.branch?.name || b.snapshot.branch?.id) &&
+              (S.snap.branch?.name || S.snap.branch?.id) &&
+              (b.snapshot.branch.name !== S.snap.branch.name || b.snapshot.branch.id !== S.snap.branch.id)) {
+            return restoreSheet(`This backup is from a different restaurant/branch ("${esc(b.snapshot.branch.name || '')}") than this phone ("${esc(S.snap.branch.name || '')}"). Restoring it would scramble your menu and sales.`);
+          }
           b.snapshot.local = true; // a backup restores a phone account, never a server menu
           await replaceEverything(b);
           booksDirty = true;
