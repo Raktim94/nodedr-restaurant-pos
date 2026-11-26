@@ -898,7 +898,12 @@ export class BackupService {
       // been replaced or corrupted since. Check the bytes we are about to
       // feed to pg_restore, before any destructive database operation.
       const actualHash = await sha256File(dbDumpPath);
-      if (!record.sha256 || actualHash !== record.sha256) {
+      if (!record.sha256) {
+        throw new BadRequestException(
+          'This backup cannot be restored: it was created before integrity hashing was added. Please use a newer backup.',
+        );
+      }
+      if (actualHash !== record.sha256) {
         throw new BadRequestException(
           'The stored database backup failed its checksum. Nothing was restored.',
         );
