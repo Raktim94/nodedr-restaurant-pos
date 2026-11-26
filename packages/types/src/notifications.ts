@@ -6,7 +6,10 @@ import { z } from "zod";
 // in the controller — shared here so the frontend hook builds a query
 // string the backend actually accepts.
 export const notificationListQuerySchema = z.object({
-  unreadOnly: z.coerce.boolean().optional(),
+  unreadOnly: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
 });
