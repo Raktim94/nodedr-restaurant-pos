@@ -351,16 +351,20 @@ export class MarketingService {
           campaign.id,
           `Sending ${campaign.channel === 'SMS' ? 'SMS' : 'WhatsApp'} needs a webhook subscribed to "campaign.message" (Settings > Webhooks) connected to your messaging service`,
         );
+      let sent = 0;
+      let failed = 0;
       for (const r of recipients) {
-        await this.webhooks.emitForBranch(branchId, 'campaign.message', {
+        const ok = await this.webhooks.emitForBranch(branchId, 'campaign.message', {
           campaignId: campaign.id,
           channel: campaign.channel,
           to: r.contact,
           name: r.name,
           message: campaign.message,
         });
+        if (ok) sent++;
+        else failed++;
       }
-      result = { sent: recipients.length, failed: 0 };
+      result = { sent, failed };
     }
     await this.prisma.campaign.update({
       where: { id: campaign.id },
