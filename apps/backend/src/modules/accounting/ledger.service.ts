@@ -178,10 +178,7 @@ export class LedgerService {
       .filter(([k]) => !used.has(k))
       .map(([category, actual]) => ({ category, actual }));
     const totalBudget = round2(rows.reduce((s, r) => s + r.budget, 0));
-    const totalActual = round2(
-      rows.reduce((s, r) => s + r.actual, 0) +
-        unbudgeted.reduce((s, r) => s + r.actual, 0),
-    );
+    const totalActual = round2(rows.reduce((s, r) => s + r.actual, 0));
     return {
       month,
       rows,

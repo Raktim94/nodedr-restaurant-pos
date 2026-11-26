@@ -66,4 +66,75 @@ describe('permission override privilege ceiling', () => {
     await svc.setPermissionOverrides('r1', actor, 'u2', dto);
     expect(prisma.userPermissionOverride.createMany).toHaveBeenCalled();
   });
+
+  it('lets an actor grant a permission they hold through an implied one', async () => {
+    const { svc, prisma } = setup('WAITER', ['orders.create']);
+    prisma.permission.findMany.mockResolvedValue([
+      { id: 'p1', key: 'menu.view' },
+    ]);
+    // menu.manage implies menu.view (PERMISSION_IMPLIES)
+    const manager = {
+      ...actor,
+      permissions: ['users.manage', 'orders.create', 'menu.manage'],
+    };
+    await svc.setPermissionOverrides('r1', manager, 'u2', {
+      overrides: [
+        {
+          permissionKey: 'menu.view',
+          effect: 'GRANT',
+          reason: null,
+          expiresAt: null,
+        },
+      ],
+    });
+    expect(prisma.userPermissionOverride.createMany).toHaveBeenCalled();
+  });
+
+  it('refuses to grant a permission the actor neither holds nor implies', async () => {
+    const { svc, prisma } = setup('WAITER', ['orders.create']);
+    prisma.permission.findMany.mockResolvedValue([
+      { id: 'p1', key: 'backup.manage' },
+    ]);
+    await expect(
+      svc.setPermissionOverrides('r1', actor, 'u2', {
+        overrides: [
+          {
+            permissionKey: 'backup.manage',
+            effect: 'GRANT',
+            reason: null,
+            expiresAt: null,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/cannot grant/);
+    expect(prisma.userPermissionOverride.createMany).not.toHaveBeenCalled();
+  });
+
+  it('a DENY override on the actor still blocks granting the implied permission', async () => {
+    const { svc } = setup('WAITER', ['orders.create']);
+    svc.prisma.permission.findMany.mockResolvedValue([
+      { id: 'p1', key: 'menu.view' },
+    ]);
+    const denied = {
+      ...actor,
+      permissions: [
+        'users.manage',
+        'orders.create',
+        'menu.manage',
+        '!menu.view',
+      ],
+    };
+    await expect(
+      svc.setPermissionOverrides('r1', denied, 'u2', {
+        overrides: [
+          {
+            permissionKey: 'menu.view',
+            effect: 'GRANT',
+            reason: null,
+            expiresAt: null,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/cannot grant/);
+  });
 });

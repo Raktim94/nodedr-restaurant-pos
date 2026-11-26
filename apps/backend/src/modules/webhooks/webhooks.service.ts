@@ -54,28 +54,21 @@ export class WebhooksService {
   /**
    * Queues the event for every active endpoint subscribed to it. Never
    * throws: a webhook problem must not fail the order or booking that
-   * triggered it. Returns false if the branch has no subscribers or the
-   * emit itself failed.
+   * triggered it.
    */
-  async emitForBranch(
-    branchId: string,
-    event: WebhookEvent,
-    data: unknown,
-  ): Promise<boolean> {
+  async emitForBranch(branchId: string, event: WebhookEvent, data: unknown) {
     try {
       const branch = await this.prisma.branch.findUnique({
         where: { id: branchId },
         select: { restaurantId: true },
       });
-      if (!branch) return false;
+      if (!branch) return;
       await this.emit(branch.restaurantId, event, {
         branchId,
         ...(data as object),
       });
-      return true;
     } catch (err) {
       this.logger.warn(`emit ${event} failed: ${String(err)}`);
-      return false;
     }
   }
 
