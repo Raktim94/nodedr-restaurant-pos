@@ -5,13 +5,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type {
+import {
   SessionUser,
   CreateStaffDto,
   DepartmentDto,
   SetPermissionOverridesDto,
   UpdateStaffDto,
 } from '@nodedr-restaurant/types';
+import { permissionSatisfied } from '@nodedr-restaurant/types';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuditService } from '../../audit/audit.service';
@@ -434,7 +435,7 @@ export class UsersService {
       }
       if (
         o.effect === 'GRANT' &&
-        !actor.permissions.includes(o.permissionKey)
+        !permissionSatisfied(actor.permissions, o.permissionKey)
       ) {
         throw new BadRequestException(
           `You cannot grant "${o.permissionKey}" because you do not hold it yourself`,
