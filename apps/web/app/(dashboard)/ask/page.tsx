@@ -817,6 +817,7 @@ export default function AskAssistantPage() {
               onClick={toggleSidebar}
               className="h-8 w-8 rounded-lg shrink-0 text-muted-foreground hover:text-foreground md:hidden"
               title={sidebarOpen ? translate("Hide conversations") : translate("Show conversations")}
+              aria-label={sidebarOpen ? translate("Hide conversations") : translate("Show conversations")}
             >
               <MessageSquare className="h-4 w-4" />
             </Button>

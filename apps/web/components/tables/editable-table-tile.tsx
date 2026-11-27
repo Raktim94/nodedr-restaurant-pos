@@ -100,6 +100,7 @@ export function EditableTableTile({
           variant="secondary"
           size="icon"
           className="h-6 w-6 shadow"
+          aria-label={t("Edit table {name}", { name: table.name ?? t("Table {number}", { number: table.number }) })}
           onClick={(e) => {
             e.stopPropagation();
             onEdit();
@@ -111,6 +112,7 @@ export function EditableTableTile({
           variant="secondary"
           size="icon"
           className="h-6 w-6 text-destructive shadow"
+          aria-label={t("Delete table {name}", { name: table.name ?? t("Table {number}", { number: table.number }) })}
           onClick={handleDelete}
         >
           <Trash2 className="h-3 w-3" />

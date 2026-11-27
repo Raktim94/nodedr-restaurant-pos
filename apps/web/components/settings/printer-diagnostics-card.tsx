@@ -43,7 +43,7 @@ export function PrinterDiagnosticsCard() {
             {t("Native ESC/POS printing, independent of the browser print dialog. The printer must be reachable from the machine running OrderRestro: USB on a Linux host, or a network printer on port 9100.")}
           </p>
         </div>
-        <Button variant="ghost" size="icon" onClick={() => refetch()} disabled={isFetching}>
+        <Button variant="ghost" size="icon" aria-label={t("Refresh printer status")} onClick={() => refetch()} disabled={isFetching}>
           <RefreshCw className={isFetching ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
         </Button>
       </div>

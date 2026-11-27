@@ -136,6 +136,7 @@ export default function ReservationsPage() {
                       size="icon-sm"
                       className="text-success hover:bg-success/10"
                       title={t("Accept reservation")}
+                      aria-label={t("Accept reservation for {name}", { name: r.customerName })}
                       onClick={() => updateStatus.mutate({ id: r.id, status: "CONFIRMED" })}
                     >
                       <Check className="h-4 w-4" />
@@ -145,6 +146,7 @@ export default function ReservationsPage() {
                       size="icon-sm"
                       className="text-destructive hover:bg-destructive/10"
                       title={t("Reject reservation")}
+                      aria-label={t("Reject reservation for {name}", { name: r.customerName })}
                       onClick={() => updateStatus.mutate({ id: r.id, status: "CANCELLED" })}
                     >
                       <X className="h-4 w-4" />

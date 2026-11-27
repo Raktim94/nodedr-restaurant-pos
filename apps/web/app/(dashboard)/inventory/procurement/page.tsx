@@ -117,8 +117,7 @@ function PurchaseRequestsSection({ branchId }: { branchId: string | null }) {
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
+                            <Button variant="ghost" size="icon" aria-label={t("More options")}>\n                              <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           }
                         />
@@ -196,8 +195,7 @@ function QuotationsSection({ branchId }: { branchId: string | null }) {
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
+                            <Button variant="ghost" size="icon" aria-label={t("More options")}>\n                              <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           }
                         />
@@ -315,3 +313,5 @@ export default function ProcurementPage() {
     </div>
   );
 }
+
+
