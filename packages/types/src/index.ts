@@ -17,6 +17,7 @@ export * from "./notifications";
 export * from "./backup";
 export * from "./integrations";
 export * from "./tax";
+export * from "./region";
 export * from "./hr";
 export * from "./accounting";
 export * from "./marketing";

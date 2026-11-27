@@ -1,23 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createStaffFormat, formatCurrency, setDefaultCurrency } from "./format.ts";
+import { createStaffFormat, formatCurrency } from "./format.ts";
 import { LOCALE_TAGS } from "./i18n/locales.ts";
 
-test("formatCurrency follows the configured default currency", () => {
-  try {
-    setDefaultCurrency("EUR");
-    assert.match(formatCurrency(12.5), /€/);
-    assert.doesNotMatch(formatCurrency(12.5), /₹/);
-    setDefaultCurrency("not-a-code");
-    assert.match(formatCurrency(12.5), /€/); // invalid codes are ignored
-    assert.match(formatCurrency(12.5, "INR"), /₹/); // an explicit currency still wins
-  } finally {
-    setDefaultCurrency("INR");
-  }
+test("a staff screen waiting for settings never displays another restaurant's currency", () => {
+  const current = createStaffFormat(LOCALE_TAGS.en, (key) => key, "BRL");
+  const loading = createStaffFormat(LOCALE_TAGS.en, (key) => key);
+  assert.equal(current.currency(25), "R$25.00");
+  assert.equal(loading.currency(25), "—");
 });
 
 test("guest prices follow the selected language and the restaurant currency", () => {
   assert.match(formatCurrency(25, "BRL", LOCALE_TAGS.pt), /^R\$\s25,00$/);
+  assert.match(formatCurrency(25, "EUR", LOCALE_TAGS.it), /^25,00\s€$/);
+  assert.match(formatCurrency(25, "CHF", LOCALE_TAGS.it), /^25,00\sCHF$/);
   assert.equal(formatCurrency(25, "BRL", LOCALE_TAGS.en), "R$25.00");
   assert.match(formatCurrency(25, "EUR", LOCALE_TAGS.pt), /^€\s25,00$/);
   assert.match(formatCurrency(25, "EUR", LOCALE_TAGS.es), /^25,00\s€$/);

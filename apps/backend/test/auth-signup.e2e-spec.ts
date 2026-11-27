@@ -84,9 +84,140 @@ run('Sign-up is closed after first run (e2e)', () => {
         .post('/api/v1/auth/register')
         .send(body('open'))
         .expect(201);
+      const restaurant = await prisma.restaurant.findFirstOrThrow({
+        where: { name: body('open').restaurantName },
+        include: { branches: true },
+      });
+      expect(restaurant).toMatchObject({
+        currency: 'INR',
+        timezone: 'Asia/Kolkata',
+        branches: [
+          { country: 'IN', taxRegime: 'INDIA_GST', taxMode: 'INCLUSIVE' },
+        ],
+      });
     } finally {
       delete process.env.ALLOW_PUBLIC_SIGNUP;
     }
+  });
+
+  describe('regional settings at sign-up', () => {
+    beforeEach(() => {
+      process.env.ALLOW_PUBLIC_SIGNUP = 'true';
+    });
+    afterEach(() => {
+      delete process.env.ALLOW_PUBLIC_SIGNUP;
+    });
+
+    const brazil = {
+      country: 'BR',
+      currency: 'BRL',
+      timezone: 'America/Sao_Paulo',
+      taxRegime: 'CUSTOM',
+    };
+
+    it.each([
+      [brazil, 'INCLUSIVE'],
+      [
+        {
+          country: 'US',
+          currency: 'USD',
+          timezone: 'America/Chicago',
+          taxRegime: 'US_SALES_TAX',
+        },
+        'EXCLUSIVE',
+      ],
+    ] as const)(
+      'stores %o for the owner and first branch',
+      async (regionalSettings, taxMode) => {
+        const signup = body(regionalSettings.country);
+        const owner = request.agent(app.getHttpServer());
+        await owner
+          .post('/api/v1/auth/register')
+          .send({ ...signup, regionalSettings })
+          .expect(201);
+        const [branch] = (await owner.get('/api/v1/branches').expect(200))
+          .body as { id: string }[];
+        const settings = await owner
+          .get('/api/v1/settings/display')
+          .query({ branchId: branch.id })
+          .expect(200);
+        expect(settings.body.restaurant).toMatchObject({
+          currency: regionalSettings.currency,
+          timezone: regionalSettings.timezone,
+        });
+        expect(settings.body.branch).toMatchObject({
+          country: regionalSettings.country,
+          taxRegime: regionalSettings.taxRegime,
+          taxMode,
+        });
+      },
+    );
+
+    it.each([
+      { currency: undefined },
+      { currency: 'ZZZ' },
+      { timezone: 'Mars/Base' },
+      { timezone: '+05:30' },
+      { country: 'XX' },
+      { taxRegime: 'UNKNOWN' },
+    ])('rejects %o before creating the restaurant', async (invalid) => {
+      const signup = body(randomUUID());
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ ...signup, regionalSettings: { ...brazil, ...invalid } })
+        .expect(400);
+      expect(
+        await prisma.restaurant.count({
+          where: { name: signup.restaurantName },
+        }),
+      ).toBe(0);
+    });
+
+    it('validates later regional edits and retains the country when changing the tax regime', async () => {
+      const owner = request.agent(app.getHttpServer());
+      await owner
+        .post('/api/v1/auth/register')
+        .send({ ...body('edit'), regionalSettings: brazil })
+        .expect(201);
+      const [branch] = (await owner.get('/api/v1/branches').expect(200))
+        .body as { id: string }[];
+      const restaurantSettings = '/api/v1/settings/restaurant';
+      const branchSettings = '/api/v1/settings/branch';
+      await owner
+        .patch(restaurantSettings)
+        .send({ currency: 'ZZZ' })
+        .expect(400);
+      await owner
+        .patch(restaurantSettings)
+        .send({ timezone: 'Missing/Zone' })
+        .expect(400);
+      await owner
+        .patch(branchSettings)
+        .query({ branchId: branch.id })
+        .send({ country: 'XX' })
+        .expect(400);
+      await owner
+        .patch(restaurantSettings)
+        .send({ currency: ' eur ', timezone: 'UTC' })
+        .expect(200);
+      await owner
+        .patch(branchSettings)
+        .query({ branchId: branch.id })
+        .send({ taxRegime: 'EU_VAT' })
+        .expect(200);
+      const settings = await owner
+        .get('/api/v1/settings/display')
+        .query({ branchId: branch.id })
+        .expect(200);
+      expect(settings.body.restaurant).toMatchObject({
+        currency: 'EUR',
+        timezone: 'UTC',
+      });
+      expect(settings.body.branch).toMatchObject({
+        country: 'BR',
+        taxRegime: 'EU_VAT',
+      });
+    });
   });
 
   it('login and existing owners are unaffected', async () => {

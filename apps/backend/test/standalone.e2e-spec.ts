@@ -138,6 +138,74 @@ run('Standalone mode (e2e)', () => {
     );
   });
 
+  it('refuses a new sale in a different currency but acknowledges a recorded sale and accepts legacy phones', async () => {
+    const { restaurant } = await prisma.branch.findUniqueOrThrow({
+      where: { id: branchId },
+      select: { restaurant: { select: { id: true, currency: true } } },
+    });
+    const price = Number(
+      (await prisma.menuItem.findUniqueOrThrow({ where: { id: itemId } }))
+        .price,
+    );
+    const makeSale = (n: number) => ({
+      ...saleBase(n),
+      items: [{ menuItemId: itemId, quantity: 1, unitPrice: price }],
+      payments: [{ method: 'CASH', amount: price }],
+    });
+    const recorded = { ...makeSale(981), currency: restaurant.currency };
+    const endpoint = `/api/v1/mobile/standalone/sales?branchId=${branchId}`;
+    const first = (
+      await owner
+        .post(endpoint)
+        .send({ sales: [recorded] })
+        .expect(201)
+    ).body.results[0];
+    expect(first.status).toBe('created');
+
+    const nextCurrency = restaurant.currency === 'EUR' ? 'USD' : 'EUR';
+    const where = { id: restaurant.id };
+    await prisma.restaurant.update({ where, data: { currency: nextCurrency } });
+    try {
+      const stale = {
+        ...makeSale(982),
+        currency: restaurant.currency,
+        customer: { phone: `319${tag}` },
+      };
+      const legacy = makeSale(983);
+      const { results } = (
+        await owner
+          .post(endpoint)
+          .send({ sales: [recorded, stale, legacy] })
+          .expect(201)
+      ).body;
+      expect(results).toMatchObject([
+        { id: recorded.id, status: 'duplicate', orderId: first.orderId },
+        { id: stale.id, status: 'refused', code: 'CURRENCY_MISMATCH' },
+        { id: legacy.id, status: 'created' },
+      ]);
+      expect(
+        await prisma.order.count({
+          where: { branchId, clientRequestId: stale.id },
+        }),
+      ).toBe(0);
+      expect(results[1].reason).toContain(restaurant.currency);
+      expect(results[1].reason).toContain(nextCurrency);
+      expect(
+        await prisma.customer.count({
+          where: { branchId, phone: stale.customer.phone },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.payment.count({ where: { orderId: first.orderId } }),
+      ).toBe(1);
+    } finally {
+      await prisma.restaurant.update({
+        where,
+        data: { currency: restaurant.currency },
+      });
+    }
+  });
+
   it("does not trust the phone's clock: a far-future sale is booked now and flagged, an ancient one is refused", async () => {
     const send = async (n: number, soldAt: string) =>
       (

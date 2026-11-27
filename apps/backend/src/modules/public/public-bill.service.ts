@@ -1,3 +1,4 @@
+import { storedTimeZone } from '../../common/time';
 import { Injectable } from '@nestjs/common';
 import { BillShareService } from '../bill-share/bill-share.service';
 import { OrdersService } from '../orders/orders.service';
@@ -25,6 +26,7 @@ export class PublicBillService {
     return {
       restaurantName: restaurant.name,
       currency: restaurant.currency,
+      timezone: storedTimeZone(restaurant.timezone),
       branch: {
         name: order.branch.name,
         address: order.branch.address,
@@ -65,7 +67,10 @@ export class PublicBillService {
       },
       // Only while something is still owed and a VPA is configured.
       upi:
-        overrides.isProvisional && overrides.balanceDue > 0 && restaurant.upiVpa
+        restaurant.currency.toUpperCase() === 'INR' &&
+        overrides.isProvisional &&
+        overrides.balanceDue > 0 &&
+        restaurant.upiVpa
           ? {
               vpa: restaurant.upiVpa,
               payeeName: restaurant.upiPayeeName || restaurant.name,

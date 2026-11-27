@@ -40,6 +40,16 @@ test("is laid out for 80 mm paper and formats money for the locale/currency", ()
   assert.ok(html.includes("Incluye IVA"));
 });
 
+test("uses the configured restaurant time zone for the ticket", () => {
+  assert.ok(buildTicketHtml({ ...base, timeZone: "Asia/Tokyo" }).includes("19:30"));
+  assert.ok(buildTicketHtml({ ...base, timeZone: "America/Sao_Paulo" }).includes("7:30"));
+});
+
+test("preserves the recorded amount on tickets in zero-minor-unit currencies", () => {
+  const html = buildTicketHtml({ ...base, currency: "JPY", locale: "en", totalAmount: "6.25" });
+  assert.ok(html.includes("¥6.25"));
+});
+
 test("never claims the order is paid and omits a zero tax row", () => {
   const html = buildTicketHtml({ ...base, taxAmount: "0" });
   assert.ok(html.includes("NO PAGADO"));

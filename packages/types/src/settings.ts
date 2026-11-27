@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { currencyCodeSchema, timezoneSchema } from "./region";
+import { branchTaxSettingsSchema } from "./tax";
 
 // The restaurant's brand name renders in the app shell's top-of-sidebar
 // header (fixed-width column, next to the logo) — a name much past this
@@ -13,8 +15,8 @@ export const restaurantSettingsSchema = z.object({
   // login screen once set. Square, ~256x256px+ PNG/SVG with a transparent
   // background reads best in that slot — see the settings page hint text.
   logoUrl: z.string().max(2048).optional().nullable(),
-  currency: z.string().optional(),
-  timezone: z.string().optional(),
+  currency: currencyCodeSchema.optional(),
+  timezone: timezoneSchema.optional(),
   // UPI id such as "name@okbank" (VPA format per NPCI: handle@psp).
   upiVpa: z
     .string()
@@ -38,8 +40,6 @@ export const restaurantSettingsSchema = z.object({
 });
 export type RestaurantSettingsDto = z.infer<typeof restaurantSettingsSchema>;
 
-import { TAX_MODES, TAX_REGIMES } from "./tax";
-
 export const branchSettingsSchema = z.object({
   name: z.string().min(1).optional(),
   address: z.string().optional(),
@@ -47,11 +47,7 @@ export const branchSettingsSchema = z.object({
   gstNumber: z.string().optional(),
   // Multi-region tax config — see tax.ts for the regime presets this
   // pairs with (label, default mode, CGST/SGST split).
-  country: z.string().length(2).optional(),
-  taxRegime: z.enum(TAX_REGIMES).optional(),
-  taxMode: z.enum(TAX_MODES).optional(),
-  taxLabel: z.string().max(30).optional().nullable(),
-  taxId: z.string().max(50).optional().nullable(),
+  ...branchTaxSettingsSchema.shape,
   // Online order / table-booking handling (false = staff accept manually).
   autoConfirmOrders: z.boolean().optional(),
   autoConfirmReservations: z.boolean().optional(),

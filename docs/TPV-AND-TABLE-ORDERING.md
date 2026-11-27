@@ -43,7 +43,7 @@ hardware arrives.
 ## The table journey and its states
 
 1. Each table has a QR code and an NFC card with the same link (Tables > Table cards; the page explains how to write the NFC card).
-2. The guest opens the web menu, enters a name, and chooses items. Prices, add-ons, and the cart total use the restaurant's currency and the guest's selected language. For example, a BRL price shown as `R$25.00` in English appears as `R$ 25,00` in Brazilian Portuguese. Guests can switch languages with items in their cart. [Menu and cart in Portuguese](./assets/qr-menu-brl.png) · [Add-on price](./assets/qr-addon-pt-br.png).
+2. The guest opens the web menu, enters a name, and chooses items. Prices, add-ons, and the cart total use the restaurant's currency and the guest's selected language. For example, a BRL price shown as `R$25.00` in English appears as `R$ 25,00` in Brazilian Portuguese. In Italian, a EUR 25 dish appears as `25,00 €`. Switching languages keeps the restaurant’s currency and the items already in the cart. [Menu and cart in Italian](./assets/qr-menu-italian.webp) · [Menu and cart in Portuguese](./assets/qr-menu-brl.png) · [Add-on price](./assets/qr-addon-pt-br.png).
 3. **Payment choice** (only if a gateway such as Stripe is switched on in Settings > Payments; otherwise cash only):
    * **Pay at the register**: the order goes to the kitchen **immediately** and stays **unpaid** ("Cash due at register" badge in Orders)
      until staff record the cash at the till.

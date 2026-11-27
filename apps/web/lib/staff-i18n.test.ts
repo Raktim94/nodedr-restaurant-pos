@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { DEFAULT_LOCALE, LOCALES } from "./i18n/locales.ts";
+
+const staffLocales = LOCALES.filter((locale) => locale !== DEFAULT_LOCALE);
 
 function catalog(locale: string): Record<string, string> {
   const url = new URL(`./i18n/staff/${locale}.json`, import.meta.url);
@@ -9,7 +12,7 @@ function catalog(locale: string): Record<string, string> {
 
 test("the staff language choices cover the same UI messages and keep their named values", () => {
   const portuguese = catalog("pt");
-  for (const locale of ["pt", "es", "fr"]) {
+  for (const locale of staffLocales) {
     const messages = catalog(locale);
     assert.deepEqual(Object.keys(messages).sort(), Object.keys(portuguese).sort(), locale);
     for (const [source, translated] of Object.entries(messages)) {
@@ -20,6 +23,18 @@ test("the staff language choices cover the same UI messages and keep their named
     for (const source of ["No customers yet", "Roles & permissions", "Today's Orders"]) {
       assert.ok(messages[source] && messages[source] !== source, locale + ": " + source);
     }
+  }
+});
+
+test("Italian covers every public, kiosk and regional setup message and preserves its values", () => {
+  const read = (locale: string): Record<string, string> =>
+    JSON.parse(readFileSync(new URL(`./i18n/dictionaries/${locale}.json`, import.meta.url), "utf8"));
+  const english = read("en");
+  const italian = read("it");
+  assert.deepEqual(Object.keys(italian).sort(), Object.keys(english).sort());
+  for (const [key, source] of Object.entries(english)) {
+    assert.ok(italian[key].trim(), key);
+    assert.deepEqual(italian[key].match(/\{\w+\}/g)?.sort() ?? [], source.match(/\{\w+\}/g)?.sort() ?? [], key);
   }
 });
 
@@ -36,7 +51,7 @@ test("staff routes use the language picker for visible copy and all literal mess
   const ts = (await import("typescript")).default;
   const root = new URL("../", import.meta.url);
   const base = JSON.parse(readFileSync(new URL("lib/i18n/dictionaries/en.json", root), "utf8"));
-  const catalogs = ["pt", "es", "fr"].map(catalog);
+  const catalogs = staffLocales.map(catalog);
   const missing = new Set<string>();
   const untranslated: string[] = [];
   for (const dir of ["app/(dashboard)/", "components/", "hooks/"]) {

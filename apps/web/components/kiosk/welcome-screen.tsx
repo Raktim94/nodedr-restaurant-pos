@@ -45,7 +45,7 @@ export function WelcomeScreen({
         </KButton>
       )}
       {load.status === "loading" && (
-        <div role="status" aria-label="loading" className="h-[4rem] w-[22rem] animate-pulse rounded-2xl bg-secondary motion-reduce:animate-none" />
+        <div role="status" aria-label={t("common.loading")} className="h-[4rem] w-[22rem] animate-pulse rounded-2xl bg-secondary motion-reduce:animate-none" />
       )}
       {load.status === "empty" && (
         <div className="w-full max-w-[40rem]">

@@ -57,7 +57,7 @@ Free restaurant POS with no ads and no tracking. Delete your account any time.
 
 ## What's new (1.47.0)
 - Nearby phones (beta): phones of one branch can keep a copy of each other's finished sales with no WiFi, internet or server
-- Staff screens follow the language you pick: English, Spanish, French, Brazilian Portuguese
+- Staff screens follow the language you pick: English, Spanish, French, Italian, Brazilian Portuguese
 - Menu: a Paused view lists dishes by return time
 - Paid bills, refunds and customer points history are never lost when something is deleted
 

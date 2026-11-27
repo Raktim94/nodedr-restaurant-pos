@@ -1,12 +1,14 @@
 // UPI deep link per the NPCI linking spec. Scanning the QR (or tapping the
 // link on a phone) opens any UPI app with the payee and exact amount filled.
 export function buildUpiUri(opts: {
+  currency: string | undefined;
   vpa: string;
   name?: string | null;
   amount: number;
   note?: string;
   ref?: string;
-}): string {
+}): string | null {
+  if (opts.currency?.toUpperCase() !== "INR") return null;
   const q = new URLSearchParams();
   q.set("pa", opts.vpa);
   if (opts.name) q.set("pn", opts.name.slice(0, 60));

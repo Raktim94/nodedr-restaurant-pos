@@ -29,6 +29,7 @@ import { WebhooksService } from '../webhooks/webhooks.service';
 import { resolveProfile } from './escpos/encoder';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertMenuItemsAvailable } from '../menu/item-availability';
+import { assertSaleCurrency, moneyFormatter } from '../../common/money';
 import { zonedRange } from '../../common/time';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import {
@@ -206,22 +207,28 @@ export class OrdersService {
        * sent later): stamped with when it was sold, and it never reaches the
        * kitchen, occupies a table or raises a "new order" alert.
        */
-      historical?: { createdAt: Date };
+      historical?: { createdAt: Date; currency?: string };
       /** Table self-ordering: how the guest will pay, and whether the kitchen waits for an online payment. */
       payIntent?: 'CASH' | 'ONLINE';
       heldForPayment?: boolean;
     } = {},
   ) {
     const channel = options.channel ?? 'STAFF';
-    // Online orders wait for a staff member to accept them unless this
-    // branch is set to auto-confirm (Settings > Online orders).
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: {
+        taxMode: true,
+        autoConfirmOrders: true,
+        restaurant: { select: { currency: true } },
+      },
+    });
+    if (!branch) throw new NotFoundException('Branch not found');
+    const { taxMode } = branch;
+    const currency = branch.restaurant.currency;
+    // Online orders wait for staff approval unless this branch auto-confirms them.
     let acceptance: 'NOT_REQUIRED' | 'PENDING' | 'ACCEPTED' = 'NOT_REQUIRED';
     if (options.requireAcceptance) {
-      const branch = await this.prisma.branch.findUnique({
-        where: { id: branchId },
-        select: { autoConfirmOrders: true },
-      });
-      acceptance = branch?.autoConfirmOrders ? 'ACCEPTED' : 'PENDING';
+      acceptance = branch.autoConfirmOrders ? 'ACCEPTED' : 'PENDING';
     }
     const menuItemIds = [...new Set(dto.items.map((i) => i.menuItemId))];
     if (channel === 'ONLINE')
@@ -254,7 +261,6 @@ export class OrdersService {
           : m,
       ]),
     );
-    const taxMode = await this.getBranchTaxMode(branchId);
 
     const modifierIds = [...new Set(dto.items.flatMap((i) => i.modifierIds))];
     const modifiers = await this.prisma.modifier.findMany({
@@ -306,8 +312,9 @@ export class OrdersService {
     );
     const totals = computeOrderTotals(lineInputs.map((l) => l.priced));
     if (options.minOrderAmount && totals.subtotal < options.minOrderAmount) {
+      const money = moneyFormatter(currency);
       throw new BadRequestException(
-        `Minimum order for online ordering is ₹${options.minOrderAmount}. Your items come to ₹${totals.subtotal}.`,
+        `Minimum order for online ordering is ${money.format(options.minOrderAmount)}. Your items come to ${money.format(totals.subtotal)}.`,
       );
     }
 
@@ -364,7 +371,7 @@ export class OrdersService {
         }
         if (totals.subtotal < Number(zone.minOrderAmount)) {
           throw new BadRequestException(
-            `Minimum order for ${zone.name} is ₹${Number(zone.minOrderAmount)}`,
+            `Minimum order for ${zone.name} is ${moneyFormatter(currency).format(Number(zone.minOrderAmount))}`,
           );
         }
         delivery.deliveryZoneId = zone.id;
@@ -385,6 +392,15 @@ export class OrdersService {
     }
 
     const order = await this.prisma.$transaction(async (tx) => {
+      if (options.historical?.currency) {
+        // Keep a simultaneous change in Settings ordered with the sale insert.
+        const [restaurant] = await tx.$queryRaw<{ currency: string }[]>`
+          SELECT r.currency FROM restaurants r JOIN branches b ON b."restaurantId" = r.id
+          WHERE b.id = ${branchId} FOR SHARE OF r
+        `;
+        if (!restaurant) throw new NotFoundException('Restaurant not found');
+        assertSaleCurrency(options.historical.currency, restaurant.currency);
+      }
       // An offline sale already happened. A later pause cannot invalidate it on sync.
       if (!options.historical)
         await this.assertItemsForSale(tx, branchId, menuItemIds);
@@ -505,7 +521,7 @@ export class OrdersService {
         await this.notifications.notifyByPermission(branchId, 'orders.accept', {
           type: 'order.pending',
           title: 'New online order — accept?',
-          body: `Order ${full.orderNumber} (${full.type.replace('_', ' ')})${who ? ` — ${who}` : ''} · ₹${Number(full.totalAmount)}`,
+          body: `Order ${full.orderNumber} (${full.type.replace('_', ' ')})${who ? ` — ${who}` : ''} · ${moneyFormatter(currency).format(Number(full.totalAmount))}`,
           entity: 'Order',
           entityId: full.id,
         });

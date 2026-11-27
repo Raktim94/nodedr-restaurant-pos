@@ -34,8 +34,8 @@ station chips, (b) realtime now always connects through the web origin (see §6)
    full-screen, landscape, in Spanish.
 3. Use the **HTTPS** address. Service worker, install, and screen wake lock only exist in a
    secure context; over plain `http://192.168.x.x` the kiosk still works but without those.
-4. Each customer starts in Spanish. Tap the welcome screen, then select **EN** for English or **PT** for
-   Brazilian Portuguese in the header. The choice applies only to the current kiosk session.
+4. Each customer starts in Spanish. Tap the welcome screen, then select **EN** for English, **PT** for
+   Brazilian Portuguese or **IT** for Italian in the header. The choice applies only to the current kiosk session.
    [View the order review screen in Brazilian Portuguese](./assets/kiosk-pt-br.png).
 
 ### Keeping the kiosk locked down and awake (separate from this code)

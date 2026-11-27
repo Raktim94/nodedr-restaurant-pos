@@ -56,27 +56,27 @@ interface CartLine {
 interface PublicStatus {
   order: {
     id: string;
-    orderNumber: string;
+    orderNumber?: string;
     status: string;
-    acceptance: string;
+    acceptance?: string;
     paid: boolean;
-    payIntent: "CASH" | "ONLINE" | null;
-    heldForPayment: boolean;
+    payIntent?: "CASH" | "ONLINE" | null;
+    heldForPayment?: boolean;
     kitchen: "WAITING_PAYMENT" | "SENT" | "NEW" | "PREPARING" | "READY" | "SERVED";
-    lastPayment: "CREATED" | "SUCCEEDED" | "FAILED" | "EXPIRED" | "NEEDS_REVIEW" | null;
+    lastPayment?: "CREATED" | "SUCCEEDED" | "FAILED" | "EXPIRED" | "NEEDS_REVIEW" | null;
     paged: boolean;
-    items: { id: string; nameSnapshot: string; quantity: number; status: string }[];
+    items?: { id: string; nameSnapshot: string; quantity: number; status: string }[];
   } | null;
   openRequests: ("WAITER" | "BILL")[];
 }
 
 const ITEM_STATUS_LABEL: Record<string, string> = {
-  NEW: "Received",
-  ACCEPTED: "Received",
-  PREPARING: "Being prepared",
-  READY: "Ready",
-  SERVED: "Served",
-  CANCELLED: "Cancelled",
+  NEW: "order.received",
+  ACCEPTED: "order.received",
+  PREPARING: "order.preparing",
+  READY: "order.ready",
+  SERVED: "order.served",
+  CANCELLED: "order.cancelled",
 };
 
 interface PublicMenuCategory {
@@ -139,7 +139,7 @@ export default function PublicMenuPage({
       grantRef.current = null;
       setGrant(null);
       setAccess(null);
-      setSessionMsg(e instanceof ApiError ? e.message : "Your table session has ended. Please ask the staff for a new table code.");
+      setSessionMsg(e instanceof ApiError ? e.message : "order.sessionEnded");
       return true;
     }
     return false;
@@ -155,7 +155,7 @@ export default function PublicMenuPage({
       setSessionMsg(null);
       setCodeDraft("");
     } catch (e) {
-      setCodeError(e instanceof ApiError ? e.message : "Could not check the code. Please try again.");
+      setCodeError(e instanceof ApiError ? e.message : "order.invalidCode");
     }
     setJoining(false);
   };
@@ -175,7 +175,7 @@ export default function PublicMenuPage({
         setGrant(r.token);
         setSessionMsg(null);
       } catch (e) {
-        if (alive) setScanMsg(e instanceof ApiError ? e.message : "Could not join the table. Please scan the code on the table screen again.");
+        if (alive) setScanMsg(e instanceof ApiError ? e.message : "order.joinFailed");
       }
       try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ }
     })();
@@ -241,8 +241,9 @@ export default function PublicMenuPage({
 
   // Live status of the table's tab and any pending waiter/bill request.
   const { data: status } = useQuery({
-    queryKey: ["public-status", qrToken],
-    queryFn: () => api.get<PublicStatus>(`/public/menu/${qrToken}/status`),
+    queryKey: ["public-status", qrToken, grant],
+    queryFn: () => api.get<PublicStatus>(`/public/menu/${qrToken}/status`,
+      grant ? { headers: { "X-Table-Session": grant } } : undefined),
     refetchInterval: 8000,
     enabled: !!data,
   });
@@ -260,7 +261,7 @@ export default function PublicMenuPage({
       if (!pay.checkoutUrl) throw new Error("no link");
       window.location.href = pay.checkoutUrl;
     } catch (e) {
-      setPayError(e instanceof ApiError ? e.message : "We could not open the payment page. You can try again or pay at the register.");
+      setPayError(e instanceof ApiError ? e.message : "order.paymentPageFailed");
       void queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] });
     }
   };
@@ -268,7 +269,7 @@ export default function PublicMenuPage({
   const payAtRegister = useMutation({
     mutationFn: (orderId: string) => api.post(`/public/menu/${qrToken}/orders/${orderId}/pay-cash`, undefined, hdr()),
     onSuccess: () => { setPayError(null); void queryClient.invalidateQueries({ queryKey: ["public-status", qrToken] }); },
-    onError: (e) => setPayError(e instanceof ApiError ? e.message : "Could not change that. Please ask the staff."),
+    onError: (e) => setPayError(e instanceof ApiError ? e.message : "order.changeFailed"),
   });
 
   const items = cart.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, modifierIds: l.modifierIds }));
@@ -352,11 +353,11 @@ export default function PublicMenuPage({
 
   if (error && (!data || (error instanceof ApiError && error.status === 404))) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
+      <div lang={LOCALE_TAGS[locale]} className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background px-6 text-center">
         <UtensilsCrossed className="h-10 w-10 text-muted-foreground" />
         <p className="text-lg font-medium text-foreground">{t("order.qrNotRecognized")}</p>
         <p className="text-sm text-muted-foreground">
-          {error instanceof ApiError ? error.message : t("order.askStaffForHelp")}
+          {error instanceof ApiError && error.status !== 404 ? t(error.message) : t("order.askStaffForHelp")}
         </p>
       </div>
     );
@@ -364,7 +365,7 @@ export default function PublicMenuPage({
 
   if (placed) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center">
+      <div lang={LOCALE_TAGS[locale]} className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-6 text-center">
         <div className="relative flex h-10 w-10 items-center justify-center">
           <PopBurst />
           <CheckCircle2 className="h-10 w-10 text-success" />
@@ -387,7 +388,7 @@ export default function PublicMenuPage({
 
   if (!guestName) {
     return (
-      <div className="relative flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+      <div lang={LOCALE_TAGS[locale]} className="relative flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
         <div className="absolute right-4 top-4">
           <LanguageSwitcher compact />
         </div>
@@ -429,7 +430,7 @@ export default function PublicMenuPage({
   }
 
   return (
-    <div className="relative min-h-screen bg-background pb-24">
+    <div lang={LOCALE_TAGS[locale]} className="relative min-h-screen bg-background pb-24">
       <header className="border-b border-border px-5 py-6 text-center">
         <div className="absolute right-4 top-4">
           <LanguageSwitcher compact />
@@ -488,6 +489,7 @@ export default function PublicMenuPage({
                               variant="outline"
                               size="icon"
                               className="h-7 w-7"
+                              aria-label={t("order.decrease", { name: item.name })}
                               onClick={() => removeOne(item.id)}
                             >
                               <Minus className="h-3 w-3" />
@@ -497,6 +499,7 @@ export default function PublicMenuPage({
                               variant="outline"
                               size="icon"
                               className="h-7 w-7"
+                              aria-label={t("order.increase", { name: item.name })}
                               onClick={() => handleAdd(item)}
                               disabled={pauseLabels.has(item.id)}
                             >
@@ -525,22 +528,22 @@ export default function PublicMenuPage({
       </main>
 
       {data?.session?.required && !grant && access && (
-        <p className="mx-auto max-w-lg px-5 pt-4 text-sm text-muted-foreground" data-testid="tap-verified">Your table is verified. Your first order opens the table.</p>
+        <p className="mx-auto max-w-lg px-5 pt-4 text-sm text-muted-foreground" data-testid="tap-verified">{t("order.verified")}</p>
       )}
 
       {data?.session?.required && !grant && !access && (
-        <section aria-label="Table code" className="mx-auto max-w-lg px-5 pt-4">
+        <section aria-label={t("order.code")} className="mx-auto max-w-lg px-5 pt-4">
           <div className="rounded-2xl border border-primary/40 bg-primary/5 p-4">
-            <h2 className="text-base font-semibold text-foreground">Scan the code on your table to order</h2>
-            <p className="mt-1 text-sm text-muted-foreground">You can look at the menu now. To order, scan the QR shown on your table&rsquo;s screen, or enter the 6-character table code if the staff gave you one.</p>
-            {scanMsg && <p role="alert" className="mt-2 text-sm text-destructive">{scanMsg}</p>}
-            {sessionMsg && <p role="alert" className="mt-2 text-sm text-destructive">{sessionMsg}</p>}
+            <h2 className="text-base font-semibold text-foreground">{t("order.scanTitle")}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t("order.scanHint")}</p>
+            {scanMsg && <p role="alert" className="mt-2 text-sm text-destructive">{t(scanMsg)}</p>}
+            {sessionMsg && <p role="alert" className="mt-2 text-sm text-destructive">{t(sessionMsg)}</p>}
             <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (codeDraft.trim().length >= 6) void joinTable(); }}>
-              <label className="sr-only" htmlFor="table-code">Table code</label>
+              <label className="sr-only" htmlFor="table-code">{t("order.code")}</label>
               <input id="table-code" value={codeDraft} onChange={(e) => setCodeDraft(e.target.value.toUpperCase())} maxLength={8} autoCapitalize="characters" autoComplete="off" spellCheck={false} inputMode="text" className="h-12 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-center text-xl font-semibold uppercase tracking-[0.3em]" placeholder="ABC234" />
-              <Button type="submit" className="h-12" disabled={joining || codeDraft.trim().length < 6}>{joining ? "Checking…" : "Join table"}</Button>
+              <Button type="submit" className="h-12" disabled={joining || codeDraft.trim().length < 6}>{joining ? t("order.checking") : t("order.join")}</Button>
             </form>
-            {codeError && <p role="alert" className="mt-2 text-sm text-destructive">{codeError}</p>}
+            {codeError && <p role="alert" className="mt-2 text-sm text-destructive">{t(codeError)}</p>}
           </div>
         </section>
       )}
@@ -549,49 +552,49 @@ export default function PublicMenuPage({
         <section className="mx-auto max-w-lg px-5 pb-6">
           {status.order && (
             <div className="mb-4 rounded-2xl border border-border p-4">
-              <p className="text-sm font-medium text-foreground">
-                Your order #{status.order.orderNumber}
-                {status.order.acceptance === "PENDING" && " — waiting for the restaurant to confirm"}
-              </p>
+              {status.order.orderNumber && <p className="text-sm font-medium text-foreground">
+                {t("order.orderNumber", { number: status.order.orderNumber })}
+                {status.order.acceptance === "PENDING" && ` — ${t("order.awaitingConfirmation")}`}
+              </p>}
               {status.order.paged && (
-                <p role="alert" className="mt-2 rounded-xl bg-success/15 px-3 py-2 text-sm font-semibold text-foreground">Your food is ready. Please collect it now.</p>
+                <p role="alert" className="mt-2 rounded-xl bg-success/15 px-3 py-2 text-sm font-semibold text-foreground">{t("order.collect")}</p>
               )}
               <p className="mt-2 text-sm text-foreground" data-testid="order-state">
                 {status.order.paid
-                  ? "Paid. "
+                  ? `${t("order.paid")} `
                   : status.order.payIntent === "CASH"
-                    ? "Not paid yet: please pay at the register and tell them your order number. "
+                    ? `${t("order.cashDue")} `
                     : status.order.heldForPayment
-                      ? "Waiting for your payment. "
+                      ? `${t("order.waitingPayment")} `
                       : ""}
-                {{ WAITING_PAYMENT: "The kitchen will start as soon as the payment is confirmed.", SENT: "Sent to the kitchen.", NEW: "The kitchen has your order.", PREPARING: "Being prepared.", READY: "Ready, please collect it.", SERVED: "Served. Enjoy!" }[status.order.kitchen]}
+                {t(`order.kitchen.${status.order.kitchen}`)}
               </p>
               {status.order.paid && <div className="mt-3"><RatingCard orderId={status.order.id} /></div>}
               {!status.order.paid && status.order.payIntent === "ONLINE" && (
                 <div className="mt-3 flex flex-col gap-2">
                   {(status.order.lastPayment === "FAILED" || status.order.lastPayment === "EXPIRED") && (
-                    <p role="alert" className="text-sm text-destructive">Your payment did not go through. You have not been charged for it.</p>
+                    <p role="alert" className="text-sm text-destructive">{t("order.chargeFailed")}</p>
                   )}
                   {status.order.lastPayment === "NEEDS_REVIEW" && (
-                    <p role="alert" className="text-sm text-destructive">We received a payment but could not match it to your order. Please ask the staff.</p>
+                    <p role="alert" className="text-sm text-destructive">{t("order.chargeUnmatched")}</p>
                   )}
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" onClick={() => void startOnlinePayment(status.order!.id)}>{status.order.lastPayment === "FAILED" || status.order.lastPayment === "EXPIRED" ? "Try paying again" : "Pay now"}</Button>
-                    <Button size="sm" variant="outline" disabled={payAtRegister.isPending} onClick={() => payAtRegister.mutate(status.order!.id)}>Pay at the register instead</Button>
+                    <Button size="sm" onClick={() => void startOnlinePayment(status.order!.id)}>{status.order.lastPayment === "FAILED" || status.order.lastPayment === "EXPIRED" ? t("order.retryPayment") : t("order.payNow")}</Button>
+                    <Button size="sm" variant="outline" disabled={payAtRegister.isPending} onClick={() => payAtRegister.mutate(status.order!.id)}>{t("order.payCounterInstead")}</Button>
                   </div>
-                  {payError && <p role="alert" className="text-sm text-destructive">{payError}</p>}
+                  {payError && <p role="alert" className="text-sm text-destructive">{t(payError)}</p>}
                 </div>
               )}
-              <ul className="mt-2 flex flex-col gap-1 text-sm text-muted-foreground">
+              {status.order.items && <ul className="mt-2 flex flex-col gap-1 text-sm text-muted-foreground">
                 {status.order.items.map((i) => (
                   <li key={i.id} className="flex justify-between gap-3">
                     <span>
                       {i.quantity} × {i.nameSnapshot}
                     </span>
-                    <span>{ITEM_STATUS_LABEL[i.status] ?? i.status}</span>
+                    <span>{Object.hasOwn(ITEM_STATUS_LABEL, i.status) ? t(ITEM_STATUS_LABEL[i.status]) : i.status}</span>
                   </li>
                 ))}
-              </ul>
+              </ul>}
             </div>
           )}
           <div className="flex gap-3">
@@ -602,7 +605,7 @@ export default function PublicMenuPage({
               onClick={() => requestService.mutate("WAITER")}
             >
               <BellRing className="mr-2 h-4 w-4" />
-              {status.openRequests.includes("WAITER") ? "Waiter is coming" : "Call waiter"}
+              {status.openRequests.includes("WAITER") ? t("order.waiterComing") : t("order.callWaiter")}
             </Button>
             {status.order && (
               <Button
@@ -612,7 +615,7 @@ export default function PublicMenuPage({
                 onClick={() => requestService.mutate("BILL")}
               >
                 <Receipt className="mr-2 h-4 w-4" />
-                {status.openRequests.includes("BILL") ? "Bill requested" : "Request bill"}
+                {status.openRequests.includes("BILL") ? t("order.billRequested") : t("order.requestBill")}
               </Button>
             )}
           </div>
@@ -644,16 +647,16 @@ export default function PublicMenuPage({
       {cartCount > 0 && (
         <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background px-5 py-4 shadow-[0_-4px_16px_rgba(0,0,0,0.06)]">
           {data?.payments?.online && (
-            <fieldset className="mx-auto mb-3 flex max-w-lg gap-2" aria-label="How will you pay?">
-              {([["CASH", "Pay at the register"], ["ONLINE", "Pay now on my phone"]] as const).map(([v, label]) => (
+            <fieldset className="mx-auto mb-3 flex max-w-lg gap-2" aria-label={t("order.howPay")}>
+              {([["CASH", "order.payCounter"], ["ONLINE", "order.payPhone"]] as const).map(([v, label]) => (
                 <label key={v} className={`flex-1 cursor-pointer rounded-xl border px-3 py-2 text-center text-sm ${payChoice === v ? "border-primary bg-primary/10 font-medium" : "border-border"}`}>
                   <input type="radio" name="pay" className="sr-only" checked={payChoice === v} onChange={() => setPayChoice(v)} />
-                  {label}
+                  {t(label)}
                 </label>
               ))}
             </fieldset>
           )}
-          {!data?.payments?.online && <p className="mx-auto mb-2 max-w-lg text-center text-xs text-muted-foreground">You will pay at the register.</p>}
+          {!data?.payments?.online && <p className="mx-auto mb-2 max-w-lg text-center text-xs text-muted-foreground">{t("order.willPayCounter")}</p>}
           {blockedByPause && <p role="status" className="mx-auto mb-2 max-w-lg text-center text-sm text-warning">{t("menu.removePaused")}</p>}
           <div className="mx-auto flex max-w-lg items-center gap-3">
             <Button
@@ -669,7 +672,7 @@ export default function PublicMenuPage({
           {placeOrder.isError && !(placeOrder.error instanceof ApiError && placeOrder.error.pausedItems.length && blockedByPause) && (
             <p className="mx-auto mt-2 max-w-lg text-center text-xs text-destructive">
               {placeOrder.error instanceof ApiError
-                ? placeOrder.error.message
+                ? t(placeOrder.error.message)
                 : t("order.couldNotPlace")}
             </p>
           )}

@@ -1,18 +1,12 @@
 import type { IngredientUnit, StaffRole } from "@nodedr-restaurant/types";
 
-// The restaurant's configured currency, set once by the app shell when settings load. Call sites that do not
-// pass a currency (most of them) follow it instead of silently showing rupees.
-let defaultCurrency = "INR";
-export function setDefaultCurrency(code?: string | null): string {
-  if (code && /^[A-Za-z]{3}$/.test(code)) defaultCurrency = code.toUpperCase();
-  return defaultCurrency;
-}
-
 export function formatCurrency(
   value: number | string,
-  currency = defaultCurrency,
-  locale = "en-IN",
+  currency?: string,
+  locale?: string,
 ): string {
+  // While settings load, never label a payment with another restaurant's currency.
+  if (!currency || !/^[a-z]{3}$/i.test(currency)) return "—";
   const amount = typeof value === "string" ? Number(value) : value;
   return new Intl.NumberFormat(locale, {
     style: "currency",

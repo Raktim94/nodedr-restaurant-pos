@@ -94,6 +94,7 @@ function build(opts: { zones?: boolean; pausedUntil?: Date } = {}) {
       ),
       findUnique: jest.fn(async () => ({
         autoConfirmOrders: false,
+        restaurant: { currency: 'BRL', timezone: 'America/Sao_Paulo' },
         taxMode: 'INCLUSIVE',
       })),
     },
@@ -154,13 +155,14 @@ function build(opts: { zones?: boolean; pausedUntil?: Date } = {}) {
     $transaction: jest.fn(async (fn: any) => fn(tx)),
   };
 
+  const notifyByPermission = jest.fn();
   const ordersService = new OrdersService(
     prisma,
     { emitToBranch: jest.fn() } as never,
     {} as never,
     {} as never,
     {} as never,
-    { notifyByPermission: jest.fn() } as never,
+    { notifyByPermission } as never,
     {} as never,
     { emitForBranch: jest.fn() } as never,
     {} as never,
@@ -173,7 +175,7 @@ function build(opts: { zones?: boolean; pausedUntil?: Date } = {}) {
     {} as never,
     {} as never,
   );
-  return { service, prisma, orders, customers, tx };
+  return { service, prisma, orders, customers, tx, notifyByPermission };
 }
 
 const body = (over: Record<string, unknown> = {}) =>
@@ -188,6 +190,30 @@ const body = (over: Record<string, unknown> = {}) =>
   });
 
 describe('Integration API order flow', () => {
+  it('uses the restaurant currency in minimums and pending-order notifications', async () => {
+    const { service, prisma, notifyByPermission } = build({ zones: true });
+    prisma.restaurant.findUniqueOrThrow.mockResolvedValueOnce({
+      onlineMinOrderAmount: 500,
+    });
+    await expect(service.createOrder(KEY, BRANCH, body())).rejects.toThrow(
+      /R\$500.00.*R\$400.00/,
+    );
+    prisma.deliveryZone.findFirst.mockResolvedValueOnce({
+      name: 'Central',
+      minOrderAmount: 450,
+    });
+    await expect(service.createOrder(KEY, BRANCH, body())).rejects.toThrow(
+      /Central.*R\$450.00/,
+    );
+
+    await service.createOrder(KEY, BRANCH, body());
+    expect(notifyByPermission).toHaveBeenCalledWith(
+      BRANCH,
+      'orders.accept',
+      expect.objectContaining({ body: expect.stringContaining('R$400.00') }),
+    );
+  });
+
   it('refuses a currently paused dish before writing an order, and accepts an expired pause', async () => {
     const until = new Date(Date.now() + 60_000);
     const paused = build({ pausedUntil: until });

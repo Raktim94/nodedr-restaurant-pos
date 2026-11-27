@@ -21,7 +21,7 @@ Bills and kitchen tickets no longer depend on a printer plugged into the restaur
 
 - **Bluetooth thermal printers** (58 mm and 80 mm "mobile printers"): pair the printer in the phone's Bluetooth settings, then Settings > Bluetooth printer (this phone) > Choose printer. The server builds the ESC/POS data (`?via=device` on the print endpoints) and the app sends it over Bluetooth serial (`NativePrinterPlugin`, Android). Needs the "Nearby devices" permission on Android 12+.
 - **Print / Save PDF**: opens Android's print dialog (or AirPrint on iPhone) for the bill, receipt or kitchen ticket, so you can save a PDF or use any print service installed on the phone.
-- **UPI QR on the bill**: when a UPI id is set under Settings, an unpaid bill prints a "Scan to pay by UPI" QR with the exact amount due (thermal and PDF). It is left off paid receipts.
+- **UPI QR on the bill**: when an INR restaurant has a UPI id set under Settings, an unpaid bill prints a "Scan to pay by UPI" QR with the exact amount due (thermal and PDF). It is left off paid receipts.
 
 iPhones cannot talk to Bluetooth thermal printers, so there it is AirPrint / PDF only.
 
@@ -53,6 +53,19 @@ Tests: `node --test www/pos/lib/*.test.mjs`.
 ## Standalone POS on the phone
 
 With no server the app opens its own POS (`www/pos/`): menu, selling, tables and held orders, kitchen tickets and the kitchen screen, Bluetooth and PDF printing, and sync to a server later. Everything is kept in the phone's IndexedDB (`lib/store.js`).
+
+During phone-only setup, confirm your country, currency and time zone. The phone suggests them from its language and time-zone settings when available. You can edit them later under **Sync > Shop settings**. Paired phones use the restaurant settings from the last downloaded menu. Amounts on screen and on receipts follow the device language. Receipts, sales reports, cash counts and CSV exports use the restaurant’s time zone. New sales retain their currency for reprints. Connecting a phone account to a server with a different currency keeps pending bills on the phone until it connects to a server that uses their currency.
+
+<details>
+<summary>Phone-only setup with Brazil and BRL suggested</summary>
+
+<img src="../docs/screenshots/tutorial/mobile-regional-setup.png" width="320" alt="Phone-only setup with BR, BRL and America/Sao_Paulo prefilled">
+
+</details>
+
+On a phone set to Italian, the account form and regional settings appear in Italian. Italy suggests EUR and Switzerland suggests CHF. You can change these choices after setup. The other offline POS screens currently use English.
+
+To check the regional setup and offline currency changes in Chrome, run `node mobile/test/regional.chrome.cjs` from the repository root. Set `CHROME` to the browser executable and make `playwright-core` available on `NODE_PATH`, as in the mobile CI job.
 
 Books (`lib/books.js`, unit tested in `lib/books.test.mjs`). On a phone account they stay on the phone. On a server-linked phone, refunds (money only), expenses, money collected on owed bills and the phone's own day-end cash count are also sent to the server through the event queue (`lib/journal.js`, each with its own id so a resend is harmless; a refund or collection waits until its sale is on the server). The cash counts appear in the web app under Accounting > Cash close > Phone tills.
 

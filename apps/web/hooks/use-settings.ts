@@ -91,11 +91,12 @@ export function useDisplaySettings(branchId: string | null) {
   });
 }
 
-export function useUpdateRestaurantSettings(branchId: string | null) {
+export function useUpdateRestaurantSettings() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (dto: RestaurantSettingsDto) => api.patch("/settings/restaurant", dto),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings", branchId] }),
+    // Currency and time zone belong to the restaurant and affect every branch.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings"] }),
   });
 }
 

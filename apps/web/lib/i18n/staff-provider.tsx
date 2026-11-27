@@ -7,6 +7,7 @@ import { DEFAULT_LOCALE, LOCALE_TAGS, type Locale } from "./locales";
 const load = {
   es: () => import("./staff/es.json"),
   fr: () => import("./staff/fr.json"),
+  it: () => import("./staff/it.json"),
   pt: () => import("./staff/pt.json"),
 };
 type TranslatedLocale = keyof typeof load;

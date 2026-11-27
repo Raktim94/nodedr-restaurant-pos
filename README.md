@@ -208,7 +208,7 @@ a Settings area (restaurant + branch details, per-branch tax regime — India
 GST/US Sales Tax/EU VAT/Spain IVA, tax-inclusive or -exclusive menu
 pricing) and staff account management (create/deactivate staff, assign
 roles) under **Settings** in the sidebar, photo upload on menu items, and
-a language switcher for English, Spanish, French and Brazilian Portuguese in the staff dashboard
+a language switcher for English, Spanish, French, Italian and Brazilian Portuguese in the staff dashboard
 and on the guest QR ordering page. Staff can switch languages from the top bar while working.
 The browser remembers the choice. Restaurant records, including customer and dish names, keep
 the text entered by staff.
@@ -273,9 +273,9 @@ Start with the [screenshot-guided tutorial](./TUTORIAL.md) for the full
 first-run walkthrough. It covers sign-up, setup, daily service, and the
 management tools with **56 screenshots of the app**.
 
-1. **Set up your restaurant.** Create the owner account, then enter your
-   restaurant details, branch address, currency, timezone, tax settings, and
-   UPI payee in **Settings**.
+1. **Set up your restaurant.** At signup, confirm the first branch’s country
+   and tax regime, plus the restaurant’s currency and time zone. You can edit
+   them in **Settings → General**, along with the branch address and UPI payee.
 2. **Add the menu and floor.** Create categories, dishes, options and combos;
    add floors and tables. Add ingredients and recipes if you want stock usage
    and food cost tracked automatically.
@@ -369,7 +369,7 @@ Postgres over the originally-specced SQLite — is in
 | Tables | TanStack Table |
 | Charts | Recharts |
 | Drag & drop | dnd-kit (floor designer, KDS columns) |
-| i18n | Lightweight client-side context (`apps/web/lib/i18n`) — English, Spanish, French and Brazilian Portuguese, no routing/middleware |
+| i18n | Lightweight client-side context (`apps/web/lib/i18n`) — English, Spanish, French, Italian and Brazilian Portuguese, no routing/middleware |
 | Auth | JWT (httpOnly cookie) + PIN quick-switch, optional TOTP 2FA |
 | Containers | Docker + Docker Compose |
 

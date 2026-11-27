@@ -1,10 +1,9 @@
 // The restaurant's books on this phone: refunds, expenses, the cash drawer and
 // exports. Pure functions (no page, no database) so they are unit tested.
+import { formatMoney } from './money.js';
 import { effectiveUnit, round2 } from './bill.js';
-
-const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-export const dayOf = (iso) => dayKey(new Date(iso));
-export const today = (now = new Date()) => dayKey(now);
+import { dayOf, today, localMinute } from './calendar.js';
+export { dayOf, today, daysAgo } from './calendar.js';
 
 // ------------------------------------------------------------------ refunds ---
 
@@ -72,11 +71,13 @@ export const dueOf = (sale) => (sale.payLater ? round2(Math.max(sale.bill.total 
 export const dueSales = (sales) => sales.filter((s) => dueOf(s) > 0 && s.status !== 'dismissed').sort((a, b) => (a.soldAt < b.soldAt ? -1 : 1));
 
 /** Money owed, split by how long ago the sale was (the "sale aging" view). */
-export function agingBuckets(sales, now = new Date()) {
+export function agingBuckets(sales, now = new Date(), timeZone) {
   const out = { total: 0, today: 0, d1_30: 0, d31_60: 0, over60: 0 };
+  const businessDay = timeZone ? Date.parse(today(now, timeZone)) : null;
   for (const s of dueSales(sales)) {
     const d = dueOf(s);
-    const days = Math.floor((now.getTime() - new Date(s.soldAt).getTime()) / 86400000);
+    const elapsed = businessDay === null ? now.getTime() - Date.parse(s.soldAt) : businessDay - Date.parse(dayOf(s.soldAt, timeZone));
+    const days = Math.floor(elapsed / 86400000);
     out.total += d;
     if (days < 1) out.today += d;
     else if (days <= 30) out.d1_30 += d;
@@ -88,12 +89,12 @@ export function agingBuckets(sales, now = new Date()) {
 }
 
 /** Money taken later on a due sale. Cash above what is owed is change, like at the till. */
-export function buildCollection({ id, sale, method = 'CASH', amount, reference = '', now = new Date() }) {
+export function buildCollection({ id, sale, method = 'CASH', amount, reference = '', now = new Date(), currency = sale.currency, locale }) {
   const due = dueOf(sale);
   if (!(due > 0)) throw new Error('Nothing is owed on this bill.');
   const given = round2(Number(amount));
   if (!Number.isFinite(given) || given <= 0) throw new Error('Enter the amount received, for example 200.');
-  if (given > due && method !== 'CASH') throw new Error(`Only ${due.toFixed(2)} is owed. Only cash can be more (the rest is change).`);
+  if (given > due && method !== 'CASH') throw new Error(`Only ${formatMoney(due, currency, locale)} is owed. Only cash can be more (the rest is change).`);
   const applied = round2(Math.min(given, due));
   return {
     id,
@@ -106,9 +107,9 @@ export function buildCollection({ id, sale, method = 'CASH', amount, reference =
 }
 
 /** Collections taken on a given day, from any sale. */
-function collectionsOn(sales, key) {
+function collectionsOn(sales, key, timeZone) {
   const out = [];
-  for (const s of sales) for (const c of s.collections || []) if (dayOf(c.at) === key) out.push(c);
+  for (const s of sales) for (const c of s.collections || []) if (dayOf(c.at, timeZone) === key) out.push(c);
   return out;
 }
 
@@ -124,14 +125,12 @@ export function buildExpense({ id, amount, note, category, method = 'CASH', now 
 
 // ---------------------------------------------------------------- the books ---
 
-const inDay = (iso, key) => dayOf(iso) === key;
-
 /** One day's money on this phone. `float` is the cash in the drawer when the day opened. */
-export function dayBooks({ sales, refunds, expenses, float = 0, day = today() }) {
-  const s = sales.filter((x) => inDay(x.soldAt, day));
-  const r = refunds.filter((x) => inDay(x.at, day));
-  const e = expenses.filter((x) => inDay(x.at, day));
-  const col = collectionsOn(sales, day);
+export function dayBooks({ sales, refunds, expenses, float = 0, timeZone, day = today(undefined, timeZone) }) {
+  const s = sales.filter((x) => dayOf(x.soldAt, timeZone) === day);
+  const r = refunds.filter((x) => dayOf(x.at, timeZone) === day);
+  const e = expenses.filter((x) => dayOf(x.at, timeZone) === day);
+  const col = collectionsOn(sales, day, timeZone);
   const byMethod = { CASH: 0, UPI: 0, CARD: 0, OTHER: 0 };
   let gross = 0;
   let tax = 0;
@@ -174,9 +173,9 @@ export function dayBooks({ sales, refunds, expenses, float = 0, day = today() })
 }
 
 /** Total of net sales, refunds and expenses between two day keys (inclusive). */
-export function rangeBooks({ sales, refunds, expenses, from, to }) {
+export function rangeBooks({ sales, refunds, expenses, from, to, timeZone }) {
   const within = (iso) => {
-    const k = dayOf(iso);
+    const k = dayOf(iso, timeZone);
     return k >= from && k <= to;
   };
   const s = sales.filter((x) => within(x.soldAt));
@@ -196,12 +195,6 @@ export function rangeBooks({ sales, refunds, expenses, from, to }) {
     profit: round2(gross - refundTotal - expenseTotal),
     top: [...items.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, qty]) => ({ name, qty })),
   };
-}
-
-export function daysAgo(n, now = new Date()) {
-  const d = new Date(now);
-  d.setDate(d.getDate() - n);
-  return dayKey(d);
 }
 
 /** What the cashier counted against what the books say should be there. */
@@ -232,17 +225,17 @@ export function cell(v) {
 }
 const row = (a) => a.map(cell).join(',');
 
-export function salesCsv(sales, refunds = []) {
+export function salesCsv(sales, refunds = [], timeZone) {
   const head = ['Bill', 'Server order', 'Date', 'Time', 'Type', 'Table', 'Customer', 'Taken by', 'Items', 'Subtotal', 'Discount', 'Service charge', 'Tax', 'Total', 'Refunded', 'Payments', 'Due', 'Status'];
   const out = [row(head)];
   for (const s of [...sales].sort((a, b) => (a.soldAt < b.soldAt ? -1 : 1))) {
-    const d = new Date(s.soldAt);
+    const [day, time] = localMinute(s.soldAt, timeZone).split('T');
     out.push(
       row([
         s.localNumber,
         s.serverOrderNumber || '',
-        dayKey(d),
-        `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
+        day,
+        time,
         s.type,
         s.tableLabel || '',
         s.customer ? [s.customer.name, s.customer.phone].filter(Boolean).join(' ') : '',
@@ -263,11 +256,11 @@ export function salesCsv(sales, refunds = []) {
   return out.join('\r\n') + '\r\n';
 }
 
-export function expensesCsv(expenses) {
+export function expensesCsv(expenses, timeZone) {
   const out = [row(['Date', 'Time', 'What for', 'Category', 'Paid by', 'Amount'])];
   for (const e of [...expenses].sort((a, b) => (a.at < b.at ? -1 : 1))) {
-    const d = new Date(e.at);
-    out.push(row([dayKey(d), `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, e.note, e.category, e.method === 'CASH' ? 'Cash' : 'Other', e.amount]));
+    const [day, time] = localMinute(e.at, timeZone).split('T');
+    out.push(row([day, time, e.note, e.category, e.method === 'CASH' ? 'Cash' : 'Other', e.amount]));
   }
   return out.join('\r\n') + '\r\n';
 }

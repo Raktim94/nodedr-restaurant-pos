@@ -4,6 +4,8 @@
 // itself (iframe + window.print) lives in kiosk-print.tsx. This is a plain
 // browser/print-dialog path: nothing here talks to a printer directly.
 
+import { formatCurrency } from "./format.ts";
+
 export interface TicketData {
   restaurantName: string;
   orderNumber: string;
@@ -16,6 +18,7 @@ export interface TicketData {
   taxLabel: string;
   taxMode: "INCLUSIVE" | "EXCLUSIVE";
   locale: string;
+  timeZone?: string;
   currency: string;
   /** Pre-rendered <svg> for the order QR (optional). */
   qrSvg?: string;
@@ -38,9 +41,8 @@ export function escapeHtml(value: string): string {
 }
 
 export function buildTicketHtml(t: TicketData): string {
-  const money = (v: string) =>
-    new Intl.NumberFormat(t.locale, { style: "currency", currency: t.currency }).format(Number(v));
-  const date = new Intl.DateTimeFormat(t.locale, { dateStyle: "short", timeStyle: "short" }).format(
+  const money = (value: string) => formatCurrency(value, t.currency, t.locale);
+  const date = new Intl.DateTimeFormat(t.locale, { dateStyle: "short", timeStyle: "short", timeZone: t.timeZone }).format(
     new Date(t.createdAt),
   );
   const rows = t.items

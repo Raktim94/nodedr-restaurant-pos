@@ -62,7 +62,7 @@ export function KioskApp({ token }: { token: string }) {
 
   const localeTag = LOCALE_TAGS[locale];
   const fmt = useCallback(
-    (n: number | string) => formatCurrency(n, menu?.currency ?? "EUR", localeTag),
+    (n: number | string) => formatCurrency(n, menu?.currency, localeTag),
     [menu?.currency, localeTag],
   );
 
@@ -241,7 +241,6 @@ export function KioskApp({ token }: { token: string }) {
         menu={menu}
         confirmation={state.confirmation}
         secondsLeft={Math.max(doneLeft, 0)}
-        fmt={fmt}
         localeTag={localeTag}
         online={online}
         onNewOrder={reset}
@@ -251,6 +250,7 @@ export function KioskApp({ token }: { token: string }) {
 
   return (
     <div
+      lang={localeTag}
       className="relative h-full select-none"
       style={{
         paddingTop: "env(safe-area-inset-top)",

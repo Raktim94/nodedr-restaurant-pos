@@ -4,10 +4,9 @@
 // Both show the same figures. An unpaid bill ("provisional") carries the UPI
 // "scan to pay" QR when the restaurant has a UPI id.
 
-const money = (n) => Number(n).toFixed(2);
+import { storedZone } from './calendar.js';
+import { formatMoney, saleCurrency, supportsUpi } from './money.js';
 const METHOD = { CASH: 'Cash', CARD: 'Card', UPI: 'UPI', OTHER: 'Other' };
-
-export const upiPayLine = (snap) => (snap.restaurant.upiVpa ? snap.restaurant.upiVpa : null);
 
 // ---------------------------------------------------------------- ESC/POS ---
 const ESC = 0x1b;
@@ -112,7 +111,9 @@ export function columnsFor(snap) {
   return snap.branch.printerColumns || (snap.branch.printerPaperWidthMm >= 80 ? 48 : 32);
 }
 
-export function escposReceipt(sale, snap, { provisional = false, upiUri = null } = {}) {
+export function escposReceipt(sale, snap, { provisional = false, upiUri = null, locale } = {}) {
+  const currency = saleCurrency(sale, snap.restaurant);
+  const money = (value) => formatMoney(value, currency, locale, true);
   const w = new Writer(columnsFor(snap));
   w.text(snap.restaurant.name, { align: 1, bold: true, big: true });
   w.text(snap.branch.name, { align: 1 });
@@ -120,7 +121,7 @@ export function escposReceipt(sale, snap, { provisional = false, upiUri = null }
   if (snap.branch.phone) w.text(`Tel ${snap.branch.phone}`, { align: 1 });
   if (snap.branch.gstNumber) w.text(`GSTIN ${snap.branch.gstNumber}`, { align: 1 });
   w.rule();
-  w.row(new Date(sale.soldAt).toLocaleString(), '');
+  w.row(new Date(sale.soldAt).toLocaleString(locale, { timeZone: storedZone(snap.restaurant.timezone) }), '');
   w.row(`Bill ${sale.localNumber}`, sale.type === 'DINE_IN' ? 'DINE IN' : 'TAKEAWAY');
   if (sale.tableLabel) w.row(sale.tableLabel, '');
   if (sale.customer && (sale.customer.name || sale.customer.phone)) w.row(`For ${[sale.customer.name, sale.customer.phone].filter(Boolean).join(' ')}`, '');
@@ -142,11 +143,11 @@ export function escposReceipt(sale, snap, { provisional = false, upiUri = null }
     const owed = owedOn(sale);
     if (owed > 0) w.row('BALANCE DUE', money(owed), { bold: true });
   }
-  if (provisional && upiUri) {
+  if (provisional && upiUri && supportsUpi(currency)) {
     w.rule();
     w.text('Scan to pay by UPI', { align: 1, bold: true });
     w.qr(upiUri);
-    w.text(`Amount: Rs ${money(sale.bill.total)}`, { align: 1, bold: true });
+    w.text(`Amount: ${money(sale.bill.total)}`, { align: 1, bold: true });
     if (snap.restaurant.upiPayeeName) w.text(snap.restaurant.upiPayeeName, { align: 1 });
   }
   w.rule();
@@ -164,9 +165,9 @@ export function toBase64(bytes) {
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-export function htmlReceipt(sale, snap, { provisional = false, upiSvg = null } = {}) {
-  const cur = snap.restaurant.currency === 'INR' ? '₹' : `${snap.restaurant.currency} `;
-  const m = (n) => `${cur}${money(n)}`;
+export function htmlReceipt(sale, snap, { provisional = false, upiSvg = null, locale } = {}) {
+  const currency = saleCurrency(sale, snap.restaurant);
+  const m = (value) => formatMoney(value, currency, locale);
   const rows = sale.items
     .map(
       (it) =>
@@ -180,8 +181,8 @@ export function htmlReceipt(sale, snap, { provisional = false, upiSvg = null } =
         sale.change > 0 ? `<div class="r"><span>Change</span><span>${m(sale.change)}</span></div>` : ''
       }${owed > 0 ? `<div class="r t"><span>BALANCE DUE</span><span>${m(owed)}</span></div>` : ''}`;
   const upi =
-    provisional && upiSvg
-      ? `<hr><div class="c"><strong>Scan to pay by UPI</strong><div class="qr">${upiSvg}</div><strong>Amount: ${esc(cur)}${money(sale.bill.total)}</strong><div>${esc(snap.restaurant.upiPayeeName || '')}</div></div>`
+    provisional && upiSvg && supportsUpi(currency)
+      ? `<hr><div class="c"><strong>Scan to pay by UPI</strong><div class="qr">${upiSvg}</div><strong>Amount: ${m(sale.bill.total)}</strong><div>${esc(snap.restaurant.upiPayeeName || '')}</div></div>`
       : '';
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <style>
@@ -196,7 +197,7 @@ th{font-size:10px;text-align:left;border-bottom:1px solid #000}td{padding:2px 0;
 ${snap.branch.address ? `<div class="s">${esc(snap.branch.address)}</div>` : ''}
 ${snap.branch.phone ? `<div class="s">Tel ${esc(snap.branch.phone)}</div>` : ''}
 ${snap.branch.gstNumber ? `<div class="s">GSTIN ${esc(snap.branch.gstNumber)}</div>` : ''}
-<hr><div class="r"><span>${esc(new Date(sale.soldAt).toLocaleString())}</span></div>
+<hr><div class="r"><span>${esc(new Date(sale.soldAt).toLocaleString(locale, { timeZone: storedZone(snap.restaurant.timezone) }))}</span></div>
 <div class="r"><span>Bill ${esc(sale.localNumber)}</span><span>${sale.type === 'DINE_IN' ? 'DINE IN' : 'TAKEAWAY'}</span></div>
 ${sale.tableLabel ? `<div>${esc(sale.tableLabel)}</div>` : ''}
 ${sale.customer && (sale.customer.name || sale.customer.phone) ? `<div>For ${esc([sale.customer.name, sale.customer.phone].filter(Boolean).join(' '))}</div>` : ''}

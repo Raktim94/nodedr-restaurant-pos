@@ -87,7 +87,7 @@ export function CheckoutPanel({
         status: live.status,
       }
     : orderSnapshot;
-  const [method, setMethod] = useState<PaymentMethodDto>("CASH");
+  const [selectedMethod, setMethod] = useState<PaymentMethodDto>("CASH");
   const [amountText, setAmountText] = useState("");
   // The cashier enters either a percentage or a fixed cash amount; the server
   // prices both the same way (and enforces the cap and the reason rule).
@@ -143,6 +143,9 @@ export function CheckoutPanel({
     );
   const [completed, setCompleted] = useState<CheckoutResult | null>(null);
   const { data: settings } = useDisplaySettings(branchId);
+  const supportsUpi = settings?.restaurant.currency.toUpperCase() === "INR";
+  const methods = supportsUpi ? METHODS : METHODS.filter((value) => value !== "UPI");
+  const method = selectedMethod === "UPI" && !supportsUpi ? "CASH" : selectedMethod;
 
   // What the guest has typed in, as numbers. Once a payment has been taken the
   // server locks the figures, so these stop mattering (and are not sent).
@@ -233,6 +236,7 @@ export function CheckoutPanel({
     method !== "UPI" || !upiVpa || !(upiAmount > 0)
       ? null
       : buildUpiUri({
+          currency: settings?.restaurant.currency,
           vpa: upiVpa,
           name: upiName,
           amount: upiAmount,
@@ -312,7 +316,7 @@ export function CheckoutPanel({
     );
   };
 
-  const printBill = () => branchId && openReceiptPrint(t, order.id, branchId, locked ? {} : settled);
+  const printBill = () => branchId && openReceiptPrint(t, order.id, branchId, { ...(locked ? {} : settled), locale: fmt.localeTag });
   const printBillThermal = () =>
     printUsb.mutate(
       { orderId: order.id, adjustments: locked ? {} : settled },
@@ -343,7 +347,7 @@ export function CheckoutPanel({
           <Button
             variant="outline"
             className="h-11"
-            onClick={() => branchId && openReceiptPrint(t, completed.id, branchId)}
+            onClick={() => branchId && openReceiptPrint(t, completed.id, branchId, { locale: fmt.localeTag })}
           >
             {phone ? t("Print / Save PDF") : t("Print receipt (browser)")}
           </Button>
@@ -663,7 +667,7 @@ export function CheckoutPanel({
           {remainingDue > 0 && (
             <div className="flex flex-col gap-2">
               <Label>{t("Payment method")}</Label>
-              <PaymentMethodButtons methods={METHODS} value={method} onChange={setMethod} />
+              <PaymentMethodButtons methods={methods} value={method} onChange={setMethod} />
             </div>
           )}
 

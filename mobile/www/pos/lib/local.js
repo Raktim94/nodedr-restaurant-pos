@@ -2,6 +2,7 @@
 // the phone (IndexedDB), so the app is usable before any server exists. Later
 // the owner connects a server; the sales taken here are then matched to the
 // server's dishes by name and sent (see remapSalesToServer).
+import { currencyCode, supportsUpi } from './money.js';
 import { planTables } from './tables.js';
 import { expenses, kv, kots, newId, orders, refunds, sales, shifts } from './store.js';
 
@@ -18,8 +19,38 @@ async function hashPassword(password, saltHex) {
 export const isLocal = (snap) => !!(snap && snap.local);
 export const hasLocalAccount = async () => !!(await kv.get('localAccount'));
 
+// Validate the user's choices before creating the account or writing its snapshot.
+function regionalSettings({ country, currency, timezone, upiVpa }) {
+  country = String(country || '').trim().toUpperCase();
+  currency = currencyCode(currency);
+  timezone = String(timezone || '').trim();
+  const names = typeof Intl.DisplayNames === 'function' ? new Intl.DisplayNames(['en'], { type: 'region', fallback: 'none' }) : null;
+  if (!/^[A-Z]{2}$/.test(country) || country === 'ZZ' || (names && !names.of(country))) {
+    throw new Error('Enter a two-letter country code, for example BR or IN.');
+  }
+  if (!currency || (Intl.supportedValuesOf && !Intl.supportedValuesOf('currency').includes(currency))) {
+    throw new Error('Enter a valid currency code, for example BRL or EUR.');
+  }
+  if (!/^[A-Za-z]/.test(timezone)) throw new Error('Enter a time zone, for example America/Sao_Paulo.');
+  try { new Intl.DateTimeFormat(undefined, { timeZone: timezone }); }
+  catch { throw new Error('Enter a valid time zone, for example America/Sao_Paulo.'); }
+  upiVpa = supportsUpi(currency) ? String(upiVpa || '').trim() || null : null;
+  if (upiVpa && !/^[\w.\-]{2,}@[\w.\-]{2,}$/.test(upiVpa)) throw new Error('A UPI id looks like name@bank.');
+  return { country, currency, timezone, upiVpa };
+}
+
+export async function saveLocalRegion(snap, values) {
+  if (!isLocal(snap)) throw new Error('Change the regional settings on your restaurant server.');
+  const { country, ...restaurant } = regionalSettings(values);
+  // Sales made before currency was stored on each bill keep their previous denomination.
+  if (snap.restaurant.currency !== restaurant.currency && !snap.restaurant.legacySaleCurrency) {
+    restaurant.legacySaleCurrency = snap.restaurant.currency;
+  }
+  return saveSnap({ ...snap, branch: { ...snap.branch, country }, restaurant: { ...snap.restaurant, ...restaurant } });
+}
+
 /** Create the account and an empty restaurant. Returns the snapshot. */
-export async function createLocalAccount({ name, email, password, restaurant, upiVpa }) {
+export async function createLocalAccount({ name, email, password, restaurant, ...region }) {
   name = String(name || '').trim();
   restaurant = String(restaurant || '').trim();
   email = String(email || '').trim();
@@ -27,22 +58,20 @@ export async function createLocalAccount({ name, email, password, restaurant, up
   if (!restaurant) throw new Error('Enter the name of your restaurant or shop.');
   if (String(password || '').length < 6) throw new Error('Choose a password of at least 6 characters.');
   if (email && !/^\S+@\S+\.\S+$/.test(email)) throw new Error('That email address does not look right.');
-  if (upiVpa && !/^[\w.\-]{2,}@[\w.\-]{2,}$/.test(upiVpa.trim())) throw new Error('A UPI id looks like name@bank.');
+  const { country, ...settings } = regionalSettings(region);
   const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
-  await kv.set('localAccount', { name, email, salt, hash: await hashPassword(password, salt), createdAt: new Date().toISOString() });
+  const account = { name, email, salt, hash: await hashPassword(password, salt), createdAt: new Date().toISOString() };
   const snap = {
     local: true,
     generatedAt: new Date().toISOString(),
     user: { id: 'local', name, permissions: [] },
-    restaurant: { name: restaurant, currency: 'INR', timezone: 'Asia/Kolkata', upiVpa: (upiVpa || '').trim() || null, upiPayeeName: restaurant, maxManualDiscountPercent: 100 },
-    branch: { id: 'local', name: restaurant, address: null, phone: null, gstNumber: null, taxRegime: null, taxMode: 'INCLUSIVE', taxLabel: 'Tax', taxId: null, printerPaperWidthMm: 58, printerColumns: 32 },
+    restaurant: { name: restaurant, ...settings, upiPayeeName: restaurant, maxManualDiscountPercent: 100 },
+    branch: { id: 'local', country, name: restaurant, address: null, phone: null, gstNumber: null, taxRegime: null, taxMode: 'INCLUSIVE', taxLabel: 'Tax', taxId: null, printerPaperWidthMm: 58, printerColumns: 32 },
     categories: [],
     items: [],
     floors: [],
   };
-  await kv.set('snapshot', snap);
-  await kv.set('snapshotAt', Date.now());
-  await kv.set('branchId', 'local');
+  await kv.setMany([['localAccount', account], ['snapshot', snap], ['snapshotAt', Date.now()], ['branchId', 'local']]);
   await kv.del('serverBase');
   return snap;
 }
@@ -64,14 +93,16 @@ export async function saveSnap(snap) {
  * Add-ons typed one per line, "Extra cheese = 30" (price optional), into the one optional "Add-ons" group a phone dish
  * has. Keeps the ids of add-ons that were already there, so open orders still match.
  */
-export function parseAddOns(text, old = []) {
+export function parseAddOns(text, old = [], locale = globalThis.navigator?.language) {
+  const format = new Intl.NumberFormat(locale, { numberingSystem: 'latn', useGrouping: false });
+  const decimal = format.formatToParts(1.5).find((p) => p.type === 'decimal').value;
   const choices = [];
   for (const raw of String(text || '').split(/\n/)) {
     const line = raw.trim();
     if (!line) continue;
-    const m = line.match(/^(.*?)(?:\s*[=:]\s*(?:₹|rs\.?)?\s*(-?\d+(?:\.\d+)?))?$/i);
+    const m = line.match(/^(.*?)(?:\s*[=:]\s*(?:₹|rs\.?)?\s*(-?\d+(?:[.,٫]\d+)?))?$/i);
     const name = (m[1] || '').trim().slice(0, 60);
-    const price = m[2] != null ? Number(m[2]) : 0;
+    const price = m[2] != null ? Number(m[2].replace(decimal, '.')) : 0;
     if (!name) continue;
     if (!Number.isFinite(price) || price < 0) throw new Error(`Add-on "${name}" needs a price of 0 or more.`);
     if (choices.some((c) => c.name.toLowerCase() === name.toLowerCase())) continue;
@@ -81,7 +112,10 @@ export function parseAddOns(text, old = []) {
   if (choices.length > 30) throw new Error('Keep it to 30 add-ons or fewer.');
   return choices;
 }
-export const addOnsText = (item) => ((item && item.options && item.options[0] && item.options[0].choices) || []).map((c) => (c.price ? `${c.name} = ${c.price}` : c.name)).join('\n');
+export function addOnsText(item, locale = globalThis.navigator?.language) {
+  const format = new Intl.NumberFormat(locale, { numberingSystem: 'latn', useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (item?.options?.[0]?.choices || []).map((c) => c.price ? `${c.name} = ${format.format(c.price)}` : c.name).join('\n');
+}
 
 export async function upsertDish(snap, { id, name, price, taxRate, isVeg, categoryName, stock, soldOut, halfPrice, barcode, addOns }) {
   name = String(name || '').trim();

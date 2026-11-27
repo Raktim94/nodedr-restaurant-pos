@@ -142,6 +142,25 @@ describe('receipt job', () => {
     expect(job.buffer.includes(Buffer.from([0x1b, 0x2a]))).toBe(false);
   });
 
+  it('prints reais on a thermal receipt', () => {
+    const job = buildReceiptEscPosJob({
+      restaurantName: 'Cafe',
+      currency: 'BRL',
+      branch,
+      order,
+      ...fmt,
+    });
+    expect(readJob(job.buffer).text).toContain('R$31.40');
+    const localized = buildReceiptEscPosJob({
+      restaurantName: 'Cafe',
+      currency: 'BRL',
+      branch,
+      order,
+      locale: 'pt-BR',
+    });
+    expect(readJob(localized.buffer).text).toContain('R$ 31,40');
+  });
+
   it('falls back to "EUR" on a code page that has no euro sign', () => {
     const job = buildReceiptEscPosJob({
       restaurantName: 'Casa',

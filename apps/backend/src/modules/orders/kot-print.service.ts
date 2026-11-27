@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
+import { storedTimeZone } from '../../common/time';
 import { buildKotEscPosJob, resolveProfile } from './escpos-receipt';
 import { PrinterNotFoundError } from './escpos-usb';
 import { sendToBranchPrinter } from './printer-transport';
@@ -46,7 +47,7 @@ export class KotPrintService {
           include: {
             table: true,
             customer: true,
-            branch: true,
+            branch: { include: { restaurant: { select: { timezone: true } } } },
           },
         },
         items: {
@@ -119,6 +120,7 @@ export class KotPrintService {
       const copy = reprint ? kot.printedCount : 0; // REPRINT #n on paper
       const job = buildKotEscPosJob({
         branchName: branch.name,
+        timeZone: storedTimeZone(branch.restaurant.timezone),
         profile: resolveProfile({
           paperWidthMm: branch.printerPaperWidthMm,
           codepage: branch.printerCodepage,

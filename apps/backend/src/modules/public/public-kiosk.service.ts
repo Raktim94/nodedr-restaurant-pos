@@ -1,3 +1,4 @@
+import { storedTimeZone } from '../../common/time';
 import {
   BadRequestException,
   Injectable,
@@ -51,7 +52,7 @@ export class PublicKioskService {
       branchName: branch.name,
       logoUrl: branch.restaurant.logoUrl ?? null,
       currency: branch.restaurant.currency,
-      timezone: branch.restaurant.timezone,
+      timezone: storedTimeZone(branch.restaurant.timezone),
       country: branch.country,
       taxMode: branch.taxMode,
       taxLabel: resolveTaxLabel(branch.taxRegime, branch.taxLabel),

@@ -6,9 +6,10 @@ import { formatMessage, type MessageValues } from "./message";
 import en from "./dictionaries/en.json";
 import es from "./dictionaries/es.json";
 import fr from "./dictionaries/fr.json";
+import it from "./dictionaries/it.json";
 import pt from "./dictionaries/pt.json";
 
-const DICTIONARIES: Record<Locale, Record<string, string>> = { en, es, fr, pt };
+const DICTIONARIES: Record<Locale, Record<string, string>> = { en, es, fr, it, pt };
 const STORAGE_KEY = "nodedr-locale";
 
 function detectBrowserLocale(): Locale {

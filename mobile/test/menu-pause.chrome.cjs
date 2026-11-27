@@ -11,7 +11,7 @@ const dish = { id: 'soup', name: 'Soup', categoryId: 'lunch', price: 30, taxRate
 const snapshot = {
   generatedAt: '2026-11-25T09:00:00Z', user: { id: 'server-user' },
   branch: { id: 'br1', name: 'Lunch', taxMode: 'INCLUSIVE' },
-  restaurant: { timezone: 'UTC', upiVpa: 'lunch@bank' }, floors: [],
+  restaurant: { currency: 'INR', timezone: 'UTC', upiVpa: 'lunch@bank' }, floors: [],
   categories: [{ id: 'lunch', name: 'Lunch' }], items: [dish],
 };
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, type LoginDto } from "@nodedr-restaurant/types";
 import { motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
@@ -16,8 +15,12 @@ import { Label } from "@/components/ui/label";
 import { useLogin } from "@/hooks/use-auth";
 import { useDemoInfo } from "@/hooks/use-demo";
 import { ApiError } from "@/lib/api";
+import { formResolver } from "@/lib/form-validation";
+import { useI18n } from "@/lib/i18n/context";
+import { LOCALE_TAGS } from "@/lib/i18n/locales";
 
 export default function LoginPage() {
+  const { locale, t } = useI18n();
   const router = useRouter();
   const login = useLogin();
   const { data: demo } = useDemoInfo();
@@ -30,7 +33,7 @@ export default function LoginPage() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<LoginDto>({ resolver: zodResolver(loginSchema) });
+  } = useForm<LoginDto>({ resolver: formResolver(loginSchema) });
 
   const onSubmit = (dto: LoginDto) => {
     setError(null);
@@ -47,18 +50,18 @@ export default function LoginPage() {
           return;
         }
         if (err instanceof ApiError && err.status >= 500) {
-          setError("The server is having a problem right now. Please try again in a minute.");
+          setError("login.serverError");
         } else if (err instanceof ApiError) {
           setError(err.message);
         } else {
-          setError("Can't reach the server. Check your internet connection and try again.");
+          setError("login.connectionError");
         }
       },
     });
   };
 
   return (
-    <main className="relative flex flex-1 items-center justify-center overflow-hidden bg-background px-4">
+    <main lang={LOCALE_TAGS[locale]} className="relative flex flex-1 items-center justify-center overflow-hidden bg-background px-4">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(50%_50%_at_50%_0%,color-mix(in_oklch,var(--primary),transparent_90%),transparent)]"
@@ -76,12 +79,12 @@ export default function LoginPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             OrderRestro
           </h1>
-          <p className="text-sm text-muted-foreground">Sign in to manage your restaurant</p>
+          <p className="text-sm text-muted-foreground">{t("login.title")}</p>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="email">Email or phone number</Label>
+            <Label htmlFor="email">{t("login.identifier")}</Label>
             <Input
               id="email"
               type="text"
@@ -93,45 +96,50 @@ export default function LoginPage() {
               enterKeyHint="next"
               autoFocus
               className="h-11"
-              placeholder="you@restaurant.com or phone number"
+              placeholder={t("login.identifierHint")}
+              aria-invalid={!!errors.email}
+              aria-describedby={errors.email ? "email-error" : undefined}
               {...register("email")}
             />
             {errors.email && (
-              <p className="text-xs text-destructive">{errors.email.message}</p>
+              <p id="email-error" className="text-xs text-destructive">{t("login.invalidIdentifier")}</p>
             )}
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">{t("signup.password")}</Label>
             <PasswordInput
               id="password"
-              
               autoComplete="current-password"
               enterKeyHint="go"
               className="h-11"
-              placeholder="Your password"
+              placeholder={t("login.passwordHint")}
+              aria-invalid={!!errors.password}
+              aria-describedby={errors.password ? "password-error" : undefined}
               {...register("password")}
             />
             {errors.password && (
-              <p className="text-xs text-destructive">{errors.password.message}</p>
+              <p id="password-error" className="text-xs text-destructive">{t("login.invalidPassword")}</p>
             )}
           </div>
 
           {needsCode && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="totp">Verification code</Label>
+              <Label htmlFor="totp">{t("login.verificationCode")}</Label>
               <Input
                 id="totp"
                 inputMode="text"
                 autoComplete="one-time-code"
                 autoFocus
-                placeholder="6-digit code or recovery code"
+                placeholder={t("login.codeHint")}
+                aria-invalid={!!errors.totp}
+                aria-describedby={errors.totp ? "totp-help totp-error" : "totp-help"}
                 {...register("totp")}
               />
-              <p className="text-xs text-muted-foreground">
-                Open your authenticator app, or use one of your recovery codes.
+              <p id="totp-help" className="text-xs text-muted-foreground">
+                {t("login.codeHelp")}
               </p>
-              {errors.totp && <p className="text-xs text-destructive">{errors.totp.message}</p>}
+              {errors.totp && <p id="totp-error" className="text-xs text-destructive">{t("login.invalidCode")}</p>}
             </div>
           )}
 
@@ -141,22 +149,22 @@ export default function LoginPage() {
               className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
+              <span>{t(error)}</span>
             </div>
           )}
 
           <Button type="submit" className="mt-2 h-12 text-base" disabled={login.isPending}>
-            {login.isPending ? "Signing in…" : "Sign in"}
+            {login.isPending ? t("login.signingIn") : t("signup.signIn")}
           </Button>
           {demo?.demo && (
-            <Link href="/demo" className="inline-flex h-12 items-center justify-center rounded-lg border border-border text-base font-medium hover:bg-muted">Try the live demo (no password)</Link>
+            <Link href="/demo" className="inline-flex h-12 items-center justify-center rounded-lg border border-border text-base font-medium hover:bg-muted">{t("login.demo")}</Link>
           )}
         </form>
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
-          New restaurant?{" "}
+          {t("login.newRestaurant")}{" "}
           <Link href="/signup" className="font-medium text-foreground hover:underline">
-            Create an account
+            {t("signup.create")}
           </Link>
         </p>
       </motion.div>

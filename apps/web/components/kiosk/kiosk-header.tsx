@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { TOUCH } from "./kiosk-ui";
 
 // Offer languages with a complete kiosk dictionary, with Spanish first.
-export const LOCALES_SHOWN: Locale[] = ["es", "en", "pt"];
+export const LOCALES_SHOWN: Locale[] = ["es", "en", "pt", "it"];
 
 export function KioskHeader({
   name,
