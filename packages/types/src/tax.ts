@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { countryCodeSchema } from "./region";
 
 // Multi-region tax support (2026-09-27). A branch picks a TaxRegime, which
 // supplies sensible defaults for how the receipt labels tax and whether
@@ -101,7 +102,7 @@ export function resolveTaxIdLabel(taxRegime: TaxRegime): string {
 }
 
 export const branchTaxSettingsSchema = z.object({
-  country: z.string().length(2).optional(),
+  country: countryCodeSchema.optional(),
   taxRegime: z.enum(TAX_REGIMES).optional(),
   taxMode: z.enum(TAX_MODES).optional(),
   taxLabel: z.string().max(30).optional().nullable(),

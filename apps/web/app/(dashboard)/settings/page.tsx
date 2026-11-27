@@ -217,7 +217,7 @@ function GeneralSettingsForm({
 
   const preset = TAX_REGIME_PRESETS[taxRegime];
 
-  const updateRestaurant = useUpdateRestaurantSettings(branchId);
+  const updateRestaurant = useUpdateRestaurantSettings();
   const { note: saveNote, clear: clearSaveNote, toast: saveToast } = useNoteToast();
   const updateBranch = useUpdateBranchSettings(branchId);
 
@@ -275,11 +275,8 @@ function GeneralSettingsForm({
   const onRegimeChange = (value: TaxRegime | null) => {
     if (!value) return;
     setTaxRegime(value);
-    // Switching regimes resets to that regime's own mode/country by
-    // default — a picker that silently kept the old mode would quietly
-    // mis-price every item on this branch (see settings.service.ts).
+    // Apply the pricing mode for this preset. The branch's location is independent.
     setTaxMode(TAX_REGIME_PRESETS[value].defaultMode);
-    setCountry(TAX_REGIME_PRESETS[value].defaultCountry);
   };
 
   return (

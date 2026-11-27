@@ -30,6 +30,8 @@ Open `http://<that machine's IP>:1995` from any till or tablet on the same netwo
 
 The first time you open the app, **Sign up** creates your restaurant and the owner account. After that, **Sign in** with the same email.
 
+Review **Regional settings** during signup. A browser configured for Brazilian Portuguese can suggest Brazil and BRL. The time zone comes separately from the device. A language without a country, such as `pt`, leaves the country open. Choose the currency yourself if several currencies circulate in that country, and confirm the first branch’s tax regime. Staff and guests can use different interface languages while viewing prices in the restaurant’s currency.
+
 <table>
 <tr>
 <td><img src="docs/screenshots/tutorial/signup.png" alt="Create your restaurant"></td>
@@ -50,8 +52,8 @@ You land on the **Dashboard**: today's revenue, orders, occupied tables, kitchen
 
 Then open **Settings** and do these once:
 
-1. **Restaurant**: name, currency (`INR`), timezone, logo, and your **UPI id** (see [section 5](#5-get-paid-with-upi)).
-2. **This branch**: address, phone, GSTIN, **tax regime** (India GST, US Sales Tax, EU VAT or Spain IVA) and whether menu prices include tax.
+1. **Restaurant**: edit the name, currency, time zone and logo. For INR payments, configure your **UPI id** (see [section 5](#5-get-paid-with-upi)). Changing the currency updates how amounts are presented. It does not convert prices or past sales.
+2. **This branch**: edit the country, address, phone, tax registration number and **tax regime** (India GST, US Sales Tax, EU VAT, Spain IVA or Custom), and choose whether menu prices include tax.
 3. **Staff** and **Roles**: one account per person, each with only the permissions they need.
 
 ![Settings](docs/screenshots/tutorial/settings.png)

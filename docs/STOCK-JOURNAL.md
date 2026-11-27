@@ -175,7 +175,7 @@ The Stock journal page and CSV have a Place filter/column.
 
 **Reports.**
 * `Inventory > Stock Journal Reports > Daily production` (`GET manufacturing/daily`, `.csv`): one block per **local** date (the
-  restaurant timezone, Asia/Kolkata by default), posted vouchers only (drafts and reversed ones never appear; a corrected
+  restaurant time zone, confirmed at signup and editable in Settings), posted vouchers only (drafts and reversed ones never appear; a corrected
   voucher shows once, as its replacement). Filters: date range, product, batch/reference, PO number or supplier, place. Each
   voucher expands to the full Source/Destination with expected, variance, rate, cost, good, rejected, yield, allocated cost,
   unit cost, split method, quality, narration, source PO and recipe/version. CSV uses the same filters; its rows add up to the

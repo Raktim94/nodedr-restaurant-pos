@@ -16,11 +16,11 @@ const sale = {
 const text = (u8) => Buffer.from(u8).toString('latin1');
 
 test('the thermal receipt lists the dishes, totals and change', () => {
-  const t = text(escposReceipt(sale, snap));
+  const t = text(escposReceipt(sale, snap, { locale: 'en-IN' }));
   assert.match(t, /2 x Paneer Tikka/);
   assert.match(t, /560\.00/);
-  assert.match(t, /TOTAL\s+650\.00/);
-  assert.match(t, /Change\s+50\.00/);
+  assert.match(t, /TOTAL\s+INR 650\.00/);
+  assert.match(t, /Change\s+INR 50\.00/);
   assert.match(t, /Thank you/);
 });
 
@@ -56,4 +56,26 @@ test('the printable page is escaped and shows the QR on a bill', () => {
 test('base64 round-trips the printer bytes', () => {
   const bytes = escposReceipt(sale, snap);
   assert.deepEqual(Uint8Array.from(Buffer.from(toBase64(bytes), 'base64')), bytes);
+});
+
+test('Brazilian receipts use the configured currency and device locale, including on ASCII printers', () => {
+  const brazil = { ...snap, restaurant: { ...snap.restaurant, currency: 'BRL' } };
+  const opts = { provisional: true, locale: 'pt-BR', upiUri: 'upi://pay?cu=INR', upiSvg: '<svg id="upi"></svg>' };
+  const html = htmlReceipt(sale, brazil, opts);
+  assert.match(html, /R\$\s650,00/);
+  assert.doesNotMatch(html, /Scan to pay|id="upi"/);
+  const thermal = text(escposReceipt(sale, brazil, opts));
+  assert.match(thermal, /BRL/);
+  assert.match(thermal, /650,00/);
+  assert.doesNotMatch(thermal, /upi:\/\/pay/);
+  assert.match(htmlReceipt({ ...sale, currency: 'EUR' }, brazil, opts), /€\s650,00/);
+  const legacy = { ...brazil, restaurant: { ...brazil.restaurant, legacySaleCurrency: 'USD' } };
+  assert.match(htmlReceipt(sale, legacy, opts), /US\$\s650,00/);
+});
+
+test('receipts print the business date when the till is already on the following day', () => {
+  const ny = { ...snap, restaurant: { ...snap.restaurant, timezone: 'America/New_York' } };
+  const midnight = { ...sale, soldAt: '2026-03-09T03:50:00Z' };
+  assert.match(htmlReceipt(midnight, ny, { locale: 'en-GB' }), /08\/03\/2026, 23:50/);
+  assert.match(text(escposReceipt(midnight, ny, { locale: 'en-GB' })), /08\/03\/2026, 23:50/);
 });

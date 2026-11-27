@@ -6,6 +6,8 @@ import { QRCodeSVG } from "qrcode.react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { playPaymentReceived } from "@/lib/celebrate";
 import { subscribeDisplay, type DisplayState } from "@/lib/customer-display";
+import { useI18n } from "@/lib/i18n/context";
+import { LOCALE_TAGS } from "@/lib/i18n/locales";
 import { formatCurrency } from "@/lib/format";
 import { useBranch } from "@/hooks/use-branch";
 import { useDisplaySettings } from "@/hooks/use-settings";
@@ -52,8 +54,9 @@ function Welcome() {
   );
 }
 
-function OrderScreen({ state, currency }: { state: DisplayState; currency: string }) {
-  const money = (v: number) => formatCurrency(v, currency);
+function OrderScreen({ state, currency }: { state: DisplayState; currency?: string }) {
+  const { locale } = useI18n();
+  const money = (v: number) => formatCurrency(v, currency, LOCALE_TAGS[locale]);
   if (state.kind === "cart") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col" data-screen="order">
@@ -76,7 +79,7 @@ function OrderScreen({ state, currency }: { state: DisplayState; currency: strin
       </div>
     );
   }
-  if (state.kind === "upi") {
+  if (state.kind === "upi" && currency?.toUpperCase() === "INR") {
     return (
       <div className="m-auto flex flex-col items-center text-center" data-screen="pay">
         <p className="text-3xl text-muted-foreground">Scan to pay</p>
@@ -104,15 +107,16 @@ function OrderScreen({ state, currency }: { state: DisplayState; currency: strin
 function LocalDisplay() {
   const { branchId } = useBranch();
   const { data: settings } = useDisplaySettings(branchId);
-  const currency = settings?.restaurant.currency || "INR";
+  const currency = settings?.restaurant.currency;
+  const { locale } = useI18n();
   const [state, setState] = useState<DisplayState>({ kind: "idle" });
   useEffect(() => subscribeDisplay(setState), []);
 
   // Chime when the payment lands. Browsers only allow audio after a click on the page.
   const [soundOn, setSoundOn] = useState(false);
   useEffect(() => {
-    if (state.kind === "paid" && soundOn) playPaymentReceived(formatCurrency(state.total));
-  }, [state, soundOn]);
+    if (state.kind === "paid" && soundOn && currency) playPaymentReceived(formatCurrency(state.total, currency, LOCALE_TAGS[locale]));
+  }, [state, soundOn, currency, locale]);
 
   // After "paid", fall back to the welcome screen for the next guest.
   useEffect(() => {

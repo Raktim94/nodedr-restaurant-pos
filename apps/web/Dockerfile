@@ -29,6 +29,7 @@ ARG BACKEND_URL=http://backend:4000
 ENV BACKEND_URL=${BACKEND_URL}
 COPY packages/types packages/types
 COPY apps/web apps/web
+COPY mobile/www/pos/lib/region-currency.js mobile/www/pos/lib/region-currency.js
 RUN pnpm --filter @nodedr-restaurant/types build
 RUN pnpm --filter web build
 

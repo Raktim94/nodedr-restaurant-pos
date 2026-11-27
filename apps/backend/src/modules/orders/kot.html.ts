@@ -32,12 +32,16 @@ interface KotOrder {
 
 export function buildKotHtml({
   branchName,
+  timeZone,
   order,
 }: {
   branchName: string;
+  timeZone?: string;
   order: KotOrder;
 }): string {
-  const dateStr = new Date(order.createdAt).toLocaleString();
+  const dateStr = new Date(order.createdAt).toLocaleString(undefined, {
+    timeZone,
+  });
 
   const itemRows = order.items
     .map((item) => {

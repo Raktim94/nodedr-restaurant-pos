@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-argument --
    This file parses free-form JSON from external LLM providers and model-proposed tool arguments, which are untyped
    by nature; every action is still checked against the caller's permissions and branch before it runs. */
+import { moneyFormatter } from '../common/money';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -658,7 +659,7 @@ export class AiService {
             executionResults.push(
               `📊 **Sales & Orders Snapshot:**\n` +
                 `• **Total Orders Today:** ${parsedData.todayOrders ?? 0} (${parsedData.channels?.offline ?? 0} In-store, ${parsedData.channels?.online ?? 0} Online)\n` +
-                `• **Today's Revenue:** ₹${Number(parsedData.todayRevenue ?? 0).toFixed(2)}\n` +
+                `• **Today's Revenue:** ${moneyFormatter(parsedData.currency).format(Number(parsedData.todayRevenue ?? 0))}\n` +
                 `• **Table Status:** ${parsedData.tables?.available ?? 0} Available, ${parsedData.tables?.occupied ?? 0} Occupied, ${parsedData.tables?.reserved ?? 0} Reserved`,
             );
           } else {

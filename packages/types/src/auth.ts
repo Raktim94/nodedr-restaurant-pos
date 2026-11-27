@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { countryCodeSchema, currencyCodeSchema, timezoneSchema } from "./region";
+import { TAX_REGIMES } from "./tax";
 
 export const loginSchema = z.object({
   // Login ID: an email address or a phone number (delivery riders sign in with their phone).
@@ -11,12 +13,21 @@ export const loginSchema = z.object({
 });
 export type LoginDto = z.infer<typeof loginSchema>;
 
+export const regionalSettingsSchema = z.object({
+  country: countryCodeSchema,
+  currency: currencyCodeSchema,
+  timezone: timezoneSchema,
+  taxRegime: z.enum(TAX_REGIMES),
+});
+export type RegionalSettingsDto = z.infer<typeof regionalSettingsSchema>;
+
 export const registerSchema = z.object({
   restaurantName: z.string().min(1),
   branchName: z.string().min(1).default("Main Branch"),
   ownerName: z.string().min(1),
   email: z.string().email(),
   password: z.string().min(8),
+  regionalSettings: regionalSettingsSchema.optional(),
 });
 export type RegisterDto = z.infer<typeof registerSchema>;
 

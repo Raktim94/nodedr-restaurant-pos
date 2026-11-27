@@ -10,7 +10,6 @@ import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useBranch } from "@/hooks/use-branch";
 import { useDisplaySettings } from "@/hooks/use-settings";
 import { StaffCurrencyContext } from "@/hooks/use-staff-format";
-import { setDefaultCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { BrandFooter } from "./brand-footer";
 import { BranchSwitcher } from "./branch-switcher";
@@ -97,7 +96,6 @@ export function AppShell({
   const toggle = () => setCollapsed((c) => { const n = !c; try { localStorage.setItem("orderrestro.sidebar.collapsed", n ? "1" : "0"); } catch { /* storage blocked */ } return n; });
   const { branchId: shellBranch } = useBranch();
   const { data: shellDisplay } = useDisplaySettings(shellBranch);
-  const currency = setDefaultCurrency(shellDisplay?.restaurant.currency);
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -108,7 +106,7 @@ export function AppShell({
       >
         {translate("Skip to content")}
       </a>
-      <StaffCurrencyContext.Provider value={currency}>
+      <StaffCurrencyContext.Provider value={shellDisplay?.restaurant.currency}>
       <div className="flex min-h-0 flex-1">
       {/* Desktop sidebar */}
       <aside

@@ -62,6 +62,7 @@ import {
   probeCharDevices,
 } from './escpos-usb';
 import { KotPrintService } from './kot-print.service';
+import { storedTimeZone } from '../../common/time';
 import { upiForBill } from './upi';
 import {
   sendToBranchPrinter,
@@ -74,6 +75,15 @@ import { buildReceiptHtml } from './receipt.html';
 import { VerifactuService } from '../verifactu/verifactu.service';
 
 type ReceiptData = Awaited<ReturnType<OrdersService['getReceiptData']>>;
+
+function receiptLocale(value?: string): string | undefined {
+  if (!value) return undefined;
+  try {
+    return Intl.getCanonicalLocales(value)[0];
+  } catch {
+    return undefined;
+  }
+}
 
 function branchPrinterProfile(branch: {
   printerPaperWidthMm: number;
@@ -170,6 +180,7 @@ function toEscposOrder(
 function upiFor(order: ReceiptData, overrides: BillOverrides) {
   const r = order.branch.restaurant;
   return upiForBill({
+    currency: r.currency,
     vpa: r.upiVpa,
     payeeName: r.upiPayeeName ?? r.name,
     orderNumber: order.orderNumber,
@@ -540,6 +551,8 @@ export class OrdersController {
     const html = buildReceiptHtml({
       restaurantName: order.branch.restaurant.name,
       currency: order.branch.restaurant.currency,
+      locale: receiptLocale(query.locale),
+      timeZone: storedTimeZone(order.branch.restaurant.timezone),
       branch: {
         name: order.branch.name,
         address: order.branch.address,
@@ -606,6 +619,7 @@ export class OrdersController {
     const order = await this.ordersService.getReceiptData(branchId, id);
     const html = buildKotHtml({
       branchName: order.branch.name,
+      timeZone: storedTimeZone(order.branch.restaurant.timezone),
       order: toKotOrder(order),
     });
     res.type('html').send(html);
@@ -763,6 +777,8 @@ export class OrdersController {
     const job = buildReceiptEscPosJob({
       restaurantName: order.branch.restaurant.name,
       currency: order.branch.restaurant.currency,
+      locale: receiptLocale(query.locale),
+      timeZone: storedTimeZone(order.branch.restaurant.timezone),
       branch: {
         name: order.branch.name,
         address: order.branch.address,

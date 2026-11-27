@@ -1,6 +1,7 @@
 // Keeps the phone and the restaurant server in step:
 //   pullSnapshot  server -> phone   menu, prices, tables, settings
 //   pushSales     phone -> server   every sale taken (each only ever recorded once)
+import { currencyCode, saleCurrency } from './money.js';
 import { kv, peerSales, reservations, sales } from './store.js';
 import { mergeFromServer, toPayload } from './reservations.js';
 import { pickServer, request, serverInfo } from './net.js';
@@ -18,7 +19,7 @@ export async function login(base, identifier, password) {
   await kv.set('serverBase', base);
 }
 
-export async function pullSnapshot(base) {
+export async function pullSnapshot(base, phoneAccount) {
   const b = await request(base, 'GET', '/api/v1/branches');
   if (b.status === 401) throw new AuthExpired();
   if (b.status !== 200 || !Array.isArray(b.data) || b.data.length === 0) throw new Error('No branch is set up for this account.');
@@ -28,6 +29,15 @@ export async function pullSnapshot(base) {
   if (s.status === 401) throw new AuthExpired();
   if (s.status === 403) throw new Error('This account may not take orders.');
   if (s.status !== 200) throw new Error('The server could not send the menu. Try again in a moment.');
+  if (phoneAccount) {
+    const target = currencyCode(s.data.restaurant.currency);
+    const pending = await sales.pending();
+    const mismatch = pending.find((sale) => saleCurrency(sale, phoneAccount) !== target);
+    if (mismatch) {
+      const source = saleCurrency(mismatch, phoneAccount);
+      throw new Error(`Bill ${mismatch.localNumber} is in ${source}; the server uses ${target || 'an unknown currency'}. It stays on this phone. Connect to a server using the bill’s currency.`);
+    }
+  }
   await kv.set('branchId', branch.id);
   await saveServerCaps(base);
   await kv.set('snapshot', s.data);
@@ -108,6 +118,7 @@ function payload(sale) {
     id: sale.id,
     localNumber: sale.localNumber,
     soldAt: sale.soldAt,
+    ...(sale.currency ? { currency: sale.currency } : {}),
     type: sale.type,
     tableLabel: sale.tableLabel || undefined,
     note: sale.note || undefined,

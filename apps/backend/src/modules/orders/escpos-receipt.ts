@@ -16,6 +16,7 @@ import {
   type TaxMode,
   type TaxRegime,
 } from '@nodedr-restaurant/types';
+import { moneyFormatter } from '../../common/money';
 import {
   CMD,
   EscposWriter,
@@ -24,23 +25,6 @@ import {
 } from './escpos/encoder';
 
 export { resolveProfile, type PrinterProfile } from './escpos/encoder';
-
-// Preferred symbol first; used only when the selected code page can print it,
-// otherwise the ISO-style code after it (never a '?').
-const CURRENCY_SYMBOLS: Record<string, [string, string]> = {
-  INR: ['Rs.', 'Rs.'],
-  USD: ['$', 'USD '],
-  EUR: ['\u20ac', 'EUR '],
-  GBP: ['\u00a3', 'GBP '],
-};
-
-function currencySymbol(w: EscposWriter, currency: string): string {
-  const [preferred, fallback] = CURRENCY_SYMBOLS[currency] ?? [
-    `${currency} `,
-    `${currency} `,
-  ];
-  return [...preferred].every((c) => w.has(c)) ? preferred : fallback;
-}
 
 export interface PrintResult {
   buffer: Buffer;
@@ -140,8 +124,18 @@ export function buildReceiptEscPosJob({
   openDrawer?: boolean;
 } & JobFormat): PrintResult {
   const w = new EscposWriter(profile);
-  const sym = currencySymbol(w, currency);
-  const money = (n: number) => `${sym}${Number(n).toFixed(2)}`;
+  const formatter = moneyFormatter(currency, locale);
+  const money = (amount: number) =>
+    formatter
+      .formatToParts(amount)
+      .map((part) => {
+        if (part.type !== 'currency') return part.value.replace(/\u00a0/g, ' ');
+        if (currency.toUpperCase() === 'INR') return 'Rs.';
+        return [...part.value].every((c) => w.has(c))
+          ? part.value
+          : `${currency} `;
+      })
+      .join('');
   const taxLabel = resolveTaxLabel(branch.taxRegime, branch.taxLabel);
   const taxIdValue =
     branch.taxId ||

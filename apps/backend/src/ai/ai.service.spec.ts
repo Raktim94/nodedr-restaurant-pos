@@ -61,6 +61,31 @@ describe('AiService.executeAction tenancy', () => {
 });
 
 describe('AiService.executeAction tool matching', () => {
+  it('renders the dashboard currency in revenue summaries', async () => {
+    const handler = jest.fn().mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ todayRevenue: 25, currency: 'BRL' }),
+        },
+      ],
+    });
+    const service = new AiService(
+      {} as never,
+      {} as never,
+      {
+        toolDefs: () => [{ name: 'dashboard_summary', handler }],
+      } as never,
+      { assertAccess: jest.fn() } as never,
+    );
+    const result = await service.executeAction({
+      user,
+      branchId: 'b1',
+      actionPayload: { command: 'dashboard_summary' },
+    });
+    expect(result.message).toContain('R$25.00');
+  });
+
   it('matches tool names with dashes or spaces, and never guesses staff credentials from other text', async () => {
     const run = jest
       .fn()

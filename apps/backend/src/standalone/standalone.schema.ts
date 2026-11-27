@@ -9,6 +9,13 @@ export const offlineSaleSchema = z
     /** Number printed on the phone's receipt, kept in the order notes. */
     localNumber: z.string().max(40),
     soldAt: z.string().datetime(),
+    /** Currency on the original receipt. Older phones did not send it. */
+    currency: z
+      .string()
+      .trim()
+      .regex(/^[a-z]{3}$/i)
+      .toUpperCase()
+      .optional(),
     type: z.enum(['DINE_IN', 'TAKEAWAY']).default('TAKEAWAY'),
     tableLabel: z.string().max(40).optional(),
     note: z.string().max(300).optional(),
@@ -86,6 +93,7 @@ export type SaleReviewFlag = {
 
 /** Why a sale was not recorded. The phone keeps it and offers the right next step. */
 export type RefusalCode =
+  | 'CURRENCY_MISMATCH' // amounts were collected in a different currency
   | 'ITEM_UNAVAILABLE' // a dish was removed or switched off on the server
   | 'ALREADY_STARTED' // an earlier attempt left an unfinished order
   | 'PRICE_CONFLICT' // the same dish at two prices inside one sale

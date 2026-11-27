@@ -35,10 +35,16 @@ export function upiForBill(opts: {
   orderNumber: string;
   balanceDue: number;
   isProvisional: boolean;
-  currencySymbol?: string;
+  currency: string;
 }): ReceiptUpi | null {
   const vpa = opts.vpa?.trim();
-  if (!vpa || !opts.isProvisional || !(opts.balanceDue > 0)) return null;
+  if (
+    opts.currency.toUpperCase() !== 'INR' ||
+    !vpa ||
+    !opts.isProvisional ||
+    !(opts.balanceDue > 0)
+  )
+    return null;
   return {
     uri: buildUpiUri({
       vpa,
@@ -47,7 +53,7 @@ export function upiForBill(opts: {
       note: `Order ${opts.orderNumber}`,
       ref: opts.orderNumber,
     }),
-    amountText: `${opts.currencySymbol ?? 'Rs '}${opts.balanceDue.toFixed(2)}`,
+    amountText: `Rs ${opts.balanceDue.toFixed(2)}`,
     payee: opts.payeeName?.trim() || null,
   };
 }

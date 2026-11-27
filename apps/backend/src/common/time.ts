@@ -3,6 +3,12 @@
 // 05:30 local, which would split an evening's sales across two report days.
 
 import { BadRequestException } from '@nestjs/common';
+import { timezoneSchema } from '@nodedr-restaurant/types';
+
+/** Time zone used for reading older restaurants that could store free-text settings. */
+export function storedTimeZone(value: string): string {
+  return timezoneSchema.safeParse(value).data ?? 'UTC';
+}
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -82,14 +88,17 @@ export function zonedRange(from: string, to: string, tz: string) {
 }
 
 /** The local calendar date (YYYY-MM-DD) of an instant in `tz`. */
-export function localDate(instant: Date, tz: string): string {
-  const p = new Intl.DateTimeFormat('en-CA', {
+export function localDateFormatter(tz: string) {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(instant);
-  return p; // en-CA formats as YYYY-MM-DD
+  });
+}
+
+export function localDate(instant: Date, tz: string): string {
+  return localDateFormatter(tz).format(instant);
 }
 
 /** Minutes since local midnight and ISO weekday-agnostic day index (0=Sun). */

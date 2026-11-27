@@ -3,6 +3,7 @@
 import { ArrowLeft, CheckCircle2, Printer, RefreshCw, WifiOff } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useRef, useState } from "react";
+import { formatCurrency } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/context";
 import type { KioskMenu } from "@/lib/kiosk-api";
 import { basketCount, basketTotal, type BasketLine } from "@/lib/kiosk-basket";
@@ -134,7 +135,6 @@ export function DoneScreen({
   menu,
   confirmation,
   secondsLeft,
-  fmt,
   localeTag,
   online,
   onNewOrder,
@@ -142,7 +142,6 @@ export function DoneScreen({
   menu: KioskMenu;
   confirmation: KioskConfirmation;
   secondsLeft: number;
-  fmt: (n: number | string) => string;
   localeTag: string;
   online: boolean;
   onNewOrder: () => void;
@@ -166,6 +165,7 @@ export function DoneScreen({
       taxLabel: menu.taxLabel,
       taxMode: menu.taxMode,
       locale: localeTag,
+      timeZone: menu.timezone,
       currency: confirmation.currency,
       qrSvg: qrRef.current?.innerHTML,
       labels: {
@@ -192,7 +192,7 @@ export function DoneScreen({
       </div>
       <p className="text-[1.5rem] font-semibold">{t("kiosk.done.pay")}</p>
       <p className="text-[1.25rem] tabular-nums">
-        {t("kiosk.basket.total")}: <strong>{fmt(confirmation.totalAmount)}</strong>
+        {t("kiosk.basket.total")}: <strong>{formatCurrency(confirmation.totalAmount, confirmation.currency, localeTag)}</strong>
       </p>
 
       {printState === "unavailable" && (

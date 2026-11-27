@@ -2,6 +2,7 @@ import { buildUpiUri, upiForBill } from './upi';
 import { buildReceiptEscPosJob } from './escpos-receipt';
 
 const base = {
+  currency: 'INR',
   vpa: 'shop@upi',
   payeeName: 'PKUSS Hotel',
   orderNumber: '20261102-0001',
@@ -16,6 +17,8 @@ describe('UPI QR on the bill', () => {
   });
 
   it('only appears on an unpaid bill with a UPI id and an amount due', () => {
+    const nonInr = { ...base, currency: 'BRL' };
+    expect(upiForBill(nonInr)).toBeNull();
     expect(upiForBill(base)?.uri).toContain('am=1080.00');
     expect(upiForBill({ ...base, vpa: null })).toBeNull();
     expect(upiForBill({ ...base, vpa: '  ' })).toBeNull();

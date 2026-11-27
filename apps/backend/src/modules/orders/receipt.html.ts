@@ -13,6 +13,7 @@
 // (computed once, correctly, in pricing.ts — see its own multi-region
 // note) and are never recomputed here.
 
+import { moneyFormatter } from '../../common/money';
 import { qrSvg } from '../verifactu/verifactu.qr';
 import type { ReceiptVerifactu } from './escpos-receipt';
 import {
@@ -22,13 +23,6 @@ import {
   type TaxMode,
   type TaxRegime,
 } from '@nodedr-restaurant/types';
-
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  INR: '₹',
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-};
 
 function esc(value: string | number | null | undefined): string {
   return String(value ?? '').replace(
@@ -86,6 +80,8 @@ export function buildReceiptHtml({
   restaurantName,
   branch,
   currency,
+  timeZone,
+  locale,
   order,
 }: {
   restaurantName: string;
@@ -100,11 +96,15 @@ export function buildReceiptHtml({
     taxId: string | null;
   };
   currency: string;
+  timeZone?: string;
+  locale?: string;
   order: ReceiptOrder;
 }): string {
-  const sym = CURRENCY_SYMBOLS[currency] ?? `${currency} `;
-  const money = (n: number) => `${sym}${Number(n).toFixed(2)}`;
-  const dateStr = new Date(order.createdAt).toLocaleString();
+  const amounts = moneyFormatter(currency, locale);
+  const money = (amount: number) => amounts.format(amount);
+  const dateStr = new Date(order.createdAt).toLocaleString(locale, {
+    timeZone,
+  });
   const taxLabel = resolveTaxLabel(branch.taxRegime, branch.taxLabel);
   // gstNumber is the pre-multi-region field every India install already
   // has populated; taxId is the new generic one. India falls back to the

@@ -48,6 +48,22 @@ const verifactu = {
 };
 
 describe('receipt HTML with VERI*FACTU', () => {
+  it('prints reais and the restaurant local time on an HTML bill', () => {
+    const restaurant = {
+      ...base,
+      currency: 'BRL',
+      locale: 'pt-BR',
+      timeZone: 'America/Sao_Paulo',
+    };
+    const html = buildReceiptHtml(restaurant);
+    expect(html).toMatch(/R\$\s11,00/);
+    expect(html).toContain(
+      base.order.createdAt.toLocaleString(restaurant.locale, {
+        timeZone: restaurant.timeZone,
+      }),
+    );
+  });
+
   it('draws an inline 35 mm QR with the legends on a paid receipt', () => {
     const html = buildReceiptHtml({
       ...base,

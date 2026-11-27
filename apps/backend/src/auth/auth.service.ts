@@ -12,6 +12,7 @@ import {
   DEFAULT_ROLE_PERMISSIONS,
   PERMISSIONS,
   STAFF_ROLES,
+  TAX_REGIME_PRESETS,
   type LoginDto,
   type PinLoginDto,
   type RegisterDto,
@@ -226,12 +227,23 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
+    const region = dto.regionalSettings;
     const owner = await this.prisma.$transaction(async (tx) => {
       const restaurant = await tx.restaurant.create({
-        data: { name: dto.restaurantName },
+        data: {
+          name: dto.restaurantName,
+          currency: region?.currency,
+          timezone: region?.timezone,
+        },
       });
       const branch = await tx.branch.create({
-        data: { restaurantId: restaurant.id, name: dto.branchName },
+        data: {
+          restaurantId: restaurant.id,
+          name: dto.branchName,
+          country: region?.country,
+          taxRegime: region?.taxRegime,
+          taxMode: region && TAX_REGIME_PRESETS[region.taxRegime].defaultMode,
+        },
       });
 
       let ownerRoleId = '';

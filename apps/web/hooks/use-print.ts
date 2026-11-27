@@ -1,5 +1,6 @@
 "use client";
 
+import { LOCALE_TAGS } from "@/lib/i18n/locales";
 import { useI18n } from "@/lib/i18n/context";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -51,14 +52,14 @@ export function usePrintTestSlip(branchId?: string | null, kind?: "kot") {
  * a bill printed before payment never opens the drawer.
  */
 export function usePrintOrderUsb(branchId: string | null) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   return useMutation({
     mutationFn: async ({ orderId, drawer, adjustments }: { orderId: string; drawer?: boolean; adjustments?: BillQuery }) => {
       // In the phone app the bill goes to the phone's own Bluetooth printer;
       // everywhere else to the printer attached to the restaurant computer.
       const onDevice = canPrintOnDevice();
       const r = await api.post<PrintJobResult & { escpos?: string[] }>(
-        `/orders/${orderId}/print/usb?branchId=${branchId}${drawer ? "&drawer=true" : ""}${onDevice ? "&via=device" : ""}${billQueryString(adjustments)}`,
+        `/orders/${orderId}/print/usb?branchId=${branchId}${drawer ? "&drawer=true" : ""}${onDevice ? "&via=device" : ""}${billQueryString({ ...adjustments, locale: LOCALE_TAGS[locale] })}`,
       );
       if (onDevice && r.escpos) await printEscposOnDevice(t, r.escpos);
       return { ok: true as const, unsupportedChars: r.unsupportedChars };

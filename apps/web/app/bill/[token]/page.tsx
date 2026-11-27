@@ -6,12 +6,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/api";
+import { useI18n } from "@/lib/i18n/context";
+import { LOCALE_TAGS } from "@/lib/i18n/locales";
 import { formatCurrency } from "@/lib/format";
 import { buildUpiUri } from "@/lib/upi";
 
 interface PublicBillResponse {
   restaurantName: string;
   currency: string;
+  timezone: string;
   branch: { name: string; address: string | null; phone: string | null };
   order: {
     orderNumber: string;
@@ -44,6 +47,8 @@ interface PublicBillResponse {
 // is the only credential and resolves to one order (see PublicBillService).
 export default function PublicBillPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
+  const { locale } = useI18n();
+  const localeTag = LOCALE_TAGS[locale];
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["public-bill", token],
@@ -66,10 +71,11 @@ export default function PublicBillPage({ params }: { params: Promise<{ token: st
   }
 
   const order = data?.order;
-  const currency = data?.currency ?? "INR";
+  const money = (amount: number) => formatCurrency(amount, data?.currency, localeTag);
   const upiUri =
     data?.upi && order && order.balanceDue > 0
       ? buildUpiUri({
+          currency: data.currency,
           vpa: data.upi.vpa,
           name: data.upi.payeeName,
           amount: order.balanceDue,
@@ -108,7 +114,7 @@ export default function PublicBillPage({ params }: { params: Promise<{ token: st
               <div>
                 <p className="text-sm font-medium text-foreground">Order #{order.orderNumber}</p>
                 <p className="text-xs text-muted-foreground">
-                  {new Date(order.createdAt).toLocaleString()}
+                  {new Date(order.createdAt).toLocaleString(localeTag, { timeZone: data?.timezone })}
                   {order.table ? ` · ${order.table.label}` : ""}
                 </p>
               </div>
@@ -147,7 +153,7 @@ export default function PublicBillPage({ params }: { params: Promise<{ token: st
                         {item.quantity}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums text-foreground">
-                        {formatCurrency(item.lineTotal, currency)}
+                        {money(item.lineTotal)}
                       </td>
                     </tr>
                   ))}
@@ -156,34 +162,34 @@ export default function PublicBillPage({ params }: { params: Promise<{ token: st
             </div>
 
             <div className="flex flex-col gap-1.5 rounded-2xl border border-border p-4 text-sm">
-              <Row label="Subtotal" value={formatCurrency(order.subtotal, currency)} />
+              <Row label="Subtotal" value={money(order.subtotal)} />
               {order.discountAmount > 0 && (
-                <Row label="Discount" value={`- ${formatCurrency(order.discountAmount, currency)}`} />
+                <Row label="Discount" value={`- ${money(order.discountAmount)}`} />
               )}
               {order.loyaltyDiscountAmount > 0 && (
                 <Row
                   label="Loyalty"
-                  value={`- ${formatCurrency(order.loyaltyDiscountAmount, currency)}`}
+                  value={`- ${money(order.loyaltyDiscountAmount)}`}
                 />
               )}
               {order.taxAmount > 0 && (
-                <Row label="Tax" value={formatCurrency(order.taxAmount, currency)} />
+                <Row label="Tax" value={money(order.taxAmount)} />
               )}
               {order.tipAmount > 0 && (
-                <Row label="Tip" value={formatCurrency(order.tipAmount, currency)} />
+                <Row label="Tip" value={money(order.tipAmount)} />
               )}
               <div className="my-1 border-t border-border" />
               <Row
                 label={order.isProvisional ? "Total due" : "Grand total"}
-                value={formatCurrency(order.totalAmount, currency)}
+                value={money(order.totalAmount)}
                 strong
               />
               {order.amountPaid > 0 && (
                 <>
-                  <Row label="Paid" value={formatCurrency(order.amountPaid, currency)} />
+                  <Row label="Paid" value={money(order.amountPaid)} />
                   <Row
                     label="Balance due"
-                    value={formatCurrency(order.balanceDue, currency)}
+                    value={money(order.balanceDue)}
                     strong
                   />
                 </>
@@ -196,7 +202,7 @@ export default function PublicBillPage({ params }: { params: Promise<{ token: st
                 className="flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground print:hidden"
               >
                 <Receipt className="h-4 w-4" />
-                Pay {formatCurrency(order.balanceDue, currency)} via UPI
+                Pay {money(order.balanceDue)} via UPI
               </a>
             )}
 

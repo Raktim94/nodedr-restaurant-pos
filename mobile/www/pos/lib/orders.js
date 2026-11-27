@@ -1,5 +1,6 @@
 // Open orders, tables and the day's figures for the standalone POS.
 // Pure functions: no page, no database, so they are unit tested.
+import { dayOf } from './calendar.js';
 import { round2 } from './bill.js';
 
 export const OPEN = 'OPEN';
@@ -62,17 +63,11 @@ export function minutesSince(iso, now = Date.now()) {
 /** Kitchen ticket status flow. */
 export const KOT_NEXT = { NEW: 'PREPARING', PREPARING: 'READY', READY: 'SERVED' };
 
-const sameDay = (iso, now) => {
-  const a = new Date(iso);
-  return a.getFullYear() === now.getFullYear() && a.getMonth() === now.getMonth() && a.getDate() === now.getDate();
-};
-
-/**
- * Figures for one calendar day on this phone. `sales` are completed sales
- * (any sync state); `orders` supply the voids. The day is the phone's local day.
- */
-export function dayReport(sales, orders, now = new Date()) {
-  const todays = sales.filter((s) => sameDay(s.soldAt, now));
+/** Completed sales, collections and voids for one restaurant calendar day. */
+export function dayReport(sales, orders, now = new Date(), timeZone) {
+  const day = dayOf(now, timeZone);
+  const sameDay = (iso) => dayOf(iso, timeZone) === day;
+  const todays = sales.filter((s) => sameDay(s.soldAt));
   const byMethod = { CASH: 0, UPI: 0, CARD: 0, OTHER: 0 };
   const items = new Map();
   let total = 0;
@@ -86,8 +81,8 @@ export function dayReport(sales, orders, now = new Date()) {
     for (const i of s.items) items.set(i.name, (items.get(i.name) || 0) + i.quantity);
   }
   // Money collected today on bills left due (on any day) is today's money too.
-  for (const s of sales) for (const c of s.collections || []) if (sameDay(c.at, now)) byMethod[c.method] = round2((byMethod[c.method] || 0) + c.amount);
-  const voids = orders.filter((o) => o.status === 'VOID' && o.voidedAt && sameDay(o.voidedAt, now));
+  for (const s of sales) for (const c of s.collections || []) if (sameDay(c.at)) byMethod[c.method] = round2((byMethod[c.method] || 0) + c.amount);
+  const voids = orders.filter((o) => o.status === 'VOID' && o.voidedAt && sameDay(o.voidedAt));
   return {
     count: todays.length,
     total: round2(total),

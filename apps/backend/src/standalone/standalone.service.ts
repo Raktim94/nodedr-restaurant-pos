@@ -4,6 +4,7 @@ import {
   type SessionUser,
 } from '@nodedr-restaurant/types';
 import { allowedUnits } from '../modules/inventory/units';
+import { assertSaleCurrency, SaleCurrencyMismatch } from '../common/money';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   computeOrderTotals,
@@ -318,7 +319,9 @@ export class StandaloneService {
         const reason =
           err instanceof Error ? err.message : 'Could not record this sale';
         const code: RefusalCode =
-          err instanceof SaleRefused ? err.code : 'OTHER';
+          err instanceof SaleRefused || err instanceof SaleCurrencyMismatch
+            ? err.code
+            : 'OTHER';
         this.logger.warn(
           `Offline sale ${sale.id} refused (${code}): ${reason}`,
         );
@@ -364,6 +367,15 @@ export class StandaloneService {
         'ALREADY_STARTED',
         'An earlier attempt of this sale did not finish; it needs a look in Orders.',
       );
+    }
+
+    if (sale.currency) {
+      const restaurant = await this.prisma.restaurant.findUniqueOrThrow({
+        where: { id: user.restaurantId },
+        select: { currency: true },
+      });
+      // Refuse stale receipts before changing customer records or processing the menu.
+      assertSaleCurrency(sale.currency, restaurant.currency);
     }
 
     // The phone's clock is not trusted: see sold-at.ts.
@@ -607,7 +619,7 @@ export class StandaloneService {
       },
       {
         clientRequestId: sale.id,
-        historical: { createdAt: when.at },
+        historical: { createdAt: when.at, currency: sale.currency },
       },
     );
 

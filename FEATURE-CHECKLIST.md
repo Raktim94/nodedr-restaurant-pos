@@ -51,7 +51,7 @@ partially built, the note says what's missing.
 | Multiple payment methods | Shipped | Cash/card/UPI/wallet/bank transfer |
 | Split payment | Planned | One payment method per order currently |
 | Cash + card / Cash + UPI / Card + UPI | Planned | Same as split payment |
-| Multiple currencies | Planned | Single `currency` field per restaurant (default INR), no multi-currency checkout |
+| Multi-currency checkout | Planned | Each restaurant uses one billing currency, confirmed at signup and editable in Settings |
 | Customer-facing display | Planned | |
 | Receipt printing | Shipped | Self-printing HTML receipt via browser dialog |
 | Digital receipt | Shipped | Guest-facing `/bill/[token]` page opened from a QR/link on the bill or receipt screen (`POST /orders/:id/bill-share`, `GET /v1/public/bill/:token`); signed token expires in 2h, carries the cashier's on-screen discount/tip, no printer or guest login |
@@ -402,7 +402,7 @@ partially built, the note says what's missing.
 |---|---|---|
 | GST-inclusive pricing (CGST/SGST backed out correctly) | Shipped | Verified numerically, see docs/decisions ADR in nodedr-ecommerce-template |
 | UPI as a payment method | Shipped | Recorded as a payment method, no live UPI QR collection |
-| Indian currency (INR) | Shipped | Default currency |
+| Indian currency (INR) | Shipped | Signup suggests INR for India. Older registration clients that omit regional settings retain INR as their default. |
 | Dynamic UPI QR, IGST, HSN/SAC, FSSAI, WhatsApp receipts/ordering, Tally/Razorpay/PhonePe/BharatPe, Swiggy/Zomato integration | Planned | None integrated |
 
 ## 🤖 AI Features

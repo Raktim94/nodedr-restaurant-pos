@@ -273,9 +273,9 @@ Start with the [screenshot-guided tutorial](./TUTORIAL.md) for the full
 first-run walkthrough. It covers sign-up, setup, daily service, and the
 management tools with **56 screenshots of the app**.
 
-1. **Set up your restaurant.** Create the owner account, then enter your
-   restaurant details, branch address, currency, timezone, tax settings, and
-   UPI payee in **Settings**.
+1. **Set up your restaurant.** At signup, confirm the first branch’s country
+   and tax regime, plus the restaurant’s currency and time zone. You can edit
+   them in **Settings → General**, along with the branch address and UPI payee.
 2. **Add the menu and floor.** Create categories, dishes, options and combos;
    add floors and tables. Add ingredients and recipes if you want stock usage
    and food cost tracked automatically.
