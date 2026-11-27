@@ -53,6 +53,7 @@ export class SettingsService {
         taxMode: true,
         taxLabel: true,
         taxId: true,
+        ticketMode: true,
       },
     });
     if (!restaurant || !branch) {

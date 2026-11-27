@@ -51,6 +51,7 @@ export function CartPanel({
   onScheduledForChange,
   branchId = null,
   taxMode = "INCLUSIVE",
+  ticketMode = "KDS",
 }: {
   lines: CartLine[];
   pauseLabels: ReadonlyMap<string, string>;
@@ -80,6 +81,8 @@ export function CartPanel({
   branchId?: string | null;
   /** EXCLUSIVE branches show a pre-tax-free subtotal: prices are grossed up in addLine. */
   taxMode?: "INCLUSIVE" | "EXCLUSIVE";
+  /** BILL_ONLY branches create no kitchen ticket: the order is a bill only. */
+  ticketMode?: "KDS" | "BILL_ONLY";
 }) {
   const fmt = useStaffFormat();
   const { t: translate, t } = useI18n();
@@ -181,7 +184,7 @@ export function CartPanel({
           {translate("Checking this table's open bills…")}
         </p>
       )}
-      {openBills && openBills.length > 1 && (
+      {openBills && openBills.length >= 1 && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" role="group" aria-label={translate("Open bills on this table")}>
           <span>{translate("{count} open bills here — add to:", { count: openBills.length })}</span>
           {openBills.map((b) => (
@@ -279,10 +282,10 @@ export function CartPanel({
         {hasPaused && <p role="status" className="text-sm text-warning">{t("menu.removePaused")}</p>}
         <Button className="h-11 w-full" disabled={!canSubmit} onClick={onSubmit}>
           {isSubmitting
-            ? translate("Sending to kitchen…")
+            ? translate(ticketMode === "BILL_ONLY" ? "Saving bill…" : "Sending to kitchen…")
             : existingOrderNumber
-              ? translate("Add to order & send to kitchen")
-              : translate("Send to kitchen")}
+              ? translate(ticketMode === "BILL_ONLY" ? "Add to order & save bill" : "Add to order & send to kitchen")
+              : translate(ticketMode === "BILL_ONLY" ? "Save bill" : "Send to kitchen")}
         </Button>
         {onViewExistingOrder && existingOrderNumber && (
           <Button type="button" variant="outline" className="h-11 w-full" onClick={onViewExistingOrder}>{translate("View bill #{existingOrderNumber} & take payment", { existingOrderNumber })}</Button>

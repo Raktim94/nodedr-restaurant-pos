@@ -3173,6 +3173,14 @@ export class OrdersService {
     branchId: string,
     orderItems: { id: string; menuItemId: string }[],
   ) {
+    // Branches that do not run a Kitchen Display opt out of kitchen tickets
+    // entirely: their orders are bills only. Checked here so every caller
+    // (create, addItems, accept, scheduled release, merge) honours it.
+    const branch = await tx.branch.findUnique({
+      where: { id: branchId },
+      select: { ticketMode: true },
+    });
+    if (branch?.ticketMode === 'BILL_ONLY') return;
     const stationLookup = await tx.menuItem.findMany({
       where: { id: { in: orderItems.map((i) => i.menuItemId) } },
       select: { id: true, stationId: true },

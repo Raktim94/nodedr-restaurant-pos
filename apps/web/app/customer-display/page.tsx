@@ -7,7 +7,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { playPaymentReceived } from "@/lib/celebrate";
 import { subscribeDisplay, type DisplayState } from "@/lib/customer-display";
 import { formatCurrency } from "@/lib/format";
-import { useBranch } from "@/hooks/use-branch";
+import { BranchProvider, useBranch } from "@/hooks/use-branch";
 import { useDisplaySettings } from "@/hooks/use-settings";
 
 interface View {
@@ -38,7 +38,7 @@ export default function CustomerDisplayPage() {
 
 function Router() {
   const t = useSearchParams().get("t");
-  return t ? <ServerDisplay token={t} /> : <LocalDisplay />;
+  return t ? <ServerDisplay token={t} /> : <BranchProvider><LocalDisplay /></BranchProvider>;
 }
 
 // ---- the live order, payment and thank-you pictures (shared) --------------------------------------

@@ -1,4 +1,8 @@
 {
+  "Kitchen tickets": "Tickets de cocina",
+  "Choose how orders reach your kitchen. Restaurants without a Kitchen Display can use bill-only mode.": "Elige cómo llegan los pedidos a tu cocina. Los locales sin pantalla de cocina pueden usar el modo solo factura.",
+  "Live order tickets by station (Kitchen Display)": "Tickets en vivo por estación (Pantalla de cocina)",
+  "On = each paid order creates station-grouped tickets that appear live on the Kitchen Display. Off = bill only, no kitchen ticket is created.": "Activado = cada pedido pagado crea tickets por estación que aparecen en la pantalla de cocina. Desactivado = solo factura, sin ticket de cocina.",
   "nav.dashboard": "Panel",
   "nav.pos": "Punto de venta",
   "nav.tables": "Mesas",
