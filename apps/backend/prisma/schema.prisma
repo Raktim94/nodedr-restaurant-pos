@@ -40,6 +40,14 @@ enum TaxMode {
   EXCLUSIVE
 }
 
+// Where a new order's kitchen ticket goes. KDS = station-grouped tickets on
+// the live Kitchen Display (historic behaviour); BILL_ONLY = no ticket, the
+// order is just a printable bill. Opt-in per branch; see Branch.ticketMode.
+enum TicketMode {
+  KDS
+  BILL_ONLY
+}
+
 model Restaurant {
   departments Department[]
   id          String       @id @default(cuid())
@@ -159,6 +167,13 @@ model Branch {
   // one from the dashboard; true = accepted automatically on arrival.
   autoConfirmOrders       Boolean @default(false)
   autoConfirmReservations Boolean @default(false)
+
+  // How a new order reaches the kitchen. KDS (the historic default) creates
+  // station-grouped kitchen tickets that appear live on the Kitchen Display.
+  // BILL_ONLY creates no ticket at all: the order is a printable bill only,
+  // for counter-service/retail branches that do not run a kitchen screen.
+  // Existing installations keep their current behaviour via the default.
+  ticketMode TicketMode @default(KDS)
 
   // Self-service kiosk (2026-10-17). kioskToken is the opaque, unguessable
   // credential in the public /kiosk/<token> URL (same idea as

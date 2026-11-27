@@ -55,6 +55,7 @@ function PosPageInner() {
   const { data: settings } = useDisplaySettings(branchId);
   const pauseLabels = useMenuPauseLabels(allItems, settings?.restaurant.timezone);
   const taxMode = settings?.branch.taxMode ?? "INCLUSIVE";
+  const ticketMode = settings?.branch.ticketMode ?? "KDS";
   const { note, clear: clearNote, toast } = useNoteToast();
   const floorsQuery = useFloors(branchId);
   const floors = floorsQuery.data;
@@ -128,6 +129,14 @@ function PosPageInner() {
   const existingOrder =
     existingOrders?.find((o) => o.id === selectedBillId) ?? existingOrders?.[0];
 
+  // If the selected bill no longer exists (e.g. closed by another terminal),
+  // clear the selection so we don't silently bill the wrong order.
+  useEffect(() => {
+    if (selectedBillId && existingOrders && !existingOrders.some((o) => o.id === selectedBillId)) {
+      setSelectedBillId(null);
+    }
+  }, [selectedBillId, existingOrders]);
+
   const addLine = (
     menuItemId: string,
     name: string,
@@ -168,6 +177,7 @@ function PosPageInner() {
   // Keyboard-wedge barcode scanner: it types the code as a fast burst + Enter. Listen anywhere on the page except
   // inside a text field (the search box handles its own Enter), look the code up across all categories and add it.
   const scanRef = useRef({ buf: { text: "", last: 0 } as ScanBuffer, items: allItems, select: handleSelect, toast });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     scanRef.current.items = allItems;
     scanRef.current.select = handleSelect;
@@ -249,6 +259,7 @@ function PosPageInner() {
   };
 
   const handleSubmit = () => {
+    if (createOrder.isPending || addOrderItems.isPending) return;
     if (checkingTable || lines.some((line) => pauseLabels.has(line.menuItemId))) return;
     const sentTableId = tableId;
     const items = lines.map((l) => ({
@@ -270,7 +281,7 @@ function PosPageInner() {
         {
           onSuccess: (order) => {
             setDrafts((d) => clearDraft(d, sentTableId));
-            setActiveCustomer(existingOrder.customer);
+            setActiveCustomer(existingOrder.customer ?? null);
             setActiveOrder(order);
             setJustSent(true);
             setCartOpen(true);
@@ -308,7 +319,7 @@ function PosPageInner() {
 
   const viewExistingOrder = () => {
     if (existingOrder) {
-      setActiveCustomer(existingOrder.customer);
+      setActiveCustomer(existingOrder.customer ?? null);
       setActiveOrder(existingOrder);
       setJustSent(false);
       setCartOpen(true);
@@ -335,6 +346,7 @@ function PosPageInner() {
     setCartOpen(false);
     // The sent cart is gone; other tables' unsent drafts stay.
     setLines([]);
+    setDrafts({});
     setSelectedBillId(null);
     setTableIdRaw("");
     setActiveCustomer(null);
@@ -481,6 +493,7 @@ function PosPageInner() {
                 onScheduledForChange={setScheduledFor}
                 branchId={branchId}
                 taxMode={taxMode}
+                ticketMode={ticketMode}
               />
             )}
           </Card>
@@ -499,11 +512,11 @@ function PosPageInner() {
             {activeOrder
               ? translate("Order #{orderNumber} — pay", { orderNumber: activeOrder.orderNumber })
               : lines.length > 0
-                ? translate("View cart · {reduce} items", { reduce: lines.reduce((n, l) => n + l.quantity, 0) })
+                ? translate(lines.reduce((n, l) => n + l.quantity, 0) === 1 ? "View cart · 1 item" : "View cart · {reduce} items", { reduce: lines.reduce((n, l) => n + l.quantity, 0) })
                 : translate("Open bill #{orderNumber} — view", { orderNumber: (existingOrder?.orderNumber) ?? "" })}
           </span>
           {!activeOrder && lines.length > 0 && (
-            <span className="text-sm font-semibold tabular-nums">
+            <span className="text-sm font-semibold tabular-nums" aria-live="polite">
               {fmt.currency(lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0))}
             </span>
           )}

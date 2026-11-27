@@ -2,7 +2,7 @@
 
 import { useStaffFormat } from "@/hooks/use-staff-format";
 import { useI18n } from "@/lib/i18n/context";
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { PauseBadge } from "@/components/menu/pause-badge";
 import { Input } from "@/components/ui/input";
 import { QueryError } from "@/components/ui/query-error";
@@ -31,6 +31,11 @@ export function ProductGrid({
   const { data: categories } = useCategories(branchId);
   const [activeCategoryId, setActiveCategoryId] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 150);
+    return () => clearTimeout(timer);
+  }, [search]);
   const { data: items, isLoading, isError, error, refetch, isFetching } = menu;
 
   // Optional line under each price: the posted production cost (today's when there was a batch today). Off until someone
@@ -50,9 +55,9 @@ export function ProductGrid({
 
   // Archived items (deleted but kept for old orders) are not for sale. A typed/scanned barcode or SKU also finds its item.
   const sellable = items?.filter((i) => i.isActive && (!activeCategoryId || i.categoryId === activeCategoryId));
-  const needle = search.toLowerCase();
+  const needle = debouncedSearch.toLowerCase();
   const filtered = sellable?.filter(
-    (i) => i.name.toLowerCase().includes(needle) || (!!needle && findItemByCode([i], search) === i),
+    (i) => i.name.toLowerCase().includes(needle) || (!!needle && findItemByCode([i], debouncedSearch) === i),
   );
 
   return (
@@ -108,7 +113,7 @@ export function ProductGrid({
             <span aria-hidden className={`relative inline-block h-5 w-9 rounded-full transition-colors ${showCost ? "bg-primary" : "bg-muted-foreground/40"}`}>
               <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${showCost ? "left-[1.125rem]" : "left-0.5"}`} />
             </span>
-            {t("Show cost today")}
+            {t("Show production cost")}
           </button>
         )}
       </div>
@@ -125,6 +130,7 @@ export function ProductGrid({
             key={item.id}
             type="button"
             title={item.name}
+            aria-label={`${item.name}, ${fmt.currency(toInclusivePrice(Number(item.price), Number(item.taxRatePercent ?? 0), taxMode))}`}
             disabled={pauseLabels.has(item.id)}
             onClick={() => onSelect(item)}
             className="flex min-h-24 min-w-0 flex-col items-start gap-2 rounded-2xl border border-border bg-card p-3 text-left sm:p-4 shadow-sm transition-all enabled:hover:-translate-y-0.5 enabled:hover:shadow-md enabled:active:scale-[0.97] disabled:cursor-not-allowed disabled:bg-muted/30 lg:min-h-32 lg:justify-between lg:p-4 lg:enabled:hover:border-primary/50"

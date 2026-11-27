@@ -2608,7 +2608,7 @@
   "Show all options": "Afficher toutes les options",
   "Show all pending tickets currently in the kitchen queue.": "Afficher tous les bons en attente en cuisine.",
   "Show conversations": "Afficher les conversations",
-  "Show cost today": "Afficher le coût du jour",
+  "Show production cost": "Afficher le coût de production",
   "Show every bill on {date}": "Afficher toutes les additions du {date}",
   "Show every bill on {value}": "Afficher toutes les additions du {value}",
   "Show on website": "Afficher sur le site",
