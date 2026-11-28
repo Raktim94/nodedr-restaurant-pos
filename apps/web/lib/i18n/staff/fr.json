@@ -3596,5 +3596,19 @@
   "✅ **Action Approved & Persisted to Database**\n\n{message}": "✅ **Action approuvée et enregistrée dans la base de données**\n\n{message}",
   "❌ **Action Cancelled**\n\nNo changes were applied to your restaurant records. System remains in current state.": "❌ **Action annulée**\n\nAucune modification n’a été apportée aux données du restaurant. Le système conserve son état actuel.",
   "You can permanently delete finished bills that have no payment history, refund history or VERI*FACTU invoice. Every selected bill must qualify. The Audit Log records each deletion. Enter your admin password to confirm.": "Vous pouvez supprimer définitivement les additions terminées qui n’ont ni historique de paiement, ni historique de remboursement, ni facture VERI*FACTU. Toutes les additions sélectionnées doivent remplir ces conditions. Le journal d’audit enregistre chaque suppression. Saisissez votre mot de passe administrateur pour confirmer.",
-  "To correct this paid bill, issue a refund from the Dashboard. Bills with payment or refund history stay on record.": "Pour corriger cette addition payée, effectuez un remboursement depuis le tableau de bord. Les additions ayant un historique de paiement ou de remboursement restent conservées."
+  "To correct this paid bill, issue a refund from the Dashboard. Bills with payment or refund history stay on record.": "Pour corriger cette addition payée, effectuez un remboursement depuis le tableau de bord. Les additions ayant un historique de paiement ou de remboursement restent conservées.",
+  "Show production cost": "Afficher le coût de production",
+  "Edit category {name}": "Modifier la catégorie {name}",
+  "Delete category {name}": "Supprimer la catégorie {name}",
+  "Combo components for {name}": "Composants du combo pour {name}",
+  "Edit item {name}": "Modifier l'article {name}",
+  "Delete item {name}": "Supprimer l'article {name}",
+  "Edit customer {name}": "Modifier le client {name}",
+  "Delete customer {name}": "Supprimer le client {name}",
+  "Accept reservation for {name}": "Accepter la réservation de {name}",
+  "Reject reservation for {name}": "Refuser la réservation de {name}",
+  "Edit table {name}": "Modifier la table {name}",
+  "Delete table {name}": "Supprimer la table {name}",
+  "Refresh printer status": "Actualiser l'état de l'imprimante",
+  "More options": "Plus d'options"
 }

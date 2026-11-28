@@ -3596,5 +3596,19 @@
   "✅ **Action Approved & Persisted to Database**\n\n{message}": "✅ **Ação aprovada e salva no banco de dados**\n\n{message}",
   "❌ **Action Cancelled**\n\nNo changes were applied to your restaurant records. System remains in current state.": "❌ **Ação cancelada**\n\nNenhuma alteração foi aplicada aos registros do restaurante. O sistema permanece no estado atual.",
   "You can permanently delete finished bills that have no payment history, refund history or VERI*FACTU invoice. Every selected bill must qualify. The Audit Log records each deletion. Enter your admin password to confirm.": "Você pode excluir permanentemente contas finalizadas que não tenham histórico de pagamento, histórico de reembolso nem fatura VERI*FACTU. Todas as contas selecionadas precisam atender a esses critérios. O Registro de auditoria guarda cada exclusão. Digite a senha de administrador para confirmar.",
-  "To correct this paid bill, issue a refund from the Dashboard. Bills with payment or refund history stay on record.": "Para corrigir esta conta paga, faça um reembolso no Painel. Contas com histórico de pagamento ou reembolso permanecem registradas."
+  "To correct this paid bill, issue a refund from the Dashboard. Bills with payment or refund history stay on record.": "Para corrigir esta conta paga, faça um reembolso no Painel. Contas com histórico de pagamento ou reembolso permanecem registradas.",
+  "Show production cost": "Mostrar o custo de produção",
+  "Edit category {name}": "Editar categoria {name}",
+  "Delete category {name}": "Excluir categoria {name}",
+  "Combo components for {name}": "Componentes do combo para {name}",
+  "Edit item {name}": "Editar item {name}",
+  "Delete item {name}": "Excluir item {name}",
+  "Edit customer {name}": "Editar cliente {name}",
+  "Delete customer {name}": "Excluir cliente {name}",
+  "Accept reservation for {name}": "Aceitar reserva de {name}",
+  "Reject reservation for {name}": "Rejeitar reserva de {name}",
+  "Edit table {name}": "Editar mesa {name}",
+  "Delete table {name}": "Excluir mesa {name}",
+  "Refresh printer status": "Atualizar status da impressora",
+  "More options": "Mais opções"
 }

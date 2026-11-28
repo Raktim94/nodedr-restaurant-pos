@@ -44,6 +44,7 @@ export interface BranchSettings {
   taxId: string | null;
   autoConfirmOrders: boolean;
   autoConfirmReservations: boolean;
+  ticketMode: "KDS" | "BILL_ONLY";
   kioskToken: string | null;
   kioskDineInEnabled: boolean;
   kioskTakeawayEnabled: boolean;
@@ -77,7 +78,7 @@ export type DisplayRestaurant = Pick<
 >;
 export type DisplayBranch = Pick<
   BranchSettings,
-  "id" | "name" | "address" | "phone" | "gstNumber" | "country" | "taxRegime" | "taxMode" | "taxLabel" | "taxId"
+  | "id" | "name" | "address" | "phone" | "gstNumber" | "country" | "taxRegime" | "taxMode" | "taxLabel" | "taxId" | "ticketMode"
 >;
 
 export function useDisplaySettings(branchId: string | null) {

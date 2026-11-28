@@ -263,6 +263,7 @@ function BranchMenu({ branchId }: { branchId: string | null }) {
                         size="icon"
                         className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground active:scale-95 transition-transform"
                         title={t("Edit category")}
+                        aria-label={t("Edit category {name}", { name: cat.name })}
                         onClick={() => setEditingCategory(cat)}
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -272,6 +273,7 @@ function BranchMenu({ branchId }: { branchId: string | null }) {
                         size="icon"
                         className="h-6 w-6 rounded-md text-muted-foreground hover:text-destructive active:scale-95 transition-transform"
                         title={t("Delete category")}
+                        aria-label={t("Delete category {name}", { name: cat.name })}
                         onClick={() => onDeleteCategory(cat)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -460,6 +462,7 @@ function BranchMenu({ branchId }: { branchId: string | null }) {
                                 item.isCombo && "text-primary bg-primary/10",
                               )}
                               title={t("Combo components")}
+                              aria-label={t("Combo components for {name}", { name: item.name })}
                               onClick={() => setComboItem(item)}
                             >
                               <Layers className="h-4 w-4" />
@@ -469,6 +472,7 @@ function BranchMenu({ branchId }: { branchId: string | null }) {
                               size="icon"
                               className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground active:scale-95 transition-transform"
                               title={t("Edit item")}
+                              aria-label={t("Edit item {name}", { name: item.name })}
                               onClick={() => setEditingItem(item)}
                             >
                               <Pencil className="h-4 w-4" />
@@ -478,6 +482,7 @@ function BranchMenu({ branchId }: { branchId: string | null }) {
                               size="icon"
                               className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive active:scale-95 transition-transform"
                               title={t("Delete item")}
+                              aria-label={t("Delete item {name}", { name: item.name })}
                               onClick={() =>
                                 deleteItem.mutate(item.id, {
                                   onSuccess: () => toast.success(t("{name} removed", { name: item.name })),

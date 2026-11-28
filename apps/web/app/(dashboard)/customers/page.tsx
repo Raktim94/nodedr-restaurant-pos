@@ -91,6 +91,7 @@ export default function CustomersPage() {
                     size="icon"
                     className="h-8 w-8 text-muted-foreground hover:text-primary"
                     title={t("Edit customer")}
+                    aria-label={t("Edit customer {name}", { name: c.name ?? "customer" })}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -104,6 +105,7 @@ export default function CustomersPage() {
                     size="icon"
                     className="h-8 w-8 text-muted-foreground hover:text-destructive"
                     title={t("Delete customer")}
+                    aria-label={t("Delete customer {name}", { name: c.name ?? "customer" })}
                     onClick={(e) => onDelete(e, c)}
                   >
                     <Trash2 className="h-4 w-4" />

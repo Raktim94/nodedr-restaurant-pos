@@ -1,4 +1,8 @@
 {
+  "Kitchen tickets": "Kitchen tickets",
+  "Choose how orders reach your kitchen. Restaurants without a Kitchen Display can use bill-only mode.": "Choose how orders reach your kitchen. Restaurants without a Kitchen Display can use bill-only mode.",
+  "Live order tickets by station (Kitchen Display)": "Live order tickets by station (Kitchen Display)",
+  "On = each paid order creates station-grouped tickets that appear live on the Kitchen Display. Off = bill only, no kitchen ticket is created.": "On = each paid order creates station-grouped tickets that appear live on the Kitchen Display. Off = bill only, no kitchen ticket is created.",
   "nav.dashboard": "Dashboard",
   "nav.pos": "Point of Sale",
   "nav.tables": "Tables",

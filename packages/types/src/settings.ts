@@ -55,6 +55,9 @@ export const branchSettingsSchema = z.object({
   // Online order / table-booking handling (false = staff accept manually).
   autoConfirmOrders: z.boolean().optional(),
   autoConfirmReservations: z.boolean().optional(),
+  // Where a new order's kitchen ticket goes. KDS (default) = station-grouped
+  // tickets on the Kitchen Display; BILL_ONLY = no ticket, printable bill only.
+  ticketMode: z.enum(["KDS", "BILL_ONLY"]).optional(),
   // Self-service kiosk: which service-mode buttons the start screen offers.
   kioskDineInEnabled: z.boolean().optional(),
   kioskTakeawayEnabled: z.boolean().optional(),

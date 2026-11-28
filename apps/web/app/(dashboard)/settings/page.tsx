@@ -75,6 +75,8 @@ export default function SettingsPage() {
 
       {data && <OnlineOrdersCard key={data.branch.id} branchId={branchId} branch={data.branch} />}
 
+      {data && <KitchenTicketsCard key={`tickets-${data.branch.id}`} branchId={branchId} branch={data.branch} />}
+
       {data && <KioskCard key={`kiosk-${data.branch.id}`} branchId={branchId} branch={data.branch} />}
 
       <NotificationSettingsCard />
@@ -135,6 +137,52 @@ function OnlineOrdersCard({
           checked={branch.autoConfirmReservations}
           disabled={update.isPending}
           onCheckedChange={(v) => save({ autoConfirmReservations: v })}
+        />
+      </div>
+    </Card>
+  );
+}
+
+function KitchenTicketsCard({
+  branchId,
+  branch,
+}: {
+  branchId: string | null;
+  branch: { ticketMode: "KDS" | "BILL_ONLY" };
+}) {
+  const { t } = useI18n();
+  const update = useUpdateBranchSettings(branchId);
+  const kds = branch.ticketMode !== "BILL_ONLY";
+  const save = (v: boolean) =>
+    update.mutate(
+      { ticketMode: v ? "KDS" : "BILL_ONLY" },
+      {
+        onSuccess: () => toast.success(t("Saved")),
+        onError: (err) => toast.error(err instanceof Error ? err.message : t("Could not save")),
+      },
+    );
+
+  return (
+    <Card className="flex flex-col gap-4 p-6">
+      <div>
+        <h2 className="text-[18px] font-medium text-foreground">{t("Kitchen tickets")}</h2>
+        <p className="text-sm text-muted-foreground">
+          {t("Choose how orders reach your kitchen. Restaurants without a Kitchen Display can use bill-only mode.")}
+        </p>
+
+      </div>
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-border p-4">
+        <div className="flex flex-col gap-0.5">
+          <Label htmlFor="ticket-mode-kds">{t("Live order tickets by station (Kitchen Display)")}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t("On = each paid order creates station-grouped tickets that appear live on the Kitchen Display. Off = bill only, no kitchen ticket is created.")}
+          </p>
+        </div>
+        <Switch
+          id="ticket-mode-kds"
+          checked={kds}
+          disabled={update.isPending}
+          onCheckedChange={save}
         />
       </div>
     </Card>

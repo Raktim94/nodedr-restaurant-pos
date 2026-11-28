@@ -642,7 +642,7 @@ export function CheckoutPanel({
               disabled={!giftCardCode || checkingGiftCard}
               onClick={checkGiftCard}
             >
-              {checkingGiftCard ? "…" : t("Check")}
+              {checkingGiftCard ? t("Checking…") : t("Check")}
             </Button>
           </div>
           {giftCardBalance !== null && (
